@@ -36,6 +36,7 @@ Cada afirmação leva uma destas marcas:
 5. [Fluxo técnico do contas a pagar](05-contas-a-pagar.md)
 6. [Registro de decisões](06-decisoes.md)
 7. [Pendências, riscos e lixo de teste](07-pendencias.md)
+8. [Segurança: revisões e falhas](08-seguranca.md)
 
 ## Fontes
 
@@ -51,7 +52,7 @@ Quando um documento de desenho e este repositório divergirem, vale o que estive
 
 ## Como manter
 
-1. **Toda mudança que altera o sistema atualiza esta pasta no mesmo PR.** Migration nova → [03-banco-de-dados.md](03-banco-de-dados.md). Chamada nova à API do Sienge ou comportamento descoberto → [04-integracao-sienge.md](04-integracao-sienge.md). Variável de ambiente ou segredo novo → [02-ambientes-e-segredos.md](02-ambientes-e-segredos.md). Decisão → [06-decisoes.md](06-decisoes.md).
+1. **Toda mudança que altera o sistema atualiza esta pasta no mesmo PR.** Migration nova → [03-banco-de-dados.md](03-banco-de-dados.md). Chamada nova à API do Sienge ou comportamento descoberto → [04-integracao-sienge.md](04-integracao-sienge.md). Variável de ambiente ou segredo novo → [02-ambientes-e-segredos.md](02-ambientes-e-segredos.md). Decisão → [06-decisoes.md](06-decisoes.md). Código novo passa pela revisão de segurança e entra no histórico de [08-seguranca.md](08-seguranca.md).
 2. Ao construir algo que estava **[Desenhado]**, troque a marca para **[Construído]** e aponte o arquivo, a função ou a tabela. Se o construído ficou diferente do desenho, descreva o que foi feito e registre a mudança em [06-decisoes.md](06-decisoes.md).
 3. Nunca escreva valor de senha, token ou chave aqui. Escreva o **nome** do segredo e onde ele mora.
 4. Datas por extenso no formato dia/mês/ano (7/nov/2026). Idioma: português.
