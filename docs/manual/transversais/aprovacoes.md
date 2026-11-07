@@ -27,7 +27,7 @@ Compras (requisição, cotação, pedido e contrato) fica para depois, no mesmo 
 | 4. **Liberação de caução** | O gestor do contrato e, acima de certo valor, também as regras gerais |
 | 5. **Publicação de versão do orçamento** | Diretoria |
 
-✅ **Quem lança não aprova o próprio lançamento** (Moises, 7/nov/2026). Só a AD pode lançar e aprovar. O lançamento de quem está na AF ou na AO é aprovado, por padrão, pela AD; é configurável trocar por "a AF aprova o da AO e a AO aprova o da AF" ou por uma terceira pessoa que aprova os dois. ⏳ Com mais de uma pessoa na AD, falta dizer se cada uma pode aprovar o próprio lançamento ou se uma aprova a da outra.
+✅ **Quem lança não aprova o próprio lançamento** (Moises, 7/nov/2026). Só a AD pode lançar e aprovar. O lançamento de quem está na AF ou na AO é aprovado, por padrão, pela AD; é configurável trocar por "a AF aprova o da AO e a AO aprova o da AF" ou por uma terceira pessoa que aprova os dois. ⏳ Com mais de uma pessoa na AD, falta dizer se cada uma pode aprovar o próprio lançamento ou só o master, e quem pode mudar a lista AD.
 
 ⏳ Em aberto: o valor a partir do qual a liberação de caução também passa pelas regras gerais.
 
