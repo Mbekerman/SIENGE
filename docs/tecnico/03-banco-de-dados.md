@@ -62,7 +62,17 @@ O que falta antes de abrir o `nucleo` às telas (ver [07-pendencias.md](07-pende
 
 ### Regra de migrations
 
-Enquanto nenhum banco de produção tiver recebido estas migrations, elas podem ser editadas no lugar (mesma regra do BKM Terrenos). Quando o `nucleo` for aplicado no BKM_Desenvolvimento_Imobiliario, toda mudança passa a ser migration nova. **[Construído]** CI em `.github/workflows/ci.yml` (commit `a252fbe`): em todo push e PR, instala o Postgres 16 num runner `ubuntu-24.04`, roda `bash supabase/tests/run.sh` e só fica verde se a saída trouxer "TODOS OS TESTES PASSARAM". Token só de leitura (`permissions: contents: read`). **Em 7/nov/2026 o CI ainda não tinha rodado nenhuma vez:** o GitHub recusa os jobs da conta por pagamento recusado ou limite de gastos ("Billing & plans" da conta). Enquanto isso, o check aparece vermelho sem ter executado nada, e os testes são conferidos rodando `run.sh` à mão.
+Enquanto nenhum banco de produção tiver recebido estas migrations, elas podem ser editadas no lugar (mesma regra do BKM Terrenos). Quando o `nucleo` for aplicado no BKM_Desenvolvimento_Imobiliario, toda mudança passa a ser migration nova. **[Construído]** CI em `.github/workflows/ci.yml` (commit `a252fbe`): em todo push e PR, instala o Postgres 16 num runner `ubuntu-24.04`, roda `bash supabase/tests/run.sh` e só fica verde se a saída trouxer "TODOS OS TESTES PASSARAM". Token só de leitura (`permissions: contents: read`). **Em 7/nov/2026 o CI ainda não tinha rodado nenhuma vez:** os minutos do GitHub Actions da conta acabaram em 6/nov/2026, às 15h11 UTC, e desde então todo job é recusado sem rodar (a anotação fala em "Billing & plans"). Enquanto isso, o check fica vermelho sem ter executado nada, e os testes são conferidos rodando `run.sh` à mão.
+
+**Regra de CI de todo o projeto** (decisão do Moises, 7/nov/2026, para gastar menos minutos), que o CI do SIENGE ainda precisa seguir **[A fazer]**:
+
+- roda só em `pull_request` para `develop` e `main`, mais `workflow_dispatch` (nada de `push`);
+- `concurrency` com `cancel-in-progress`;
+- um job só, que lê pela API os arquivos do PR e roda cada teste só quando a parte dele muda, além do filtro `paths` no gatilho;
+- cache de dependências;
+- `timeout-minutes`.
+
+O modelo está nos PRs do BKM Terrenos (#243) e do monitor de mercado (#10).
 
 ## 3.2 Esquemas `sienge_bruto` e `sienge` [Desenhado, aprovado em 7/nov/2026]
 
