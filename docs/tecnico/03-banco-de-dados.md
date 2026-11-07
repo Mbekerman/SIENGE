@@ -115,6 +115,7 @@ Ajustes aceitos pela thread do banco depois da revisão de segurança (7/nov/202
 Decidido pelo Moises (7/nov/2026):
 
 - A folha PJ entra no livro **somada por centro de custo e mês**, sem linha por pessoa.
+- O cadastro do RH guarda, além de quem está ativo e dos benefícios, **qual SPE paga cada PJ em cada mês** (vínculo mensal, com histórico; Moises, 7/nov/2026).
 - Notas fiscais e retenções dos PJ ficam **só no esquema pessoal** e vão direto ao contador, por um **portal do contador** (acesso externo, login próprio, só leitura das notas, cada download no mesmo log que só cresce).
 
 Também decidido (7/nov/2026): **os pagamentos PJ continuam passando pelo Sienge** até ele sair; a anonimização só vale depois disso. Remessa e extrato pela **Nexxera**.
