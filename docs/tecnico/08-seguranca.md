@@ -6,6 +6,50 @@ Uma falha encontrada vai na hora para a tarefa que fez o código. Esta página g
 
 Gravidade: **crítica** (explorável hoje por quem está fora), **alta** (explorável assim que o sistema for ao ar como está), **média** (depende de uma mudança futura plausível), **baixa** (boa prática).
 
+## Checklist de cada revisão
+
+Adaptado em 7/nov/2026 da skill "security-and-hardening" de Addy Osmani ([addyosmani/agent-skills](https://github.com/addyosmani/agent-skills/blob/main/skills/security-and-hardening/SKILL.md), lida em 7/nov/2026). A skill foi escrita para apps web com servidor próprio. Aqui ficou só o que vale para Supabase + Postgres + React + adaptador do Sienge, traduzido para os nossos termos.
+
+**1. Fronteiras de confiança.** Antes de revisar, liste por onde entra dado que não escrevemos e passe por cada uma as seis perguntas STRIDE: alguém se passa por outro? Altera o dado? Nega o que fez? Lê o que não devia? Derruba o serviço? Ganha poder que não tem? As fronteiras conhecidas:
+
+| Fronteira | O que entra |
+| --- | --- |
+| API do Supabase (PostgREST) | Toda chamada das telas, logadas ou não |
+| Webhook do Sienge | Aviso sem assinatura documentada |
+| Respostas da API do Sienge | Dado de terceiro gravado no `sienge_bruto` |
+| Upload de nota (PDF, XML) | Arquivo do fornecedor |
+| Leitura da nota por IA | Texto gerado pelo modelo a partir de um PDF que qualquer fornecedor escreve |
+| CRM e BKM Terrenos | Dado de outro sistema |
+
+**2. Acesso.** Toda função e visão aberta às telas confere quem pede **e** se a pessoa pode mexer naquele registro específico (empresa, empreendimento, natureza), e não só se ela está logada. Na nossa stack isso é RLS + checagem de papel nas funções, com teste por papel. Nenhum privilégio para `anon`. `service_role` só com o que o adaptador usa.
+
+**3. Entrada.** Valida no banco, na função que grava: tipo, tamanho, lista de valores, formato (CPF, CNPJ, valores, datas). A validação da tela é conforto, não proteção. SQL dinâmico (`execute`) só com `format('%I', ...)`/`%L` ou parâmetros, nunca concatenando texto.
+
+**4. Segredos.** Nada de senha, token ou chave no repositório, em log, em mensagem de erro, no `sienge_bruto` ou na janela de contexto de uma IA. `.env.example` com valores falsos; `.env*` reais no `.gitignore`. Antes de cada commit, procurar segredo no diff. Segredo que chegou ao GitHub está vazado: trocar primeiro, limpar o histórico depois.
+
+**5. Upload.** Lista de tipos aceitos (PDF, XML) conferida pelo conteúdo, não pela extensão; limite de tamanho; caminho no Storage conferido pela RLS; XML lido sem entidades externas.
+
+**6. Saída da IA.** O que o modelo devolve é dado não confiável: valida por esquema (valores, CNPJ, datas) antes de usar, e nunca vai para SQL, HTML cru ou caminho de arquivo. Um PDF pode trazer instruções escondidas para o modelo; quem decide a permissão é o código, nunca o prompt. A IA não recebe segredo nem dado de outra empresa.
+
+**7. Erros e logs.** Mensagem ao usuário sem detalhe interno (pilha, SQL, nome de tabela do Sienge); o detalhe vai para o log do servidor, sem dado sensível.
+
+**8. Abuso e volume.** Limite de tamanho e de taxa no recebedor do webhook e no upload; tempo máximo nas chamadas ao Sienge. O limite do próprio Sienge (200 por minuto) não protege o nosso lado.
+
+**9. Rastro.** Ação que mexe em dinheiro, permissão ou configuração fica na auditoria com quem fez (ver S-005).
+
+**10. Dependências.** Quando houver `package.json`: `npm audit` no lockfile antes de cada entrega, triagem do que é crítico ou alto pelo que de fato roda, nunca `npm audit fix --force` automático, e revisão de toda dependência nova (dono, manutenção, nome parecido com outro pacote).
+
+**11. Telas.** Cabeçalhos de segurança no servidor web (CSP começando de `default-src 'self'`, HSTS, `X-Frame-Options`, `X-Content-Type-Options`), nada de `dangerouslySetInnerHTML` com dado de usuário ou do Sienge, só a chave publicável do Supabase no navegador.
+
+**12. Dados pessoais (LGPD).** CPF, dados bancários e Pix de fornecedores, folha e dados de sócios: cada campo novo é classificado (comum, pessoal, sensível), só se guarda o que tem finalidade, e o desenho precisa permitir achar e apagar os dados de uma pessoa. Mandar dado pessoal para um serviço de IA ou de terceiros exige contrato com ele.
+
+O que ficou de fora da skill, e por quê:
+
+- **Senhas com bcrypt e cookies de sessão:** o login é do Supabase Auth com Google; não guardamos senha nem montamos sessão.
+- **Configuração de CORS e cabeçalhos via Express/helmet:** não há servidor Express. O CORS da API é do Supabase; os cabeçalhos vão no servidor web do front (item 11).
+- **Operações destrutivas em arquivos e SSRF:** o sistema não apaga arquivos por caminho nem busca URL informada pelo usuário. Volta para o checklist se isso aparecer.
+- **"Nunca guardar o token de sessão no localStorage":** o supabase-js guarda a sessão no navegador por padrão, como no BKM Terrenos. Aceitamos essa troca e compensamos com CSP rígida e sem HTML cru (item 11). **[A decidir]** se um dia valer usar cookies pelo servidor.
+
 ## Falhas abertas
 
 | Id | Gravidade | Onde | Falha | Correção sugerida | Desde |
