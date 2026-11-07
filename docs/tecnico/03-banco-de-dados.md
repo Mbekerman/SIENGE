@@ -110,6 +110,11 @@ Ajustes aceitos pela thread do banco depois da revisão de segurança (7/nov/202
 - Leitura só por função `security definer` que grava o log antes de devolver, sem `grant` nas tabelas; log que só cresce, revisado por quem não é master.
 - Chave de criptografia no Vault.
 
-**[A decidir]** (com o Moises): folha PJ no livro somada por centro de custo e mês (recomendado) ou linha por pseudônimo; nota fiscal e retenções do PJ só na área restrita (recomendado); se esses pagamentos passam pelo Sienge; remessa e extrato só por API, de preferência numa conta separada; dois masters.
+Decidido pelo Moises (7/nov/2026):
+
+- A folha PJ entra no livro **somada por centro de custo e mês**, sem linha por pessoa.
+- Notas fiscais e retenções dos PJ ficam **só no esquema pessoal** e vão direto ao contador, por um **portal do contador** (acesso externo, login próprio, só leitura das notas, cada download no mesmo log que só cresce).
+
+**[A decidir]**: se os pagamentos PJ passam pelo Sienge durante a transição; remessa e extrato por Nexxera ou pela API do banco (de preferência numa conta separada); dois masters.
 
 O que a revisão de segurança pede antes de construir está em [08-seguranca.md](08-seguranca.md), S-007.
