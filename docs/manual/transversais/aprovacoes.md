@@ -35,6 +35,8 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 
 ## Pagamento de funcionários PJ
 
+✅ **Já vale agora, com o Sienge** (Moises, 7/nov/2026): os títulos dos fornecedores PJ copiados do Sienge ficam numa **área restrita** do ERP BKM. Relatórios e BI mostram só a soma por centro de custo e mês, sem valor por pessoa. No próprio Sienge, nome e valor continuam visíveis.
+
 > 🔜 **Futuro.** Os pagamentos PJ ainda passam pelo Sienge, e a remessa e o extrato vão pelo Nexxera (Moises, 7/nov/2026). Enquanto for assim, o nome e o valor de cada PJ continuam visíveis no Sienge, e **todo o fluxo abaixo (anonimização, conferência com dois "ok", portal de notas e portal do contador) fica para quando o Sienge sair desse fluxo**. Ver [O que ainda é feito à mão no Sienge](passos-manuais-no-sienge.md). A conciliação automática depende do módulo de Bancos, que não foi desenhado.
 
 **Para que serve:** pagar os funcionários contratados como PJ mantendo o valor de cada um o mais anônimo possível.
@@ -45,8 +47,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 - Uma **tabela de remuneração**, à parte, guarda o valor de cada um "a 7 chaves".
 - O **financeiro** vê só um pseudônimo (por exemplo, "PJ-017") e o valor a pagar, nunca o nome.
 - O funcionário sobe a nota num **portal**; se tudo bate com as duas tabelas, ela segue direto para pagamento.
-- O pagamento de um funcionário pode ser **dividido entre SPEs**. Quando a nota chega, o sistema confere a SPE, o percentual e o valor contra o cadastro do RH daquele mês.
-- Os títulos dos PJ ficam numa **área restrita**; os relatórios mostram só a soma por centro de custo e mês.
+- O RH pode **dividir o pagamento de um funcionário entre SPEs**, em percentuais, no mês. O PJ emite uma nota para cada SPE. Ao receber cada nota, o sistema confere o CNPJ da SPE, o percentual e o valor contra o cadastro do RH daquele mês, e **trava o pagamento** se algo divergir.
 - **Todo mês, as duas tabelas são conferidas.** Se um dos dois responsáveis não der o "ok" do mês, **ninguém recebe**.
 - Os dois responsáveis e os **substitutos temporários** de cada um são definidos na própria plataforma.
 - O **usuário master** vê tudo, pode trocar o aprovador e também pode aprovar.
