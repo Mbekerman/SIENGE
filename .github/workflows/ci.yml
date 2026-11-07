@@ -1,17 +1,28 @@
 name: CI
+# Regra de CI do projeto (Moises, 7/nov/2026): só em PR para develop e main, ou à mão;
+# sem push; cancela rodada antiga do mesmo PR; só quando a parte testada muda; com tempo máximo.
 on:
-  push:
   pull_request:
+    branches: [develop, main]
+    paths:
+      - 'supabase/**'
+      - '.github/workflows/ci.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   banco:
     name: Banco (migrations + regras)
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-16
+      # o runner já traz o Postgres 16; só instala se faltar (não há dependência para guardar em cache)
+      - run: test -x /usr/lib/postgresql/16/bin/initdb || (sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-16)
       - run: bash supabase/tests/run.sh | tee saida.txt && grep -q "TODOS OS TESTES PASSARAM" saida.txt
