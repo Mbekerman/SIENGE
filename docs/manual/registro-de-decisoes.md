@@ -6,6 +6,7 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
+| 7/nov/2026 | AF = Aprovação financeira, AO = Aprovação operacional; contador entra no portal com login fora do Google | [Aprovações](transversais/aprovacoes.md#regra-inicial-e-papéis-de-exceção) |
 | 7/nov/2026 | Travas fixas confirmadas, sem tela que as desligue; dados bancários e PIX do fornecedor fazem parte do aprovado, e a troca deles precisa de aprovação | [Aprovações](transversais/aprovacoes.md#travas-fixas) |
 | 7/nov/2026 | Lembretes por automações configuráveis; escalada depois de 7 dias corridos, só da camada parada; a AD aprova sozinha a qualquer momento | [Aprovações](transversais/aprovacoes.md#regra-inicial-e-papéis-de-exceção) |
 | 7/nov/2026 | Qualquer pessoa da AD edita as listas AF e AO; revisão das listas e dos admins passa a ser trimestral | [Aprovações](transversais/aprovacoes.md#quem-muda-a-configuração) |
