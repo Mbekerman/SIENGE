@@ -141,6 +141,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 - **Todo mês, as duas tabelas são conferidas.** Se um dos dois responsáveis não der o "ok" do mês, **ninguém recebe**.
 - Os dois responsáveis e os **substitutos temporários** de cada um são definidos na própria plataforma.
 - Existe **um único usuário master, o Moises** (com uma conta própria de master, separada da conta do dia a dia). Ele vê tudo, pode trocar o aprovador e pode aprovar tudo, inclusive os dois "ok" do mês.
+- **Mudar a remuneração** de um PJ pode exigir o aval de outra pessoa; isso é configurável (Moises, 7/nov/2026). 🟡 Foi proposto, como padrão, o aval do outro responsável ou do master, com a mudança valendo só a partir do mês seguinte, porque quem muda o valor e também dá o "ok" conseguiria aumentar e liberar sozinho.
 - A folha PJ entra no financeiro, nos relatórios e no BI **somada por centro de custo e por mês**, sem valor por pessoa. O detalhe fica só na área restrita.
 - As **notas dos PJ ficam guardadas na área restrita** ("a 7 chaves") e vão direto ao contador. O contador também tem um **portal** para baixá-las.
 

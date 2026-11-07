@@ -6,6 +6,7 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
+| 7/nov/2026 | PJ (futuro): se mudar a remuneração exige aval de outra pessoa é configurável | [Aprovações](transversais/aprovacoes.md#pagamento-de-funcionários-pj) |
 | 7/nov/2026 | AD: cada pessoa configurada se pode aprovar o próprio lançamento e se gera aviso; a lista AD só muda pelo master, ou por admin com aprovação do master | [Aprovações](transversais/aprovacoes.md#os-cinco-momentos-de-aprovação) |
 | 7/nov/2026 | Listas de exceção chamam-se AF, AO e AD (Aprovação definitiva) | [Aprovações](transversais/aprovacoes.md#regra-inicial-e-papéis-de-exceção) |
 | 7/nov/2026 | Pedido parado: prazo configurável, 7 dias de início; e-mail e notificação no 3º dia | [Aprovações](transversais/aprovacoes.md#regra-inicial-e-papéis-de-exceção) |
