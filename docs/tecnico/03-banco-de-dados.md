@@ -102,6 +102,14 @@ Desenho aceito pelo Moises (thread "Desenhar o banco do ERP BKM"), sem código:
 - O `nucleo` recebe só o pseudônimo, a chave PIX e o valor.
 - A conciliação lê o extrato por API ou Open Finance, liga cada linha ao pagamento pelo identificador do PIX e troca nome, documento e chave pelo pseudônimo antes de gravar na área do financeiro.
 
-**[A decidir]** (propostas, à espera do Moises): pseudônimo aleatório ou HMAC com chave secreta; remessa e extrato só por API, de preferência numa conta separada; dois masters com toda leitura auditada.
+Ajustes aceitos pela thread do banco depois da revisão de segurança (7/nov/2026):
+
+- A chave PIX não vai para o `nucleo`: ele guarda só o pseudônimo e a referência do pagamento, e a função de remessa busca a chave no esquema pessoal na hora do envio.
+- Pseudônimo aleatório, com a tabela de ligação no esquema pessoal (sem HMAC).
+- Extrato cru gravado só no esquema pessoal.
+- Leitura só por função `security definer` que grava o log antes de devolver, sem `grant` nas tabelas; log que só cresce, revisado por quem não é master.
+- Chave de criptografia no Vault.
+
+**[A decidir]** (com o Moises): folha PJ no livro somada por centro de custo e mês (recomendado) ou linha por pseudônimo; nota fiscal e retenções do PJ só na área restrita (recomendado); se esses pagamentos passam pelo Sienge; remessa e extrato só por API, de preferência numa conta separada; dois masters.
 
 O que a revisão de segurança pede antes de construir está em [08-seguranca.md](08-seguranca.md), S-007.
