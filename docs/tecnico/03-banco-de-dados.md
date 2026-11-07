@@ -115,6 +115,8 @@ Decidido pelo Moises (7/nov/2026):
 - A folha PJ entra no livro **somada por centro de custo e mês**, sem linha por pessoa.
 - Notas fiscais e retenções dos PJ ficam **só no esquema pessoal** e vão direto ao contador, por um **portal do contador** (acesso externo, login próprio, só leitura das notas, cada download no mesmo log que só cresce).
 
-**[A decidir]**: se os pagamentos PJ passam pelo Sienge durante a transição; remessa e extrato por Nexxera ou pela API do banco (de preferência numa conta separada); dois masters.
+Também decidido (7/nov/2026): **os pagamentos PJ continuam passando pelo Sienge** até ele sair; a anonimização só vale depois disso. Remessa e extrato pela **Nexxera**.
+
+**[A decidir]**: conta bancária separada para a folha PJ; dois masters. Limitação da transição em [08](08-seguranca.md), S-010.
 
 O que a revisão de segurança pede antes de construir está em [08-seguranca.md](08-seguranca.md), S-007.
