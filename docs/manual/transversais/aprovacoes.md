@@ -62,7 +62,13 @@ Compras (requisição, cotação, pedido e contrato) fica para depois, no mesmo 
 
 Essas listas cuidam das **exceções**: férias sem substituto, demora na aprovação e casos parecidos.
 
-✅ **Pedido parado** (Moises, 7/nov/2026): depois de um prazo configurável, que começa com **7 dias**, o pedido sem resposta sobe para as listas de exceção. No **3º dia** sem resposta, o aprovador recebe um lembrete por e-mail e notificação. 🟡 Pelo desenho, o aprovador original continua podendo aprovar até alguém decidir. ⏳ Falta dizer se os 7 dias são corridos ou úteis.
+✅ **Pedido parado** (Moises, 7/nov/2026):
+
+- Os **lembretes são automações configuráveis**: notificação, e-mail, aviso a outras pessoas. O primeiro sai, por padrão, no **3º dia** sem resposta.
+- Depois de **7 dias corridos** (prazo configurável), **só a camada parada** pode ser decidida por alguém da AF, da AO ou da AD. Esperar não serve para pular as outras camadas, e quem lançou nunca decide.
+- O aprovador original continua podendo aprovar até alguém decidir.
+- **A AD pode aprovar sozinha a qualquer momento**, sem esperar o prazo.
+- 🟡 Ainda sem confirmação explícita: o prazo pode ser diferente em cada camada; a exceção pede justificativa; o aprovador que foi passado para trás recebe aviso.
 
 ✅ **Camadas com quantos aprovadores quiser** (Moises, 7/nov/2026): uma camada pode ter 2 aprovadores ou mais, e a regra diz se eles precisam seguir uma ordem ou não. A AD pode entrar na sequência como última instância.
 
@@ -106,7 +112,7 @@ Essas listas cuidam das **exceções**: férias sem substituto, demora na aprova
 1. O administrador **não pode se colocar** numa lista de aprovadores nem se nomear substituto.
 2. O administrador **não pode mudar uma lista da qual faz parte**.
 3. **Só o master dá e tira** o poder de administrador.
-4. **Todo mês, o master revisa** as listas de aprovadores e quem é administrador.
+4. **A cada trimestre, o master revisa** as listas de aprovadores e quem é administrador (Moises, 7/nov/2026; antes era mensal).
 
 ### Tarefa: trocar o aprovador de uma lista
 
@@ -137,7 +143,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 - Uma **tabela de remuneração**, à parte, guarda o valor de cada um "a 7 chaves".
 - O **financeiro** vê só um pseudônimo (por exemplo, "PJ-017") e o valor a pagar, nunca o nome.
 - O funcionário sobe a nota num **portal**; se tudo bate com as duas tabelas, ela segue direto para pagamento.
-- O RH pode **dividir o pagamento de um funcionário entre SPEs**, em percentuais, no mês. O PJ emite uma nota para cada SPE. Ao receber cada nota, o sistema confere o CNPJ da SPE, o percentual e o valor contra o cadastro do RH daquele mês, e **trava o pagamento** se algo divergir.
+- O RH pode **dividir o pagamento de um funcionário entre SPEs ou centros de custo**, em percentuais, no mês (Moises, 7/nov/2026). O PJ emite uma nota para cada SPE. Ao receber cada nota, o sistema confere o CNPJ da SPE, o percentual e o valor contra o cadastro do RH daquele mês, e **trava o pagamento** se algo divergir.
 - **Todo mês, as duas tabelas são conferidas.** Se um dos dois responsáveis não der o "ok" do mês, **ninguém recebe**.
 - Os dois responsáveis e os **substitutos temporários** de cada um são definidos na própria plataforma.
 - Existe **um único usuário master, o Moises** (com uma conta própria de master, separada da conta do dia a dia). Ele vê tudo, pode trocar o aprovador e pode aprovar tudo, inclusive os dois "ok" do mês.
@@ -188,24 +194,37 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 
 🟡 Pelo banco de dados de 7/nov/2026: diretor, gestor, analista e leitura; à parte, administrador (configuração) e contador (vota nas alçadas que pedem o contador). Segue o modelo do BKM Terrenos, com hierarquia analista → gestor → diretor.
 
-## Propostas do desenho à espera do Moises
+## Travas fixas
 
-🟡 O [documento de desenho das aprovações](https://claude.ai/artifact/FvkBaLmYig68zstJzTKFwP) (7/nov/2026) traz estas propostas, que ainda não foram confirmadas:
+✅ **Confirmadas pelo Moises** no [documento de desenho das aprovações](https://claude.ai/artifact/FvkBaLmYig68zstJzTKFwP) (7/nov/2026). Ficam no banco de dados, e **nenhuma tela as desliga**, nem a do master:
 
-- **Travas fixas**, que nenhuma tela desliga: quem lança não aprova (salvo a AD autorizada); nas camadas em conjunto, cada camada tem uma pessoa diferente; o admin não se nomeia aprovador nem substituto; o substituto não é quem lançou; se o título ou o arquivo do lote mudar depois de aprovado, é preciso aprovar de novo; todo pagamento tem pelo menos uma aprovação; toda mudança de configuração fica registrada.
+1. Quem lança não aprova, salvo a pessoa da AD que o master autorizou.
+2. Nas camadas em conjunto, cada camada tem uma pessoa diferente, salvo a exceção "gestor da área também na AF ou na AO" escolhida na configuração.
+3. O administrador não se nomeia aprovador nem substituto.
+4. O substituto não é quem lançou.
+5. A aprovação vale só para o que foi aprovado, **inclusive a conta bancária e o PIX do fornecedor**. Se o título, os dados bancários ou o arquivo do lote mudarem depois, é preciso aprovar de novo.
+6. **Trocar os dados bancários de um fornecedor** é um ato que outra pessoa aprova. O fornecedor é avisado pelo contato que já estava cadastrado, e os títulos abertos dele voltam para aprovação. (É o golpe mais comum: um e-mail falso pedindo a troca da conta.)
+7. O lote só aceita título aprovado e sem nenhuma mudança depois da aprovação.
+8. Todo pagamento tem pelo menos uma aprovação. No PJ, a aprovação são os dois "ok" do mês.
+9. Toda mudança de configuração fica registrada.
+
+## Quem muda a configuração
+
+- ✅ **Listas AF e AO:** qualquer pessoa da AD pode mexer (Moises, 7/nov/2026).
+- ✅ **Lista AD:** o master, ou um administrador com a aprovação do master.
+- ✅ **Mudanças de configuração** valem só para os pedidos novos e avisam o master. As que afrouxam o controle (menos camadas, faixa maior, tirar uma natureza da aprovação) precisam do master. A tela mostra o efeito antes de salvar (Moises, 7/nov/2026).
+- ✅ **Duas alçadas de valor**, ambas configuráveis: o valor da operação e o acumulado no mês (Moises, 7/nov/2026).
+
+🟡 Propostas do documento de desenho que o Moises não respondeu explicitamente:
+
 - As duas contas do Moises (normal e master) contam como **a mesma pessoa**, para ele não ocupar duas camadas de uma regra.
 - Uma regra "substitui as gerais" precisa do aval de outra pessoa e nunca tem menos camadas que as gerais.
 - A faixa de valor é conferida também pelo total do lançamento, para o rateio não servir para fugir dela.
-- As opções de cada pessoa da AD só o master muda; todo lançamento aprovado por quem lançou entra na revisão mensal do master.
-- Um relatório mensal dos pagamentos que caíram em "sem regra".
-- O prazo do pedido parado pode ser diferente em cada camada; a exceção pede justificativa; o aprovador que foi passado para trás recebe aviso.
-- Mudança de configuração vale só para pedidos novos e avisa o master; a que afrouxa o controle (menos camadas, faixa maior, tirar uma natureza da aprovação) precisa do master; a tela mostra o efeito antes de salvar.
-- Os demais prazos e opções (demora, destino do "sem regra") são mudados pelo master ou por um admin, como o prazo da nota do adiantamento.
-- No lote, a conferência grava a "impressão digital" do arquivo; se o arquivo mudar antes do envio, é preciso conferir de novo.
-- Trocar a conta bancária ou o PIX de um fornecedor exige aprovação.
-- A escalada por demora vale só para a camada que está parada, não para a regra inteira.
-- Só o master inclui e tira pessoas da AF e da AO.
-- ⏳ Os nomes por extenso de AF e AO ("financeira" e "operacional") ainda não foram confirmados.
+- As duas opções de cada pessoa da AD só o master muda; todo lançamento aprovado por quem lançou fica marcado e entra na revisão do master.
+- Um relatório dos pagamentos que caíram em "sem regra".
+- No lote, a conferência grava a "impressão digital" do arquivo, para saber se ele mudou.
+
+⏳ Ainda em aberto: quem configura os demais prazos e opções (demora, destino do "sem regra", lembretes); os detalhes dos substitutos; os nomes por extenso de AF e AO ("financeira" e "operacional" foram sugestão, não confirmada).
 
 ## O que falta decidir
 

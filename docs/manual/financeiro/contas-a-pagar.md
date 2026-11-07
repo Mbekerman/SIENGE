@@ -98,8 +98,9 @@ Assim, o realizado do sistema sempre bate com o dinheiro que saiu do banco.
 ## Adiantamento sem nota: prazo e travas
 
 - ✅ Há um **prazo para a nota chegar**, de **30 dias** por padrão, que o master ou um administrador pode mudar (Moises, 7/nov/2026).
-- 🟡 Quando o prazo vence, o sistema avisa o financeiro e o gestor do contrato. (Proposta que o Moises não contestou; falta confirmação explícita.)
-- ✅ Enquanto houver um adiantamento sem nota, o fornecedor **não recebe nenhum adiantamento novo** (Moises, 7/nov/2026).
+- ✅ Quando o prazo vence, o sistema avisa o financeiro e o gestor do contrato (Moises, 7/nov/2026).
+- ✅ Enquanto houver um adiantamento sem nota, o fornecedor **só recebe outro adiantamento com a aprovação da AD** (Moises, 7/nov/2026; antes era "nenhum").
+- ✅ **Nenhum título desse fornecedor é pago sem deduzir o adiantamento em aberto**, mesmo que o título seja de outro centro de custo, salvo com a aprovação da AD (Moises, 7/nov/2026).
 - O adiantamento sem nota passa pela mesma aprovação do título, mais o gestor do contrato (ver [Aprovações](../transversais/aprovacoes.md#os-cinco-momentos-de-aprovação)).
 
 ## Tarefa: registrar um adiantamento e abater aos poucos

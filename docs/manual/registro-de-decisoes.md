@@ -6,6 +6,13 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
+| 7/nov/2026 | Travas fixas confirmadas, sem tela que as desligue; dados bancários e PIX do fornecedor fazem parte do aprovado, e a troca deles precisa de aprovação | [Aprovações](transversais/aprovacoes.md#travas-fixas) |
+| 7/nov/2026 | Lembretes por automações configuráveis; escalada depois de 7 dias corridos, só da camada parada; a AD aprova sozinha a qualquer momento | [Aprovações](transversais/aprovacoes.md#regra-inicial-e-papéis-de-exceção) |
+| 7/nov/2026 | Qualquer pessoa da AD edita as listas AF e AO; revisão das listas e dos admins passa a ser trimestral | [Aprovações](transversais/aprovacoes.md#quem-muda-a-configuração) |
+| 7/nov/2026 | Mudança de configuração vale para pedidos novos; a que afrouxa o controle precisa do master | [Aprovações](transversais/aprovacoes.md#quem-muda-a-configuração) |
+| 7/nov/2026 | Duas alçadas de valor configuráveis: valor da operação e acumulado no mês | [Aprovações](transversais/aprovacoes.md#quem-muda-a-configuração) |
+| 7/nov/2026 | Adiantamento sem nota: novo adiantamento só com aprovação da AD; título do fornecedor só é pago deduzindo o adiantamento em aberto, salvo AD; aviso no vencimento do prazo | [Contas a pagar](financeiro/contas-a-pagar.md#adiantamento-sem-nota-prazo-e-travas) |
+| 7/nov/2026 | PJ (futuro): o pagamento pode ser dividido por SPE ou por centro de custo | [Aprovações](transversais/aprovacoes.md#pagamento-de-funcionários-pj) |
 | 7/nov/2026 | PJ (futuro): se mudar a remuneração exige aval de outra pessoa é configurável | [Aprovações](transversais/aprovacoes.md#pagamento-de-funcionários-pj) |
 | 7/nov/2026 | AD: cada pessoa configurada se pode aprovar o próprio lançamento e se gera aviso; a lista AD só muda pelo master, ou por admin com aprovação do master | [Aprovações](transversais/aprovacoes.md#os-cinco-momentos-de-aprovação) |
 | 7/nov/2026 | Listas de exceção chamam-se AF, AO e AD (Aprovação definitiva) | [Aprovações](transversais/aprovacoes.md#regra-inicial-e-papéis-de-exceção) |
@@ -17,8 +24,8 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 | 7/nov/2026 | CFO, COO e CEO são posições do sistema em listas nomeadas, com nomes neutros, para exceções (férias sem substituto, demora) | [Aprovações](transversais/aprovacoes.md#regra-inicial-e-papéis-de-exceção) |
 | 7/nov/2026 | Regra inicial: gestor da área junto com CFO ou COO, ou o CEO sozinho | [Aprovações](transversais/aprovacoes.md#regra-inicial-e-papéis-de-exceção) |
 | 7/nov/2026 | Aprovadores, faixas de valor, ordem das camadas e "um ou todos" configuráveis ponto a ponto, regra a regra | [Aprovações](transversais/aprovacoes.md#tarefa-criar-uma-regra-de-aprovação) |
-| 7/nov/2026 | Limites do administrador: não se põe em lista nem como substituto, não muda lista de que faz parte; só o master dá e tira o poder de admin; revisão mensal pelo master | [Aprovações](transversais/aprovacoes.md#limites-do-administrador) |
-| 7/nov/2026 | Fornecedor com adiantamento sem nota não recebe nenhum adiantamento novo | [Contas a pagar](financeiro/contas-a-pagar.md#adiantamento-sem-nota-prazo-e-travas) |
+| 7/nov/2026 | Limites do administrador: não se põe em lista nem como substituto, não muda lista de que faz parte; só o master dá e tira o poder de admin; revisão pelo master (hoje trimestral) | [Aprovações](transversais/aprovacoes.md#limites-do-administrador) |
+| 7/nov/2026 | Fornecedor com adiantamento sem nota não recebe nenhum adiantamento novo (substituída: agora só com aprovação da AD) | [Contas a pagar](financeiro/contas-a-pagar.md#adiantamento-sem-nota-prazo-e-travas) |
 | 7/nov/2026 | Prazo para a nota do adiantamento chegar: 30 dias por padrão, configurável pelo master ou administrador | [Contas a pagar](financeiro/contas-a-pagar.md#adiantamento-sem-nota-prazo-e-travas) |
 | 7/nov/2026 | Todo aprovador e substituto é nomeado pelo master ou por um administrador | [Aprovações](transversais/aprovacoes.md) |
 | 7/nov/2026 | Nomear substituto de aprovador precisa de aprovação | [Aprovações](transversais/aprovacoes.md) |
