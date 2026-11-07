@@ -37,9 +37,9 @@ Este documento cobre o contas a pagar, a raiz (empresas e sócios), a árvore de
 | `naturezas_sistema` | As naturezas que o próprio sistema usa: adiantamentos, juros e multas pagos, descontos obtidos e movimentos entre sócios | O administrador pode trocar o galho, mas a chave continua existindo |
 | `v_naturezas` | Visão com o caminho legível ("Comerciais › Marketing › Online") e os níveis 1 a 4 | |
 
-Regras da árvore (decididas em 7/nov/2026):
+Regras da árvore. O Moises decidiu em 7/nov/2026 que a árvore é dinâmica e que o topo também se edita; as regras marcadas como *proposta* ainda precisam ser confirmadas por ele:
 
-1. Só o administrador cria, renomeia, move e desativa naturezas, incluindo as do topo. Tudo fica na auditoria.
+1. *Proposta:* só o administrador cria, renomeia, move e desativa naturezas, incluindo as do topo. Tudo fica na auditoria.
 2. Uma natureza nova nasce com as características da mãe. Elas podem ser trocadas depois.
 3. Só se lança no último nível. Uma natureza que já tem lançamentos não pode ganhar galhos abaixo dela: antes, os lançamentos precisam ser reclassificados.
 4. Uma natureza desativada não recebe lançamentos novos, e os antigos continuam onde estão.
@@ -121,14 +121,14 @@ O livro é escrito sozinho, a cada passo:
 
 | Tabela | O que guarda |
 |---|---|
-| `meses_fechados` | Os meses fechados de cada empresa. Só a diretoria fecha e reabre, sempre em ordem |
+| `meses_fechados` | Os meses fechados de cada empresa (o fechamento mensal foi aceito pelo Moises). *Proposta:* só a diretoria fecha e reabre, sempre em ordem |
 | `niveis_aprovacao` | Gestor, Diretoria, e Diretoria e contador |
 | `alcadas_reclassificacao` | A alçada pela idade do lançamento (mês aberto, mês fechado com o trimestre aberto, trimestre fechado), pelo valor e pelo acumulado da pessoa no mês. Só o administrador mexe |
 | `reclassificacoes` | O pedido: origem, destino, filtro, motivo, valor, acumulado, faixa, nível exigido e situação |
 | `reclassificacao_itens` | Cada linha do livro movida, com a natureza de antes e a de depois |
 | `reclassificacao_votos` | Os votos, com quem votou, em que papel e a justificativa |
 
-Regras (decididas em 7/nov/2026):
+Regras decididas em 7/nov/2026 (o Moises disse que mesmo a reclassificação simples precisa do aval da diretoria; a exceção que propus, para corrigir um lançamento só num mês aberto, ficou sem resposta e não foi implementada):
 
 1. Toda reclassificação precisa de aval. O padrão é a diretoria em qualquer valor; no trimestre fechado, a diretoria e o contador.
 2. O trimestre é o do calendário. Ele fecha quando o último mês dele é fechado.
