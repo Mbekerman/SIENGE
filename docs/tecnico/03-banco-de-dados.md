@@ -12,7 +12,7 @@ O banco é um Postgres do Supabase, organizado em esquemas por camada. Cada cama
 
 ## 3.1 Esquema `nucleo` [Construído em branch, 7/nov/2026]
 
-Onde está: branch `claude/project-thread-dknc98` deste repositório (commits `649ae60` "Núcleo do ERP BKM v0", `5c71b57`, `89c1202` e `ae75175`, que fecham o esquema à API). Quando o PR desse branch entrar na `develop`, esta seção passa a valer para a `develop`.
+Onde está: branch `claude/project-thread-dknc98` deste repositório (commits `649ae60` "Núcleo do ERP BKM v0", `5c71b57`, `89c1202`, `ae75175` e `f659cfe`, que fecham o esquema à API). Quando o PR desse branch entrar na `develop`, esta seção passa a valer para a `develop`.
 
 | Arquivo | Conteúdo |
 | --- | --- |
@@ -20,12 +20,12 @@ Onde está: branch `claude/project-thread-dknc98` deste repositório (commits `6
 | `supabase/migrations/20261107000200_nucleo_pagar_livro.sql` | Compromissos, previsões, documentos fiscais e retenções, títulos, parcelas, pagamentos, quitações, caução, movimentos societários, contas e lotes bancários, orçamento, livro de lançamentos e visões (19 tabelas) |
 | `supabase/migrations/20261107000300_nucleo_reclassificacao.sql` | Fechamento de mês, níveis de aprovação, alçadas, pedidos de reclassificação, itens e votos (6 tabelas) |
 | `supabase/migrations/20261107000400_nucleo_carga.sql` | Carga inicial: árvore de naturezas v0 (11 grupos), linhas da DRE, naturezas do sistema, níveis e alçada padrão |
-| `supabase/tests/nucleo.sql` | 111 testes de regra (os de acesso incluem função `security definer` e catálogo de privilégios) |
+| `supabase/tests/nucleo.sql` | 112 testes de regra (os de acesso incluem função `security definer` e catálogo de privilégios) |
 | `supabase/tests/run.sh` | Sobe um Postgres 16 temporário, aplica `shim_supabase.sql` + migrations e roda os testes |
 | `supabase/tests/shim_supabase.sql` | Imita o mínimo do Supabase (`auth.uid()` lido de `request.jwt.claim.sub`) |
 | `docs/nucleo.md` | Dicionário das tabelas e regras, em português (fonte principal para o detalhe de cada tabela) |
 
-Conferido nesta documentação em 7/nov/2026: `bash supabase/tests/run.sh` aplica as 4 migrations e passa os 111 testes.
+Conferido nesta documentação em 7/nov/2026: `bash supabase/tests/run.sh` aplica as 4 migrations e passa os 112 testes.
 
 ### Como rodar os testes
 
@@ -49,7 +49,7 @@ Roda como root (usa `runuser -u postgres`) ou como usuário comum; porta padrão
 ### Identidade e permissões no `nucleo`
 
 - `nucleo.usuarios` (`user_id` = `auth.users.id`) guarda papel (`diretor`, `gestor`, `analista`, `leitura`), `contador` e `administrador`.
-- `nucleo.eu()` = `auth.uid()`. `nucleo.sistema()` é verdadeiro só quando não há usuário, o `session_user` não é `authenticator`, `anon` nem `authenticated`, e o papel da sessão não é `anon` nem `authenticated`: migration, pg_cron ou conexão direta ao Postgres. Chamada pela API do Supabase nunca conta como sistema, nem com a chave de serviço. As checagens `exigir_admin`, `exigir_editor` e `exigir_diretor` deixam passar só nesse caso.
+- `nucleo.eu()` = `auth.uid()`. `nucleo.sistema()` é verdadeiro só quando não há usuário, o `session_user` não é `authenticator`, `anon` nem `authenticated`, e o papel da sessão não é `anon` nem `authenticated`: migration, pg_cron, conexão direta ao Postgres ou a chave de serviço (`service_role`, commit `f659cfe`). Chamadas como `anon` ou `authenticated` sem login nunca contam. As checagens `exigir_admin`, `exigir_editor` e `exigir_diretor` deixam passar só nesse caso.
 - Acesso fechado à API do Supabase (migration `..._nucleo_carga.sql`, fim): o esquema, as tabelas e o `execute` das funções são revogados de `public`, `anon` e `authenticated`, inclusive nos privilégios padrão. Hoje **só o servidor** usa o `nucleo`.
 
 Corrigido em 7/nov/2026: na v0 inicial, `eu()` nulo passava nas checagens, e uma chamada anônima pela API também tem `auth.uid()` nulo. Em seguida (S-002), a decisão deixou de usar `current_user`, que dentro de `security definer` é o dono. Os testes de acesso cobrem os dois casos e um teste de catálogo barra qualquer privilégio de `public`, `anon` ou `authenticated`.
