@@ -57,3 +57,6 @@ Quando um documento de desenho e este repositório divergirem, vale o que estive
 3. Nunca escreva valor de senha, token ou chave aqui. Escreva o **nome** do segredo e onde ele mora.
 4. Datas por extenso no formato dia/mês/ano (7/nov/2026). Idioma: português.
 5. O histórico de mudanças desta documentação é o histórico do git desta pasta.
+6. Limite novo da API do Sienge (descoberto em teste ou na documentação) entra em [04-integracao-sienge.md](04-integracao-sienge.md) com a data (regra do projeto, 7/nov/2026).
+7. Falha de segurança ou de dados é avisada na hora a esta documentação e ao coordenador do projeto, e registrada em [08-seguranca.md](08-seguranca.md).
+8. Nenhuma mudança no banco de produção sem o aval do Moises, com a descrição do que muda e de como desfazer (regra do projeto, 7/nov/2026).
