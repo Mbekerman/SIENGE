@@ -40,11 +40,11 @@ Este documento cobre o contas a pagar, a raiz (empresas e sócios), a árvore de
 Regras da árvore. O Moises decidiu em 7/nov/2026 que a árvore é dinâmica e que o topo também se edita; as regras marcadas como *proposta* ainda precisam ser confirmadas por ele:
 
 1. *Proposta:* só o administrador cria, renomeia, move e desativa naturezas, incluindo as do topo. Tudo fica na auditoria.
-2. Uma natureza nova nasce com as características da mãe. Elas podem ser trocadas depois.
-3. Só se lança no último nível. Uma natureza que já tem lançamentos não pode ganhar galhos abaixo dela: antes, os lançamentos precisam ser reclassificados.
-4. Uma natureza desativada não recebe lançamentos novos, e os antigos continuam onde estão.
-5. Uma natureza com lançamentos não se apaga direto. Ela é esvaziada pela reclassificação, que a apaga no fim.
-6. Quando a natureza tem lançamentos, mudar o lugar dela na árvore, o tipo, a linha da DRE ou o fluxo de caixa mexe nos relatórios do passado. Por isso só a diretoria pode fazer essas mudanças.
+2. *Proposta:* Uma natureza nova nasce com as características da mãe. Elas podem ser trocadas depois.
+3. *Proposta:* Só se lança no último nível. Uma natureza que já tem lançamentos não pode ganhar galhos abaixo dela: antes, os lançamentos precisam ser reclassificados.
+4. *Proposta:* Uma natureza desativada não recebe lançamentos novos, e os antigos continuam onde estão.
+5. Uma natureza com lançamentos não se apaga direto. Ela é esvaziada pela reclassificação, que a apaga no fim. (pedido do Moises: página de reclassificação.)
+6. *Proposta:* Quando a natureza tem lançamentos, mudar o lugar dela na árvore, o tipo, a linha da DRE ou o fluxo de caixa mexe nos relatórios do passado. Por isso só a diretoria pode fazer essas mudanças.
 
 A carga inicial é o rascunho v0 do doc, com 11 grupos e 4 níveis em Marketing. As 4 divergências em relação à viabilidade ainda esperam a sua decisão. A carga já usa a minha proposta para cada uma: impostos sobre a receita em Deduções, custo de capital só no orçado, taxas de gestão como grupo próprio e ITBI e registro das unidades vendidas em Comerciais.
 
