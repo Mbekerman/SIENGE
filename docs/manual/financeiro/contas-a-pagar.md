@@ -95,6 +95,13 @@ Assim, o realizado do sistema sempre bate com o dinheiro que saiu do banco.
 4. Se pagou atrasado, informe juros e multa; se teve desconto, informe o desconto.
 5. Confirme. A parcela fica quitada.
 
+## Adiantamento sem nota: prazo e travas
+
+- ✅ Há um **prazo para a nota chegar**, de **30 dias** por padrão, que o master ou um administrador pode mudar (Moises, 7/nov/2026).
+- 🟡 Quando o prazo vence, o sistema avisa o financeiro e o gestor do contrato. (Proposta que o Moises não contestou; falta confirmação explícita.)
+- 🟡 Enquanto houver um adiantamento sem nota, o fornecedor não recebe outro. (Idem.)
+- O adiantamento sem nota passa pela mesma aprovação do título, mais o gestor do contrato (ver [Aprovações](../transversais/aprovacoes.md#os-cinco-momentos-de-aprovação)).
+
 ## Tarefa: registrar um adiantamento e abater aos poucos
 
 1. Abra **Contas a pagar › Pagamentos** e clique em **Novo pagamento**.

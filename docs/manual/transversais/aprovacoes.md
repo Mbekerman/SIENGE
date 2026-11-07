@@ -48,6 +48,13 @@ Compras (requisição, cotação, pedido e contrato) fica para depois, no mesmo 
 - Cada regra tem **camadas de aprovadores em sequência**, e cada camada diz se basta um aprovador ou se precisam todos.
 - Exemplos: "Marketing acima de R$ 10 mil: Fulana (marketing), depois Moises"; "Obra: engenheiro da obra, depois gestor de obras"; "qualquer pagamento acima de R$ 200 mil: mais o diretor financeiro".
 
+🟡 Propostas que o Moises não contestou em 7/nov/2026 (falta confirmação explícita):
+
+- O substituto tem data de início e de fim e nunca é quem lançou o item.
+- Se um aprovador sai da empresa, as aprovações pendentes dele vão para o master.
+- Trocar um nome na lista vale só para os pedidos novos; os que já estavam em andamento seguem com quem estava.
+- Toda troca fica registrada e avisa as pessoas envolvidas.
+
 ### Tarefa: trocar o aprovador de uma lista
 
 > ⏳ As telas ainda não existem.
