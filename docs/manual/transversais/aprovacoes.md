@@ -54,6 +54,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 🟡 **Propostas** ainda sem resposta (7/nov/2026):
 
 - Conciliação automática: o extrato vem direto do banco e, antes de qualquer pessoa ver, os dados do PJ são trocados pelo pseudônimo. O Moises sugeriu a ideia; o desenho depende do módulo de Bancos.
+- ⏳ Em aberto: se cada funcionário é pago por uma SPE só no mês, ou dividido entre SPEs em percentuais.
 - O pseudônimo é um código aleatório, e não um "hash" do CPF, que se descobre testando todos os CPFs.
 - Ninguém do financeiro digita o Pix nem entra no internet banking da conta usada para os PJ, que seria uma conta separada; o lote vai ao banco pela integração.
 - Toda leitura do master fica registrada, e há dois masters, para trocar um aprovador não depender de uma pessoa só.
