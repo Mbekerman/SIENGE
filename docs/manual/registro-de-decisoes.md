@@ -6,6 +6,13 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
+| 7/nov/2026 | Hierarquia de regras: mesmo nível soma, nível superior se sobrepõe, supertrunfo substitui; qualquer número de camadas | [Aprovações](transversais/aprovacoes.md#como-uma-regra-de-aprovação-funciona) |
+| 7/nov/2026 | Cada conta conta como uma pessoa, inclusive as duas do Moises | [Aprovações](transversais/aprovacoes.md#como-uma-regra-de-aprovação-funciona) |
+| 7/nov/2026 | Substitutos: vigência, saída da empresa, quem aprova a nomeação e quem cobre a vez, tudo configurável | [Aprovações](transversais/aprovacoes.md#regra-inicial-e-papéis-de-exceção) |
+| 7/nov/2026 | AD não edita lista AF ou AO de que faz parte; toda mudança avisa o master e a AD; prazos e opções pelo master ou admin | [Aprovações](transversais/aprovacoes.md#quem-muda-a-configuração) |
+| 7/nov/2026 | Remuneração variável pelo caminho de quem recebe (CLT folha, PJ nota, autônomo RPA, imobiliária nota); campanha cadastrada antes; só pessoas cadastradas | [Aprovações](transversais/aprovacoes.md#remuneração-variável-comissões-prêmios-sorteios) |
+| 7/nov/2026 | PJ (futuro): toda mudança de remuneração passa por aprovadores definidos | [Aprovações](transversais/aprovacoes.md#pagamento-de-funcionários-pj) |
+| 7/nov/2026 | Faixas iniciais e configuração inicial ficam num documento de implantação separado do manual | [Como atualizar](COMO-ATUALIZAR.md) |
 | 7/nov/2026 | AF = Aprovação financeira, AO = Aprovação operacional; contador entra no portal com login fora do Google | [Aprovações](transversais/aprovacoes.md#regra-inicial-e-papéis-de-exceção) |
 | 7/nov/2026 | Travas fixas confirmadas, sem tela que as desligue; dados bancários e PIX do fornecedor fazem parte do aprovado, e a troca deles precisa de aprovação | [Aprovações](transversais/aprovacoes.md#travas-fixas) |
 | 7/nov/2026 | Lembretes por automações configuráveis; escalada depois de 7 dias corridos, só da camada parada; a AD aprova sozinha a qualquer momento | [Aprovações](transversais/aprovacoes.md#regra-inicial-e-papéis-de-exceção) |

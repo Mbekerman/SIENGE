@@ -36,13 +36,18 @@ Compras (requisição, cotação, pedido e contrato) fica para depois, no mesmo 
 ✅ **Decidido** (Moises, 7/nov/2026):
 
 - As regras são **editáveis pela tela**, sem programador, e podem ser dadas por centro de custo, por natureza e por quem paga. Exemplo do Moises: uma regra para marketing, outra para obra, outra para comercial.
-- **Quando várias regras valem ao mesmo tempo, todas se aplicam (soma).** A mesma pessoa não aprova duas vezes. Uma regra só troca as gerais se estiver marcada **"substitui as gerais"**.
+- **Hierarquia de regras** (Moises, 7/nov/2026). Cada regra tem um nível:
+  1. Regras do **mesmo nível** que se encaixam no lançamento **se somam**, e a mesma pessoa não aprova duas vezes.
+  2. Uma regra de **nível superior se sobrepõe** às de nível inferior.
+  3. Uma regra **supertrunfo** substitui qualquer outra.
+  Qualquer regra, inclusive a superior e a supertrunfo, pode ter quantas camadas se quiser, até menos que as gerais. ⏳ Falta decidir quem cria e muda as regras superiores e supertrunfo (proposta: só o master).
 - **Os aprovadores são pessoas, escolhidas pelo nome** em cada regra, e não um papel ("gestor", "diretor"). Decisão do Moises de 7/nov/2026.
 - ✅ As pessoas ficam em **listas nomeadas** (por exemplo, "Aprovador Obras SP", com o João), e cada regra aponta para uma lista. Quando a pessoa sai ou tira férias, edita-se só a lista (Moises, 7/nov/2026). 🟡 Proposto também: um substituto nomeado em cada camada. ✅ **Nomear um substituto é um ato que precisa ser aprovado** (Moises, 7/nov/2026).
 - ✅ **Todo aprovador, inclusive os substitutos, é nomeado pelo master ou por um usuário com poder de administrador** (Moises, 7/nov/2026).
-- **Título rateado:** cada parte do rateio puxa as suas regras, e o título só fica aprovado quando todas forem cumpridas. Exemplo: um título metade Marketing, metade Obra passa pela regra de marketing e pela de obra.
+- **Título rateado:** cada parte do rateio puxa as suas regras, e o título só fica aprovado quando todas forem cumpridas. Exemplo: um título metade Marketing, metade Obra passa pela regra de marketing e pela de obra. A faixa de valor é conferida também pelo total do lançamento, para o rateio não servir para fugir dela.
+- **Cada conta é uma pessoa**, inclusive as duas do Moises (a normal e a master) (Moises, 7/nov/2026).
 
-✅ **Tudo configurável ponto a ponto, regra a regra, pela tela** (Moises, 7/nov/2026): quem aprova, as faixas de valor, a ordem das camadas e se basta um ou precisam todos. Os valores iniciais virão do financeiro antes de o sistema entrar no ar. O formato de cada regra:
+✅ **Tudo configurável ponto a ponto, regra a regra, pela tela** (Moises, 7/nov/2026): quem aprova, as faixas de valor, a ordem das camadas e se basta um ou precisam todos. Os valores iniciais são definidos na [implantação](https://claude.ai/artifact/2U1u689a7Qi3WAvbZAT6n6). O formato de cada regra:
 
 - Além de centro de custo, natureza e empresa pagadora, a regra pode filtrar por fornecedor, tipo de compromisso e faixa de valor.
 - Cada regra tem **camadas de aprovadores em sequência**, e cada camada diz se basta um aprovador ou se precisam todos.
@@ -68,7 +73,7 @@ Essas listas cuidam das **exceções**: férias sem substituto, demora na aprova
 - Depois de **7 dias corridos** (prazo configurável), **só a camada parada** pode ser decidida por alguém da AF, da AO ou da AD. Esperar não serve para pular as outras camadas, e quem lançou nunca decide.
 - O aprovador original continua podendo aprovar até alguém decidir.
 - **A AD pode aprovar sozinha a qualquer momento**, sem esperar o prazo.
-- 🟡 Ainda sem confirmação explícita: o prazo pode ser diferente em cada camada; a exceção pede justificativa; o aprovador que foi passado para trás recebe aviso.
+- O prazo pode ser diferente em cada camada; a exceção pede justificativa; o aprovador que foi passado para trás recebe aviso.
 
 ✅ **Camadas com quantos aprovadores quiser** (Moises, 7/nov/2026): uma camada pode ter 2 aprovadores ou mais, e a regra diz se eles precisam seguir uma ordem ou não. A AD pode entrar na sequência como última instância.
 
@@ -81,16 +86,15 @@ Essas listas cuidam das **exceções**: férias sem substituto, demora na aprova
 - Chega com o aviso **"sem regra"**, para quem recebe analisar e, se for o caso, transformar o caso em regra e atribuir o aprovador.
 - Nenhum pagamento sai sem aprovação por falta de regra.
 
-🟡 Propostas que o Moises não contestou em 7/nov/2026 (falta confirmação explícita):
+✅ **Substitutos: tudo configurável** (Moises, 7/nov/2026):
 
-- O substituto tem data de início e de fim e nunca é quem lançou o item.
-- Se um aprovador sai da empresa, as aprovações pendentes dele vão para o master.
-- Trocar um nome na lista vale só para os pedidos novos; os que já estavam em andamento seguem com quem estava.
-- Toda troca fica registrada e avisa as pessoas envolvidas.
+- A vigência (início e fim), o que acontece quando o aprovador sai da empresa, se a troca vale só para pedidos novos e quem cobre a vez enquanto a nomeação espera aprovação.
+- Quem aprova a nomeação e quem cobre a vez: AF, AO, AD, o master ou alguém que o master designar, combinados como se quiser (por exemplo, AF e AO juntos ou separados).
+- O substituto nunca é quem lançou o item (trava fixa).
 
 ### Tarefa: criar uma regra de aprovação
 
-> ⏳ As telas ainda não existem. Quem pode criar regras ainda será definido; a configuração em geral é do master e dos administradores.
+> ⏳ As telas ainda não existem. A configuração é do master e dos administradores; quem cria regras superiores e supertrunfo ainda será definido.
 
 1. Abra **Configurações › Aprovação › Regras** e clique em **Nova regra**.
 2. Escolha o **momento**: título, adiantamento sem nota, lote, liberação de caução ou orçamento.
@@ -98,7 +102,7 @@ Essas listas cuidam das **exceções**: férias sem substituto, demora na aprova
 4. Em **Condições**, escolha o que a regra pega. Todas são opcionais: empresa pagadora, centro de custo, galho da natureza (vale para tudo abaixo dele), fornecedor, tipo de compromisso e faixa de valor.
 5. Em **Camadas**, inclua a primeira camada: escolha a lista de aprovadores e se basta um ou precisam todos.
 6. Se houver mais camadas, inclua na ordem em que devem aprovar.
-7. Marque **Substitui as gerais** só se esta regra deve valer no lugar das regras gerais. Sem a marca, ela se soma às outras.
+7. Escolha o **nível**: comum (soma com as do mesmo nível), superior (se sobrepõe às de nível inferior) ou supertrunfo (substitui qualquer outra).
 8. Salve. A regra vale para os pedidos novos.
 
 **O que o sistema confere:** a regra precisa ter pelo menos uma camada; quem lança não aprova o próprio lançamento, salvo a AD.
@@ -147,7 +151,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 - **Todo mês, as duas tabelas são conferidas.** Se um dos dois responsáveis não der o "ok" do mês, **ninguém recebe**.
 - Os dois responsáveis e os **substitutos temporários** de cada um são definidos na própria plataforma.
 - Existe **um único usuário master, o Moises** (com uma conta própria de master, separada da conta do dia a dia). Ele vê tudo, pode trocar o aprovador e pode aprovar tudo, inclusive os dois "ok" do mês.
-- **Mudar a remuneração** de um PJ pode exigir o aval de outra pessoa; isso é configurável (Moises, 7/nov/2026). 🟡 Foi proposto, como padrão, o aval do outro responsável ou do master, com a mudança valendo só a partir do mês seguinte, porque quem muda o valor e também dá o "ok" conseguiria aumentar e liberar sozinho.
+- **Qualquer mudança de remuneração** de um PJ passa por aprovadores definidos (Moises, 7/nov/2026).
 - A folha PJ entra no financeiro, nos relatórios e no BI **somada por centro de custo e por mês**, sem valor por pessoa. O detalhe fica só na área restrita.
 - As **notas dos PJ ficam guardadas na área restrita** ("a 7 chaves") e vão direto ao contador. O contador também tem um **portal** para baixá-las. ✅ O contador entra nesse portal com um login próprio, fora do Google (Moises, 7/nov/2026).
 
@@ -210,24 +214,34 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 
 ## Quem muda a configuração
 
-- ✅ **Listas AF e AO:** qualquer pessoa da AD pode mexer (Moises, 7/nov/2026).
+- ✅ **Listas AF e AO:** qualquer pessoa da AD pode mexer, menos numa lista da qual ela mesma faça parte. Toda mudança avisa o master e as outras pessoas da AD (Moises, 7/nov/2026).
+- ✅ **Prazos e opções** (demora, lembretes, destino do "sem regra", prazo da nota do adiantamento): o master ou um administrador (Moises, 7/nov/2026).
 - ✅ **Lista AD:** o master, ou um administrador com a aprovação do master.
 - ✅ **Mudanças de configuração** valem só para os pedidos novos e avisam o master. As que afrouxam o controle (menos camadas, faixa maior, tirar uma natureza da aprovação) precisam do master. A tela mostra o efeito antes de salvar (Moises, 7/nov/2026).
 - ✅ **Duas alçadas de valor**, ambas configuráveis: o valor da operação e o acumulado no mês (Moises, 7/nov/2026).
 
-🟡 Propostas do documento de desenho que o Moises não respondeu explicitamente:
+✅ Também confirmados no documento de desenho (7/nov/2026): as duas opções de cada pessoa da AD só o master muda, e todo lançamento aprovado por quem o lançou fica marcado e entra na revisão do master; um relatório mostra os pagamentos que caíram em "sem regra"; no lote, a conferência grava a "impressão digital" do arquivo, para saber se ele mudou.
 
-- As duas contas do Moises (normal e master) contam como **a mesma pessoa**, para ele não ocupar duas camadas de uma regra.
-- Uma regra "substitui as gerais" precisa do aval de outra pessoa e nunca tem menos camadas que as gerais.
-- A faixa de valor é conferida também pelo total do lançamento, para o rateio não servir para fugir dela.
-- As duas opções de cada pessoa da AD só o master muda; todo lançamento aprovado por quem lançou fica marcado e entra na revisão do master.
-- Um relatório dos pagamentos que caíram em "sem regra".
-- No lote, a conferência grava a "impressão digital" do arquivo, para saber se ele mudou.
+## Remuneração variável (comissões, prêmios, sorteios)
 
-⏳ Ainda em aberto: quem configura os demais prazos e opções (demora, destino do "sem regra", lembretes); os detalhes dos substitutos.
+✅ **Decidido** (Moises, 7/nov/2026, no documento de desenho). O caminho do pagamento depende de **quem recebe**:
+
+| Quem recebe | Como se paga |
+| --- | --- |
+| Funcionário CLT | Pela folha, com imposto retido. Nunca por PIX direto da conta da empresa |
+| PJ | Entra no valor do mês, coberto pela nota |
+| Corretor autônomo | Por RPA, com as retenções |
+| Imobiliária | Com nota fiscal |
+
+- Cada **campanha** (de meta, de vendas, de evento) é cadastrada antes, com o orçamento aprovado pelas regras.
+- Paga-se **só a pessoas cadastradas**, nunca a uma chave PIX solta. Pelo vínculo da pessoa, o sistema escolhe o caminho da tabela.
+- Um relatório mostra quanto cada pessoa recebeu no mês.
+- 🟡 Para prêmio pequeno em evento, uma alternativa é vale-presente comprado com nota. A forma de cada caso, e as regras de sorteio, o contador confirma.
 
 ## O que falta decidir
 
-- Faixas de valor de cada regra (a regra inicial já está decidida; as faixas vêm do financeiro).
+- Quem cria e muda regras de nível superior e supertrunfo.
+- Se o Nexxera ou o banco exigem assinatura eletrônica da remessa, de quem e quantas (pergunta ao financeiro).
+- As faixas de valor de cada regra ficam para a [implantação](https://claude.ai/artifact/2U1u689a7Qi3WAvbZAT6n6).
 - As avaliações e a aprovação para liberar caução.
 - Alçadas de pagamento.

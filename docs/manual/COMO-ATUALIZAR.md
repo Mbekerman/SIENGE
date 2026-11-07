@@ -14,6 +14,8 @@ Esta página é para quem mantém o manual (pessoas ou sessões do Claude), não
 6. **Enquanto a tela não existe,** os nomes de botões são provisórios e a tarefa leva o aviso "As telas ainda não existem". Quando a tela existir, os passos passam a ser os cliques reais.
 7. **Fontes:** as conversas do projeto, as decisões que o coordenador repassa e os documentos de desenho. Nunca afirmar sobre o Sienge sem conferir na documentação da API (repositório sienge-api-docs) ou em teste.
 
+8. **Documento de implantação, à parte** (Moises, 7/nov/2026): tudo o que precisa ser definido, configurado e feito antes de o ERP entrar no ar fica no [documento de implantação](https://claude.ai/artifact/2U1u689a7Qi3WAvbZAT6n6), não no manual. Toda decisão nova que deixa um valor "para a implantação" ou cria um passo de implantação entra lá no mesmo dia.
+
 ## Organização
 
 - Uma pasta por módulo (`cadastros`, `financeiro`, `suprimentos`, depois `engenharia`, `comercial`...), um arquivo por seção.
