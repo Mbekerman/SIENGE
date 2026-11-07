@@ -144,7 +144,7 @@ Exemplo de alçada configurada pelo administrador: "gestor aprova até R$ 11 mil
 
 ## O que ficou de fora desta versão (de propósito)
 
-- **Permissões por linha (RLS) e telas.** Por enquanto, as regras de papel estão nas funções.
+- **Permissões por linha (RLS) e telas.** Por enquanto, o esquema fica fechado à API (anon e authenticated sem nenhum acesso) e as regras de papel estão nas funções. Só as rotinas do servidor passam sem usuário.
 - **Contas a receber.** Por isso a quitação só aceita título a pagar. O título a receber já existe para o dinheiro entre sócios.
 - **Módulo de aprovação geral.** Ficam para ele as alçadas de pagamento, a liberação de caução e as avaliações do gestor do contrato.
 - **Estorno de pagamento, conciliação e remessa.** Ficam para o módulo de bancos.
