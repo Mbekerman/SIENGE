@@ -46,6 +46,8 @@ Cada afirmação leva uma destas marcas:
   - [Ecossistema em volta do Sienge: levantamento da API e projeto](https://claude.ai/artifact/NYYXN6TeeCscmPrKoToLz4)
   - [Banco espelho do Sienge: desenho pela API](https://claude.ai/artifact/EgDt6HJJREERJBsYKrvLsE)
   - [Núcleo do ERP BKM: modelo v1](https://claude.ai/artifact/YXuHgVNLaMPRtpxJ8YWCPt)
+  - [Desenho de aprovação v1](https://claude.ai/artifact/FvkBaLmYig68zstJzTKFwP) (7/nov/2026)
+  - [Supabase × AWS para o ERP](https://claude.ai/artifact/Rmq8G8PR7hcg1Fo6RFjG7P) (7/nov/2026)
 - Documentação oficial da API: `Mbekerman/sienge-api-docs` (coleta de 6/nov/2026, YAMLs em `oficial/yaml-files/`).
 - BKM Terrenos (`Mbekerman/bkm_terrenos-claude`): stack, convenções e o projeto Supabase compartilhado.
 
