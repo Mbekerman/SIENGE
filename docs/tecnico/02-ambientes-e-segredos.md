@@ -22,7 +22,7 @@ Igual ao BKM Terrenos (instruções do projeto):
 - `develop` = ambiente de desenvolvimento; `main` = produção.
 - Todo trabalho num branch próprio, com PR para `develop`. Produção só por PR `develop → main`, quando o Moises pedir. Nada de PR direto na `main`, salvo correção urgente (que depois volta para a `develop`).
 
-Em 7/nov/2026 o repositório estava vazio, sem nenhum branch. Para abrir o primeiro PR, `main` e `develop` foram criados a partir de um commit inicial com só o `README.md`.
+`main` e `develop` foram criadas em 7/nov/2026, com o aval do Moises, a partir do commit inicial vazio `5c88264`. **Pendente:** o branch padrão do GitHub ficou sendo um branch de trabalho (o primeiro enviado); trocar para `main` em Settings › General.
 
 ## Ambientes
 
