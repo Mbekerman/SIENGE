@@ -35,7 +35,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 
 ## Pagamento de funcionários PJ
 
-> ⏳ Ainda só no desenho, sem tela. A conciliação depende do módulo de Bancos, que não foi desenhado.
+> 🔜 **Futuro.** Os pagamentos PJ ainda passam pelo Sienge, e a remessa e o extrato vão pelo Nexxera (Moises, 7/nov/2026). Enquanto for assim, o nome e o valor de cada PJ continuam visíveis no Sienge, e **a anonimização abaixo só passa a valer depois que o Sienge sair desse fluxo**. Ver [O que ainda é feito à mão no Sienge](passos-manuais-no-sienge.md). A conciliação automática depende do módulo de Bancos, que não foi desenhado.
 
 **Para que serve:** pagar os funcionários contratados como PJ mantendo o valor de cada um o mais anônimo possível.
 
@@ -60,7 +60,6 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 - Aviso aos responsáveis alguns dias antes do vencimento.
 - A chave Pix não aparece para o financeiro: ela só é buscada na hora de mandar o pagamento ao banco.
 - O portal do contador tem login próprio, mostra só as notas e registra cada download.
-- ⏳ Sem resposta: se os pagamentos PJ continuarem passando pelo Sienge durante a transição, o nome e o valor ficam visíveis lá como credor.
 
 **O que não dá para garantir:** o anonimato total. A chave Pix, o extrato e o comprovante do banco e a nota que vai ao contador identificam a pessoa. O que o sistema garante é que quase ninguém veja, e que toda leitura fique registrada.
 

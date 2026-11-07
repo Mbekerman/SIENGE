@@ -14,6 +14,7 @@ Estes passos **não** podem ser feitos pelo ERP BKM, porque a API do Sienge não
 | **Criar empresa e obra** | Ao abrir uma SPE e um empreendimento | Liga o cadastro do ERP BKM ao do Sienge, uma vez | Documentação da API |
 | **Corrigir ou apagar título criado pela API** | Depois de criado, a API só muda o vencimento; tipo, número, valor, empresa, fornecedor, emissão, parcelas e impostos só se corrigem à mão | Confere tudo antes de enviar, para o título nascer certo | Teste de 6/nov/2026 (título 8422) |
 | **Gravar os dados fiscais de serviço no título** | Depois da liberação | ⏳ Pode passar a ser feito pela API; o teste parou porque falta o código da filial da empresa 2 | Teste de 6/nov/2026 |
+| **Pagamento dos funcionários PJ** | Todo mês | ⚠️ Hoje passa inteiro pelo Sienge e pelo Nexxera, com nome e valor visíveis lá. A anonimização do ERP BKM só vale quando o Sienge sair desse fluxo | Moises, 7/nov/2026 |
 | **Pagamento, baixa e remessa ao banco** | Depois da autorização | Acompanha pelos avisos do Sienge | Documentação da API |
 
 ⏳ Foi sugerido perguntar ao suporte do Sienge se existe liberação automática de medição e se há API (pública ou em desenvolvimento) para liberação, ciência e autorização de pagamento. Se a resposta mudar algum item, esta tabela é a primeira a ser atualizada.
