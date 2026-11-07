@@ -1,6 +1,6 @@
 # 3. Banco de dados
 
-O banco é um Postgres do Supabase, organizado em esquemas por camada. Cada camada tem uma situação diferente:
+O banco é um Postgres do Supabase, num projeto próprio do ERP (decisão de 7/nov/2026; o BKM Terrenos e o monitor ficam no BKM_Desenvolvimento_Imobiliario), organizado em esquemas por camada. Cada camada tem uma situação diferente:
 
 | Esquema | Papel | Situação |
 | --- | --- | --- |
@@ -9,7 +9,7 @@ O banco é um Postgres do Supabase, organizado em esquemas por camada. Cada cama
 | `sienge_bruto` | Resposta inteira de cada chamada à API, nunca alterada | **[Desenhado]**, aprovado em 7/nov/2026 |
 | `crm`, `crm_bruto` | Mesma lógica para o CRM | **[Desenhado]**; CRM ainda não identificado |
 | esquema pessoal dos PJ (nome a definir) | Cadastro e remuneração dos PJ, fora do `nucleo` | **[Desenhado]**, aceito pelo Moises em 7/nov/2026; **adiado até o Sienge sair** (ver 3.3) |
-| `app`, `fluxo` | BKM Terrenos e tarefas | Do repositório do BKM Terrenos; ver `docs/modelo.md` de lá |
+| `app`, `fluxo` | BKM Terrenos e tarefas | Em outro projeto Supabase (BKM_Desenvolvimento_Imobiliario); ver `docs/modelo.md` do BKM Terrenos |
 
 ## 3.1 Esquema `nucleo` [Construído em branch, 7/nov/2026]
 
@@ -63,7 +63,7 @@ O que falta antes de abrir o `nucleo` às telas (ver [07-pendencias.md](07-pende
 
 ### Regra de migrations
 
-Enquanto nenhum banco de produção tiver recebido estas migrations, elas podem ser editadas no lugar (mesma regra do BKM Terrenos). Quando o `nucleo` for aplicado no BKM_Desenvolvimento_Imobiliario, toda mudança passa a ser migration nova. **[Construído]** CI em `.github/workflows/ci.yml` (commit `a252fbe`): em todo push e PR, instala o Postgres 16 num runner `ubuntu-24.04`, roda `bash supabase/tests/run.sh` e só fica verde se a saída trouxer "TODOS OS TESTES PASSARAM". Token só de leitura (`permissions: contents: read`). **Em 7/nov/2026 o CI ainda não tinha rodado nenhuma vez:** os minutos do GitHub Actions da conta acabaram em 6/nov/2026, às 15h11 UTC, e desde então todo job é recusado sem rodar (a anotação fala em "Billing & plans"). Enquanto isso, o check fica vermelho sem ter executado nada, e os testes são conferidos rodando `run.sh` à mão.
+Enquanto nenhum banco de produção tiver recebido estas migrations, elas podem ser editadas no lugar (mesma regra do BKM Terrenos). Quando o `nucleo` for aplicado no banco de produção (o projeto próprio do ERP), toda mudança passa a ser migration nova. **[Construído]** CI em `.github/workflows/ci.yml` (commit `a252fbe`): em todo push e PR, instala o Postgres 16 num runner `ubuntu-24.04`, roda `bash supabase/tests/run.sh` e só fica verde se a saída trouxer "TODOS OS TESTES PASSARAM". Token só de leitura (`permissions: contents: read`). **Em 7/nov/2026 o CI ainda não tinha rodado nenhuma vez:** os minutos do GitHub Actions da conta acabaram em 6/nov/2026, às 15h11 UTC, e desde então todo job é recusado sem rodar (a anotação fala em "Billing & plans"). Enquanto isso, o check fica vermelho sem ter executado nada, e os testes são conferidos rodando `run.sh` à mão.
 
 **Regra de CI de todo o projeto** (decisão do Moises, 7/nov/2026, para gastar menos minutos), aplicada aqui nos commits `556ca8c` e `73ab4b0`:
 

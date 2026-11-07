@@ -29,7 +29,7 @@ Igual ao BKM Terrenos (instruções do projeto):
 | Ambiente | Situação |
 | --- | --- |
 | Banco de desenvolvimento (Supabase) | Não criado **[A decidir]** |
-| Banco de produção | Será o projeto Supabase BKM_Desenvolvimento_Imobiliario (mesmo do BKM Terrenos e do monitor de mercado). Nenhum esquema deste projeto aplicado |
+| Banco de produção | Projeto Supabase **próprio do ERP**, separado do BKM_Desenvolvimento_Imobiliario (decisão do Moises, 7/nov/2026). Ainda não criado: nasce quando as tabelas forem para um banco |
 | Sienge | Só existe a base de produção da BKM conhecida (`bkmincorporadora`). Não sabemos se há base de testes do Sienge **[A decidir]** |
 | Front | Não criado |
 

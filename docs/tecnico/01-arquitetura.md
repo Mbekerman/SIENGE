@@ -22,14 +22,17 @@ Ressalva registrada desde o início: isso torna o **código** trocável. Trocar 
  Sistemas BKM (contas a pagar, BKM Terrenos, CRM, suprimentos, obra)
                  │  só falam com o núcleo, em português
                  ▼
- ┌──────────────────────────── Supabase (BKM_Desenvolvimento_Imobiliario) ─┐
+ ┌──────────────────────────── Supabase, projeto próprio do ERP ───────────┐
  │  nucleo        modelo neutro da BKM + nucleo.codigos_externos             │
  │  pagar*        documentos a pagar, conferência, aprovação                 │
  │  sienge        espelho do Sienge (uma tabela por entidade da API)         │
  │  sienge_bruto  resposta inteira de cada chamada, nunca alterada           │
  │  crm, crm_bruto  mesma lógica para o CRM                                  │
- │  app, fluxo    BKM Terrenos e tarefas (já desenhados lá)                  │
  └───────────────────────────────────────────────────────────────────────────┘
+ ┌──────────── Supabase BKM_Desenvolvimento_Imobiliario (outro projeto) ─────┐
+ │  app, fluxo    BKM Terrenos e tarefas;  public.im_*  monitor de mercado   │
+ └───────────────────────────────────────────────────────────────────────────┘
+   Portal único: um login pelo Google, uma sessão em cada projeto
                  ▲                                   │
    avisos (webhooks) + leitura periódica     fila de envio
                  │                                   ▼
@@ -53,7 +56,8 @@ Ressalva registrada desde o início: isso torna o **código** trocável. Trocar 
 Mesma do BKM Terrenos, por decisão do Moises (instruções do projeto):
 
 - Front: React 18 + TypeScript + Vite, TanStack Query, react-router, supabase-js, sem biblioteca de UI. Visual Material 3 sobre a marca BKM, reaproveitando componentes do BKM Terrenos.
-- Banco: Supabase (Postgres + Auth + Storage), no projeto BKM_Desenvolvimento_Imobiliario (decisão de 25/out/2026, registrada no BKM Terrenos). **[A decidir]** projeto Supabase próprio para o ERP (recomendado pela segurança, S-015; estudo Supabase × AWS de 7/nov/2026: https://claude.ai/artifact/Rmq8G8PR7hcg1Fo6RFjG7P, custo estimado de US$ 115–165/mês para um projeto próprio no Supabase, contra US$ 335–400/mês mais operação num RDS Multi-AZ da AWS em sa-east-1; preços de trechos de busca, sem conferir nas páginas oficiais).
+- Banco: Supabase (Postgres + Auth + Storage), num **projeto próprio do ERP**, separado do BKM_Desenvolvimento_Imobiliario do Terrenos e do monitor (decisão do Moises, 7/nov/2026, 21h56; motivo na S-015 do [08](08-seguranca.md)). O projeto só é criado quando as tabelas forem para um banco. Estudo Supabase × AWS de 7/nov/2026: https://claude.ai/artifact/Rmq8G8PR7hcg1Fo6RFjG7P (projeto próprio no Supabase estimado em US$ 115–165/mês; RDS Multi-AZ da AWS em sa-east-1, US$ 335–400/mês mais operação; preços de trechos de busca).
+- **Portal único** (requisito do Moises, 7/nov/2026): ERP, CRM, Terrenos, obras e o resto num portal só, com um login pelo Google e uma sessão em cada projeto, aberta sem nova tela (a validar em protótipo; requisitos na S-018).
 - Portabilidade (estudo de 7/nov/2026): o que hoje prende o `nucleo` ao Supabase é só `auth.uid()` em `nucleo.eu()`, os papéis do PostgREST e `request.jwt.claim.sub` em `nucleo.sistema()`; o `shim_supabase.sql` dos testes já roda tudo num Postgres comum. Regras propostas, à espera do Moises: usuário só por `nucleo.eu()`; adaptador do Sienge em contêiner (Cloud Run), não em Edge Function; arquivo acessado só por função nossa; segredo lido num ponto só; cópia diária do banco e dos arquivos fora do Supabase, com teste de restauração a cada trimestre.
 - Regra de negócio no banco (funções Postgres chamadas por RPC), sempre com teste.
 - Adaptador do Sienge: servidor ainda não escolhido (funções do Supabase, serviço no Cloud Run ou outro). **[A decidir]**
