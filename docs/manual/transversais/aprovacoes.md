@@ -41,7 +41,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 
 ✅ **Pedido e decisões do Moises** (7/nov/2026):
 
-- O **RH** mantém a lista de quem está ativo e o controle dos benefícios.
+- O **RH** mantém, no portal dele, quem está ativo, o controle dos benefícios e **qual SPE paga cada funcionário em cada mês**.
 - Uma **tabela de remuneração**, à parte, guarda o valor de cada um "a 7 chaves".
 - O **financeiro** vê só um pseudônimo (por exemplo, "PJ-017") e o valor a pagar, nunca o nome.
 - O funcionário sobe a nota num **portal**; se tudo bate com as duas tabelas, ela segue direto para pagamento.
@@ -69,7 +69,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 
 > ⏳ As telas ainda não existem.
 
-1. **Responsável do RH:** abra **Pessoal › Conferência do mês**, confira quem está ativo e os benefícios, e clique em **Dar ok**.
+1. **Responsável do RH:** abra **Pessoal › Conferência do mês**, confira quem está ativo, os benefícios e qual SPE paga cada um neste mês, e clique em **Dar ok**.
 2. **Responsável pela remuneração:** abra a mesma tela, confira os valores e clique em **Dar ok**.
 3. Com os dois "ok", as notas que os PJ subiram no portal e que batem com as tabelas seguem para pagamento.
 4. **Financeiro:** vê os pagamentos só pelo pseudônimo e o valor.
