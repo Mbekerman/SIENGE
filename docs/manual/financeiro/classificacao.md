@@ -46,7 +46,9 @@ Hoje a BKM usa "centro de custo Marketing, natureza MKT Online, motivo verba Goo
 - Só se lança no último nível (não se lança em "Comerciais", só em "Marketing online").
 - A natureza nova herda as características da mãe (ver abaixo), e pode ser mudada.
 - Natureza com lançamentos não se apaga direto: primeiro se reclassifica (ver [Reclassificação](reclassificacao-e-fechamento.md)).
+- Natureza desativada não recebe lançamentos novos; os antigos continuam onde estão.
 - Mover um galho com lançamentos para outra mãe mostra antes quanto do histórico muda de lugar.
+- Mudar o lugar, o tipo, a linha da DRE ou a do fluxo de caixa de uma natureza que já tem lançamentos é só com a diretoria, porque mexe nos relatórios do passado.
 - Como o topo é editável: quem edita o topo e o que acontece com a comparação com a viabilidade quando ele muda. ⏳
 
 ### Características de cada natureza
