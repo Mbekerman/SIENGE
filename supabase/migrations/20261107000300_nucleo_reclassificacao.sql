@@ -322,7 +322,7 @@ end $$;
 -- diretoria que aprovou, mesmo que quem aprovou não seja administrador.
 create or replace function nucleo.exigir_admin() returns void language plpgsql stable as $$
 begin
-  if nucleo.eu() is null or current_setting('nucleo.sistema_apaga', true) = 'on' then return; end if;
+  if nucleo.sistema() or current_setting('nucleo.sistema_apaga', true) = 'on' then return; end if;
   if not exists (select 1 from nucleo.usuarios where user_id = nucleo.eu() and ativo and administrador) then
     raise exception 'Só o administrador pode mudar a configuração';
   end if;

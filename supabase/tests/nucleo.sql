@@ -409,5 +409,28 @@ select pg_temp.ok((select natureza_id from nucleo.compromisso_rateios where comp
 
 select pg_temp.ok((select count(*) from nucleo.auditoria where tabela = 'naturezas') > 0, 'mudanças na árvore ficam na auditoria');
 
+\echo '# acesso pela API'
+select pg_temp.como(null);
+set role anon;
+select pg_temp.falha($$select nucleo.fechar_mes('20000000-0000-0000-0000-000000000002', '2026-04-01')$$, 'chamada anônima não executa função do núcleo');
+select pg_temp.falha($$select count(*) from nucleo.lancamentos$$, 'chamada anônima não lê o livro');
+reset role;
+set role authenticated;
+select pg_temp.falha($$select count(*) from nucleo.pessoas$$, 'usuário logado também não lê enquanto não houver permissões por papel');
+reset role;
+-- mesmo que alguém dê acesso por engano, sem usuário a API não passa nas checagens de papel
+grant usage on schema nucleo to anon;
+grant execute on function nucleo.exigir_diretor() to anon;
+grant execute on function nucleo.sistema() to anon;
+grant execute on function nucleo.eu() to anon;
+grant execute on function nucleo.meu_papel() to anon;
+grant select on nucleo.usuarios to anon;
+set role anon;
+select pg_temp.falha($$select nucleo.exigir_diretor()$$, 'sem usuário, anon não é tratado como rotina do sistema');
+reset role;
+revoke all on schema nucleo from anon;
+revoke all on nucleo.usuarios from anon;
+revoke execute on all functions in schema nucleo from anon;
+
 \echo '# fim'
 do $$ begin raise notice 'TODOS OS TESTES PASSARAM'; end $$;

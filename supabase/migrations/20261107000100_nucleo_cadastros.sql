@@ -18,16 +18,21 @@ create table nucleo.usuarios (
   criado_em     timestamptz not null default now()
 );
 
--- Quem está agindo. Nulo = rotina do sistema ou migration (passa nas checagens de papel).
+-- Quem está agindo (o usuário logado no Supabase).
 create function nucleo.eu() returns uuid language sql stable as
   $$ select auth.uid() $$;
+
+-- Rotina do sistema (migration, cron, função do servidor): sem usuário e fora dos papéis da API.
+-- Chamada anônima pela API também tem auth.uid() nulo, mas roda como anon/authenticated: não passa.
+create function nucleo.sistema() returns boolean language sql stable as
+  $$ select nucleo.eu() is null and current_user not in ('anon', 'authenticated') $$;
 
 create function nucleo.meu_papel() returns text language sql stable as
   $$ select papel from nucleo.usuarios where user_id = nucleo.eu() and ativo $$;
 
 create function nucleo.exigir_admin() returns void language plpgsql stable as $$
 begin
-  if nucleo.eu() is null then return; end if;
+  if nucleo.sistema() then return; end if;
   if not exists (select 1 from nucleo.usuarios where user_id = nucleo.eu() and ativo and administrador) then
     raise exception 'Só o administrador pode mudar a configuração';
   end if;
@@ -35,7 +40,7 @@ end $$;
 
 create function nucleo.exigir_editor() returns void language plpgsql stable as $$
 begin
-  if nucleo.eu() is null then return; end if;
+  if nucleo.sistema() then return; end if;
   if coalesce(nucleo.meu_papel(), 'leitura') = 'leitura' then
     raise exception 'Seu papel só permite consulta';
   end if;
@@ -43,7 +48,7 @@ end $$;
 
 create function nucleo.exigir_diretor() returns void language plpgsql stable as $$
 begin
-  if nucleo.eu() is null then return; end if;
+  if nucleo.sistema() then return; end if;
   if coalesce(nucleo.meu_papel(), '') <> 'diretor' then
     raise exception 'Só a diretoria pode fazer isso';
   end if;

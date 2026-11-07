@@ -101,3 +101,17 @@ select a.id, o.valor, o.ordem from nucleo.atributos a
 join (values ('faixa_mcmv', 'Faixa 1', 1), ('faixa_mcmv', 'Faixa 2', 2), ('faixa_mcmv', 'Faixa 3', 3),
              ('faixa_mcmv', 'Faixa 4', 4), ('faixa_mcmv', 'Fora do MCMV', 5)) o(attr, valor, ordem)
   on o.attr = a.codigo;
+
+-- Acesso: nada do esquema fica aberto à API por padrão. O Postgres dá EXECUTE de toda função a
+-- PUBLIC; aqui isso é tirado. As permissões por papel (RLS e grants a authenticated) entram com as telas.
+revoke all on schema nucleo from public;
+revoke all on all tables in schema nucleo from public;
+revoke execute on all functions in schema nucleo from public;
+alter default privileges in schema nucleo revoke execute on functions from public;
+do $$ begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    execute 'revoke all on schema nucleo from anon, authenticated';
+    execute 'revoke all on all tables in schema nucleo from anon, authenticated';
+    execute 'revoke execute on all functions in schema nucleo from anon, authenticated';
+  end if;
+end $$;
