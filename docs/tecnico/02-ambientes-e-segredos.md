@@ -39,6 +39,7 @@ Enquanto não houver base de testes do Sienge, todo teste de escrita é feito **
 
 - Organização BKM no plano **Pro**. Projetos: `bkm_tarefas`, `BKM_Desenvolvimento_Imobiliario` e `BKM_autodoc`, todos em `sa-east-1`, Postgres 17.
 - O Pro não tem SLA de disponibilidade (só o Enterprise). Recuperação para um instante (PITR) é adicional (cerca de US$ 100/mês, 7 dias) e não cobre os arquivos do Storage: a cópia dos arquivos precisa ser feita à parte.
+- Cópias (decisão do Moises, 7/nov/2026): por ora só a cópia diária do Pro; PITR quando o ERP mandar pagamentos reais; proposta de cópia extra a cada hora no Google Cloud (requisitos em [08](08-seguranca.md), S-018).
 - Os testes do `nucleo` rodam em Postgres 16 (`run.sh`); o projeto é 17. **[A conferir]** rodar a suíte em 17 antes de aplicar.
 
 ### Onde moram os segredos [Desenhado, 7/nov/2026]
