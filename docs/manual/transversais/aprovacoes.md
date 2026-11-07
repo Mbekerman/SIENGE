@@ -40,7 +40,7 @@ Compras (requisição, cotação, pedido e contrato) fica para depois, no mesmo 
   1. Regras do **mesmo nível** que se encaixam no lançamento **se somam**, e a mesma pessoa não aprova duas vezes.
   2. Uma regra de **nível superior se sobrepõe** às de nível inferior.
   3. Uma regra **supertrunfo** substitui qualquer outra.
-  Qualquer regra, inclusive a superior e a supertrunfo, pode ter quantas camadas se quiser, até menos que as gerais. ⏳ Falta decidir quem cria e muda as regras superiores e supertrunfo (proposta: só o master).
+  Qualquer regra, inclusive a superior e a supertrunfo, pode ter quantas camadas se quiser, até menos que as gerais. ✅ Os níveis são configurados pelo master ou por um administrador; a regra **supertrunfo** só é criada e alterada pelo master ou por quem ele der esse poder (Moises, 7/nov/2026).
 - **Os aprovadores são pessoas, escolhidas pelo nome** em cada regra, e não um papel ("gestor", "diretor"). Decisão do Moises de 7/nov/2026.
 - ✅ As pessoas ficam em **listas nomeadas** (por exemplo, "Aprovador Obras SP", com o João), e cada regra aponta para uma lista. Quando a pessoa sai ou tira férias, edita-se só a lista (Moises, 7/nov/2026). 🟡 Proposto também: um substituto nomeado em cada camada. ✅ **Nomear um substituto é um ato que precisa ser aprovado** (Moises, 7/nov/2026).
 - ✅ **Todo aprovador, inclusive os substitutos, é nomeado pelo master ou por um usuário com poder de administrador** (Moises, 7/nov/2026).
@@ -94,7 +94,7 @@ Essas listas cuidam das **exceções**: férias sem substituto, demora na aprova
 
 ### Tarefa: criar uma regra de aprovação
 
-> ⏳ As telas ainda não existem. A configuração é do master e dos administradores; quem cria regras superiores e supertrunfo ainda será definido.
+> ⏳ As telas ainda não existem. A configuração é do master e dos administradores; a supertrunfo, só do master ou de quem ele autorizar.
 
 1. Abra **Configurações › Aprovação › Regras** e clique em **Nova regra**.
 2. Escolha o **momento**: título, adiantamento sem nota, lote, liberação de caução ou orçamento.
@@ -240,7 +240,6 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 
 ## O que falta decidir
 
-- Quem cria e muda regras de nível superior e supertrunfo.
 - Se o Nexxera ou o banco exigem assinatura eletrônica da remessa, de quem e quantas (pergunta ao financeiro).
 - As faixas de valor de cada regra ficam para a [implantação](https://claude.ai/artifact/2U1u689a7Qi3WAvbZAT6n6).
 - As avaliações e a aprovação para liberar caução.
