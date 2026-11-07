@@ -23,7 +23,6 @@
 | Risco | O que fazer |
 | --- | --- |
 | Falhas de segurança do código | Lista própria em [08-seguranca.md](08-seguranca.md) |
-| Sem CI neste repositório | Criar workflow que roda `supabase/tests/run.sh` a cada push, como o BKM Terrenos |
 | Cota diária pequena (pacote desconhecido); CRM, Terrenos e pagar dividem a mesma cota | Saber o pacote; medir na primeira carga; usar massa para cargas grandes |
 | Aviso perdido (5 tentativas em ~10 h) e eventos inexistentes | Varredura por data de alteração e conferência periódica desde o primeiro dia |
 | Título em dobro (`POST /bills` não recusa repetição; NFSE aceita número repetido) | Trava no `nucleo` + procura no espelho e na fila antes de criar |

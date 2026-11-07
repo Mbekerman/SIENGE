@@ -11,6 +11,7 @@ Gravidade: **crítica** (explorável hoje por quem está fora), **alta** (explor
 | Id | Gravidade | Onde | Falha | Correção sugerida | Desde |
 | --- | --- | --- | --- | --- | --- |
 | S-005 | Baixa | `nucleo.sistema()` + auditoria | O que uma rotina do sistema faz (chave de serviço, pg_cron) fica na auditoria e no livro sem autor (`por` nulo). Quando o adaptador agir por pedido de alguém (ex.: lançar a nota que um analista aprovou), não fica registrado quem pediu | O adaptador grava o autor do pedido na fila de envio e passa esse autor às funções (parâmetro ou configuração de sessão lida pela auditoria), com teste | 7/nov/2026 |
+| S-006 | Baixa | `.github/workflows/ci.yml` | O workflow não declara `permissions:`, então o token do GitHub Actions recebe o padrão do repositório, que pode ser escrita. O CI só lê o código | Pôr `permissions: contents: read` no topo do workflow. Usar `pull_request`, e nunca `pull_request_target` (hoje está certo) | 7/nov/2026 |
 | S-003 | Alta (bloqueia o primeiro `grant`) | Todo o `nucleo` | Não há RLS em nenhuma tabela. Hoje o esquema está fechado a `anon` e `authenticated`, então não é explorável. No primeiro `grant` para as telas, qualquer usuário logado leria tudo, de todas as empresas, inclusive folha e movimentos entre sócios | Criar a RLS no mesmo PR do primeiro `grant`, com teste por papel e por empresa ou empreendimento. Preferir dar `grant` só em funções e visões, não nas tabelas | 7/nov/2026 |
 
 ## A conferir quando o código existir
@@ -39,3 +40,4 @@ Ainda não há código para revisar nestes pontos; ficam como requisito para que
 | 7/nov/2026 | `nucleo` v0 até o commit `89c1202`: permissões, papéis, funções, `revoke` | 108 passando |
 | 7/nov/2026 | Correções S-002 e S-004 (commit `ae75175`) | 111 passando |
 | 7/nov/2026 | Chave de serviço como rotina do sistema (commit `f659cfe`): sem falha nova grave; anotada a S-005 | 112 passando |
+| 7/nov/2026 | CI (commit `a252fbe`): anotada a S-006 | 112 passando |

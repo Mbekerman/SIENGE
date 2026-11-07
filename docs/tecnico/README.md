@@ -16,7 +16,8 @@ O único código escrito é o esquema `nucleo` v0 (SQL e testes), num branch ain
 | Núcleo do ERP BKM (esquema `nucleo`: 42 tabelas, regras em funções, 112 testes) | Construído no branch `claude/project-thread-dknc98` (7/nov/2026; commits até `f659cfe`); não integrado na `develop`, não aplicado em banco nenhum |
 | Banco espelho do Sienge (camadas `sienge_bruto` e `sienge`) | Desenhado e aprovado pelo Moises (7/nov/2026); não criado |
 | Contas a pagar: envio ao Sienge, leitura de PDF, aprovação, telas | Desenhado; não construído |
-| Banco Supabase, adaptador (servidor), front, CI, deploy | Nada criado |
+| CI (testes do banco a cada push e PR) | Construído em `.github/workflows/ci.yml` (7/nov/2026) |
+| Banco Supabase, adaptador (servidor), front, deploy | Nada criado |
 
 ## Como ler
 
