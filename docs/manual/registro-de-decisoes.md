@@ -6,6 +6,11 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
+| 7/nov/2026 | Listas de exceção chamam-se AF, AO e AD (Aprovação definitiva) | [Aprovações](transversais/aprovacoes.md#regra-inicial-e-papéis-de-exceção) |
+| 7/nov/2026 | Pedido parado: prazo configurável, 7 dias de início; e-mail e notificação no 3º dia | [Aprovações](transversais/aprovacoes.md#regra-inicial-e-papéis-de-exceção) |
+| 7/nov/2026 | Quem está em AF, AO ou AD pode lançar e aprovar; os demais, não (há contraproposta em discussão) | [Aprovações](transversais/aprovacoes.md#os-cinco-momentos-de-aprovação) |
+| 7/nov/2026 | Camadas com 2 ou mais aprovadores, em sequência ou não; AD pode ser a última instância | [Aprovações](transversais/aprovacoes.md#regra-inicial-e-papéis-de-exceção) |
+| 7/nov/2026 | Gestor da área que está na AF: o sistema avisa e pergunta se aprova sozinho ou com outra pessoa | [Aprovações](transversais/aprovacoes.md#regra-inicial-e-papéis-de-exceção) |
 | 7/nov/2026 | Pagamento sem regra vai para COO, CFO ou os dois (configurável); lista vazia passa para a outra; nenhuma, para o CEO; chega com aviso "sem regra" | [Aprovações](transversais/aprovacoes.md#regra-inicial-e-papéis-de-exceção) |
 | 7/nov/2026 | CFO, COO e CEO são posições do sistema em listas nomeadas, com nomes neutros, para exceções (férias sem substituto, demora) | [Aprovações](transversais/aprovacoes.md#regra-inicial-e-papéis-de-exceção) |
 | 7/nov/2026 | Regra inicial: gestor da área junto com CFO ou COO, ou o CEO sozinho | [Aprovações](transversais/aprovacoes.md#regra-inicial-e-papéis-de-exceção) |

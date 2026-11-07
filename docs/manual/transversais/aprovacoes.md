@@ -27,7 +27,7 @@ Compras (requisição, cotação, pedido e contrato) fica para depois, no mesmo 
 | 4. **Liberação de caução** | O gestor do contrato e, acima de certo valor, também as regras gerais |
 | 5. **Publicação de versão do orçamento** | Diretoria |
 
-✅ **Regra que vale para todos:** quem lança nunca aprova o próprio lançamento.
+✅ **Quem lança não aprova o próprio lançamento.** Exceção: quem está nas listas AF, AO e AD pode lançar e aprovar (Moises, 7/nov/2026). 🟡 Em discussão: foi proposto que só a AD tenha essa exceção, e que o lançamento da AF ou da AO seja aprovado pela outra lista ou pela AD, porque uma pessoa sozinha cadastrando, lançando e aprovando é o caso clássico de fraude ou de erro que passa direto. O Moises ainda não respondeu.
 
 ⏳ Em aberto: o valor a partir do qual a liberação de caução também passa pelas regras gerais.
 
@@ -52,7 +52,21 @@ Compras (requisição, cotação, pedido e contrato) fica para depois, no mesmo 
 
 ✅ **Ponto de partida de todas as regras** (Moises, 7/nov/2026): aprovam **juntos o gestor da área e o diretor financeiro ou o COO**; ou então **o CEO aprova sozinho**. Hoje o CEO é o Moises. Depois, cada regra pode ser mudada pela tela.
 
-✅ **Diretor financeiro (CFO), COO e CEO são posições no sistema, não cargos** (Moises, 7/nov/2026). Cada posição é uma **lista nomeada**, com um nome neutro (⏳ os nomes ainda serão escolhidos), porque quem ocupa a posição no sistema pode não ter o cargo na empresa. Essas posições cuidam das **exceções**: férias sem substituto, demora sem justificativa na aprovação e casos parecidos.
+✅ **Diretor financeiro (CFO), COO e CEO são posições no sistema, não cargos** (Moises, 7/nov/2026). Cada posição é uma **lista nomeada**, porque quem ocupa a posição no sistema pode não ter o cargo na empresa:
+
+| Lista | Posição | Para que serve |
+| --- | --- | --- |
+| **AF** | a do diretor financeiro (CFO) | Aprova junto com o gestor da área; recebe exceções |
+| **AO** | a do COO | Aprova junto com o gestor da área; recebe exceções |
+| **AD** (Aprovação definitiva) | a do CEO, hoje o Moises | Aprova sozinho; última instância |
+
+Essas listas cuidam das **exceções**: férias sem substituto, demora na aprovação e casos parecidos.
+
+✅ **Pedido parado** (Moises, 7/nov/2026): depois de um prazo configurável, que começa com **7 dias**, o pedido sem resposta sobe para as listas de exceção. No **3º dia** sem resposta, o aprovador recebe um lembrete por e-mail e notificação.
+
+✅ **Camadas com quantos aprovadores quiser** (Moises, 7/nov/2026): uma camada pode ter 2 aprovadores ou mais, e a regra diz se eles precisam seguir uma ordem ou não. A AD pode entrar na sequência como última instância.
+
+✅ **Quando o gestor da área também está na AF** (Moises, 7/nov/2026): ao colocar a pessoa na AF, o sistema percebe o conflito e pergunta se ela aprova sozinha nesses casos ou se outra pessoa aprova junto, e quem.
 
 ✅ **Pagamento que não se encaixa em nenhuma regra** (Moises, 7/nov/2026):
 
@@ -60,8 +74,6 @@ Compras (requisição, cotação, pedido e contrato) fica para depois, no mesmo 
 - Se uma das duas listas estiver vazia, vai só para a outra. Se as duas estiverem vazias, vai para o CEO.
 - Chega com o aviso **"sem regra"**, para quem recebe analisar e, se for o caso, transformar o caso em regra e atribuir o aprovador.
 - Nenhum pagamento sai sem aprovação por falta de regra.
-
-⏳ A definir: o que conta como "demora sem justificativa" (quantos dias) e se a exceção é pedida por alguém ou acontece sozinha.
 
 🟡 Propostas que o Moises não contestou em 7/nov/2026 (falta confirmação explícita):
 
@@ -83,7 +95,7 @@ Compras (requisição, cotação, pedido e contrato) fica para depois, no mesmo 
 7. Marque **Substitui as gerais** só se esta regra deve valer no lugar das regras gerais. Sem a marca, ela se soma às outras.
 8. Salve. A regra vale para os pedidos novos.
 
-**O que o sistema confere:** a regra precisa ter pelo menos uma camada; quem lança nunca aparece como aprovador do próprio lançamento.
+**O que o sistema confere:** a regra precisa ter pelo menos uma camada; quem lança não aprova o próprio lançamento, salvo as listas AF, AO e AD.
 
 **Se nenhuma regra pegar o item:** ele vai para as posições de exceção com o aviso "sem regra" (ver [Regra inicial e papéis de exceção](#regra-inicial-e-papéis-de-exceção)).
 
@@ -112,6 +124,8 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 ## Pagamento de funcionários PJ
 
 ✅ **Já vale agora, com o Sienge** (Moises, 7/nov/2026): os títulos dos fornecedores PJ copiados do Sienge ficam numa **área restrita** do ERP BKM. Relatórios e BI mostram só a soma por centro de custo e mês, sem valor por pessoa. Os centros de custo pequenos **não** são juntados (Moises, 7/nov/2026). Consequência: num centro de custo com um PJ só, a soma do mês é o valor dele. No próprio Sienge, nome e valor continuam visíveis.
+
+✅ O pagamento dos PJ **não tem aprovação própria**: a aprovação são os dois "ok" do mês sobre as tabelas (Moises, 7/nov/2026).
 
 > 🔜 **Futuro.** Os pagamentos PJ ainda passam pelo Sienge, e a remessa e o extrato vão pelo Nexxera (Moises, 7/nov/2026). Enquanto for assim, o nome e o valor de cada PJ continuam visíveis no Sienge, e **todo o fluxo abaixo (anonimização, conferência com dois "ok", portal de notas e portal do contador) fica para quando o Sienge sair desse fluxo**. Ver [O que ainda é feito à mão no Sienge](passos-manuais-no-sienge.md). A conciliação automática depende do módulo de Bancos, que não foi desenhado.
 
