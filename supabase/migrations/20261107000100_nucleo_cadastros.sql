@@ -27,6 +27,9 @@ create function nucleo.eu() returns uuid language sql stable as
 -- papel com SET ROLE. Não se usa current_user, que dentro de função security definer é o dono.
 -- A chave de serviço (papel service_role, segredo do servidor) conta como sistema, para as
 -- funções do servidor (Edge Functions, adaptador do Sienge) que chamam pela API.
+-- Por isso o service_role nunca recebe privilégio no esquema nucleo (S-015: o projeto Supabase
+-- é compartilhado com o monitor de mercado, cuja chave é service_role); o teste de catálogo confere.
+-- O adaptador usará papel próprio (a decidir com o Moises junto com projeto separado ou não).
 create function nucleo.sistema() returns boolean language sql stable as $$
   select nucleo.eu() is null
      and (current_setting('role', true) = 'service_role'

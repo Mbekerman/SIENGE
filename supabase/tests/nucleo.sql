@@ -448,19 +448,20 @@ reset role;
 revoke all on schema nucleo from service_role;
 revoke execute on all functions in schema nucleo from service_role;
 
--- catálogo: nenhum privilégio de public, anon ou authenticated em nada do esquema (pega migration futura)
+-- catálogo: nenhum privilégio de public, anon, authenticated ou service_role em nada do esquema (pega migration futura).
+-- service_role fica de fora (S-015): o projeto Supabase é compartilhado e a chave de serviço do monitor passaria como sistema.
 select pg_temp.ok(not exists (
-  select 1 from unnest(array['public','anon','authenticated']) r(papel)
+  select 1 from unnest(array['public','anon','authenticated','service_role']) r(papel)
   where (r.papel <> 'public' and has_schema_privilege(r.papel, 'nucleo', 'USAGE'))
      or exists (select 1 from information_schema.role_table_grants g
-                where g.table_schema = 'nucleo' and g.grantee in ('PUBLIC', 'anon', 'authenticated'))
+                where g.table_schema = 'nucleo' and g.grantee in ('PUBLIC', 'anon', 'authenticated', 'service_role'))
      or exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace,
                        lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
                 where n.nspname = 'nucleo' and a.privilege_type = 'EXECUTE'
-                  and (a.grantee = 0 or a.grantee in (select oid from pg_roles where rolname in ('anon','authenticated'))))
+                  and (a.grantee = 0 or a.grantee in (select oid from pg_roles where rolname in ('anon','authenticated','service_role'))))
      or exists (select 1 from pg_namespace n, lateral aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
                 where n.nspname = 'nucleo' and a.grantee = 0)),
-  'catálogo: o esquema nucleo não dá nenhum privilégio a public, anon ou authenticated');
+  'catálogo: o esquema nucleo não dá nenhum privilégio a public, anon, authenticated ou service_role');
 
 \echo '# fim'
 do $$ begin raise notice 'TODOS OS TESTES PASSARAM'; end $$;
