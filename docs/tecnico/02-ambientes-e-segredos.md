@@ -35,6 +35,12 @@ Igual ao BKM Terrenos (instruções do projeto):
 
 Enquanto não houver base de testes do Sienge, todo teste de escrita é feito **na produção do Sienge**, com valores de R$ 1,00 a R$ 1,50, observação "TESTE API Claude" e no contrato de teste CTP/28 (ver [04-integracao-sienge.md](04-integracao-sienge.md)).
 
+### Conta do Supabase [Testado pela API do Supabase, 7/nov/2026]
+
+- Organização BKM no plano **Pro**. Projetos: `bkm_tarefas`, `BKM_Desenvolvimento_Imobiliario` e `BKM_autodoc`, todos em `sa-east-1`, Postgres 17.
+- O Pro não tem SLA de disponibilidade (só o Enterprise). Recuperação para um instante (PITR) é adicional (cerca de US$ 100/mês, 7 dias) e não cobre os arquivos do Storage: a cópia dos arquivos precisa ser feita à parte.
+- Os testes do `nucleo` rodam em Postgres 16 (`run.sh`); o projeto é 17. **[A conferir]** rodar a suíte em 17 antes de aplicar.
+
 ## Rede
 
 - `api.sienge.com.br` liberado na rede do ambiente de nuvem do Claude desde 6/nov/2026.
