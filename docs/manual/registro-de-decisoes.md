@@ -6,6 +6,9 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
+| 7/nov/2026 | Pagamento sem regra vai para COO, CFO ou os dois (configurável); lista vazia passa para a outra; nenhuma, para o CEO; chega com aviso "sem regra" | [Aprovações](transversais/aprovacoes.md#regra-inicial-e-papéis-de-exceção) |
+| 7/nov/2026 | CFO, COO e CEO são posições do sistema em listas nomeadas, com nomes neutros, para exceções (férias sem substituto, demora) | [Aprovações](transversais/aprovacoes.md#regra-inicial-e-papéis-de-exceção) |
+| 7/nov/2026 | Regra inicial: gestor da área junto com CFO ou COO, ou o CEO sozinho | [Aprovações](transversais/aprovacoes.md#regra-inicial-e-papéis-de-exceção) |
 | 7/nov/2026 | Aprovadores, faixas de valor, ordem das camadas e "um ou todos" configuráveis ponto a ponto, regra a regra | [Aprovações](transversais/aprovacoes.md#tarefa-criar-uma-regra-de-aprovação) |
 | 7/nov/2026 | Limites do administrador: não se põe em lista nem como substituto, não muda lista de que faz parte; só o master dá e tira o poder de admin; revisão mensal pelo master | [Aprovações](transversais/aprovacoes.md#limites-do-administrador) |
 | 7/nov/2026 | Fornecedor com adiantamento sem nota não recebe nenhum adiantamento novo | [Contas a pagar](financeiro/contas-a-pagar.md#adiantamento-sem-nota-prazo-e-travas) |

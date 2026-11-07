@@ -48,6 +48,21 @@ Compras (requisição, cotação, pedido e contrato) fica para depois, no mesmo 
 - Cada regra tem **camadas de aprovadores em sequência**, e cada camada diz se basta um aprovador ou se precisam todos.
 - Exemplos (ilustrativos): "Marketing acima de R$ 10 mil: Fulana (marketing), depois Moises"; "Obra: engenheiro da obra, depois gestor de obras"; "qualquer pagamento acima de R$ 200 mil: mais o diretor financeiro".
 
+### Regra inicial e papéis de exceção
+
+✅ **Ponto de partida de todas as regras** (Moises, 7/nov/2026): aprovam **juntos o gestor da área e o diretor financeiro ou o COO**; ou então **o CEO aprova sozinho**. Hoje o CEO é o Moises. Depois, cada regra pode ser mudada pela tela.
+
+✅ **Diretor financeiro (CFO), COO e CEO são posições no sistema, não cargos** (Moises, 7/nov/2026). Cada posição é uma **lista nomeada**, com um nome neutro (⏳ os nomes ainda serão escolhidos), porque quem ocupa a posição no sistema pode não ter o cargo na empresa. Essas posições cuidam das **exceções**: férias sem substituto, demora sem justificativa na aprovação e casos parecidos.
+
+✅ **Pagamento que não se encaixa em nenhuma regra** (Moises, 7/nov/2026):
+
+- Vai para a posição do COO sozinha, para a do CFO sozinha ou para as duas juntas. A escolha é uma configuração.
+- Se uma das duas listas estiver vazia, vai só para a outra. Se as duas estiverem vazias, vai para o CEO.
+- Chega com o aviso **"sem regra"**, para quem recebe analisar e, se for o caso, transformar o caso em regra e atribuir o aprovador.
+- Nenhum pagamento sai sem aprovação por falta de regra.
+
+⏳ A definir: o que conta como "demora sem justificativa" (quantos dias) e se a exceção é pedida por alguém ou acontece sozinha.
+
 🟡 Propostas que o Moises não contestou em 7/nov/2026 (falta confirmação explícita):
 
 - O substituto tem data de início e de fim e nunca é quem lançou o item.
@@ -70,7 +85,7 @@ Compras (requisição, cotação, pedido e contrato) fica para depois, no mesmo 
 
 **O que o sistema confere:** a regra precisa ter pelo menos uma camada; quem lança nunca aparece como aprovador do próprio lançamento.
 
-⏳ Em aberto: o que acontece com um item que não se encaixa em nenhuma regra. Proposta: vai para o master, com o aviso "sem regra", para que um buraco na configuração trave em vez de deixar o dinheiro sair.
+**Se nenhuma regra pegar o item:** ele vai para as posições de exceção com o aviso "sem regra" (ver [Regra inicial e papéis de exceção](#regra-inicial-e-papéis-de-exceção)).
 
 ### Limites do administrador
 
@@ -160,6 +175,6 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 
 ## O que falta decidir
 
-- Faixas de valor e quem aprova em cada uma.
+- Faixas de valor de cada regra (a regra inicial já está decidida; as faixas vêm do financeiro).
 - As avaliações e a aprovação para liberar caução.
 - Alçadas de pagamento.
