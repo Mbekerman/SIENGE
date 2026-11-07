@@ -21,13 +21,14 @@ Compras (requisição, cotação, pedido e contrato) fica para depois, no mesmo 
 
 - As regras são **editáveis pela tela**, sem programador, e podem ser dadas por centro de custo, por natureza e por quem paga. Exemplo do Moises: uma regra para marketing, outra para obra, outra para comercial.
 - **Quando várias regras valem ao mesmo tempo, todas se aplicam (soma).** A mesma pessoa não aprova duas vezes. Uma regra só troca as gerais se estiver marcada **"substitui as gerais"**.
+- **Os aprovadores são pessoas, escolhidas pelo nome** em cada regra, e não um papel ("gestor", "diretor"). Decisão do Moises de 7/nov/2026.
 - **Título rateado:** cada parte do rateio puxa as suas regras, e o título só fica aprovado quando todas forem cumpridas. Exemplo: um título metade Marketing, metade Obra passa pela regra de marketing e pela de obra.
 
 🟡 **Proposta** (formato sugerido em 7/nov/2026, ainda sem confirmação de cada detalhe):
 
 - Além de centro de custo, natureza e empresa pagadora, a regra pode filtrar por fornecedor, tipo de compromisso e faixa de valor.
-- Cada regra tem **camadas de aprovadores em sequência**. Cada camada diz quem aprova (um papel, uma pessoa, o gestor do centro de custo ou o responsável pela natureza) e se basta um ou precisa de todos.
-- Exemplos: "Marketing acima de R$ 10 mil: gestor de marketing, depois diretoria"; "Obra: engenheiro da obra, depois gestor de obras"; "qualquer pagamento acima de R$ 200 mil: mais o diretor financeiro".
+- Cada regra tem **camadas de aprovadores em sequência**, e cada camada diz se basta um aprovador ou se precisam todos.
+- Exemplos: "Marketing acima de R$ 10 mil: Fulana (marketing), depois Moises"; "Obra: engenheiro da obra, depois gestor de obras"; "qualquer pagamento acima de R$ 200 mil: mais o diretor financeiro".
 
 ### Exemplo de soma
 
