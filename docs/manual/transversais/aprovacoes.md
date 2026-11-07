@@ -43,11 +43,13 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 
 - O **RH** mantém a lista de quem está ativo e o controle dos benefícios.
 - Uma **tabela de remuneração**, à parte, guarda o valor de cada um "a 7 chaves".
-- O **financeiro** vê só um pseudônimo (por exemplo, "PJ-017"), a chave Pix e o valor a pagar, nunca o nome.
+- O **financeiro** vê só um pseudônimo (por exemplo, "PJ-017") e o valor a pagar, nunca o nome.
 - O funcionário sobe a nota num **portal**; se tudo bate com as duas tabelas, ela segue direto para pagamento.
 - **Todo mês, as duas tabelas são conferidas.** Se um dos dois responsáveis não der o "ok" do mês, **ninguém recebe**.
 - Os dois responsáveis e os **substitutos temporários** de cada um são definidos na própria plataforma.
 - O **usuário master** vê tudo, pode trocar o aprovador e também pode aprovar.
+- A folha PJ entra no financeiro, nos relatórios e no BI **somada por centro de custo e por mês**, sem valor por pessoa. O detalhe fica só na área restrita.
+- As **notas dos PJ ficam guardadas na área restrita** ("a 7 chaves") e vão direto ao contador. O contador também tem um **portal** para baixá-las.
 
 🟡 **Propostas** ainda sem resposta (7/nov/2026):
 
@@ -56,6 +58,9 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 - Ninguém do financeiro digita o Pix nem entra no internet banking da conta usada para os PJ, que seria uma conta separada; o lote vai ao banco pela integração.
 - Toda leitura do master fica registrada, e há dois masters, para trocar um aprovador não depender de uma pessoa só.
 - Aviso aos responsáveis alguns dias antes do vencimento.
+- A chave Pix não aparece para o financeiro: ela só é buscada na hora de mandar o pagamento ao banco.
+- O portal do contador tem login próprio, mostra só as notas e registra cada download.
+- ⏳ Sem resposta: se os pagamentos PJ continuarem passando pelo Sienge durante a transição, o nome e o valor ficam visíveis lá como credor.
 
 **O que não dá para garantir:** o anonimato total. A chave Pix, o extrato e o comprovante do banco e a nota que vai ao contador identificam a pessoa. O que o sistema garante é que quase ninguém veja, e que toda leitura fique registrada.
 
@@ -68,7 +73,8 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 1. **Responsável do RH:** abra **Pessoal › Conferência do mês**, confira quem está ativo e os benefícios, e clique em **Dar ok**.
 2. **Responsável pela remuneração:** abra a mesma tela, confira os valores e clique em **Dar ok**.
 3. Com os dois "ok", as notas que os PJ subiram no portal e que batem com as tabelas seguem para pagamento.
-4. **Financeiro:** vê os pagamentos só pelo pseudônimo, com o Pix e o valor.
+4. **Financeiro:** vê os pagamentos só pelo pseudônimo e o valor.
+5. **Contador:** recebe as notas e, se precisar, baixa pelo portal dele.
 
 **Se der errado:** se um responsável estiver ausente, o substituto temporário dá o "ok". Se nenhum dos dois puder, o master pode aprovar ou trocar o aprovador.
 

@@ -6,6 +6,7 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
+| 7/nov/2026 | PJ: folha somada por centro de custo e mês no financeiro e no BI; notas na área restrita, direto ao contador, com portal para ele baixar | [Aprovações](transversais/aprovacoes.md#pagamento-de-funcionários-pj) |
 | 7/nov/2026 | PJ: RH controla ativos e benefícios, remuneração em tabela restrita, financeiro só vê pseudônimo, Pix e valor; sem os dois "ok" do mês ninguém recebe; responsáveis e substitutos definidos na plataforma; o master vê tudo, troca o aprovador e aprova | [Aprovações](transversais/aprovacoes.md#pagamento-de-funcionários-pj) |
 | 7/nov/2026 | Aprovação por ora só no financeiro (nota/título, pagamento/lote, adiantamento, caução, orçamento); compras depois, no mesmo mecanismo | [Aprovações](transversais/aprovacoes.md) |
 | 7/nov/2026 | Regras de aprovação editáveis pela tela, por centro de custo, natureza e quem paga; várias regras se somam (salvo "substitui as gerais"); no título rateado, cada parte puxa as suas | [Aprovações](transversais/aprovacoes.md) |
