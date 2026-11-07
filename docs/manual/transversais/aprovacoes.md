@@ -35,7 +35,42 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 
 ## Pagamento de funcionários PJ
 
-⏳ **Em discussão** (7/nov/2026). O Moises quer o salário de cada PJ o mais anônimo possível: o RH mantém uma lista de quem está ativo e dos benefícios, outra lista guarda a remuneração "a 7 chaves", o financeiro vê só um código do fornecedor e o Pix, o funcionário sobe a nota num portal, e nada é pago sem o "ok" mensal dos dois responsáveis. Pontos levantados e ainda sem resposta: risco trabalhista de registrar benefícios de PJ (passar pelo jurídico), limites do anonimato (o Pix, o extrato do banco e a nota que vai ao contador identificam a pessoa) e um substituto para cada responsável, para que uma pessoa de férias não pare a folha.
+> ⏳ Ainda só no desenho, sem tela. A conciliação depende do módulo de Bancos, que não foi desenhado.
+
+**Para que serve:** pagar os funcionários contratados como PJ mantendo o valor de cada um o mais anônimo possível.
+
+✅ **Pedido e decisões do Moises** (7/nov/2026):
+
+- O **RH** mantém a lista de quem está ativo e o controle dos benefícios.
+- Uma **tabela de remuneração**, à parte, guarda o valor de cada um "a 7 chaves".
+- O **financeiro** vê só um pseudônimo (por exemplo, "PJ-017"), a chave Pix e o valor a pagar, nunca o nome.
+- O funcionário sobe a nota num **portal**; se tudo bate com as duas tabelas, ela segue direto para pagamento.
+- **Todo mês, as duas tabelas são conferidas.** Se um dos dois responsáveis não der o "ok" do mês, **ninguém recebe**.
+- Os dois responsáveis e os **substitutos temporários** de cada um são definidos na própria plataforma.
+- O **usuário master** vê tudo, pode trocar o aprovador e também pode aprovar.
+
+🟡 **Propostas** ainda sem resposta (7/nov/2026):
+
+- Conciliação automática: o extrato vem direto do banco e, antes de qualquer pessoa ver, os dados do PJ são trocados pelo pseudônimo. O Moises sugeriu a ideia; o desenho depende do módulo de Bancos.
+- O pseudônimo é um código aleatório, e não um "hash" do CPF, que se descobre testando todos os CPFs.
+- Ninguém do financeiro digita o Pix nem entra no internet banking da conta usada para os PJ, que seria uma conta separada; o lote vai ao banco pela integração.
+- Toda leitura do master fica registrada, e há dois masters, para trocar um aprovador não depender de uma pessoa só.
+- Aviso aos responsáveis alguns dias antes do vencimento.
+
+**O que não dá para garantir:** o anonimato total. A chave Pix, o extrato e o comprovante do banco e a nota que vai ao contador identificam a pessoa. O que o sistema garante é que quase ninguém veja, e que toda leitura fique registrada.
+
+⚠️ **Ponto levantado e sem resposta:** registrar benefícios de PJ no sistema pode servir de prova de vínculo empregatício. A sugestão é passar o desenho pelo jurídico antes.
+
+### Tarefa: conferir e liberar o pagamento dos PJ do mês
+
+> ⏳ As telas ainda não existem.
+
+1. **Responsável do RH:** abra **Pessoal › Conferência do mês**, confira quem está ativo e os benefícios, e clique em **Dar ok**.
+2. **Responsável pela remuneração:** abra a mesma tela, confira os valores e clique em **Dar ok**.
+3. Com os dois "ok", as notas que os PJ subiram no portal e que batem com as tabelas seguem para pagamento.
+4. **Financeiro:** vê os pagamentos só pelo pseudônimo, com o Pix e o valor.
+
+**Se der errado:** se um responsável estiver ausente, o substituto temporário dá o "ok". Se nenhum dos dois puder, o master pode aprovar ou trocar o aprovador.
 
 ## Outras regras já decididas
 
