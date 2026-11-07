@@ -37,7 +37,8 @@ Compras (requisição, cotação, pedido e contrato) fica para depois, no mesmo 
 
 - As regras são **editáveis pela tela**, sem programador, e podem ser dadas por centro de custo, por natureza e por quem paga. Exemplo do Moises: uma regra para marketing, outra para obra, outra para comercial.
 - **Quando várias regras valem ao mesmo tempo, todas se aplicam (soma).** A mesma pessoa não aprova duas vezes. Uma regra só troca as gerais se estiver marcada **"substitui as gerais"**.
-- **Os aprovadores são pessoas, escolhidas pelo nome** em cada regra, e não um papel ("gestor", "diretor"). Decisão do Moises de 7/nov/2026. ⏳ Em aberto: pôr a pessoa direto em cada regra ou criar listas nomeadas (por exemplo, "Aprovador Obras SP = João"), para trocar a pessoa num lugar só quando ela sai ou tira férias. Também proposto: um substituto nomeado em cada camada.
+- **Os aprovadores são pessoas, escolhidas pelo nome** em cada regra, e não um papel ("gestor", "diretor"). Decisão do Moises de 7/nov/2026.
+- ✅ As pessoas ficam em **listas nomeadas** (por exemplo, "Aprovador Obras SP", com o João), e cada regra aponta para uma lista. Quando a pessoa sai ou tira férias, edita-se só a lista (Moises, 7/nov/2026). 🟡 Proposto também: um substituto nomeado em cada camada.
 - **Título rateado:** cada parte do rateio puxa as suas regras, e o título só fica aprovado quando todas forem cumpridas. Exemplo: um título metade Marketing, metade Obra passa pela regra de marketing e pela de obra.
 
 🟡 **Proposta** (formato sugerido em 7/nov/2026, ainda sem confirmação de cada detalhe):
@@ -45,6 +46,15 @@ Compras (requisição, cotação, pedido e contrato) fica para depois, no mesmo 
 - Além de centro de custo, natureza e empresa pagadora, a regra pode filtrar por fornecedor, tipo de compromisso e faixa de valor.
 - Cada regra tem **camadas de aprovadores em sequência**, e cada camada diz se basta um aprovador ou se precisam todos.
 - Exemplos: "Marketing acima de R$ 10 mil: Fulana (marketing), depois Moises"; "Obra: engenheiro da obra, depois gestor de obras"; "qualquer pagamento acima de R$ 200 mil: mais o diretor financeiro".
+
+### Tarefa: trocar o aprovador de uma lista
+
+> ⏳ As telas ainda não existem.
+
+1. Abra **Configurações › Aprovação › Listas de aprovadores**.
+2. Abra a lista (por exemplo, "Aprovador Obras SP").
+3. Tire a pessoa que sai e inclua a nova.
+4. Salve. Todas as regras que apontam para essa lista passam a usar a pessoa nova.
 
 ### Exemplo de soma
 

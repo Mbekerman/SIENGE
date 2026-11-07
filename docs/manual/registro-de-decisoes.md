@@ -6,6 +6,7 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
+| 7/nov/2026 | Aprovadores em listas nomeadas; a regra aponta para a lista | [Aprovações](transversais/aprovacoes.md) |
 | 7/nov/2026 | Cinco momentos de aprovação no financeiro (título, adiantamento sem nota, lote antes do Nexxera, liberação de caução, versão do orçamento); quem lança nunca aprova o próprio lançamento | [Aprovações](transversais/aprovacoes.md#os-cinco-momentos-de-aprovação) |
 | 7/nov/2026 | Cada regra de aprovação define os aprovadores pelo nome da pessoa, não por papel | [Aprovações](transversais/aprovacoes.md) |
 | 7/nov/2026 | O Moises terá duas contas: uma normal e uma de master | [Aprovações](transversais/aprovacoes.md#papéis-previstos) |
