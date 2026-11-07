@@ -17,7 +17,7 @@
 | Onde fica o fluxo de aprovação do contas a pagar (esquema `pagar` do plano ou `nucleo`) | Organização dos esquemas | 7/nov |
 | Servidor do adaptador (funções do Supabase, Cloud Run...) e serviço de leitura de PDF | Infraestrutura | 7/nov |
 | `nucleo.usuarios` e `app.membros` do BKM Terrenos: um cadastro só? | Login e papéis compartilhados | 7/nov |
-| A Nexxera ou o banco exigem assinatura da remessa (certificado, dupla assinatura)? O Moises não sabe; perguntar à Nexxera | Onde fica o certificado (Vault) e se a remessa precisa de uma segunda aprovação humana | 7/nov |
+| A Nexxera ou o banco exigem assinatura eletrônica da remessa? Quem assina e quantas assinaturas? Pergunta ao financeiro (pedido do Moises, 7/nov, para ficar no fim do documento de aprovação). Antes: exigem assinatura da remessa (certificado, dupla assinatura)? O Moises não sabe; perguntar à Nexxera | Onde fica o certificado (Vault) e se a remessa precisa de uma segunda aprovação humana | 7/nov |
 
 ## Riscos técnicos
 
