@@ -114,4 +114,11 @@ do $$ begin
     execute 'revoke all on all tables in schema nucleo from anon, authenticated';
     execute 'revoke execute on all functions in schema nucleo from anon, authenticated';
   end if;
+  -- service_role também (S-015): o projeto é compartilhado e essa chave passaria como sistema.
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    execute 'revoke all on schema nucleo from service_role';
+    execute 'revoke all on all tables in schema nucleo from service_role';
+    execute 'revoke all on all sequences in schema nucleo from service_role';
+    execute 'revoke execute on all functions in schema nucleo from service_role';
+  end if;
 end $$;
