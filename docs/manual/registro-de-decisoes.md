@@ -6,6 +6,7 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
+| 7/nov/2026 | Limites do administrador: não se põe em lista nem como substituto, não muda lista de que faz parte; só o master dá e tira o poder de admin; revisão mensal pelo master | [Aprovações](transversais/aprovacoes.md#limites-do-administrador) |
 | 7/nov/2026 | Fornecedor com adiantamento sem nota não recebe nenhum adiantamento novo | [Contas a pagar](financeiro/contas-a-pagar.md#adiantamento-sem-nota-prazo-e-travas) |
 | 7/nov/2026 | Prazo para a nota do adiantamento chegar: 30 dias por padrão, configurável pelo master ou administrador | [Contas a pagar](financeiro/contas-a-pagar.md#adiantamento-sem-nota-prazo-e-travas) |
 | 7/nov/2026 | Todo aprovador e substituto é nomeado pelo master ou por um administrador | [Aprovações](transversais/aprovacoes.md) |
