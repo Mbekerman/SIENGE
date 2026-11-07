@@ -6,6 +6,7 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
+| 7/nov/2026 | O Moises terá duas contas: uma normal e uma de master | [Aprovações](transversais/aprovacoes.md#papéis-previstos) |
 | 7/nov/2026 | Um único usuário master, o Moises, que pode aprovar tudo, inclusive os dois "ok" da folha PJ | [Aprovações](transversais/aprovacoes.md#pagamento-de-funcionários-pj) |
 | 7/nov/2026 | PJ (futuro): ao receber a nota, o sistema confere SPE, percentual e valor contra o cadastro mensal do RH; títulos PJ em área restrita | [Aprovações](transversais/aprovacoes.md#pagamento-de-funcionários-pj) |
 | 7/nov/2026 | PJ (futuro): o portal do RH guarda também qual SPE paga cada funcionário em cada mês | [Aprovações](transversais/aprovacoes.md#pagamento-de-funcionários-pj) |
