@@ -6,7 +6,7 @@ on:
     branches: [develop, main]
     paths:
       - 'supabase/**'
-      - '.github/workflows/ci.yml'
+      - '.github/workflows/**'
   workflow_dispatch:
 
 permissions:
@@ -20,9 +20,15 @@ jobs:
   banco:
     name: Banco (migrations + regras)
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       # o runner já traz o Postgres 16; só instala se faltar (não há dependência para guardar em cache)
-      - run: test -x /usr/lib/postgresql/16/bin/initdb || (sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-16)
+      - name: Postgres 16
+        timeout-minutes: 8
+        run: |
+          if [ ! -x /usr/lib/postgresql/16/bin/initdb ]; then
+            sudo apt-get update -qq -o Acquire::Retries=3
+            sudo apt-get install -y -qq postgresql-16
+          fi
       - run: bash supabase/tests/run.sh | tee saida.txt && grep -q "TODOS OS TESTES PASSARAM" saida.txt
