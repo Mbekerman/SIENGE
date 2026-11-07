@@ -37,9 +37,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 
 ⏳ **Em discussão** (7/nov/2026). O Moises quer o salário de cada PJ o mais anônimo possível: o RH mantém uma lista de quem está ativo e dos benefícios, outra lista guarda a remuneração "a 7 chaves", o financeiro vê só um código do fornecedor e o Pix, o funcionário sobe a nota num portal, e nada é pago sem o "ok" mensal dos dois responsáveis. Pontos levantados e ainda sem resposta: risco trabalhista de registrar benefícios de PJ (passar pelo jurídico), limites do anonimato (o Pix, o extrato do banco e a nota que vai ao contador identificam a pessoa) e um substituto para cada responsável, para que uma pessoa de férias não pare a folha.
 
-## O que já estava decidido antes
-
-## O que já está decidido
+## Outras regras já decididas
 
 - ✅ A aprovação será um **módulo único**, usado por todos os outros (contrato, medição, nota, pagamento, caução, reclassificação), e não uma regra espalhada em cada tela (7/nov/2026).
 - ✅ As regras podem ser dadas sobre **qualquer combinação de classificações**, e a regra num galho vale para tudo abaixo dele. Exemplos (7/nov/2026):
