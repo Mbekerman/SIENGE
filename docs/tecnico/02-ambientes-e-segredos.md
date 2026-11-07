@@ -41,6 +41,10 @@ Enquanto não houver base de testes do Sienge, todo teste de escrita é feito **
 - O Pro não tem SLA de disponibilidade (só o Enterprise). Recuperação para um instante (PITR) é adicional (cerca de US$ 100/mês, 7 dias) e não cobre os arquivos do Storage: a cópia dos arquivos precisa ser feita à parte.
 - Os testes do `nucleo` rodam em Postgres 16 (`run.sh`); o projeto é 17. **[A conferir]** rodar a suíte em 17 antes de aplicar.
 
+### Onde moram os segredos [Desenhado, 7/nov/2026]
+
+Segredos sensíveis do ERP (senha da API do Sienge, credenciais e certificado da Nexxera, chave do esquema pessoal dos PJ) ficam no **Secret Manager do Google Cloud**, lidos só pelo servidor que usa cada um. O Vault do Supabase não serve para eles enquanto o projeto for compartilhado (ver [08](08-seguranca.md), S-015).
+
 ## Rede
 
 - `api.sienge.com.br` liberado na rede do ambiente de nuvem do Claude desde 6/nov/2026.
