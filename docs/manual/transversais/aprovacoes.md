@@ -27,7 +27,7 @@ Compras (requisição, cotação, pedido e contrato) fica para depois, no mesmo 
 | 4. **Liberação de caução** | O gestor do contrato e, acima de certo valor, também as regras gerais |
 | 5. **Publicação de versão do orçamento** | Diretoria |
 
-✅ **Quem lança não aprova o próprio lançamento.** Exceção: quem está nas listas AF, AO e AD pode lançar e aprovar (Moises, 7/nov/2026). 🟡 Em discussão: foi proposto que só a AD tenha essa exceção, e que o lançamento da AF ou da AO seja aprovado pela outra lista ou pela AD, porque uma pessoa sozinha cadastrando, lançando e aprovando é o caso clássico de fraude ou de erro que passa direto. O Moises ainda não respondeu.
+✅ **Quem lança não aprova o próprio lançamento** (Moises, 7/nov/2026). Só a AD pode lançar e aprovar. O lançamento de quem está na AF ou na AO é aprovado, por padrão, pela AD; é configurável trocar por "a AF aprova o da AO e a AO aprova o da AF" ou por uma terceira pessoa que aprova os dois. ⏳ Com mais de uma pessoa na AD, falta dizer se cada uma pode aprovar o próprio lançamento ou se uma aprova a da outra.
 
 ⏳ Em aberto: o valor a partir do qual a liberação de caução também passa pelas regras gerais.
 
@@ -58,7 +58,7 @@ Compras (requisição, cotação, pedido e contrato) fica para depois, no mesmo 
 | --- | --- | --- |
 | **AF** | a do diretor financeiro (CFO) | Aprova junto com o gestor da área; recebe exceções |
 | **AO** | a do COO | Aprova junto com o gestor da área; recebe exceções |
-| **AD** (Aprovação definitiva) | a do CEO, hoje o Moises | Aprova sozinho; última instância |
+| **AD** (Aprovação definitiva) | a do CEO, hoje o Moises; pode ter mais de uma pessoa | Aprova sozinho; última instância |
 
 Essas listas cuidam das **exceções**: férias sem substituto, demora na aprovação e casos parecidos.
 
@@ -95,7 +95,7 @@ Essas listas cuidam das **exceções**: férias sem substituto, demora na aprova
 7. Marque **Substitui as gerais** só se esta regra deve valer no lugar das regras gerais. Sem a marca, ela se soma às outras.
 8. Salve. A regra vale para os pedidos novos.
 
-**O que o sistema confere:** a regra precisa ter pelo menos uma camada; quem lança não aprova o próprio lançamento, salvo as listas AF, AO e AD.
+**O que o sistema confere:** a regra precisa ter pelo menos uma camada; quem lança não aprova o próprio lançamento, salvo a AD.
 
 **Se nenhuma regra pegar o item:** ele vai para as posições de exceção com o aviso "sem regra" (ver [Regra inicial e papéis de exceção](#regra-inicial-e-papéis-de-exceção)).
 
