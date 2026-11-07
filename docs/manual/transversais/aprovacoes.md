@@ -50,7 +50,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 - O RH pode **dividir o pagamento de um funcionário entre SPEs**, em percentuais, no mês. O PJ emite uma nota para cada SPE. Ao receber cada nota, o sistema confere o CNPJ da SPE, o percentual e o valor contra o cadastro do RH daquele mês, e **trava o pagamento** se algo divergir.
 - **Todo mês, as duas tabelas são conferidas.** Se um dos dois responsáveis não der o "ok" do mês, **ninguém recebe**.
 - Os dois responsáveis e os **substitutos temporários** de cada um são definidos na própria plataforma.
-- O **usuário master** vê tudo, pode trocar o aprovador e também pode aprovar.
+- Existe **um único usuário master, o Moises**. Ele vê tudo, pode trocar o aprovador e pode aprovar tudo, inclusive os dois "ok" do mês.
 - A folha PJ entra no financeiro, nos relatórios e no BI **somada por centro de custo e por mês**, sem valor por pessoa. O detalhe fica só na área restrita.
 - As **notas dos PJ ficam guardadas na área restrita** ("a 7 chaves") e vão direto ao contador. O contador também tem um **portal** para baixá-las.
 
@@ -59,7 +59,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 - Conciliação automática: o extrato vem direto do banco e, antes de qualquer pessoa ver, os dados do PJ são trocados pelo pseudônimo. O Moises sugeriu a ideia; o desenho depende do módulo de Bancos.
 - O pseudônimo é um código aleatório, e não um "hash" do CPF, que se descobre testando todos os CPFs.
 - Ninguém do financeiro digita o Pix nem entra no internet banking da conta usada para os PJ, que seria uma conta separada; o lote vai ao banco pela integração.
-- Toda leitura do master fica registrada, e há dois masters, para trocar um aprovador não depender de uma pessoa só.
+- Toda leitura do master fica registrada. (A sugestão de dois masters foi recusada: o master é só o Moises.)
 - Aviso aos responsáveis alguns dias antes do vencimento.
 - A chave Pix não aparece para o financeiro: ela só é buscada na hora de mandar o pagamento ao banco.
 - O portal do contador tem login próprio, mostra só as notas e registra cada download.
