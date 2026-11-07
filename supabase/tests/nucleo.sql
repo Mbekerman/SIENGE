@@ -440,6 +440,13 @@ select pg_temp.ok(not public.teste_definer(), 'dentro de função security defin
 reset role;
 drop function public.teste_definer();
 select pg_temp.ok(nucleo.sistema(), 'migration e rotina do servidor (sem login, fora dos papéis da API) passam');
+grant usage on schema nucleo to service_role;
+grant execute on function nucleo.sistema(), nucleo.eu() to service_role;
+set role service_role;
+select pg_temp.ok(nucleo.sistema(), 'chave de serviço (função do servidor pela API) passa como sistema');
+reset role;
+revoke all on schema nucleo from service_role;
+revoke execute on all functions in schema nucleo from service_role;
 
 -- catálogo: nenhum privilégio de public, anon ou authenticated em nada do esquema (pega migration futura)
 select pg_temp.ok(not exists (
