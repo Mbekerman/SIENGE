@@ -12,7 +12,7 @@ O banco é um Postgres do Supabase, organizado em esquemas por camada. Cada cama
 
 ## 3.1 Esquema `nucleo` [Construído em branch, 7/nov/2026]
 
-Onde está: branch `claude/project-thread-dknc98` deste repositório (commit `649ae60`, "Núcleo do ERP BKM v0"). Quando o PR desse branch entrar na `develop`, esta seção passa a valer para a `develop`.
+Onde está: branch `claude/project-thread-dknc98` deste repositório (commits `649ae60` "Núcleo do ERP BKM v0", `5c71b57` e `89c1202`, que fecham o esquema à API). Quando o PR desse branch entrar na `develop`, esta seção passa a valer para a `develop`.
 
 | Arquivo | Conteúdo |
 | --- | --- |
@@ -20,12 +20,12 @@ Onde está: branch `claude/project-thread-dknc98` deste repositório (commit `64
 | `supabase/migrations/20261107000200_nucleo_pagar_livro.sql` | Compromissos, previsões, documentos fiscais e retenções, títulos, parcelas, pagamentos, quitações, caução, movimentos societários, contas e lotes bancários, orçamento, livro de lançamentos e visões (19 tabelas) |
 | `supabase/migrations/20261107000300_nucleo_reclassificacao.sql` | Fechamento de mês, níveis de aprovação, alçadas, pedidos de reclassificação, itens e votos (6 tabelas) |
 | `supabase/migrations/20261107000400_nucleo_carga.sql` | Carga inicial: árvore de naturezas v0 (11 grupos), linhas da DRE, naturezas do sistema, níveis e alçada padrão |
-| `supabase/tests/nucleo.sql` | 104 testes de regra |
+| `supabase/tests/nucleo.sql` | 108 testes de regra (4 deles de acesso pela API) |
 | `supabase/tests/run.sh` | Sobe um Postgres 16 temporário, aplica `shim_supabase.sql` + migrations e roda os testes |
 | `supabase/tests/shim_supabase.sql` | Imita o mínimo do Supabase (`auth.uid()` lido de `request.jwt.claim.sub`) |
 | `docs/nucleo.md` | Dicionário das tabelas e regras, em português (fonte principal para o detalhe de cada tabela) |
 
-Conferido nesta documentação em 7/nov/2026: `bash supabase/tests/run.sh` aplica as 4 migrations e passa os 104 testes.
+Conferido nesta documentação em 7/nov/2026: `bash supabase/tests/run.sh` aplica as 4 migrations e passa os 108 testes.
 
 ### Como rodar os testes
 
@@ -49,14 +49,16 @@ Roda como root (usa `runuser -u postgres`) ou como usuário comum; porta padrão
 ### Identidade e permissões no `nucleo`
 
 - `nucleo.usuarios` (`user_id` = `auth.users.id`) guarda papel (`diretor`, `gestor`, `analista`, `leitura`), `contador` e `administrador`.
-- `nucleo.eu()` = `auth.uid()`. As checagens `exigir_admin`, `exigir_editor`, `exigir_diretor` **deixam passar quando `eu()` é nulo**, de propósito, para rotinas do sistema e migrations.
+- `nucleo.eu()` = `auth.uid()`. `nucleo.sistema()` é verdadeiro só quando não há usuário **e** a chamada não roda como `anon` nem `authenticated` (migration, rotina agendada, servidor com a chave de serviço). As checagens `exigir_admin`, `exigir_editor` e `exigir_diretor` deixam passar só nesse caso.
+- Acesso fechado à API do Supabase (migration `..._nucleo_carga.sql`, fim): o esquema, as tabelas e o `execute` das funções são revogados de `public`, `anon` e `authenticated`, inclusive nos privilégios padrão. Hoje **só o servidor** usa o `nucleo`.
 
-Atenção antes de expor o esquema na API do Supabase (ver [07-pendencias.md](07-pendencias.md)):
+Corrigido em 7/nov/2026: na v0 inicial, `eu()` nulo passava nas checagens, e uma chamada anônima pela API também tem `auth.uid()` nulo. Os testes de acesso cobrem isso.
 
-1. Ainda **não há RLS nem `grant`/`revoke`** no `nucleo`. As regras de papel estão só nas funções.
-2. Uma chamada anônima pela API do Supabase também tem `auth.uid()` nulo e, hoje, passaria nas checagens. Antes de pôr `nucleo` em "Exposed schemas", é obrigatório revogar o acesso de `anon` (e decidir o de `authenticated`) ou trocar o "nulo passa" por uma marca explícita de rotina do sistema.
-3. O `nucleo` não tem `empresa_id` de isolamento como o BKM Terrenos (`app.minhas_empresas()`): as empresas do grupo são dados, não inquilinos. Quem vê o quê por empresa ou empreendimento fica para o módulo de aprovação e permissões.
-4. `nucleo.usuarios` é um cadastro de papéis separado de `app.membros` do BKM Terrenos, no mesmo login. Falta decidir se os dois se unem.
+O que falta antes de abrir o `nucleo` às telas (ver [07-pendencias.md](07-pendencias.md)):
+
+1. Dar `grant` a `authenticated` só no que as telas usam (funções e visões) e criar a RLS. Hoje não há RLS: com o esquema fechado não é necessária, mas passa a ser no primeiro `grant`.
+2. O `nucleo` não tem `empresa_id` de isolamento como o BKM Terrenos (`app.minhas_empresas()`): as empresas do grupo são dados, não inquilinos. Quem vê o quê por empresa ou empreendimento fica para o módulo de aprovação e permissões.
+3. `nucleo.usuarios` é um cadastro de papéis separado de `app.membros` do BKM Terrenos, no mesmo login. Falta decidir se os dois se unem.
 
 ### Regra de migrations
 

@@ -4,7 +4,7 @@ Decisões que mudam a arquitetura ou o código, da mais recente para a mais anti
 
 ## 7/nov/2026
 
-- **Núcleo v0 construído** (branch `claude/project-thread-dknc98`): 42 tabelas no `nucleo`, 104 testes. Pagamento sempre passa por Adiantamentos antes da quitação.
+- **Núcleo v0 construído** (branch `claude/project-thread-dknc98`): 42 tabelas no `nucleo`, 108 testes. Esquema fechado à API do Supabase (só o servidor usa) até haver RLS. Pagamento sempre passa por Adiantamentos antes da quitação.
 - **Topo da árvore de naturezas é editável** (Moises, no doc do modelo v1), contrariando a proposta de topo fixo. Só o administrador mexe; mudanças que alteram o passado (mover galho, tipo, DRE, fluxo de caixa de natureza com lançamentos) só pela diretoria.
 - **Árvore dinâmica:** lançamento só na folha; filha herda tipo, DRE e fluxo de caixa; desativar em vez de apagar; natureza com lançamentos só se apaga pela reclassificação.
 - **Fechamento de mês** passa a existir (a BKM não fechava).

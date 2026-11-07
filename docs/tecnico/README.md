@@ -13,7 +13,7 @@ O único código escrito é o esquema `nucleo` v0 (SQL e testes), num branch ain
 | Cópia da documentação da API do Sienge (`Mbekerman/sienge-api-docs`) | Construído, com scripts de atualização |
 | Acesso à API do Sienge da BKM (usuário de API, segredo no ambiente de nuvem do Claude) | Construído e testado |
 | Testes manuais da API no contrato CTP/28 (6/nov/2026) | Feitos; resultados em [04-integracao-sienge.md](04-integracao-sienge.md) |
-| Núcleo do ERP BKM (esquema `nucleo`: 42 tabelas, regras em funções, 104 testes) | Construído no branch `claude/project-thread-dknc98` (7/nov/2026); não integrado na `develop`, não aplicado em banco nenhum |
+| Núcleo do ERP BKM (esquema `nucleo`: 42 tabelas, regras em funções, 108 testes) | Construído no branch `claude/project-thread-dknc98` (7/nov/2026; commits até `89c1202`); não integrado na `develop`, não aplicado em banco nenhum |
 | Banco espelho do Sienge (camadas `sienge_bruto` e `sienge`) | Desenhado e aprovado pelo Moises (7/nov/2026); não criado |
 | Contas a pagar: envio ao Sienge, leitura de PDF, aprovação, telas | Desenhado; não construído |
 | Banco Supabase, adaptador (servidor), front, CI, deploy | Nada criado |
