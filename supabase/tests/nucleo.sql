@@ -432,5 +432,28 @@ revoke all on schema nucleo from anon;
 revoke all on nucleo.usuarios from anon;
 revoke execute on all functions in schema nucleo from anon;
 
+-- função security definer chamada sem login: current_user vira o dono, mas não vira rotina do sistema
+create function public.teste_definer() returns boolean language sql security definer as $$ select nucleo.sistema() $$;
+grant execute on function public.teste_definer() to anon;
+set role anon;
+select pg_temp.ok(not public.teste_definer(), 'dentro de função security definer, chamada anônima continua sem passe de sistema');
+reset role;
+drop function public.teste_definer();
+select pg_temp.ok(nucleo.sistema(), 'migration e rotina do servidor (sem login, fora dos papéis da API) passam');
+
+-- catálogo: nenhum privilégio de public, anon ou authenticated em nada do esquema (pega migration futura)
+select pg_temp.ok(not exists (
+  select 1 from unnest(array['public','anon','authenticated']) r(papel)
+  where (r.papel <> 'public' and has_schema_privilege(r.papel, 'nucleo', 'USAGE'))
+     or exists (select 1 from information_schema.role_table_grants g
+                where g.table_schema = 'nucleo' and g.grantee in ('PUBLIC', 'anon', 'authenticated'))
+     or exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace,
+                       lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+                where n.nspname = 'nucleo' and a.privilege_type = 'EXECUTE'
+                  and (a.grantee = 0 or a.grantee in (select oid from pg_roles where rolname in ('anon','authenticated'))))
+     or exists (select 1 from pg_namespace n, lateral aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
+                where n.nspname = 'nucleo' and a.grantee = 0)),
+  'catálogo: o esquema nucleo não dá nenhum privilégio a public, anon ou authenticated');
+
 \echo '# fim'
 do $$ begin raise notice 'TODOS OS TESTES PASSARAM'; end $$;

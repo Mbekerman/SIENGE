@@ -23,9 +23,12 @@ create function nucleo.eu() returns uuid language sql stable as
   $$ select auth.uid() $$;
 
 -- Rotina do sistema (migration, cron, função do servidor): sem usuário e fora dos papéis da API.
--- Chamada anônima pela API também tem auth.uid() nulo, mas roda como anon/authenticated: não passa.
-create function nucleo.sistema() returns boolean language sql stable as
-  $$ select nucleo.eu() is null and current_user not in ('anon', 'authenticated') $$;
+-- Chamada anônima pela API também tem auth.uid() nulo; ela entra como `authenticator` e troca de
+-- papel com SET ROLE. Não se usa current_user, que dentro de função security definer é o dono.
+create function nucleo.sistema() returns boolean language sql stable as $$
+  select nucleo.eu() is null
+     and session_user::text not in ('authenticator', 'anon', 'authenticated')
+     and coalesce(nullif(current_setting('role', true), ''), 'none') not in ('anon', 'authenticated') $$;
 
 create function nucleo.meu_papel() returns text language sql stable as
   $$ select papel from nucleo.usuarios where user_id = nucleo.eu() and ativo $$;
