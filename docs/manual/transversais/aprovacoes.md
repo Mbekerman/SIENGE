@@ -62,7 +62,7 @@ Compras (requisição, cotação, pedido e contrato) fica para depois, no mesmo 
 
 Essas listas cuidam das **exceções**: férias sem substituto, demora na aprovação e casos parecidos.
 
-✅ **Pedido parado** (Moises, 7/nov/2026): depois de um prazo configurável, que começa com **7 dias**, o pedido sem resposta sobe para as listas de exceção. No **3º dia** sem resposta, o aprovador recebe um lembrete por e-mail e notificação.
+✅ **Pedido parado** (Moises, 7/nov/2026): depois de um prazo configurável, que começa com **7 dias**, o pedido sem resposta sobe para as listas de exceção. No **3º dia** sem resposta, o aprovador recebe um lembrete por e-mail e notificação. 🟡 Pelo desenho, o aprovador original continua podendo aprovar até alguém decidir. ⏳ Falta dizer se os 7 dias são corridos ou úteis.
 
 ✅ **Camadas com quantos aprovadores quiser** (Moises, 7/nov/2026): uma camada pode ter 2 aprovadores ou mais, e a regra diz se eles precisam seguir uma ordem ou não. A AD pode entrar na sequência como última instância.
 
@@ -187,6 +187,21 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 ✅ **Usuário master** (Moises, 7/nov/2026): existe um só, o Moises, que pode ver e aprovar tudo. Ele terá **duas contas**: uma normal, para o dia a dia, e uma de master, usada só quando precisar desse poder.
 
 🟡 Pelo banco de dados de 7/nov/2026: diretor, gestor, analista e leitura; à parte, administrador (configuração) e contador (vota nas alçadas que pedem o contador). Segue o modelo do BKM Terrenos, com hierarquia analista → gestor → diretor.
+
+## Propostas do desenho à espera do Moises
+
+🟡 O [documento de desenho das aprovações](https://claude.ai/artifact/FvkBaLmYig68zstJzTKFwP) (7/nov/2026) traz estas propostas, que ainda não foram confirmadas:
+
+- **Travas fixas**, que nenhuma tela desliga: quem lança não aprova (salvo a AD autorizada); nas camadas em conjunto, cada camada tem uma pessoa diferente; o admin não se nomeia aprovador nem substituto; o substituto não é quem lançou; se o título ou o arquivo do lote mudar depois de aprovado, é preciso aprovar de novo; todo pagamento tem pelo menos uma aprovação; toda mudança de configuração fica registrada.
+- As duas contas do Moises (normal e master) contam como **a mesma pessoa**, para ele não ocupar duas camadas de uma regra.
+- Uma regra "substitui as gerais" precisa do aval de outra pessoa e nunca tem menos camadas que as gerais.
+- A faixa de valor é conferida também pelo total do lançamento, para o rateio não servir para fugir dela.
+- As opções de cada pessoa da AD só o master muda; todo lançamento aprovado por quem lançou entra na revisão mensal do master.
+- Um relatório mensal dos pagamentos que caíram em "sem regra".
+- O prazo do pedido parado pode ser diferente em cada camada; a exceção pede justificativa; o aprovador que foi passado para trás recebe aviso.
+- Mudança de configuração vale só para pedidos novos e avisa o master; a que afrouxa o controle (menos camadas, faixa maior, tirar uma natureza da aprovação) precisa do master; a tela mostra o efeito antes de salvar.
+- Os demais prazos e opções (demora, destino do "sem regra") são mudados pelo master ou por um admin, como o prazo da nota do adiantamento.
+- No lote, a conferência grava a "impressão digital" do arquivo; se o arquivo mudar antes do envio, é preciso conferir de novo.
 
 ## O que falta decidir
 
