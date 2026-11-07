@@ -64,15 +64,14 @@ O que falta antes de abrir o `nucleo` às telas (ver [07-pendencias.md](07-pende
 
 Enquanto nenhum banco de produção tiver recebido estas migrations, elas podem ser editadas no lugar (mesma regra do BKM Terrenos). Quando o `nucleo` for aplicado no BKM_Desenvolvimento_Imobiliario, toda mudança passa a ser migration nova. **[Construído]** CI em `.github/workflows/ci.yml` (commit `a252fbe`): em todo push e PR, instala o Postgres 16 num runner `ubuntu-24.04`, roda `bash supabase/tests/run.sh` e só fica verde se a saída trouxer "TODOS OS TESTES PASSARAM". Token só de leitura (`permissions: contents: read`). **Em 7/nov/2026 o CI ainda não tinha rodado nenhuma vez:** os minutos do GitHub Actions da conta acabaram em 6/nov/2026, às 15h11 UTC, e desde então todo job é recusado sem rodar (a anotação fala em "Billing & plans"). Enquanto isso, o check fica vermelho sem ter executado nada, e os testes são conferidos rodando `run.sh` à mão.
 
-**Regra de CI de todo o projeto** (decisão do Moises, 7/nov/2026, para gastar menos minutos), que o CI do SIENGE ainda precisa seguir **[A fazer]**:
+**Regra de CI de todo o projeto** (decisão do Moises, 7/nov/2026, para gastar menos minutos), aplicada aqui nos commits `556ca8c` e `73ab4b0`:
 
-- roda só em `pull_request` para `develop` e `main`, mais `workflow_dispatch` (nada de `push`);
-- `concurrency` com `cancel-in-progress`;
-- um job só, que lê pela API os arquivos do PR e roda cada teste só quando a parte dele muda, além do filtro `paths` no gatilho;
-- cache de dependências;
-- `timeout-minutes`.
+- roda só em `pull_request` para `develop` e `main` com mudança em `supabase/**` ou `.github/workflows/**`, ou à mão (`workflow_dispatch`); não roda em `push`. Um PR só de documentação não dispara o CI;
+- `concurrency` com `cancel-in-progress`; `permissions: contents: read`;
+- timeout de 15 minutos no job e de 8 no passo do Postgres;
+- usa o Postgres 16 do runner e só recorre ao `apt-get` (com novas tentativas) se ele faltar. Sem cache, porque não há dependências.
 
-O modelo está nos PRs do BKM Terrenos (#243) e do monitor de mercado (#10).
+O mesmo modelo está nos PRs do BKM Terrenos (#243) e do monitor de mercado (#10).
 
 ## 3.2 Esquemas `sienge_bruto` e `sienge` [Desenhado, aprovado em 7/nov/2026]
 
