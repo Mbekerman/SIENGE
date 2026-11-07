@@ -42,11 +42,11 @@ Compras (requisição, cotação, pedido e contrato) fica para depois, no mesmo 
 - ✅ **Todo aprovador, inclusive os substitutos, é nomeado pelo master ou por um usuário com poder de administrador** (Moises, 7/nov/2026).
 - **Título rateado:** cada parte do rateio puxa as suas regras, e o título só fica aprovado quando todas forem cumpridas. Exemplo: um título metade Marketing, metade Obra passa pela regra de marketing e pela de obra.
 
-🟡 **Proposta** (formato sugerido em 7/nov/2026, ainda sem confirmação de cada detalhe):
+✅ **Tudo configurável ponto a ponto, regra a regra, pela tela** (Moises, 7/nov/2026): quem aprova, as faixas de valor, a ordem das camadas e se basta um ou precisam todos. Os valores iniciais virão do financeiro antes de o sistema entrar no ar. O formato de cada regra:
 
 - Além de centro de custo, natureza e empresa pagadora, a regra pode filtrar por fornecedor, tipo de compromisso e faixa de valor.
 - Cada regra tem **camadas de aprovadores em sequência**, e cada camada diz se basta um aprovador ou se precisam todos.
-- Exemplos: "Marketing acima de R$ 10 mil: Fulana (marketing), depois Moises"; "Obra: engenheiro da obra, depois gestor de obras"; "qualquer pagamento acima de R$ 200 mil: mais o diretor financeiro".
+- Exemplos (ilustrativos): "Marketing acima de R$ 10 mil: Fulana (marketing), depois Moises"; "Obra: engenheiro da obra, depois gestor de obras"; "qualquer pagamento acima de R$ 200 mil: mais o diretor financeiro".
 
 🟡 Propostas que o Moises não contestou em 7/nov/2026 (falta confirmação explícita):
 
@@ -54,6 +54,23 @@ Compras (requisição, cotação, pedido e contrato) fica para depois, no mesmo 
 - Se um aprovador sai da empresa, as aprovações pendentes dele vão para o master.
 - Trocar um nome na lista vale só para os pedidos novos; os que já estavam em andamento seguem com quem estava.
 - Toda troca fica registrada e avisa as pessoas envolvidas.
+
+### Tarefa: criar uma regra de aprovação
+
+> ⏳ As telas ainda não existem. Quem pode criar regras ainda será definido; a configuração em geral é do master e dos administradores.
+
+1. Abra **Configurações › Aprovação › Regras** e clique em **Nova regra**.
+2. Escolha o **momento**: título, adiantamento sem nota, lote, liberação de caução ou orçamento.
+3. Dê um nome (por exemplo, "Marketing acima de R$ 10 mil").
+4. Em **Condições**, escolha o que a regra pega. Todas são opcionais: empresa pagadora, centro de custo, galho da natureza (vale para tudo abaixo dele), fornecedor, tipo de compromisso e faixa de valor.
+5. Em **Camadas**, inclua a primeira camada: escolha a lista de aprovadores e se basta um ou precisam todos.
+6. Se houver mais camadas, inclua na ordem em que devem aprovar.
+7. Marque **Substitui as gerais** só se esta regra deve valer no lugar das regras gerais. Sem a marca, ela se soma às outras.
+8. Salve. A regra vale para os pedidos novos.
+
+**O que o sistema confere:** a regra precisa ter pelo menos uma camada; quem lança nunca aparece como aprovador do próprio lançamento.
+
+⏳ Em aberto: o que acontece com um item que não se encaixa em nenhuma regra. Proposta: vai para o master, com o aviso "sem regra", para que um buraco na configuração trave em vez de deixar o dinheiro sair.
 
 ### Limites do administrador
 
