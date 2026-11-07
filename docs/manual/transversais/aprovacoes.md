@@ -15,13 +15,29 @@
 
 Compras (requisição, cotação, pedido e contrato) fica para depois, no mesmo mecanismo, sem um segundo sistema de aprovação.
 
+## Os cinco momentos de aprovação
+
+✅ **Decidido** (Moises, 7/nov/2026):
+
+| Momento | Quem aprova |
+| --- | --- |
+| 1. **Título** (nota lançada) | As regras de aprovação (ver abaixo). É a aprovação principal |
+| 2. **Adiantamento sem nota** | O mesmo caminho do título, mais o gestor do contrato |
+| 3. **Lote, antes de ir ao Nexxera** | Uma conferência final por uma pessoa diferente de quem montou o lote. Ela não reaprova cada título; confere banco, valores e datas |
+| 4. **Liberação de caução** | O gestor do contrato e, acima de certo valor, também as regras gerais |
+| 5. **Publicação de versão do orçamento** | Diretoria |
+
+✅ **Regra que vale para todos:** quem lança nunca aprova o próprio lançamento.
+
+⏳ Em aberto: o valor a partir do qual a liberação de caução também passa pelas regras gerais.
+
 ## Como uma regra de aprovação funciona
 
 ✅ **Decidido** (Moises, 7/nov/2026):
 
 - As regras são **editáveis pela tela**, sem programador, e podem ser dadas por centro de custo, por natureza e por quem paga. Exemplo do Moises: uma regra para marketing, outra para obra, outra para comercial.
 - **Quando várias regras valem ao mesmo tempo, todas se aplicam (soma).** A mesma pessoa não aprova duas vezes. Uma regra só troca as gerais se estiver marcada **"substitui as gerais"**.
-- **Os aprovadores são pessoas, escolhidas pelo nome** em cada regra, e não um papel ("gestor", "diretor"). Decisão do Moises de 7/nov/2026.
+- **Os aprovadores são pessoas, escolhidas pelo nome** em cada regra, e não um papel ("gestor", "diretor"). Decisão do Moises de 7/nov/2026. ⏳ Em aberto: pôr a pessoa direto em cada regra ou criar listas nomeadas (por exemplo, "Aprovador Obras SP = João"), para trocar a pessoa num lugar só quando ela sai ou tira férias. Também proposto: um substituto nomeado em cada camada.
 - **Título rateado:** cada parte do rateio puxa as suas regras, e o título só fica aprovado quando todas forem cumpridas. Exemplo: um título metade Marketing, metade Obra passa pela regra de marketing e pela de obra.
 
 🟡 **Proposta** (formato sugerido em 7/nov/2026, ainda sem confirmação de cada detalhe):
