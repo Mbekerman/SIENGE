@@ -8,6 +8,7 @@ O banco é um Postgres do Supabase, organizado em esquemas por camada. Cada cama
 | `sienge` | Espelho do Sienge: uma tabela por entidade da API | **[Desenhado]**, aprovado pelo Moises em 7/nov/2026 |
 | `sienge_bruto` | Resposta inteira de cada chamada à API, nunca alterada | **[Desenhado]**, aprovado em 7/nov/2026 |
 | `crm`, `crm_bruto` | Mesma lógica para o CRM | **[Desenhado]**; CRM ainda não identificado |
+| esquema pessoal dos PJ (nome a definir) | Cadastro e remuneração dos PJ, fora do `nucleo` | **[Desenhado]**, aceito pelo Moises em 7/nov/2026; detalhes em proposta (ver 3.3) |
 | `app`, `fluxo` | BKM Terrenos e tarefas | Do repositório do BKM Terrenos; ver `docs/modelo.md` de lá |
 
 ## 3.1 Esquema `nucleo` [Construído em branch, 7/nov/2026]
@@ -92,3 +93,15 @@ Chaves que pegam desprevenido (da documentação e dos testes):
 - Corretor não tem cadastro próprio: é credor com a marca de corretor.
 
 Como o espelho fica em dia está em [04-integracao-sienge.md](04-integracao-sienge.md), seção "Sincronização".
+
+## 3.3 Esquema pessoal dos PJ [Desenhado, 7/nov/2026]
+
+Desenho aceito pelo Moises (thread "Desenhar o banco do ERP BKM"), sem código:
+
+- Esquema separado com o cadastro dos PJ ativos e a remuneração. O valor fica criptografado; só os dois responsáveis e os masters leem.
+- O `nucleo` recebe só o pseudônimo, a chave PIX e o valor.
+- A conciliação lê o extrato por API ou Open Finance, liga cada linha ao pagamento pelo identificador do PIX e troca nome, documento e chave pelo pseudônimo antes de gravar na área do financeiro.
+
+**[A decidir]** (propostas, à espera do Moises): pseudônimo aleatório ou HMAC com chave secreta; remessa e extrato só por API, de preferência numa conta separada; dois masters com toda leitura auditada.
+
+O que a revisão de segurança pede antes de construir está em [08-seguranca.md](08-seguranca.md), S-007.
