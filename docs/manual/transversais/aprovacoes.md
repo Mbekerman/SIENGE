@@ -202,6 +202,10 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 - Mudança de configuração vale só para pedidos novos e avisa o master; a que afrouxa o controle (menos camadas, faixa maior, tirar uma natureza da aprovação) precisa do master; a tela mostra o efeito antes de salvar.
 - Os demais prazos e opções (demora, destino do "sem regra") são mudados pelo master ou por um admin, como o prazo da nota do adiantamento.
 - No lote, a conferência grava a "impressão digital" do arquivo; se o arquivo mudar antes do envio, é preciso conferir de novo.
+- Trocar a conta bancária ou o PIX de um fornecedor exige aprovação.
+- A escalada por demora vale só para a camada que está parada, não para a regra inteira.
+- Só o master inclui e tira pessoas da AF e da AO.
+- ⏳ Os nomes por extenso de AF e AO ("financeira" e "operacional") ainda não foram confirmados.
 
 ## O que falta decidir
 
