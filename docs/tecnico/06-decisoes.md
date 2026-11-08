@@ -2,6 +2,10 @@
 
 Decisões que mudam a arquitetura ou o código, da mais recente para a mais antiga. Quem decide é o Moises; "proposta" é sugestão ainda não confirmada por ele. Decisões de negócio detalhadas (regras para o usuário) ficam no manual do usuário; aqui só o que o desenvolvedor precisa saber.
 
+## 8/nov/2026
+
+- **Momento novo de aprovação: pagamento com multa ou juros, ou título vencido** (thread do banco, sem código): vale quando a data prevista de pagamento no lote passa do vencimento da parcela ou quando há juros ou multa em `pagar_parcela`. Pede uma camada extra, com aprovador configurável pelo admin (padrão AD), somada às regras normais; a trava 7 (lote só com título aprovado) passa a conferir essa camada; motivo obrigatório e relatório de juros e multa por centro e responsável. Riscos em [08](08-seguranca.md), S-020.
+
 ## 7/nov/2026
 
 - **Aprovação, rev 1196 do documento** (sem código): as duas contas do Moises contam como duas pessoas (decisão dele, revendo a de antes); hierarquia de regras: o mesmo nível soma, o nível superior se sobrepõe e a regra "supertrunfo" substitui qualquer outra, com qualquer número de camadas; substitutos configuráveis, com aprovação e cobertura por AF, AO, AD, master ou alguém designado; toda mudança de remuneração PJ passa por aprovadores; a AD não edita lista AF ou AO de que faz parte e toda mudança avisa o master e a AD. Quem configura (Moises, 22h50): a hierarquia de regras, ele ou um admin; a supertrunfo, ele ou quem ele der esse poder. Riscos em [08](08-seguranca.md), S-019.
