@@ -67,7 +67,7 @@ O menu tem cinco itens: **Início**, **Pedidos**, **Aprovar**, **Conferir** e **
 
 | Tela | O que mostra |
 | --- | --- |
-| **Início** | No alto, os **Contratos recorrentes** (uma caixa por contrato, para soltar a nota do mês); depois quatro contadores (Para aprovar, Vencem em 7 dias, Para conferir, Rascunhos) e a lista **Para hoje**, com o que você precisa fazer hoje |
+| **Início** | No alto, os **Contratos recorrentes**: a caixa única **Solte aqui as notas do mês** (várias notas de uma vez) e, abaixo, uma caixa por contrato, para soltar a nota de um só; depois quatro contadores (Para aprovar, Vencem em 7 dias, Para conferir, Rascunhos) e a lista **Para hoje**, com o que você precisa fazer hoje |
 | **Meus pedidos** | Contadores Rascunhos, Em aprovação, No Sienge e Pagos, e os pedidos agrupados por situação, com a soma de cada grupo |
 | **Novo pedido** | Uma janela curta. Você sobe o XML da nota e ela preenche fornecedor, valor, centro de custo e vencimento |
 | **Para aprovar** | Contadores Na minha vez, Vencem em 7 dias, Vencidos e Em outra camada; os pedidos agrupados por prazo |
@@ -92,6 +92,32 @@ O menu tem cinco itens: **Início**, **Pedidos**, **Aprovar**, **Conferir** e **
 5. Clique em **Enviar para aprovação**.
 
 **O que o sistema confere:** as marcas "CNPJ igual ao do contrato" e "igual ao contrato" aparecem embaixo do fornecedor e do valor. 🟡 Propostas ainda sem confirmação do Moises: o CNPJ da nota tem de ser igual ao do contrato; valor diferente do contrato exige justificativa (o botão fica travado sem ela); se a nota do mês já foi enviada, aparece um aviso de duplicidade. ⏳ Em aberto: a faixa aceita para contrato de valor variável.
+
+### Tarefa: enviar várias notas do mês de uma vez
+
+> 🧪 Telas em protótipo (linha F), ainda sem código. Pedido do Moises, 8/nov/2026.
+
+**Para que serve:** no começo do mês, mandar todas as notas dos contratos recorrentes de uma só vez, sem procurar a caixa de cada contrato.
+
+**Quem faz:** quem recebe as notas dos contratos.
+
+![Caixa "Solte aqui as notas do mês" e a janela "N notas recebidas" (computador e celular)](../imagens/financeiro/notas-do-mes.png)
+
+**Passo a passo:**
+
+1. Abra o **Início**. Em **Contratos recorrentes**, acima das caixas dos contratos, fica a caixa **Solte aqui as notas do mês**.
+2. **Arraste todos os arquivos XML das notas para essa caixa**, de uma vez. No celular, toque na caixa e escolha os arquivos.
+3. O sistema acha o contrato de cada nota pelo CNPJ de quem emitiu e de quem recebe a nota (a BKM). Se o mesmo fornecedor tem mais de um contrato, ele tenta desempatar pelo serviço, pelo texto da nota e pelo valor.
+4. Abre a janela **N notas recebidas**, com uma linha por nota, em quatro situações:
+   - **Pronta** (faixa verde): bate com o contrato. Pode ir direto.
+   - **Com divergência** (faixa laranja), por exemplo "+10% sobre o contrato": clique em **Conferir** e escreva a justificativa.
+   - **Dúvida entre contratos** (faixa laranja): o sistema mostra "Qual contrato?" com os contratos possíveis. Clique no certo.
+   - **Sem contrato** (faixa cinza): a nota não é de nenhum contrato recorrente e vira um **Novo pedido em rascunho**, para você completar em [criar um pedido de pagamento](#tarefa-criar-um-pedido-de-pagamento).
+5. Clique em **Enviar as N**. Vão para aprovação **só as prontas**; as outras ficam na janela até você resolver (as sem contrato ficam em Rascunhos).
+
+**O que você não pode fazer:** enviar uma nota com divergência sem justificativa, nem uma nota com dúvida entre contratos sem escolher o contrato.
+
+> 🟡 Proposta ainda não decidida pelo Moises: receber notas pelo **WhatsApp**. O WhatsApp só recebe a nota; o sistema responde com um resumo e um link, e o envio é feito no aplicativo, com login. Só números cadastrados seriam aceitos, e PDF sem XML ganharia o selo "conferência manual".
 
 ### Tarefa: criar um pedido de pagamento
 

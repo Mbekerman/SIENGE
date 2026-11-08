@@ -6,6 +6,7 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
+| 8/nov/2026 | Caixa única "Solte aqui as notas do mês" no Início: várias notas de uma vez, contrato achado pelo CNPJ do emitente e do tomador (desempate por serviço, texto e valor); "Enviar as N" manda só as prontas; sem contrato vira rascunho de Novo pedido. Recebimento por WhatsApp ainda é proposta | Moises (telas v15, 19h51) |
 | 8/nov/2026 | Início com "Contratos recorrentes": arrastar a nota do mês para a caixa do contrato abre "Conferir e enviar" já preenchido | [Contas a pagar](financeiro/contas-a-pagar.md#tarefa-enviar-a-nota-de-um-contrato-recorrente) |
 | 8/nov/2026 | Conversa do título: linha do tempo com perguntas e respostas, "Perguntar sobre isto" em cada nível, @ para quem responde | [Contas a pagar](financeiro/contas-a-pagar.md#conversar-sobre-o-título) |
 | 8/nov/2026 | O aprovador navega do título até a origem (nota, contrato, previsão, orçamento, adiantamento, aprovações) só com cliques; agente de recomendação por título é futuro | [Contas a pagar](financeiro/contas-a-pagar.md#ver-o-que-está-por-trás-do-título) |
