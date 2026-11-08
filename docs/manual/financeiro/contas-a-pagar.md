@@ -88,6 +88,8 @@ O menu tem cinco itens: **Início**, **Pedidos**, **Aprovar**, **Conferir** e **
 3. Confira cada campo e complete o que faltar, principalmente o **pagamento** (PIX, conta ou boleto). **Sem os dados de pagamento completos, o pedido não se conclui.**
 4. Clique em **Enviar**. O pedido aparece em **Meus pedidos**, no grupo Em aprovação.
 
+🟡 Sem os dados de pagamento, o **Enviar** fica travado e o pedido só se salva como **rascunho**, com o aviso do que falta. Motivo: a aprovação cobre também a conta e o PIX, então não dá para aprovar primeiro e informar o pagamento depois. (Desenho de 8/nov/2026, a confirmar na tela.)
+
 **O que o sistema confere:** nota repetida (mesmo emitente, tipo, número e série) é recusada; o título só vai ao Sienge completo.
 
 **E depois?** O pedido passa de Em aprovação para No Sienge e depois para Pagos. Você recebe a lista do que foi ao Sienge para conferir.
