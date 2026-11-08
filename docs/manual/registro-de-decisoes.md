@@ -6,6 +6,7 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
+| 8/nov/2026 | Contas recorrentes entram já na primeira etapa: contrato de serviço e conta de consumo, cada uma com caixa no Início; o sistema confere emitente, tomador, vigência, mês sem nota e valor, e o que não bate vira exceção com justificativa; cadastro aprovado pelo gestor e por AF ou AO, com nova aprovação ao trocar PIX, conta, valor ou faixa; quem arrastou a nota e quem mexeu por último no cadastro não aprovam; contratos de obra ficam para Suprimentos | [Contas a pagar](financeiro/contas-a-pagar.md#contas-recorrentes-os-dois-tipos) |
 | 8/nov/2026 | Caixa única "Solte aqui as notas do mês" no Início: várias notas de uma vez, contrato achado pelo CNPJ do emitente e do tomador (desempate por serviço, texto e valor); "Enviar as N" manda só as prontas; sem contrato vira rascunho de Novo pedido. Recebimento por WhatsApp ainda é proposta | [Contas a pagar](financeiro/contas-a-pagar.md#tarefa-enviar-várias-notas-do-mês-de-uma-vez) |
 | 8/nov/2026 | Início com "Contratos recorrentes": arrastar a nota do mês para a caixa do contrato abre "Conferir e enviar" já preenchido | [Contas a pagar](financeiro/contas-a-pagar.md#tarefa-enviar-a-nota-de-um-contrato-recorrente) |
 | 8/nov/2026 | Conversa do título: linha do tempo com perguntas e respostas, "Perguntar sobre isto" em cada nível, @ para quem responde | [Contas a pagar](financeiro/contas-a-pagar.md#conversar-sobre-o-título) |

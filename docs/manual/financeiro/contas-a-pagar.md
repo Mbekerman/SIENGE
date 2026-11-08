@@ -73,6 +73,19 @@ O menu tem cinco itens: **Início**, **Pedidos**, **Aprovar**, **Conferir** e **
 | **Para aprovar** | Contadores Na minha vez, Vencem em 7 dias, Vencidos e Em outra camada; os pedidos agrupados por prazo |
 | **Conferência** | O que o sistema achou ao comparar com o Sienge: **Mudou no Sienge**, **Não chegou** e **Fora do fluxo**, cada um com **Resolver** |
 
+### Contas recorrentes: os dois tipos
+
+> ✅ Decidido pelo Moises, 8/nov/2026: as contas recorrentes entram já na primeira etapa da implantação. Contratos de obra ficam para o módulo de Suprimentos.
+
+Conta recorrente é a que se repete todo mês. Ela fica cadastrada uma vez e ganha uma caixa no **Início**. Há dois tipos:
+
+| Tipo | Exemplos | O que o cadastro guarda |
+| --- | --- | --- |
+| **Contrato de serviço** | software, contabilidade, vigilância, limpeza, mídia | fornecedor, empresa pagadora, valor mensal, vigência, reajuste, dia de vencimento, dados de pagamento (PIX, conta ou boleto), centro de custo, natureza, gestor e o PDF do contrato |
+| **Conta de consumo** | energia, água, telefone | faixa máxima por mês, teto no ano e o número da instalação ou do cliente (é ele que identifica a fatura quando a concessionária usa um CNPJ só para todas as contas) |
+
+**Aprovação do cadastro:** cada conta recorrente é aprovada pelo gestor e por alguém da AF ou da AO antes de valer. **Trocar PIX, conta, valor ou faixa exige nova aprovação.**
+
 ### Tarefa: enviar a nota de um contrato recorrente
 
 > 🧪 Telas em protótipo (linha F), ainda sem código. Pedido do Moises, 8/nov/2026.
@@ -91,7 +104,17 @@ O menu tem cinco itens: **Início**, **Pedidos**, **Aprovar**, **Conferir** e **
 4. Confira. Se o valor veio diferente do contrato, aparece o aviso (por exemplo, "Veio R$ 215,00 acima do contrato (+10%)") e é preciso escrever a **justificativa**.
 5. Clique em **Enviar para aprovação**.
 
-**O que o sistema confere:** as marcas "CNPJ igual ao do contrato" e "igual ao contrato" aparecem embaixo do fornecedor e do valor. 🟡 Propostas ainda sem confirmação do Moises: o CNPJ da nota tem de ser igual ao do contrato; valor diferente do contrato exige justificativa (o botão fica travado sem ela); se a nota do mês já foi enviada, aparece um aviso de duplicidade. ⏳ Em aberto: a faixa aceita para contrato de valor variável.
+**O que o sistema confere** (regra do Moises, 8/nov/2026, no documento dos diretores), antes de montar o pedido:
+
+- o CNPJ de quem emitiu a nota é o do fornecedor da conta;
+- quem recebe a nota (o tomador) é a empresa pagadora certa;
+- o contrato está vigente;
+- o mês ainda não tem nota (não deixa mandar a nota duas vezes);
+- o valor cabe na regra: no contrato de serviço, o valor mensal com os reajustes aprovados; na conta de consumo, a faixa do mês e o teto do ano.
+
+O que não bate vira **exceção**: o pedido só segue com justificativa. Na tela, as marcas "CNPJ igual ao do contrato" e "igual ao contrato" aparecem embaixo do fornecedor e do valor.
+
+**Quem não pode aprovar esse pedido:** quem arrastou a nota e quem mexeu por último no cadastro da conta.
 
 ### Tarefa: enviar várias notas do mês de uma vez
 
