@@ -17,6 +17,8 @@ Fonte de verdade da API: os YAMLs em `Mbekerman/sienge-api-docs/oficial/yaml-fil
 - Por minuto, por subdomínio, somando **todos** os sistemas que usam a API da BKM (CRM incluído): 200 REST e 20 Bulk. Estourou: `429 Too Many Requests`.
 - Por dia, conforme o pacote: REST de 100 (Free) a 200.000 (Infinity); Bulk de 10 a 40.000, com bloqueio ao estourar.
 - **O pacote contratado pela BKM ainda não é conhecido** [A decidir]. Ele decide se a cópia diária completa cabe no dia.
+- **Testado em 8/nov/2026, 19h55:** depois de umas 3 chamadas só de leitura, o Sienge respondeu `429` com `Ratelimit-Limit: 200`, `X-Ratelimit-Remaining-Minute: 0`, `X-Ratelimit-Limit-Second: 100` e `Retry-After: 36`. Isso confirma que a cota de 200 por minuto é do subdomínio, dividida entre as integrações, e que outra integração (provavelmente o CRM) gastava quase toda. Também existe um limite por segundo (100). Para o adaptador: fila com nova tentativa que respeita o `Retry-After` (a nova tentativa de `POST /bills` passa pela idempotência da S-021); criar título e gravar pagamento têm prioridade sobre as leituras do espelho; leitura pesada pela API em massa ou fora do horário. Falta saber quanto o CRM consome e em que horários.
+- `GET /purchase-orders` funciona (testado em 8/nov: 556 pedidos); casar com o pedido fica para o módulo de Compras.
 - Custo típico: um título a pagar completo são ~6 chamadas REST (título, impostos, 3 apropriações, unidades), mais anexos e forma de pagamento. 500 títulos alterados num dia ≈ 3.000 chamadas.
 
 ## 4.3 O que a API faz e não faz (documentação, conferida em 6/nov/2026)
