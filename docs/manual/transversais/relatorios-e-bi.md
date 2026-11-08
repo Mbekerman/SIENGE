@@ -8,14 +8,14 @@
 
 - Os **gráficos e as análises ficam no próprio sistema**. O Power BI deixa de ser usado.
 - **Quem vê o quê é liberado no sistema, pessoa a pessoa.** Também dá para criar **grupos**: quem entra num grupo passa a ver o que o grupo vê.
-- **O perfil de acesso é o cruzamento de Área × Centro de custo × Fase** (Moises, 8/nov/2026): a pessoa vê o que está ao mesmo tempo nas áreas, nos centros e nas fases liberados para ela. Dá para liberar por **agrupamentos**, por exemplo um grupo de empreendimentos por tipo ou por praça.
+- **O acesso combina Área e Centro de custo** (Moises, 8/nov/2026): a pessoa vê o que está ao mesmo tempo nas áreas e nos centros liberados para ela, **com herança para baixo** nas duas árvores (quem tem "São Paulo" vê todas as obras de São Paulo; quem tem "Comercial" vê Marketing e Vendas). A fase não entra no acesso.
 - A **folha PJ** aparece só somada por centro de custo e mês.
 - Datas e horas são gravadas e mostradas no **horário de São Paulo**. (Um pagamento às 22h do dia 31 fica no dia 31, não no mês seguinte.)
 - Todas as datas de um lançamento (competência, emissão, vencimento, pagamento) podem ser usadas nos relatórios; a competência é a data padrão. Também aparecem os dias de atraso (pagamento menos vencimento) e o prazo de pagamento (pagamento menos emissão).
 
 ✅ O Power BI não fica nem como ponte (Moises, 8/nov/2026).
 
-🟡 Propostas ainda não decididas sobre o acesso: cada eixo com a opção "todos", e a fase também com "sem fase" (senão ninguém vê o aluguel do escritório, que não tem fase); a natureza PJ fora de qualquer combinação, com acesso próprio; grupos por característica (o empreendimento novo entra sozinho no grupo, com aviso ao admin) ou por lista fixa.
+🟡 Proposta ainda não decidida: a natureza PJ fica fora de qualquer combinação, com acesso próprio.
 
 ## Controle de prazos do pagamento (SLA)
 

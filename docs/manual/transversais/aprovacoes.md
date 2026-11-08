@@ -57,7 +57,7 @@ Compras (requisição, cotação, pedido e contrato) fica para depois, no mesmo 
 
 ✅ **Ponto de partida de todas as regras** (Moises, 7/nov/2026): aprovam **juntos o gestor da área e o diretor financeiro ou o COO**; ou então **o CEO aprova sozinho**. Hoje o CEO é o Moises. Depois, cada regra pode ser mudada pela tela.
 
-✅ **Gestor da área em níveis** (Moises, 8/nov/2026): as áreas têm até 3 níveis, e cada nível tem de 1 a 3 aprovadores (ver [três eixos](../financeiro/classificacao.md#três-eixos-separados-centro-de-custo-área-e-natureza)). 🟡 Proposta: isso se soma à AF, à AO e à AD, sem substituí-las. ⏳ Em aberto: se o número é de pessoas que **precisam** aprovar ou de pessoas na lista para **qualquer uma** aprovar.
+✅ **Aprovadores da área** (Moises, 8/nov/2026): cada nó da árvore de áreas tem aprovadores escolhidos pelo nome e diz quantos deles precisam aprovar (ver [três classificações](../financeiro/classificacao.md#três-classificações-centro-de-custo-área-e-natureza)). 🟡 Proposta: isso se soma à AF, à AO e à AD, sem substituí-las.
 
 ✅ **Diretor financeiro (CFO), COO e CEO são posições no sistema, não cargos** (Moises, 7/nov/2026). Cada posição é uma **lista nomeada**, porque quem ocupa a posição no sistema pode não ter o cargo na empresa:
 
