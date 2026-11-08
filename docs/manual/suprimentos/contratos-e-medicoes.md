@@ -10,7 +10,9 @@ Hoje também quase tudo entra por contrato, inclusive contratos fictícios para 
 
 ## Escopo inicial
 
-✅ **Decidido** (Moises, 6/nov/2026): o primeiro passo é lançar **medições mensais sobre contratos já criados à mão no Sienge**, inclusive para os pagamentos do dia a dia.
+~~✅ Decidido (Moises, 6/nov/2026): o primeiro passo é lançar medições mensais sobre contratos já criados à mão no Sienge.~~
+
+✅ **Mudou** (Moises, 8/nov/2026): a obra fica fora da primeira etapa, e **as medições de obra ficam paradas até a fase de suprimentos**. Os demais departamentos começam pelo [pedido de pagamento](../financeiro/contas-a-pagar.md#primeira-etapa-da-implantação-o-pedido-de-pagamento). O que está abaixo vale para quando as medições voltarem.
 
 ## O que se pode e o que não se pode fazer pelo ERP BKM
 

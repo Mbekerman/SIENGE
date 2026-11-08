@@ -12,11 +12,13 @@ Estes passos **não** podem ser feitos pelo ERP BKM, porque a API do Sienge não
 | **Criar contrato e aditivo** | Antes de qualquer medição; quando o saldo acaba | Avisa quando a nota passa do saldo do contrato | Documentação da API |
 | **Criar pedido de compra** | Compras não regulares | ⏳ A definir no módulo de suprimentos | Documentação da API |
 | **Criar empresa e obra** | Ao abrir uma SPE e um empreendimento | Liga o cadastro do ERP BKM ao do Sienge, uma vez | Documentação da API |
-| **Corrigir ou apagar título criado pela API** | Depois de criado, a API só muda o vencimento; tipo, número, valor, empresa, fornecedor, emissão, parcelas e impostos só se corrigem à mão | Confere tudo antes de enviar, para o título nascer certo | Teste de 6/nov/2026 (título 8422) |
+| **Corrigir ou apagar título criado pela API** | Depois de criado, a API só muda o vencimento e os dados de pagamento (PIX); tipo, número, valor, empresa, fornecedor, emissão, parcelas e impostos só se corrigem à mão | Só cria o título com tudo preenchido e aprovado, para ele nascer certo | Testes de 6 e 8/nov/2026 (título 8422) |
 | **Gravar os dados fiscais de serviço no título** | Depois da liberação | ⏳ Pode passar a ser feito pela API; o teste parou porque falta o código da filial da empresa 2 | Teste de 6/nov/2026 |
 | **Pagamento dos funcionários PJ** | Todo mês | ⚠️ Hoje passa inteiro pelo Sienge e pelo Nexxera, com nome e valor visíveis lá. A anonimização do ERP BKM só vale quando o Sienge sair desse fluxo | Moises, 7/nov/2026 |
 | **Pagamento, baixa e remessa ao banco** | Depois da autorização | Acompanha pelos avisos do Sienge e lê de volta o que aconteceu com cada título; confere se todo título do ERP BKM chegou ao Sienge | Documentação da API; Moises, 8/nov/2026 (primeira etapa da implantação) |
 
 ⏳ Foi sugerido perguntar ao suporte do Sienge se existe liberação automática de medição e se há API (pública ou em desenvolvimento) para liberação, ciência e autorização de pagamento. Se a resposta mudar algum item, esta tabela é a primeira a ser atualizada.
+
+**Pendente à mão no Sienge (testes):** apagar os títulos de teste 8417 e 8422 (este com PIX, credor de teste, R$ 1, vencimento em 15/03/2027, "NÃO PAGAR") e a medição 2 do contrato CTP/28.
 
 **Não é passo manual, mas é limite do Sienge:** a NFS-e aceita número repetido do mesmo fornecedor no Sienge da BKM. A trava contra nota repetida é do ERP BKM.

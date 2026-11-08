@@ -6,6 +6,8 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
+| 8/nov/2026 | Pedido de pagamento só se conclui com os dados de pagamento completos e aprovados; título vai ao Sienge pela API, completo; conferência nos dois sentidos | [Contas a pagar](financeiro/contas-a-pagar.md#primeira-etapa-da-implantação-o-pedido-de-pagamento) |
+| 8/nov/2026 | Medições de obra paradas até a fase de suprimentos (substitui o escopo inicial de 6/nov) | [Contratos e medições](suprimentos/contratos-e-medicoes.md) |
 | 8/nov/2026 | Primeira etapa da implantação: obra fora; demais departamentos no ERP até a nota; pedido de pagamento cria o título no Sienge; pagamento segue no Sienge; ERP lê de volta; conferência automática e manual; relatório para cada pessoa | [Contas a pagar](financeiro/contas-a-pagar.md#primeira-etapa-da-implantação-o-pedido-de-pagamento) |
 | 8/nov/2026 | Multa e juros: tolerância zero, vale para título vencido, motivo obrigatório, relatório mensal por área e responsável | [Aprovações](transversais/aprovacoes.md#pagamento-com-multa-ou-juros) |
 | 7/nov/2026 | Título com multa ou juros precisa de aprovação específica, somada às normais, de pessoa definida pelo admin (padrão: a AD) | [Aprovações](transversais/aprovacoes.md#pagamento-com-multa-ou-juros) |
@@ -74,5 +76,5 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 | 7/nov/2026 | Pagamento parcial e adiantamento abatido aos poucos; pagamento separado de quitação | [Contas a pagar](financeiro/contas-a-pagar.md) |
 | 6/nov/2026 | Previsões ficam no ERP BKM; título no Sienge só nasce completo (resultado de teste) | [Contas a pagar](financeiro/contas-a-pagar.md) |
 | 6/nov/2026 | Contratos novos do dia a dia com item a R$ 1,00 por unidade | [Contratos e medições](suprimentos/contratos-e-medicoes.md) |
-| 6/nov/2026 | Escopo inicial: medições mensais sobre contratos criados à mão no Sienge | [Contratos e medições](suprimentos/contratos-e-medicoes.md) |
+| 6/nov/2026 | Escopo inicial: medições mensais sobre contratos criados à mão no Sienge (substituída em 8/nov) | [Contratos e medições](suprimentos/contratos-e-medicoes.md) |
 | 6/nov/2026 | Sienge vira o núcleo (financeiro, fiscal, contábil, banco, segurança); banco próprio para todos os sistemas BKM | [Visão geral](00-visao-geral.md) |

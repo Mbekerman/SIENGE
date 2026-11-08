@@ -44,7 +44,16 @@ Quando a nota chega e o título nasce, ele **consome** a previsão correspondent
 
 > ⚠️ **Passo manual no Sienge:** a autorização, o pagamento e o lote (remessa pelo Nexxera) continuam feitos no Sienge. Ver [O que ainda é feito à mão no Sienge](../transversais/passos-manuais-no-sienge.md).
 
-🟡 Detalhes do desenho, ainda não confirmados pelo Moises: o pedido de pagamento passa pelas [aprovações](../transversais/aprovacoes.md) antes de o título ir ao Sienge, e o ERP BKM guarda o número do título; a leitura de volta é diária (autorização, pagamento e baixa); a conferência diária aponta também o título criado direto no Sienge, fora do fluxo, e o título mudado no Sienge depois de criado.
+✅ Também confirmado (Moises, 8/nov/2026):
+
+- **O título vai ao Sienge pela API, nunca redigitado**, já com a nota anexada, os impostos e o PIX ou o boleto. O ERP BKM guarda o número de cada título no Sienge.
+- **Pré-requisito:** enquanto os títulos passarem pelo Sienge, o pedido de pagamento só se conclui no ERP BKM com **todas as informações de pagamento** (PIX, conta ou boleto) preenchidas e aprovadas. Só então o título é criado no Sienge, já completo.
+- **A conferência vai nos dois sentidos:** aponta o título do ERP BKM que não chegou ao Sienge, o título criado direto no Sienge fora do fluxo e o título mudado no Sienge depois de criado (valor, conta, PIX).
+- O relatório para cada pessoa fica, mas pode sair quando a conferência à mão confirmar que o sistema não erra.
+
+Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depois de criado, e a API aceita os impostos já na criação.
+
+⏳ Em discussão: tirar no Sienge a permissão de criar e alterar títulos e dados bancários dos departamentos que entrarem no ERP BKM, para fechar a brecha de pagar fora do fluxo. O custo é que um lançamento urgente passa a depender do ERP BKM.
 
 ### Tarefa: criar um pedido de pagamento
 
@@ -57,7 +66,7 @@ Quando a nota chega e o título nasce, ele **consome** a previsão correspondent
 **Passo a passo:**
 
 1. Abra **Contas a pagar › Pedidos de pagamento** e clique em **Novo pedido**.
-2. Suba o arquivo da nota e o boleto ou os dados de pagamento.
+2. Suba o arquivo da nota e o boleto ou os dados de pagamento. **Sem os dados de pagamento completos, o pedido não se conclui.**
 3. Confira o fornecedor, a empresa que paga, o valor, as parcelas e os vencimentos.
 4. Escolha o compromisso ou a previsão que a nota consome, se houver.
 5. Classifique (centro de custo e natureza; use **Ratear** se for dividido).
