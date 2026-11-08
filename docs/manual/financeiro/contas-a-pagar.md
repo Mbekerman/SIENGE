@@ -63,13 +63,19 @@ Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depo
 
 ![Início, pedido aberto para aprovar e Novo pedido, no computador e no celular](../imagens/financeiro/pedido-pagamento-telas-2.png)
 
+![Pedidos, ficha do pedido, Novo pedido, Adiantamento sem nota, Contas recorrentes, Nova conta (os dois tipos), No Sienge e Campanhas](../imagens/financeiro/contas-a-pagar-telas.png)
+
 O menu tem cinco itens: **Início**, **Pedidos**, **Aprovar**, **Conferir** e **Admin**. No celular, eles ficam numa barra embaixo.
 
 | Tela | O que mostra |
 | --- | --- |
 | **Início** | No alto, os **Contratos recorrentes**: a caixa única **Solte aqui as notas do mês** (várias notas de uma vez) e, abaixo, uma caixa por contrato, para soltar a nota de um só; depois quatro contadores (Para aprovar, Vencem em 7 dias, Para conferir, Rascunhos) e a lista **Para hoje**, com o que você precisa fazer hoje |
-| **Meus pedidos** | Contadores Rascunhos, Em aprovação, No Sienge e Pagos, e os pedidos agrupados por situação, com a soma de cada grupo |
-| **Novo pedido** | Uma janela curta. Você sobe o XML da nota e ela preenche fornecedor, valor, centro de custo e vencimento |
+| **Pedidos** | Quatro abas no alto: **Pedidos**, **Contas recorrentes**, **No Sienge** e **Campanhas**. A aba Pedidos é **Meus pedidos**: contadores Rascunhos, Em aprovação, No Sienge e Pagos, e os pedidos agrupados por situação, com a soma de cada grupo |
+| **Ficha do pedido** | Abre ao clicar num pedido seu: as etapas **Lançado › Aprovação › Título no Sienge › Pago**, o aviso do que falta (por exemplo, "Falta a forma de pagamento"), a conversa, o que está por trás (nota, histórico com o fornecedor) e as ações da situação: **Excluir rascunho** e **Continuar**, **Cancelar** ou **Enviar de novo** |
+| **Contas recorrentes** (aba de Pedidos) | Contadores Contas ativas, Falta a nota do mês, Cadastro em aprovação e Contrato vence em 60 dias; as contas agrupadas em Contratos de serviço e Contas de consumo; botão **Nova conta** |
+| **No Sienge** (aba de Pedidos) | Os títulos que você lançou e que estão no Sienge, por vencimento (Vencem esta semana, Próxima semana, Pagos), com a situação lida do Sienge e **Conferir** em cada um; contadores Para conferir, Com divergência, Vencem esta semana e Pagos no mês |
+| **Campanhas** (aba de Pedidos) | As campanhas de remuneração variável com orçado, usado e saldo. 🟡 Ainda a confirmar |
+| **Novo pedido** | Uma janela com duas opções no alto: **Com nota** e **Adiantamento sem nota**. Com nota, você sobe o XML e ela preenche fornecedor, valor, retenções (com o líquido), vencimento, pagamento, centro de custo, área e natureza, e mostra o rateio |
 | **Para aprovar** | Contadores Na minha vez, Vencem em 7 dias, Vencidos e Em outra camada; os pedidos agrupados por prazo |
 | **Conferência** | O que o sistema achou ao comparar com o Sienge: **Mudou no Sienge**, **Não chegou** e **Fora do fluxo**, cada um com **Resolver** |
 
@@ -86,7 +92,19 @@ Conta recorrente é a que se repete todo mês. Ela fica cadastrada uma vez e gan
 
 **Aprovação do cadastro:** cada conta recorrente é aprovada pelo gestor e por alguém da AF ou da AO antes de valer. **Trocar PIX, conta, valor ou faixa exige nova aprovação.**
 
-### Tarefa: enviar a nota de um contrato recorrente
+### Tarefa: cadastrar uma conta recorrente
+
+> 🧪 Telas em protótipo (linha F), ainda sem código.
+
+1. Abra **Pedidos**, aba **Contas recorrentes**, e clique em **Nova conta**.
+2. Escolha o tipo: **Contrato de serviço** (valor fixo por mês) ou **Conta de consumo** (luz, água, telefone).
+3. Preencha:
+   - **Contrato de serviço:** fornecedor, valor mensal, vigência, reajuste (por exemplo, "IPCA, todo dezembro"), dia de vencimento, pagamento (vem do cadastro do fornecedor), centro de custo, área, natureza, gestor e o PDF do contrato;
+   - **Conta de consumo:** concessionária, número da instalação (como está na fatura; é por ele que o sistema acha a fatura), faixa por mês, teto no ano, vencimento, pagamento (por exemplo, boleto da fatura), centro de custo, área, natureza e gestor.
+4. Clique em **Enviar para aprovação**. Aprovam o gestor e alguém da AF ou da AO. Enquanto isso, a conta aparece com a marca **Cadastro em aprovação**.
+
+**Se precisar mudar:** trocar PIX, conta, valor ou faixa manda a conta de novo para aprovação.
+
 
 > 🧪 Telas em protótipo (linha F), ainda sem código. Pedido do Moises, 8/nov/2026.
 
@@ -155,17 +173,47 @@ O que não bate vira **exceção**: o pedido só segue com justificativa. Na tel
 **Passo a passo:**
 
 1. No menu, abra **Pedidos** (ou use o **+** no alto do menu) e clique em **Novo pedido**.
-2. Suba o arquivo XML da nota. O sistema preenche fornecedor, valor, centro de custo e vencimento.
+2. Deixe marcado **Com nota** e suba o arquivo XML da nota. O sistema preenche:
+   - **Fornecedor**, com a marca de que o CNPJ e a nota foram conferidos na prefeitura;
+   - **Valor** e **Retenções**: os impostos retidos vêm da tabela de retenções, com o **líquido** a pagar (por exemplo, "ISS 2% · R$ 136,00 · líquido R$ 6.664,00");
+   - **Vencimento** e **Pagamento** (PIX, conta ou boleto);
+   - **Centro de custo**, **Área** e **Natureza**, cada um num campo separado (ver [três classificações](classificacao.md#três-classificações-centro-de-custo-área-e-natureza)). Área e natureza vêm do cadastro do fornecedor;
+   - **Rateio**: "100% neste centro", ou **Ratear** para dividir.
 3. Confira cada campo e complete o que faltar, principalmente o **pagamento** (PIX, conta ou boleto). **Sem os dados de pagamento completos, o pedido não se conclui.**
 4. Clique em **Enviar**. O pedido aparece em **Meus pedidos**, no grupo Em aprovação.
 
 Sem os dados de pagamento, o **Enviar** fica travado: o campo Pagamento fica em vermelho com o aviso "Informe PIX, conta ou boleto para enviar". Nesse caso, clique em **Salvar rascunho** e volte quando tiver os dados. Motivo: a aprovação cobre também a conta e o PIX, então não dá para aprovar primeiro e informar o pagamento depois.
 
-**O que o sistema confere:** nota repetida (mesmo emitente, tipo, número e série) é recusada; o título só vai ao Sienge completo.
+**O que o sistema confere:** nota repetida (mesmo emitente, tipo, número e série) é recusada; o título só vai ao Sienge completo. Se o PIX do fornecedor veio importado do Sienge e o financeiro ainda não o conferiu, aparece o aviso "Importado do Sienge · o financeiro ainda não conferiu" e o **Enviar** fica travado.
+
+🟡 Proposta do protótipo, sem confirmação do Moises: para **trocar a área ou a natureza** que veio do fornecedor, é preciso escrever uma justificativa. Motivo: quem classifica escolhe, sem querer ou de propósito, quem aprova (achado de segurança S-028).
 
 **E depois?** O pedido passa de Em aprovação para No Sienge e depois para Pagos. Você recebe a lista do que foi ao Sienge para conferir.
 
 **Se der errado:** um pedido recusado ou mudado volta com a marca **Aprovar de novo**. Se o título não chegar ao Sienge, ele aparece na **Conferência**.
+
+### Tarefa: acompanhar um pedido seu
+
+> 🧪 Telas em protótipo (linha F), ainda sem código.
+
+1. Abra **Pedidos**. Os seus pedidos estão agrupados por situação: Rascunhos, Em aprovação, No Sienge e Pagos.
+2. Clique no pedido. Abre a **ficha**, com as etapas **Lançado › Aprovação › Título no Sienge › Pago** e a etapa atual marcada.
+3. Se houver problema, o aviso aparece no alto, em vermelho (por exemplo, "Falta a forma de pagamento").
+4. Use o botão da situação:
+   - **Rascunho:** **Continuar** (abre o Novo pedido com o que já estava) ou **Excluir rascunho**;
+   - **Em aprovação:** **Cancelar**;
+   - **Recusado ou mudado:** corrija e **Enviar de novo**.
+5. Para tirar dúvida com o aprovador, use a **Conversa** da ficha. Em **Por trás deste pedido** você vê a nota e o histórico com o fornecedor.
+
+### Tarefa: conferir os seus títulos no Sienge
+
+> 🧪 Telas em protótipo (linha F), ainda sem código.
+
+**Para que serve:** conferir que o título que o sistema criou no Sienge é o que você lançou. É a lista diária de cada pessoa decidida pelo Moises (ver [primeira etapa](#primeira-etapa-da-implantação-o-pedido-de-pagamento)).
+
+1. Abra **Pedidos** e a aba **No Sienge**. A tela diz quando o Sienge foi lido pela última vez (por exemplo, "Lido hoje às 06:00").
+2. Os títulos estão agrupados por vencimento: **Vencem esta semana**, **Próxima semana** e **Pagos**. Cada linha mostra o número do título no Sienge, o vencimento, a situação lá (Criado, Autorizado...) e o valor.
+3. Clique em **Conferir** em cada título. Se algo mudou no Sienge (por exemplo, "Valor pago diferente"), a linha vem marcada em vermelho e o caso também vai para a [Conferência](#tarefa-resolver-a-conferência-com-o-sienge).
 
 ### Tarefa: aprovar um pedido de pagamento
 
@@ -275,7 +323,7 @@ Assim, o realizado do sistema sempre bate com o dinheiro que saiu do banco.
 
 ## Tarefa: cadastrar uma assinatura recorrente (telefone, internet, aluguel...)
 
-> ⏳ As telas ainda não existem.
+> ⚠️ Roteiro antigo, de antes das telas. Na primeira etapa, use [cadastrar uma conta recorrente](#tarefa-cadastrar-uma-conta-recorrente). Este fica para quando o ERP gerar as previsões do fluxo de caixa.
 
 **Para que serve:** ter as contas fixas no fluxo de caixa sem criar contrato fictício.
 
@@ -308,6 +356,16 @@ Assim, o realizado do sistema sempre bate com o dinheiro que saiu do banco.
 - ✅ Enquanto houver um adiantamento sem nota, o fornecedor **só recebe outro adiantamento com a aprovação da AD** (Moises, 7/nov/2026; antes era "nenhum").
 - ✅ **Nenhum título desse fornecedor é pago sem deduzir o adiantamento em aberto**, mesmo que o título seja de outro centro de custo, salvo com a aprovação da AD (Moises, 7/nov/2026).
 - O adiantamento sem nota passa pela mesma aprovação do título, mais o gestor do contrato (ver [Aprovações](../transversais/aprovacoes.md#os-cinco-momentos-de-aprovação)).
+
+## Tarefa: pedir um adiantamento sem nota
+
+> 🧪 Telas em protótipo (linha F), ainda sem código.
+
+1. Abra **Pedidos**, clique em **Novo pedido** e escolha **Adiantamento sem nota**.
+2. Preencha o fornecedor, o valor e o **motivo** ("Por que pagar antes da nota?"), que é obrigatório.
+3. O **prazo da nota** vem preenchido com 30 dias. A tela avisa: depois disso, o fornecedor fica bloqueado.
+4. Pagamento, centro de custo, área e natureza vêm do cadastro do fornecedor (o PIX já conferido pelo financeiro).
+5. Clique em **Enviar** (ou **Salvar rascunho**).
 
 ## Tarefa: registrar um adiantamento e abater aos poucos
 
