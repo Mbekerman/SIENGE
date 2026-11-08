@@ -150,3 +150,15 @@ Exemplo de alçada configurada pelo administrador: "gestor aprova até R$ 11 mil
 - **Estorno de pagamento, conciliação e remessa.** Ficam para o módulo de bancos.
 - **Lançamento em mês fechado.** Hoje o fechamento só pesa na reclassificação. Falta decidir o que fazer com um pagamento atrasado de uma competência já fechada: travar, ou lançar no primeiro mês aberto.
 - **A carga do Sienge para o núcleo.** Ela vem depois das camadas `sienge_bruto` e `sienge`.
+
+## Próxima versão: decidido, ainda sem código
+
+Decisões do Moises de 08/11/2026, à espera do sinal verde para o código:
+
+- **Contas recorrentes no compromisso.** O `compromissos` ganha o subtipo da assinatura: `servico` (valor mensal, vigência, reajuste, dia de vencimento) ou `consumo` (faixa máxima por mês, teto no ano, número da instalação ou do cliente). Ganha também `gestor_id`, a conta de pagamento padrão (das contas aprovadas do fornecedor), o tipo de documento esperado, as retenções esperadas e o PDF do contrato (em `arquivos`). O modelo tem versão: o cadastro e toda mudança de valor, faixa, conta, retenções ou gestor são aprovados pelo gestor e por AF ou AO, e cada pedido guarda a versão que o montou. Quem mexeu por último no modelo e quem enviou a nota não aprovam aquele pedido.
+- **Conferência da nota contra a conta recorrente.** Emitente = fornecedor; tomador = empresa pagadora (de outra SPE, recusa); vigência; mês sem nota; duplicidade pela chave de acesso em todas as empresas; valor: serviço com 0% sobre o valor com reajustes aprovados, consumo dentro da faixa do mês e do teto do ano. Fora disso, exceção com justificativa. A conta de consumo se identifica pelo número da instalação quando a concessionária usa um CNPJ só.
+- **Entrada única de notas** (`notas_recebidas`): canal, remetente, arquivo, hash, chave de acesso e situação. O sistema acha a conta recorrente pelo CNPJ do emitente e do tomador (e pela instalação); ambígua vai para o gestor escolher.
+- **Dados de pagamento da parcela e contas do fornecedor com histórico.** Enquanto os títulos passarem pelo Sienge, o pedido só se conclui com os dados de pagamento aprovados.
+- **Arquivos** (nota, contrato, boleto, comprovante): versão e hash, nunca sobrescritos, com o caminho começando pela empresa.
+- **Conversas do objeto** (perguntas, respostas, comentários, justificativas), append-only.
+- **Fica para Suprimentos:** contratos de obra, medições e o casamento da nota com o pedido de compra (itens com saldo, recebimento, conferência de três vias).
