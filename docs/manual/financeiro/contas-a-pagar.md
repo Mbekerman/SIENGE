@@ -55,9 +55,27 @@ Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depo
 
 ⏳ Em discussão: tirar no Sienge a permissão de criar e alterar títulos e dados bancários dos departamentos que entrarem no ERP BKM, para fechar a brecha de pagar fora do fluxo. O custo é que um lançamento urgente passa a depender do ERP BKM.
 
+### As telas do pedido de pagamento
+
+> 🧪 **Protótipo escolhido, ainda sem código** (Moises, 8/nov/2026: "linha F"). Os nomes abaixo são os do protótipo e podem mudar até a tela existir. Regra do Moises para todas as telas: bastante área branca, muito respiro.
+
+![Meus pedidos, Para aprovar e Conferência, no computador e no celular](../imagens/financeiro/pedido-pagamento-telas-1.png)
+
+![Início, pedido aberto para aprovar e Novo pedido, no computador e no celular](../imagens/financeiro/pedido-pagamento-telas-2.png)
+
+O menu tem cinco itens: **Início**, **Pedidos**, **Aprovar**, **Conferir** e **Admin**. No celular, eles ficam numa barra embaixo.
+
+| Tela | O que mostra |
+| --- | --- |
+| **Início** | Quatro contadores (Para aprovar, Vencem em 7 dias, Para conferir, Rascunhos) e a lista **Para hoje**, com o que você precisa fazer hoje |
+| **Meus pedidos** | Contadores Rascunhos, Em aprovação, No Sienge e Pagos, e os pedidos agrupados por situação, com a soma de cada grupo |
+| **Novo pedido** | Uma janela curta. Você sobe o XML da nota e ela preenche fornecedor, valor, centro de custo e vencimento |
+| **Para aprovar** | Contadores Na minha vez, Vencem em 7 dias, Vencidos e Em outra camada; os pedidos agrupados por prazo |
+| **Conferência** | O que o sistema achou ao comparar com o Sienge: **Mudou no Sienge**, **Não chegou** e **Fora do fluxo**, cada um com **Resolver** |
+
 ### Tarefa: criar um pedido de pagamento
 
-> ⏳ As telas ainda não existem. Os nomes de botões são provisórios.
+> 🧪 Telas em protótipo (linha F), ainda sem código.
 
 **Para que serve:** levar uma nota que chegou até o pagamento no Sienge, passando pelas aprovações.
 
@@ -65,18 +83,47 @@ Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depo
 
 **Passo a passo:**
 
-1. Abra **Contas a pagar › Pedidos de pagamento** e clique em **Novo pedido**.
-2. Suba o arquivo da nota e o boleto ou os dados de pagamento. **Sem os dados de pagamento completos, o pedido não se conclui.**
-3. Confira o fornecedor, a empresa que paga, o valor, as parcelas e os vencimentos.
-4. Escolha o compromisso ou a previsão que a nota consome, se houver.
-5. Classifique (centro de custo e natureza; use **Ratear** se for dividido).
-6. Envie. O pedido vai para as aprovações.
+1. No menu, abra **Pedidos** (ou use o **+** no alto do menu) e clique em **Novo pedido**.
+2. Suba o arquivo XML da nota. O sistema preenche fornecedor, valor, centro de custo e vencimento.
+3. Confira cada campo e complete o que faltar, principalmente o **pagamento** (PIX, conta ou boleto). **Sem os dados de pagamento completos, o pedido não se conclui.**
+4. Clique em **Enviar**. O pedido aparece em **Meus pedidos**, no grupo Em aprovação.
 
 **O que o sistema confere:** nota repetida (mesmo emitente, tipo, número e série) é recusada; o título só vai ao Sienge completo.
 
-**E depois?** Aprovado, o título nasce no Sienge. Você recebe na lista do dia o que foi ao Sienge e confere. O pagamento é feito no Sienge.
+**E depois?** O pedido passa de Em aprovação para No Sienge e depois para Pagos. Você recebe a lista do que foi ao Sienge para conferir.
 
-**Se der errado:** se o título não aparecer no Sienge, ele entra na conferência do sistema; avise o financeiro.
+**Se der errado:** um pedido recusado ou mudado volta com a marca **Aprovar de novo**. Se o título não chegar ao Sienge, ele aparece na **Conferência**.
+
+### Tarefa: aprovar um pedido de pagamento
+
+> 🧪 Telas em protótipo (linha F), ainda sem código.
+
+**Para que serve:** dar a sua aprovação na camada em que você está.
+
+**Quem faz:** quem está na lista de aprovadores da regra (ver [Aprovações](../transversais/aprovacoes.md)).
+
+**Passo a passo:**
+
+1. No menu, abra **Aprovar**. Comece pelos grupos **Vencidos** e **Vencem esta semana**.
+2. Clique no pedido. Ele abre numa gaveta à direita, com o valor, os avisos (por exemplo, "Vencido, R$ 25,69 de multa, pede a AD"), as camadas de aprovação (quem já aprovou, de quem é a vez e quem vem depois), a nota, o centro de custo, o pagamento e o vencimento.
+3. Se precisar, clique em **Ver nota e detalhes**.
+4. Clique em **Aprovar** ou em **Recusar**.
+
+**O que o sistema confere:** quem lançou não aprova o próprio pedido; o pedido com multa ou juros pede também a aprovação específica.
+
+**O que não dá:** aprovar vários pedidos de uma vez. A tela não tem aprovação em lote; cada pedido é aberto e aprovado.
+
+### Tarefa: resolver a conferência com o Sienge
+
+> 🧪 Telas em protótipo (linha F), ainda sem código.
+
+**Para que serve:** tratar o que o sistema achou de diferente entre o ERP BKM e o Sienge.
+
+**Passo a passo:**
+
+1. No menu, abra **Conferir**. No alto aparece a hora da última leitura do Sienge.
+2. Veja os três grupos: **Mudou no Sienge** (o título foi alterado lá depois de criado), **Não chegou ao Sienge** e **Fora do fluxo** (título criado direto no Sienge).
+3. Clique em **Resolver** em cada linha. ⏳ O que cada Resolver faz ainda será desenhado.
 
 ## O que se pode fazer
 

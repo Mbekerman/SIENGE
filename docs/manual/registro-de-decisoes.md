@@ -6,6 +6,7 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
+| 8/nov/2026 | Linha de telas F para o ERP; todas as telas com bastante área branca e respiro | [Contas a pagar](financeiro/contas-a-pagar.md#as-telas-do-pedido-de-pagamento) |
 | 8/nov/2026 | Relatórios e gráficos no próprio sistema, sem Power BI; acesso liberado por pessoa ou grupo; folha PJ só por centro de custo; datas e horas no horário de São Paulo | [Relatórios](transversais/relatorios-e-bi.md#relatórios-dentro-do-sistema) |
 | 8/nov/2026 | Controle de prazos (SLA) do pagamento: antecedência da postagem e tempo de cada etapa | [Relatórios](transversais/relatorios-e-bi.md#controle-de-prazos-do-pagamento-sla) |
 | 8/nov/2026 | Atributos do empreendimento: visão padrão a de hoje, mais a foto de cada mês para comparar | [Relatórios](transversais/relatorios-e-bi.md#atributos-dos-empreendimentos-nos-relatórios) |
