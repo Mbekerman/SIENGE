@@ -198,6 +198,17 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 
 🟡 Pelo banco de dados de 7/nov/2026: diretor, gestor, analista e leitura; à parte, administrador (configuração) e contador (vota nas alçadas que pedem o contador). Segue o modelo do BKM Terrenos, com hierarquia analista → gestor → diretor.
 
+## Pagamento com multa ou juros
+
+✅ **Decidido** (Moises, 7/nov/2026): pagar com multa ou juros é "falha grave, desperdício por desorganização". Por isso, **o título com multa ou juros precisa de uma aprovação específica**, somada às regras normais, de uma pessoa definida pelo administrador. Por padrão, essa pessoa é a AD.
+
+🟡 Propostas ainda sem confirmação do Moises:
+
+- Tolerância zero: um centavo de multa ou juros já pede essa aprovação.
+- Vale também para o título já vencido, mesmo quando a multa só aparece no banco; sem isso, o boleto vencido passaria pelo lote sem a aprovação extra.
+- O motivo do atraso é obrigatório.
+- Um relatório mensal mostra a multa e os juros pagos por área e por responsável.
+
 ## Travas fixas
 
 ✅ **Confirmadas pelo Moises** no [documento de desenho das aprovações](https://claude.ai/artifact/FvkBaLmYig68zstJzTKFwP) (7/nov/2026). Ficam no banco de dados, e **nenhuma tela as desliga**, nem a do master:

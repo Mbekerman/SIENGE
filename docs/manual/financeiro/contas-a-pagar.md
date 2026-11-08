@@ -62,6 +62,7 @@ Quando a nota chega e o título nasce, ele **consome** a previsão correspondent
 - No pagamento comum, isso acontece no mesmo dia e você nem percebe.
 - No adiantamento, o valor fica parado em "Adiantamentos" até ser abatido.
 - Juros e multa vão para uma natureza própria de juros e multas pagos; o desconto obtido, para a de descontos.
+- ✅ Pagar com juros ou multa exige uma aprovação a mais, de uma pessoa definida pelo administrador (padrão: a AD). Ver [Aprovações](../transversais/aprovacoes.md#pagamento-com-multa-ou-juros).
 
 Assim, o realizado do sistema sempre bate com o dinheiro que saiu do banco.
 

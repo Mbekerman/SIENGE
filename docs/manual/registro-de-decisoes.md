@@ -6,6 +6,7 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
+| 7/nov/2026 | Título com multa ou juros precisa de aprovação específica, somada às normais, de pessoa definida pelo admin (padrão: a AD) | [Aprovações](transversais/aprovacoes.md#pagamento-com-multa-ou-juros) |
 | 7/nov/2026 | Níveis das regras configurados pelo master ou admin; supertrunfo só pelo master ou por quem ele autorizar | [Aprovações](transversais/aprovacoes.md#como-uma-regra-de-aprovação-funciona) |
 | 7/nov/2026 | Hierarquia de regras: mesmo nível soma, nível superior se sobrepõe, supertrunfo substitui; qualquer número de camadas | [Aprovações](transversais/aprovacoes.md#como-uma-regra-de-aprovação-funciona) |
 | 7/nov/2026 | Cada conta conta como uma pessoa, inclusive as duas do Moises | [Aprovações](transversais/aprovacoes.md#como-uma-regra-de-aprovação-funciona) |
