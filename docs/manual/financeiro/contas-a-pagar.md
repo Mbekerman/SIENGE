@@ -67,11 +67,31 @@ O menu tem cinco itens: **Início**, **Pedidos**, **Aprovar**, **Conferir** e **
 
 | Tela | O que mostra |
 | --- | --- |
-| **Início** | Quatro contadores (Para aprovar, Vencem em 7 dias, Para conferir, Rascunhos) e a lista **Para hoje**, com o que você precisa fazer hoje |
+| **Início** | No alto, os **Contratos recorrentes** (uma caixa por contrato, para soltar a nota do mês); depois quatro contadores (Para aprovar, Vencem em 7 dias, Para conferir, Rascunhos) e a lista **Para hoje**, com o que você precisa fazer hoje |
 | **Meus pedidos** | Contadores Rascunhos, Em aprovação, No Sienge e Pagos, e os pedidos agrupados por situação, com a soma de cada grupo |
 | **Novo pedido** | Uma janela curta. Você sobe o XML da nota e ela preenche fornecedor, valor, centro de custo e vencimento |
 | **Para aprovar** | Contadores Na minha vez, Vencem em 7 dias, Vencidos e Em outra camada; os pedidos agrupados por prazo |
 | **Conferência** | O que o sistema achou ao comparar com o Sienge: **Mudou no Sienge**, **Não chegou** e **Fora do fluxo**, cada um com **Resolver** |
+
+### Tarefa: enviar a nota de um contrato recorrente
+
+> 🧪 Telas em protótipo (linha F), ainda sem código. Pedido do Moises, 8/nov/2026.
+
+**Para que serve:** mandar a nota mensal de um contrato fixo (software, contabilidade, vigilância, energia...) quase sem digitar, porque o contrato já tem os dados. São os compromissos do tipo [assinatura recorrente](#tipos-de-compromisso).
+
+**Quem faz:** quem recebe a nota do contrato.
+
+![Contratos recorrentes no Início e a janela Conferir e enviar](../imagens/financeiro/contratos-recorrentes.png)
+
+**Passo a passo:**
+
+1. Abra o **Início**. No alto, a seção **Contratos recorrentes** mostra uma caixa por contrato: fornecedor, natureza, dia, valor mensal (ou "Valor variável") e a situação da nota do mês ("Falta a nota de nov" ou "Nota de nov enviada").
+2. **Arraste o arquivo XML da nota para a caixa do contrato.** No celular, ou se preferir, toque na caixa e solte a nota no campo que aparece.
+3. Abre a janela **Conferir e enviar**, já preenchida pela nota e pelo contrato: fornecedor, valor, retenções (por exemplo, ISS), líquido, vencimento, para onde paga (PIX, conta ou boleto), centro e natureza, e as camadas de aprovação.
+4. Confira. Se o valor veio diferente do contrato, aparece o aviso (por exemplo, "Veio R$ 215,00 acima do contrato (+10%)") e é preciso escrever a **justificativa**.
+5. Clique em **Enviar para aprovação**.
+
+**O que o sistema confere:** as marcas "CNPJ igual ao do contrato" e "igual ao contrato" aparecem embaixo do fornecedor e do valor. 🟡 Propostas ainda sem confirmação do Moises: o CNPJ da nota tem de ser igual ao do contrato; valor diferente do contrato exige justificativa (o botão fica travado sem ela); se a nota do mês já foi enviada, aparece um aviso de duplicidade. ⏳ Em aberto: a faixa aceita para contrato de valor variável.
 
 ### Tarefa: criar um pedido de pagamento
 
