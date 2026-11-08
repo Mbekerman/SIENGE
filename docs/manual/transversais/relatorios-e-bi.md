@@ -8,11 +8,14 @@
 
 - Os **gráficos e as análises ficam no próprio sistema**. O Power BI deixa de ser usado.
 - **Quem vê o quê é liberado no sistema, pessoa a pessoa.** Também dá para criar **grupos**: quem entra num grupo passa a ver o que o grupo vê.
+- **O perfil de acesso é o cruzamento de Área × Centro de custo × Fase** (Moises, 8/nov/2026): a pessoa vê o que está ao mesmo tempo nas áreas, nos centros e nas fases liberados para ela. Dá para liberar por **agrupamentos**, por exemplo um grupo de empreendimentos por tipo ou por praça.
 - A **folha PJ** aparece só somada por centro de custo e mês.
 - Datas e horas são gravadas e mostradas no **horário de São Paulo**. (Um pagamento às 22h do dia 31 fica no dia 31, não no mês seguinte.)
 - Todas as datas de um lançamento (competência, emissão, vencimento, pagamento) podem ser usadas nos relatórios; a competência é a data padrão. Também aparecem os dias de atraso (pagamento menos vencimento) e o prazo de pagamento (pagamento menos emissão).
 
-🟡 Em discussão: se o Power BI continua como ponte até as telas ficarem prontas. Se continuar, deve ficar só com quem já pode ver todas as empresas, porque ele não respeita a liberação por pessoa do sistema. Também se a liberação basta por empresa e centro de custo, ou se vai até o tipo de gasto (por exemplo, para esconder salários de quem vê o centro).
+✅ O Power BI não fica nem como ponte (Moises, 8/nov/2026).
+
+🟡 Propostas ainda não decididas sobre o acesso: cada eixo com a opção "todos", e a fase também com "sem fase" (senão ninguém vê o aluguel do escritório, que não tem fase); a natureza PJ fora de qualquer combinação, com acesso próprio; grupos por característica (o empreendimento novo entra sozinho no grupo, com aviso ao admin) ou por lista fixa.
 
 ## Controle de prazos do pagamento (SLA)
 
@@ -23,13 +26,13 @@
 
 ## Um livro único para todos os números
 
-✅ **Decidido** (7/nov/2026). Cada etapa do sistema (orçamento, previsão, título, pagamento, caução) escreve linhas num **livro de lançamentos único**, sempre com as mesmas classificações: empresa, centro de custo, natureza, fase, departamento, competência, data de caixa e estágio (orçado, previsto, comprometido, realizado).
+✅ **Decidido** (7/nov/2026). Cada etapa do sistema (orçamento, previsão, título, pagamento, caução) escreve linhas num **livro de lançamentos único**, sempre com as mesmas classificações: empresa, centro de custo, natureza, fase, área, competência, data de caixa e estágio (orçado, previsto, comprometido, realizado).
 
 É desse livro que saem os relatórios, o BI, o fluxo de caixa e as respostas dos agentes de IA. Perguntas como estas viram um filtro, sem montar planilha:
 
 - "Quanto gastei de marketing na empresa inteira em 2027?"
 - "Viabilidade × orçado × realizado do Vila Maria."
-- "Tudo o que o departamento de Marketing gastou, inclusive fora da natureza marketing."
+- "Tudo o que a área de Marketing gastou, inclusive fora da natureza marketing."
 - "Marketing por praça, por faixa MCMV, por mês."
 
 ✅ O livro só cresce: nenhuma linha é apagada ou editada. Desfazer é lançar uma linha de sinal contrário. A única exceção é a natureza, que muda pela [reclassificação](../financeiro/reclassificacao-e-fechamento.md) aprovada e guarda a anterior.

@@ -12,7 +12,7 @@
 | Que gasto é? | Natureza | Comerciais › Marketing › Marketing online |
 | Quando? | Competência e data de caixa | competência out/2027, pago em nov/2027 |
 | Em que momento do projeto? | Fase | Obras |
-| Quem responde? | Departamento | Marketing |
+| Quem responde? | Área (até 3 níveis) | Comercial › Marketing |
 
 ### O que muda em relação a hoje
 
@@ -24,11 +24,24 @@ Hoje a BKM usa "centro de custo Marketing, natureza MKT Online, motivo verba Goo
 | Natureza: MKT Online | Natureza: Comerciais › Marketing › **Marketing online** |
 | Motivo: verba de mídia Google | Mais um nível da natureza (… › Mídia Google) **ou** só a descrição do lançamento |
 | (não existia) | Centro de custo: o empreendimento, ou a Sede se for institucional |
-| (não existia) | Departamento: Marketing |
+| (não existia) | Área: Comercial › Marketing |
 
 **Regra para decidir se o "motivo" vira nível da natureza:** se você quer orçar e comparar por ele ("quanto previ e quanto gastei de Google no ano"), ele é um nível. Se só explica aquele gasto ("campanha de março"), ele vai na descrição.
 
-**Por que não um centro de custo por tipo de gasto:** com 30 empreendimentos e 10 tipos seriam 300 centros de custo, e cada regra ou relatório teria de listar os que entram. Separando as perguntas, "marketing da empresa inteira", "marketing do Vila Maria" e "tudo o que o departamento de Marketing gastou" viram três filtros sobre os mesmos dados.
+**Por que não um centro de custo por tipo de gasto:** com 30 empreendimentos e 10 tipos seriam 300 centros de custo, e cada regra ou relatório teria de listar os que entram. Separando as perguntas, "marketing da empresa inteira", "marketing do Vila Maria" e "tudo o que a área de Marketing gastou" viram três filtros sobre os mesmos dados.
+
+## Três eixos separados: centro de custo, área e natureza
+
+✅ **Decidido** (Moises, 8/nov/2026). Cada lançamento leva três classificações separadas, mais a fase:
+
+- **Centro de custo:** de quem é o gasto (um empreendimento ou a empresa).
+- **Área:** quem responde pelo gasto. As áreas formam uma árvore de **até 3 níveis** (por exemplo, Administrativo › Financeiro). Cada nível tem de 1 a 3 aprovadores.
+- **Natureza:** só o tipo de gasto (Marketing online, Vigilância, Energia...).
+- **Fase:** o momento do projeto (Novos negócios, Obras...).
+
+⏳ Em aberto: se "1 a 3 aprovadores" quer dizer quantas pessoas **precisam** aprovar naquele nível ou quantas estão na lista para **qualquer uma** aprovar. Também em aberto: se o gasto pode ser lançado em qualquer nível da área (por exemplo, uma consultoria do Administrativo inteiro) e se quem vê um nível vê os de baixo (proposta).
+
+🟡 Proposta enviada ao Moises, ainda não decidida: o centro de custo passa a ser só "de quem é o gasto", um por empreendimento e um por área da empresa. Hoje o Sienge tem 97 centros, uns 9 por SPE, que misturam tipo de gasto e momento; esses dois iriam para a natureza e para a fase.
 
 ## A árvore de naturezas
 
