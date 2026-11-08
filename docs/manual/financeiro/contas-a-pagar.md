@@ -31,6 +31,44 @@ Compromisso  →  Previsão  →  Documento  →  Título (parcelas)  →  Pagam
 
 Quando a nota chega e o título nasce, ele **consome** a previsão correspondente, e a diferença entre o previsto e o realizado fica registrada. Uma previsão não se edita: se mudou, cancela-se e cria-se outra.
 
+## Primeira etapa da implantação: o pedido de pagamento
+
+✅ **Decidido** (Moises, 8/nov/2026):
+
+- **A obra fica fora** desta etapa. Os demais departamentos usam o ERP BKM do compromisso até a chegada da nota.
+- Quando a nota chega, quem a recebe cria no ERP BKM o **pedido de pagamento**, subindo a nota e o título. O ERP BKM guarda tudo.
+- O ERP BKM **cria o título no Sienge** pela API, e o pagamento segue no Sienge até o fim.
+- Depois, o ERP BKM **lê no Sienge o que aconteceu** com o título e guarda.
+- **Conferência:** uma rotina do sistema confere se todos os títulos do ERP BKM chegaram mesmo ao Sienge. No começo, uma pessoa também confere à mão.
+- **Relatório para cada pessoa:** cada um recebe a lista dos títulos que cadastrou e que foram ao Sienge, para conferir se foi tudo.
+
+> ⚠️ **Passo manual no Sienge:** a autorização, o pagamento e o lote (remessa pelo Nexxera) continuam feitos no Sienge. Ver [O que ainda é feito à mão no Sienge](../transversais/passos-manuais-no-sienge.md).
+
+🟡 Detalhes do desenho, ainda não confirmados pelo Moises: o pedido de pagamento passa pelas [aprovações](../transversais/aprovacoes.md) antes de o título ir ao Sienge, e o ERP BKM guarda o número do título; a leitura de volta é diária (autorização, pagamento e baixa); a conferência diária aponta também o título criado direto no Sienge, fora do fluxo, e o título mudado no Sienge depois de criado.
+
+### Tarefa: criar um pedido de pagamento
+
+> ⏳ As telas ainda não existem. Os nomes de botões são provisórios.
+
+**Para que serve:** levar uma nota que chegou até o pagamento no Sienge, passando pelas aprovações.
+
+**Quem faz:** quem recebeu a nota, em qualquer departamento fora a obra.
+
+**Passo a passo:**
+
+1. Abra **Contas a pagar › Pedidos de pagamento** e clique em **Novo pedido**.
+2. Suba o arquivo da nota e o boleto ou os dados de pagamento.
+3. Confira o fornecedor, a empresa que paga, o valor, as parcelas e os vencimentos.
+4. Escolha o compromisso ou a previsão que a nota consome, se houver.
+5. Classifique (centro de custo e natureza; use **Ratear** se for dividido).
+6. Envie. O pedido vai para as aprovações.
+
+**O que o sistema confere:** nota repetida (mesmo emitente, tipo, número e série) é recusada; o título só vai ao Sienge completo.
+
+**E depois?** Aprovado, o título nasce no Sienge. Você recebe na lista do dia o que foi ao Sienge e confere. O pagamento é feito no Sienge.
+
+**Se der errado:** se o título não aparecer no Sienge, ele entra na conferência do sistema; avise o financeiro.
+
 ## O que se pode fazer
 
 | Você pode | Situação |

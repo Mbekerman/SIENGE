@@ -202,7 +202,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 
 ✅ **Decidido** (Moises, 7/nov/2026): pagar com multa ou juros é "falha grave, desperdício por desorganização". Por isso, **o título com multa ou juros precisa de uma aprovação específica**, somada às regras normais, de uma pessoa definida pelo administrador. Por padrão, essa pessoa é a AD.
 
-🟡 Propostas ainda sem confirmação do Moises:
+✅ Também confirmados (Moises, 8/nov/2026, "Concordo"):
 
 - Tolerância zero: um centavo de multa ou juros já pede essa aprovação.
 - Vale também para o título já vencido, mesmo quando a multa só aparece no banco; sem isso, o boleto vencido passaria pelo lote sem a aprovação extra.

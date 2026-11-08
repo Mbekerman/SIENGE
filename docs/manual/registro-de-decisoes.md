@@ -6,6 +6,8 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
+| 8/nov/2026 | Primeira etapa da implantação: obra fora; demais departamentos no ERP até a nota; pedido de pagamento cria o título no Sienge; pagamento segue no Sienge; ERP lê de volta; conferência automática e manual; relatório para cada pessoa | [Contas a pagar](financeiro/contas-a-pagar.md#primeira-etapa-da-implantação-o-pedido-de-pagamento) |
+| 8/nov/2026 | Multa e juros: tolerância zero, vale para título vencido, motivo obrigatório, relatório mensal por área e responsável | [Aprovações](transversais/aprovacoes.md#pagamento-com-multa-ou-juros) |
 | 7/nov/2026 | Título com multa ou juros precisa de aprovação específica, somada às normais, de pessoa definida pelo admin (padrão: a AD) | [Aprovações](transversais/aprovacoes.md#pagamento-com-multa-ou-juros) |
 | 7/nov/2026 | Níveis das regras configurados pelo master ou admin; supertrunfo só pelo master ou por quem ele autorizar | [Aprovações](transversais/aprovacoes.md#como-uma-regra-de-aprovação-funciona) |
 | 7/nov/2026 | Hierarquia de regras: mesmo nível soma, nível superior se sobrepõe, supertrunfo substitui; qualquer número de camadas | [Aprovações](transversais/aprovacoes.md#como-uma-regra-de-aprovação-funciona) |
