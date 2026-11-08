@@ -6,6 +6,9 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
+| 8/nov/2026 | Relatórios e gráficos no próprio sistema, sem Power BI; acesso liberado por pessoa ou grupo; folha PJ só por centro de custo; datas e horas no horário de São Paulo | [Relatórios](transversais/relatorios-e-bi.md#relatórios-dentro-do-sistema) |
+| 8/nov/2026 | Controle de prazos (SLA) do pagamento: antecedência da postagem e tempo de cada etapa | [Relatórios](transversais/relatorios-e-bi.md#controle-de-prazos-do-pagamento-sla) |
+| 8/nov/2026 | Atributos do empreendimento: visão padrão a de hoje, mais a foto de cada mês para comparar | [Relatórios](transversais/relatorios-e-bi.md#atributos-dos-empreendimentos-nos-relatórios) |
 | 8/nov/2026 | Pedido de pagamento só se conclui com os dados de pagamento completos e aprovados; título vai ao Sienge pela API, completo; conferência nos dois sentidos | [Contas a pagar](financeiro/contas-a-pagar.md#primeira-etapa-da-implantação-o-pedido-de-pagamento) |
 | 8/nov/2026 | Medições de obra paradas até a fase de suprimentos (substitui o escopo inicial de 6/nov) | [Contratos e medições](suprimentos/contratos-e-medicoes.md) |
 | 8/nov/2026 | Primeira etapa da implantação: obra fora; demais departamentos no ERP até a nota; pedido de pagamento cria o título no Sienge; pagamento segue no Sienge; ERP lê de volta; conferência automática e manual; relatório para cada pessoa | [Contas a pagar](financeiro/contas-a-pagar.md#primeira-etapa-da-implantação-o-pedido-de-pagamento) |
@@ -66,7 +69,7 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 | 7/nov/2026 | Página de reclassificação em lote, com prévia do impacto, orçado junto e histórico; natureza vazia pode ser apagada | [Reclassificação](financeiro/reclassificacao-e-fechamento.md) |
 | 7/nov/2026 | Árvore de naturezas dinâmica, criada do zero, novas naturezas pela tela | [Classificação](financeiro/classificacao.md) |
 | 7/nov/2026 | Tipo (operacional, não operacional, movimentação), linha da DRE e do fluxo de caixa são características da natureza | [Classificação](financeiro/classificacao.md) |
-| 7/nov/2026 | Atributos de BI (cidade, praça, faixa MCMV...) no cadastro do empreendimento, com histórico, mostrados por visão | [Relatórios](transversais/relatorios-e-bi.md) |
+| 7/nov/2026 | Atributos de BI (cidade, praça, faixa MCMV...) no cadastro do empreendimento, com histórico, mostrados por visão (em 8/nov: padrão a visão de hoje, mais a foto de cada mês) | [Relatórios](transversais/relatorios-e-bi.md) |
 | 7/nov/2026 | Classificação por dimensões independentes (empresa/centro de custo, natureza, datas, fase, departamento) e livro único, com rateio | [Classificação](financeiro/classificacao.md) |
 | 7/nov/2026 | O sistema cuida do dinheiro entre sócios, em pares ligados | [Dinheiro entre sócios](financeiro/dinheiro-entre-socios.md) |
 | 7/nov/2026 | 1 empreendimento = 1 SPE; uma lista de empresas com participações; SPE e empreendimento separados | [Empresas](cadastros/empresas-e-empreendimentos.md) |

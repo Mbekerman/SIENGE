@@ -2,6 +2,25 @@
 
 [← Sumário](../README.md)
 
+## Relatórios dentro do sistema
+
+✅ **Decidido** (Moises, 8/nov/2026):
+
+- Os **gráficos e as análises ficam no próprio sistema**. O Power BI deixa de ser usado.
+- **Quem vê o quê é liberado no sistema, pessoa a pessoa.** Também dá para criar **grupos**: quem entra num grupo passa a ver o que o grupo vê.
+- A **folha PJ** aparece só somada por centro de custo e mês.
+- Datas e horas são gravadas e mostradas no **horário de São Paulo**. (Um pagamento às 22h do dia 31 fica no dia 31, não no mês seguinte.)
+- Todas as datas de um lançamento (competência, emissão, vencimento, pagamento) podem ser usadas nos relatórios; a competência é a data padrão. Também aparecem os dias de atraso (pagamento menos vencimento) e o prazo de pagamento (pagamento menos emissão).
+
+🟡 Em discussão: se o Power BI continua como ponte até as telas ficarem prontas. Se continuar, deve ficar só com quem já pode ver todas as empresas, porque ele não respeita a liberação por pessoa do sistema. Também se a liberação basta por empresa e centro de custo, ou se vai até o tipo de gasto (por exemplo, para esconder salários de quem vê o centro).
+
+## Controle de prazos do pagamento (SLA)
+
+✅ **Decidido** (Moises, 8/nov/2026): o sistema mede **quantos dias antes do vencimento a nota foi postada** e **quanto tempo levou cada etapa** até a nota ser paga.
+
+- O controle só vale para o que passar pelo pedido de pagamento, a partir da implantação. O Sienge não tem esse histórico, e da última etapa ele informa só o dia do pagamento, sem a hora.
+- ⏳ A definir: a antecedência mínima da postagem e a meta de cada etapa (proposta: em dias úteis, definidas pelo administrador); e se o relógio para quando a nota volta para correção.
+
 ## Um livro único para todos os números
 
 ✅ **Decidido** (7/nov/2026). Cada etapa do sistema (orçamento, previsão, título, pagamento, caução) escreve linhas num **livro de lançamentos único**, sempre com as mesmas classificações: empresa, centro de custo, natureza, fase, departamento, competência, data de caixa e estágio (orçado, previsto, comprometido, realizado).
@@ -17,7 +36,7 @@
 
 ## Atributos dos empreendimentos nos relatórios
 
-✅ Cidade, estado, regional, praça, linha de produto, faixa MCMV e outros atributos ficam no cadastro do empreendimento, e o relatório os mostra como colunas de cada lançamento (Moises aceitou em 7/nov/2026). O relatório usa o valor que valia na data do lançamento.
+✅ Cidade, estado, regional, praça, linha de produto, faixa MCMV e outros atributos ficam no cadastro do empreendimento, e o relatório os mostra como colunas de cada lançamento (Moises aceitou em 7/nov/2026). ~~O relatório usa o valor que valia na data do lançamento.~~ ✅ **Mudou** (Moises, 8/nov/2026): a visão padrão é a de hoje (por exemplo, a regional atual do empreendimento), e há também uma foto de como era em cada mês, para comparar as duas.
 
 ## Tarefa: montar um relatório por natureza
 
