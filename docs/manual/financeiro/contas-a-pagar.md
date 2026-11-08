@@ -117,6 +117,8 @@ O menu tem cinco itens: **Início**, **Pedidos**, **Aprovar**, **Conferir** e **
 
 **O que você não pode fazer:** enviar uma nota com divergência sem justificativa, nem uma nota com dúvida entre contratos sem escolher o contrato.
 
+> ⏳ Depende de teste: a nota também pode casar com um **pedido de compra aprovado** (por exemplo, "Pedido de compra 4.512 · saldo R$ 6.400,00, fica R$ 2.560,00"). Nota parcial abate do saldo e o pedido continua aberto. Isso só vale na primeira etapa se a consulta de pedidos de compra do Sienge (GET /purchase-orders) funcionar no teste; senão, entra só com o módulo de Compras.
+
 > 🟡 Proposta ainda não decidida pelo Moises: receber notas pelo **WhatsApp**. O WhatsApp só recebe a nota; o sistema responde com um resumo e um link, e o envio é feito no aplicativo, com login. Só números cadastrados seriam aceitos, e PDF sem XML ganharia o selo "conferência manual".
 
 ### Tarefa: criar um pedido de pagamento
