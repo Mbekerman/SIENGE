@@ -162,3 +162,10 @@ Decisões do Moises de 08/11/2026, à espera do sinal verde para o código:
 - **Arquivos** (nota, contrato, boleto, comprovante): versão e hash, nunca sobrescritos, com o caminho começando pela empresa e entregues por link assinado de poucos minutos (S-024).
 - **Conversas do objeto** (perguntas, respostas, comentários, justificativas), append-only: autor sempre `nucleo.eu()`, tipo "sistema" só gravado por função, ocultar conteúdo só por exceção com log, e a justificativa de uma decisão fica gravada na própria decisão (S-025).
 - **Fica para Suprimentos:** contratos de obra, medições e o casamento da nota com o pedido de compra (itens com saldo, recebimento, conferência de três vias).
+- **Plano financeiro em três eixos** (Moises, 08/11/2026, substitui a natureza como eixo de acesso). Cada lançamento leva:
+  - **Centro de custo** = a obra (empreendimento/SPE) ou o ramo Corporativo. Os centros ficam numa árvore de grupos (estado › cidade › região › obra), com cada obra em um nó só, usada para liberar acesso e para relatórios. O tipo de produto é coluna de filtro, não grupo.
+  - **Área** = quem gasta, numa árvore sem limite fixo de níveis (até a menor unidade com orçamento próprio, não o organograma). Pode-se lançar em qualquer nó. Cada nó tem a lista nominal de aprovadores e quantos dela precisam aprovar (de 1 ao tamanho da lista); a mesma pessoa não conta em dois níveis do mesmo pedido.
+  - **Natureza** = só o tipo do gasto (pessoal, malote, assinatura, consultoria...), um plano único que não se repete por área.
+  - **Fase** = coluna de relatório tirada do centro e da data; não entra no acesso nem na aprovação e ninguém a escolhe.
+  - Acesso = Área × Centro, com herança para baixo nas duas árvores e "todos" (que inclui itens futuros, avisado na tela e na revisão trimestral). A natureza PJ fica fora de qualquer par; checagem única na função de acesso, com teste. Total soma só o que a pessoa vê.
+  - Sem ciclo nas árvores (constraint + teste); mover obra ou área na árvore e mudar atributo que define grupo são atos aprovados e registrados (S-028).
