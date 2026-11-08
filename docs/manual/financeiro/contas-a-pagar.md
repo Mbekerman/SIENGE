@@ -127,8 +127,25 @@ Na gaveta do pedido, o bloco **Por trás deste título** lista:
 | **Orçamento** | Orçado no ano, realizado, com este título, saldo depois dele e quanto do ano já passou |
 | **Adiantamento em aberto** | Valor e data; o aviso "Deduz R$ … de adiantamento" aparece no alto |
 | **Aprovações e comentários** | Quem já aprovou, quando, e as justificativas |
+| **Conversa** | As mensagens sobre o título (ver abaixo) |
+| **Fornecedor** | O histórico do fornecedor |
 
-Cada item abre um nível abaixo, e de lá se desce mais (por exemplo, Título › Contrato › Previsão do mês › Orçamento). A trilha no alto e a seta **←** voltam; o ícone de tela cheia amplia a gaveta.
+Cada item abre um nível abaixo, e de lá se desce mais (por exemplo, Título › Contrato › Previsão do mês › Orçamento › o centro de custo no ano). A trilha no alto e a seta **←** voltam; o ícone de tela cheia amplia a gaveta.
+
+**O que não dá:** ver o detalhe do que você não tem acesso. Outros centros de custo, outras empresas e a folha PJ aparecem só somados ou com a marca "sem acesso". Medições, compras e estoque aparecem em cinza até os módulos existirem.
+
+#### Conversar sobre o título
+
+O título tem uma **Conversa**: uma linha do tempo com o lançamento, as aprovações, as perguntas e as respostas, que podem ter anexo.
+
+![A conversa do título e o "Perguntar sobre isto"](../imagens/financeiro/conversa-do-titulo.png)
+
+1. Na gaveta, abra **Conversa**, ou, em qualquer nível (por exemplo, na Previsão do mês), clique em **Perguntar sobre isto**. A pergunta fica marcada com o assunto ("Sobre: Previsão do mês").
+2. Escreva a pergunta e marque com **@** quem deve responder.
+3. Se precisar, anexe um arquivo pelo clipe.
+4. Clique em **Enviar**. A resposta aparece embaixo da pergunta.
+
+🟡 Propostas do desenho, ainda sem confirmação do Moises: perguntar não tira o pedido da sua vez nem para o relógio do SLA; as mensagens não se apagam e a edição fica registrada; a recusa entra na conversa.
 
 🔜 **Futuro:** medições, pedidos de compra e estoque entram nessa navegação quando chegarem os módulos de obra e suprimentos. Depois, um agente poderá trazer um relatório e uma recomendação para cada título.
 

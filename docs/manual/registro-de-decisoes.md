@@ -6,6 +6,7 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
+| 8/nov/2026 | Conversa do título: linha do tempo com perguntas e respostas, "Perguntar sobre isto" em cada nível, @ para quem responde | [Contas a pagar](financeiro/contas-a-pagar.md#conversar-sobre-o-título) |
 | 8/nov/2026 | O aprovador navega do título até a origem (nota, contrato, previsão, orçamento, adiantamento, aprovações) só com cliques; agente de recomendação por título é futuro | [Contas a pagar](financeiro/contas-a-pagar.md#ver-o-que-está-por-trás-do-título) |
 | 8/nov/2026 | Linha de telas F para o ERP; todas as telas com bastante área branca e respiro | [Contas a pagar](financeiro/contas-a-pagar.md#as-telas-do-pedido-de-pagamento) |
 | 8/nov/2026 | Relatórios e gráficos no próprio sistema, sem Power BI; acesso liberado por pessoa ou grupo; folha PJ só por centro de custo; datas e horas no horário de São Paulo | [Relatórios](transversais/relatorios-e-bi.md#relatórios-dentro-do-sistema) |
