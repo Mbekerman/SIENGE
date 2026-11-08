@@ -55,7 +55,7 @@ O que ficou de fora da skill, e por quê:
 
 ## Falhas abertas
 
-Regra do Moises (8/nov/2026): controles, segurança da informação e SLA são analisados pelo **estado final**, com tudo no nosso sistema. As falhas que só existem enquanto o Sienge paga ou guarda dados ficam marcadas como **transição** (hoje S-010 e S-021) e não entram nas análises do estado final; voltam à mesa antes de o primeiro pagamento real passar pelo passo 1.
+Regra do Moises (8/nov/2026): controles, segurança da informação e SLA são analisados pelo **estado final**, com tudo no nosso sistema. As falhas que só existem enquanto o Sienge paga ou guarda dados ficam marcadas como **transição** (hoje S-010 e S-021) e não entram nas análises do estado final; voltam à mesa uma vez, antes de o primeiro pagamento real passar pelo passo 1 (aprovado pelo Moises, 8/nov, 02h30).
 
 | Id | Gravidade | Onde | Falha | Correção sugerida | Desde |
 | --- | --- | --- | --- | --- | --- |
