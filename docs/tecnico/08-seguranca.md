@@ -6,6 +6,10 @@ Uma falha encontrada vai na hora para a tarefa que fez o código. Esta página g
 
 Gravidade: **crítica** (explorável hoje por quem está fora), **alta** (explorável assim que o sistema for ao ar como está), **média** (depende de uma mudança futura plausível), **baixa** (boa prática).
 
+## Como a revisão cresce
+
+Decisão do Moises (8/nov/2026): quando o projeto crescer, ou seja, quando começarem as primeiras telas ou acontecer o primeiro deploy, a revisão de segurança se divide em dois agentes auxiliares em paralelo. Um cuida do banco; o outro, do front, do servidor e do GitHub. Os dois usam o método completo da skill security-and-hardening de Addy Osmani: mapa de ameaças, STRIDE, casos de abuso e gravidade. Nesse momento, esta revisão avisa o coordenador e começa. Achado grave não se corrige sem antes falar com o Moises, pelo coordenador. Até lá, vale o checklist abaixo, numa revisão só.
+
 ## Checklist de cada revisão
 
 Adaptado em 7/nov/2026 da skill "security-and-hardening" de Addy Osmani ([addyosmani/agent-skills](https://github.com/addyosmani/agent-skills/blob/main/skills/security-and-hardening/SKILL.md), lida em 7/nov/2026). A skill foi escrita para apps web com servidor próprio. Aqui ficou só o que vale para Supabase + Postgres + React + adaptador do Sienge, traduzido para os nossos termos.
