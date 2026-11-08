@@ -108,8 +108,29 @@ Sem os dados de pagamento, o **Enviar** fica travado: o campo Pagamento fica em 
 
 1. No menu, abra **Aprovar**. Comece pelos grupos **Vencidos** e **Vencem esta semana**.
 2. Clique no pedido. Ele abre numa gaveta à direita, com o valor, os avisos (por exemplo, "Vencido, R$ 25,69 de multa, pede a AD"), as camadas de aprovação (quem já aprovou, de quem é a vez e quem vem depois), a nota, o centro de custo, o pagamento e o vencimento.
-3. Se precisar, clique em **Ver nota e detalhes**.
-4. Clique em **Aprovar** ou em **Recusar**.
+3. Para decidir, desça pelo que está **por trás deste título**, só com cliques (ver abaixo).
+4. Clique em **Aprovar** ou em **Recusar**. Os dois botões ficam embaixo da gaveta em qualquer nível.
+
+#### Ver o que está por trás do título
+
+✅ **Pedido do Moises** (8/nov/2026): o aprovador navega da linha de aprovação até a origem do gasto, **só com cliques**, para ter tudo o que precisa para decidir.
+
+![Gaveta do aprovador: o título, o contrato e o orçamento por trás dele](../imagens/financeiro/aprovar-por-tras-do-titulo.png)
+
+Na gaveta do pedido, o bloco **Por trás deste título** lista:
+
+| Item | O que mostra |
+| --- | --- |
+| **Nota fiscal** | Número e valor da nota |
+| **Contrato** | Vigência, valor, mensal previsto, já pago, saldo, gestor e quem aprovou |
+| **Previsão do mês** | Previsto × o que chegou; um ponto amarelo avisa a diferença |
+| **Orçamento** | Orçado no ano, realizado, com este título, saldo depois dele e quanto do ano já passou |
+| **Adiantamento em aberto** | Valor e data; o aviso "Deduz R$ … de adiantamento" aparece no alto |
+| **Aprovações e comentários** | Quem já aprovou, quando, e as justificativas |
+
+Cada item abre um nível abaixo, e de lá se desce mais (por exemplo, Título › Contrato › Previsão do mês › Orçamento). A trilha no alto e a seta **←** voltam; o ícone de tela cheia amplia a gaveta.
+
+🔜 **Futuro:** medições, pedidos de compra e estoque entram nessa navegação quando chegarem os módulos de obra e suprimentos. Depois, um agente poderá trazer um relatório e uma recomendação para cada título.
 
 **O que o sistema confere:** quem lançou não aprova o próprio pedido; o pedido com multa ou juros pede também a aprovação específica.
 
