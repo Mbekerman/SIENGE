@@ -59,6 +59,7 @@ Consequências que o código deve respeitar:
 2. **Previsão no Sienge não vira título real.** As previsões ficam no nosso banco; título no Sienge só nasce quando a nota chega.
 3. **Trava de duplicidade do nosso lado é obrigatória** (credor + tipo + número). Também protege contra nova tentativa após falha de rede, porque `POST /bills` não recusa repetição.
 4. **Título nascido de medição aceita completar** documento, vencimento, forma de pagamento e anexo depois da liberação.
+5a. **Para o passo 1 (8/nov/2026), a testar antes do código:** se o título criado pela API (origem SE) aceita `PATCH .../payment-information/pix` e boleto depois de criado (o teste de 6/nov só mostrou que tipo, número e valor são recusados e o vencimento muda); se `POST /bills` leva retenções e impostos (o `tax-information` ficou bloqueado pelo código da filial); quem autoriza o título no Sienge (autorizar pagamento não tem API). O anexo **tem** API: `POST /bills/{billId}/attachments` (`bill-debt-v1.yaml`, seção "Anexo do título"), testado no título 8417 em 6/nov.
 5. **Medição só por quantidade.** Valor da nota vira quantidade = valor ÷ preço unitário, com no máximo 4 casas. Com item a R$ 1,00 não há perda; com preço alto pode sobrar até alguns centavos (item de R$ 5.000,00 e nota de R$ 4.873,22 dá R$ 0,22 de diferença). O código deve avisar antes de lançar quando o valor não fechar.
 6. **Os passos sem API são três:** liberação de medição, ciência e autorização de pagamento do título. O sistema acompanha por webhook e mostra o que espera ação no Sienge.
 

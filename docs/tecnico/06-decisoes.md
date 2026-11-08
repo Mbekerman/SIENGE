@@ -4,6 +4,7 @@ Decisões que mudam a arquitetura ou o código, da mais recente para a mais anti
 
 ## 8/nov/2026
 
+- **Passo 1 da implantação** (Moises; desenho da thread do banco, sem código): pedido de pagamento aprovado no `nucleo` → adaptador faz `POST /bills` e `PATCH .../payment-information/pix` (ou boleto) → guarda o `billId` em `codigos_externos` → o pagamento sai pelo Sienge e pela Nexxera → leitura diária por `/bills/by-change-date` e pela massa `/outcome` (baixas). Reconciliação diária em três sentidos: aprovado sem `billId` ou sem título no Sienge; título no Sienge de centro já migrado sem pedido nosso; título alterado no Sienge depois de criado (valor, vencimento, credor, dados de pagamento). Idempotência do nosso lado (chave do pedido + `billId`), porque `POST /bills` não recusa repetição. Riscos em [08](08-seguranca.md), S-021.
 - **Momento novo de aprovação: pagamento com multa ou juros, ou título vencido** (thread do banco, sem código): vale quando a data prevista de pagamento no lote passa do vencimento da parcela ou quando há juros ou multa em `pagar_parcela`. Pede uma camada extra, com aprovador configurável pelo admin (padrão AD), somada às regras normais; a trava 7 (lote só com título aprovado) passa a conferir essa camada; motivo obrigatório e relatório de juros e multa por centro e responsável. Riscos em [08](08-seguranca.md), S-020.
 
 ## 7/nov/2026
