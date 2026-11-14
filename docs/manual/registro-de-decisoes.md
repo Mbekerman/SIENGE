@@ -6,6 +6,7 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
+| 14/nov/2026 | Verificação das previsões a apagar no Sienge a cada 30 min no horário comercial e conferência completa de madrugada (limite de 200 consultas por minuto dividido com o CRM) | [Contas a pagar](financeiro/contas-a-pagar.md#previsões-de-despesa-na-transição) |
 | 14/nov/2026 | Planilha de previsões a apagar só de leitura para as pessoas; o ERP BKM marca o título apagado na verificação diária | [Contas a pagar](financeiro/contas-a-pagar.md#previsões-de-despesa-na-transição) |
 | 14/nov/2026 | Linha da planilha de previsões a apagar que não existe no ERP BKM é marcada como inválida pelo cruzamento diário, com aviso à AF | [Contas a pagar](financeiro/contas-a-pagar.md#previsões-de-despesa-na-transição) |
 | 14/nov/2026 | Título de previsão vai ao Sienge sem forma de pagamento; leitura diária aponta (também por e-mail) previsão que deveria ter sido apagada; a planilha se refaz todo dia com as linhas que faltam; cada linha com número, tipo de documento e link; título sumido do Sienge fora da planilha avisa a AF | [Contas a pagar](financeiro/contas-a-pagar.md#previsões-de-despesa-na-transição) |

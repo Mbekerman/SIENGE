@@ -69,6 +69,7 @@ Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depo
 
 - O título de previsão vai ao Sienge **sem forma de pagamento**, só como previsão, para não ser pago por engano.
 - **O Sienge é monitorado:** a leitura diária aponta os títulos de previsão que deveriam ter sido apagados e continuam lá, com aviso também por **e-mail**.
+- **Quando o Sienge é verificado:** a cada 30 minutos no horário comercial, mais uma conferência completa de madrugada. Motivo: o limite de 200 consultas por minuto da API do Sienge é dividido com o CRM (Moises, 14/nov/2026, 14h35).
 - **A planilha é só de leitura** para as pessoas. Ninguém marca "apagado": o próprio ERP BKM marca, na verificação diária do Sienge, quando o título foi de fato apagado (Moises, 14/nov/2026, 14h32).
 - **A planilha se refaz sozinha:** todo dia o ERP BKM puxa a lista dos títulos que devem ser apagados, cruza com a planilha e grava de novo o que estiver faltando. Se alguém apagar uma linha, ela volta no dia seguinte.
 - Cada linha traz o **número do título**, o **tipo de documento de previsão** e o **link para a previsão** no ERP BKM. O financeiro confere o tipo antes de apagar.
