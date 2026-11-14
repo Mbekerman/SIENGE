@@ -29,6 +29,7 @@ As palavras abaixo têm um sentido preciso no ERP BKM. Quando houver diferença 
 | **Parcela** | Cada vencimento de um título. Um título pode ter muitas parcelas. |
 | **Participação** | Quem é sócio de qual empresa, com o percentual e de quando até quando. |
 | **Pessoa** | Qualquer um com quem a BKM se relaciona. Uma pessoa pode ser fornecedor, cliente, sócio, corretor e funcionário ao mesmo tempo. |
+| **PPC, PCT, PRV** | Os tipos de previsão, nos nomes que o financeiro já usa: PPC é a previsão de pedido de compra, PCT a de contratos e medições, e PRV a lançada direto no financeiro (como o título de previsão que vai ao Sienge na transição). |
 | **Previsão** | Gasto esperado que ainda não é dívida. Na transição, vai ao Sienge como título de previsão, sem forma de pagamento, e é apagado à mão quando a nota chega. |
 | **Quitação** | A ligação entre um pagamento e uma parcela: quanto daquele pagamento quitou aquela parcela, com juros, multa e desconto. |
 | **Rateio** | Divisão de um gasto entre vários núcleos econômicos, centros de custo ou naturezas, em percentuais. |
