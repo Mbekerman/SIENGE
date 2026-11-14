@@ -295,11 +295,16 @@ create table erp.nucleo_centros (
 create function erp.tg_nucleo_centros() returns trigger language plpgsql as $$
 begin
   perform erp.exigir_admin();
-  if tg_op = 'DELETE' then raise exception 'Não se apaga o vínculo; desligue o centro de custo no núcleo'; end if;
+  if tg_op in ('DELETE', 'TRUNCATE') then raise exception 'Não se apaga o vínculo; desligue o centro de custo no núcleo'; end if;
+  if tg_op = 'UPDATE' and (new.nucleo_economico_id <> old.nucleo_economico_id or new.centro_custo_id <> old.centro_custo_id) then
+    raise exception 'O vínculo não muda de núcleo nem de centro; desligue este e ligue outro';
+  end if;
   return new;
 end $$;
 create trigger t_nucleo_centros before insert or update or delete on erp.nucleo_centros
   for each row execute function erp.tg_nucleo_centros();
+create trigger t_nucleo_centros_truncate before truncate on erp.nucleo_centros
+  for each statement execute function erp.tg_nucleo_centros();
 create trigger t_aud_nucleo_centros after insert or update or delete on erp.nucleo_centros
   for each row execute function erp.tg_auditoria('nucleo_economico_id');
 
