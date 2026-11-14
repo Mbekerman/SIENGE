@@ -274,10 +274,10 @@ declare r erp.reclassificacoes; u erp.usuarios; v_como text; v_ok boolean;
 begin
   select * into r from erp.reclassificacoes where id = p_id for update;
   if r.situacao <> 'pendente' then raise exception 'O pedido não está pendente'; end if;
-  select * into u from erp.usuarios where user_id = erp.eu() and ativo;
-  if u.user_id is null then raise exception 'Usuário sem cadastro no ERP'; end if;
-  if u.user_id = r.solicitante then raise exception 'Quem pediu a reclassificação não pode aprová-la'; end if;
-  if exists (select 1 from erp.reclassificacao_votos where reclassificacao_id = r.id and user_id = u.user_id) then
+  select * into u from erp.meu_usuario();
+  if u.id is null then raise exception 'Usuário sem cadastro no ERP'; end if;
+  if u.id = r.solicitante then raise exception 'Quem pediu a reclassificação não pode aprová-la'; end if;
+  if exists (select 1 from erp.reclassificacao_votos where reclassificacao_id = r.id and user_id = u.id) then
     raise exception 'Você já votou neste pedido';
   end if;
 
@@ -294,7 +294,7 @@ begin
   end if;
 
   insert into erp.reclassificacao_votos (reclassificacao_id, user_id, como, aprovou, justificativa)
-  values (r.id, u.user_id, v_como, p_aprovar, p_justificativa);
+  values (r.id, u.id, v_como, p_aprovar, p_justificativa);
 
   if not p_aprovar then
     update erp.reclassificacoes set situacao = 'recusada' where id = r.id;
@@ -323,7 +323,7 @@ end $$;
 create or replace function erp.exigir_admin() returns void language plpgsql stable as $$
 begin
   if erp.sistema() or current_setting('erp.sistema_apaga', true) = 'on' then return; end if;
-  if not exists (select 1 from erp.usuarios where user_id = erp.eu() and ativo and administrador) then
+  if not exists (select 1 from erp.usuarios where id = erp.eu() and ativo and administrador) then
     raise exception 'Só o administrador pode mudar a configuração';
   end if;
 end $$;

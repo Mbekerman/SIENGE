@@ -25,13 +25,14 @@ set client_min_messages = notice;
 \set leitor   '00000000-0000-0000-0000-00000000000d'
 \set contador '00000000-0000-0000-0000-00000000000c'
 
-insert into erp.usuarios (user_id, nome, papel, administrador, contador) values
-  (:'diretor', 'Moises', 'diretor', true, false),
-  (:'diretor2', 'Sócia', 'diretor', false, false),
-  (:'gestor', 'Paula', 'gestor', false, false),
-  (:'analista', 'Rafael', 'analista', false, false),
-  (:'leitor', 'Consulta', 'leitura', false, false),
-  (:'contador', 'Contador', 'analista', false, true);
+-- no teste, o login de cada um é o próprio id em texto (pg_temp.como põe o login na sessão)
+insert into erp.usuarios (id, login_id, nome, papel, administrador, contador) values
+  (:'diretor', :'diretor', 'Moises', 'diretor', true, false),
+  (:'diretor2', :'diretor2', 'Sócia', 'diretor', false, false),
+  (:'gestor', :'gestor', 'Paula', 'gestor', false, false),
+  (:'analista', :'analista', 'Rafael', 'analista', false, false),
+  (:'leitor', :'leitor', 'Consulta', 'leitura', false, false),
+  (:'contador', :'contador', 'Contador', 'analista', false, true);
 
 -- ---------------------------------------------------------------------
 \echo '# raiz: empresas, sócios, empreendimento'
@@ -366,7 +367,7 @@ select pg_temp.falha($$insert into erp.pagamentos (empresa_id, conta_id, pessoa_
   'quem grava não escolhe quem lançou o pagamento');
 select pg_temp.como(:'diretor');
 insert into erp.listas_financeiro (lista, user_id) values ('AF', :'gestor'), ('AF', :'analista'), ('AF', :'contador'), ('AD', :'diretor2'), ('AD', :'diretor');
-update erp.usuarios set ativo = false where user_id = :'contador';
+update erp.usuarios set ativo = false where id = :'contador';
 insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
 values ('70000000-0000-0000-0000-000000000008', :'spe', '10000000-0000-0000-0000-000000000005', 'nfse', '108', '2026-03-05', '2026-03-01', 100);
 insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
@@ -551,7 +552,7 @@ select pg_temp.falha($$insert into erp.previsoes (empresa_id, origem, nucleo_eco
   'natureza desativada não recebe lançamento novo');
 update erp.naturezas set ativa = true where codigo = '04.06';
 -- mover galho com lançamentos: só diretoria (o administrador não diretor não move)
-update erp.usuarios set administrador = true where user_id = :'gestor';
+update erp.usuarios set administrador = true where id = :'gestor';
 select pg_temp.como(:'gestor');
 select pg_temp.falha($$update erp.naturezas set linha_dre = 'despesas_gerais' where codigo = '04.01'$$,
   'mudar DRE de natureza com lançamentos (muda relatório do passado) só pela diretoria');
@@ -677,16 +678,17 @@ select pg_temp.falha($$select count(*) from erp.pessoas$$, 'usuário logado tamb
 reset role;
 -- mesmo que alguém dê acesso por engano, sem usuário a API não passa nas checagens de papel
 grant usage on schema erp to anon;
-grant execute on function erp.exigir_diretor() to anon;
-grant execute on function erp.sistema() to anon;
-grant execute on function erp.eu() to anon;
-grant execute on function erp.meu_papel() to anon;
-grant select on erp.usuarios to anon;
+grant execute on function erp.exigir_diretor(), erp.sistema(), erp.eu(), erp.meu_papel(), erp.login_atual() to anon;
 set role anon;
-select pg_temp.falha($$select erp.exigir_diretor()$$, 'sem usuário, anon não é tratado como rotina do sistema');
+do $$ begin
+  perform erp.exigir_diretor();
+  raise exception 'passou';
+exception when others then
+  if sqlerrm <> 'Só a diretoria pode fazer isso' then raise exception 'anon: %', sqlerrm; end if;
+end $$;
+select pg_temp.ok(not erp.sistema(), 'sem usuário, anon não é tratado como rotina do sistema (e cai na checagem de papel)');
 reset role;
 revoke all on schema erp from anon;
-revoke all on erp.usuarios from anon;
 revoke execute on all functions in schema erp from anon;
 
 -- função security definer chamada sem login: current_user vira o dono, mas não vira rotina do sistema
@@ -696,14 +698,44 @@ set role anon;
 select pg_temp.ok(not public.teste_definer(), 'dentro de função security definer, chamada anônima continua sem passe de sistema');
 reset role;
 drop function public.teste_definer();
-select pg_temp.ok(erp.sistema(), 'migration e rotina do servidor (sem login, fora dos papéis da API) passam');
+select pg_temp.ok(erp.sistema(), 'migration e cron (sessão do dono do esquema, sem login e sem SET ROLE) passam');
+
+-- S-033: só o papel nosso erp_sistema, sem login, é sistema; nenhum outro papel sem login
 grant usage on schema erp to service_role;
-grant execute on function erp.sistema(), erp.eu() to service_role;
+grant execute on function erp.sistema(), erp.login_atual() to service_role;
 set role service_role;
-select pg_temp.ok(erp.sistema(), 'chave de serviço (função do servidor pela API) passa como sistema');
+select pg_temp.ok(not erp.sistema(), 'a chave de serviço do Supabase não é sistema');
 reset role;
 revoke all on schema erp from service_role;
 revoke execute on all functions in schema erp from service_role;
+begin;
+create role erp_teste_outro nologin;
+grant usage on schema erp to erp_teste_outro;
+grant execute on function erp.sistema(), erp.login_atual() to erp_teste_outro;
+set local role erp_teste_outro;
+select pg_temp.ok(not erp.sistema(), 'outro papel sem login (de qualquer provedor) não é sistema');
+reset role;
+set local role erp_sistema;
+select pg_temp.ok(erp.sistema(), 'o papel erp_sistema, sem login, é sistema');
+select pg_temp.como(:'diretor');
+select pg_temp.ok(not erp.sistema(), 'erp_sistema com login na sessão não é sistema: vale o usuário');
+select pg_temp.como(null);
+reset role;
+select pg_temp.como(:'diretor');
+select pg_temp.ok(not erp.sistema(), 'o dono do esquema com login na sessão não é sistema');
+select pg_temp.como(null);
+rollback;
+-- erp.eu() resolve pelo login do provedor, não pelo id
+begin;
+insert into erp.usuarios (id, login_id, nome, papel) values ('00000000-0000-0000-0000-0000000000a1', 'google-oauth2|123', 'Novo', 'analista');
+select pg_temp.como('google-oauth2|123');
+select pg_temp.ok(erp.eu() = '00000000-0000-0000-0000-0000000000a1', 'erp.eu() acha o usuário pelo login_id');
+select pg_temp.como('login-sem-cadastro');
+select pg_temp.ok(erp.eu() is null and not erp.sistema(), 'login sem cadastro não é usuário nem sistema');
+select set_config('request.jwt.claim.sub', '', false), set_config('request.jwt.claims', '{"sub":"google-oauth2|123"}', false);
+select pg_temp.ok(erp.eu() = '00000000-0000-0000-0000-0000000000a1', 'erp.eu() também lê o sub de request.jwt.claims');
+select set_config('request.jwt.claims', '', false);
+rollback;
 
 -- catálogo: nenhum privilégio de public, anon, authenticated ou service_role em nada do esquema (pega migration futura).
 -- service_role fica de fora (S-015): o projeto Supabase é compartilhado e a chave de serviço do monitor passaria como sistema.
@@ -730,16 +762,15 @@ select pg_temp.ok((select count(*) from pg_class c join pg_namespace n on n.oid 
   'catálogo: a conferência do RLS achou as tabelas do esquema');
 select pg_temp.ok(not exists (
   select 1 from pg_policies where schemaname = 'erp'
+  and not (policyname = 'conferencia' and cmd = 'SELECT' and roles = '{erp_conferencia}')
   and (coalesce(qual, '') ~* '^\(?\s*true\s*\)?$' or coalesce(with_check, '') ~* '^\(?\s*true\s*\)?$')),
-  'catálogo: nenhuma política do `erp` é using(true) ou with check(true)');
--- nega por padrão: papel comum com SELECT, como usuário, não vê nada; sem usuário (sistema) vê
+  'catálogo: nenhuma política do `erp` é using(true) ou with check(true), fora a leitura do erp_conferencia');
+-- nega por padrão: papel comum com SELECT, como usuário ou sem login, não vê nada; erp_sistema vê
 begin;
 create role erp_teste_rls nologin;
 grant usage on schema erp to erp_teste_rls;
 grant select on all tables in schema erp to erp_teste_rls;
 grant execute on all functions in schema erp to erp_teste_rls;
-grant usage on schema auth to erp_teste_rls;
-grant execute on function auth.uid() to erp_teste_rls;
 select pg_temp.como(:'diretor');
 set local role erp_teste_rls;
 select pg_temp.ok((select count(*) from erp.empresas) = 0 and (select count(*) from erp.titulos) = 0
@@ -748,9 +779,103 @@ select pg_temp.ok((select count(*) from erp.empresas) = 0 and (select count(*) f
 reset role;
 select pg_temp.como(null);
 set local role erp_teste_rls;
-select pg_temp.ok((select count(*) from erp.empresas) > 0, 'a política do sistema deixa a rotina sem usuário ler');
+select pg_temp.ok((select count(*) from erp.empresas) = 0, 'papel comum sem login não vira sistema e não lê (S-033)');
+reset role;
+set local role erp_sistema;
+select pg_temp.ok((select count(*) from erp.empresas) > 0, 'a política do sistema deixa o erp_sistema sem login ler');
 reset role;
 rollback;
+
+-- S-034: as travas enxergam o que quem lança não vê. Usuário comum (não superusuário) com uma
+-- política provisória de teste: só vê pagamentos do centro Marketing, nenhuma quitação, nenhuma
+-- previsão consumida, nem usuários, listas ou a regra. As demais tabelas ficam abertas ao papel de
+-- teste para a quitação poder gravar.
+begin;
+create role erp_teste_perfil nologin;
+grant usage on schema erp to erp_teste_perfil;
+grant select, insert, update, delete on all tables in schema erp to erp_teste_perfil;
+grant execute on all functions in schema erp to erp_teste_perfil;
+do $$
+declare t record;
+begin
+  for t in select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+           where n.nspname = 'erp' and c.relkind in ('r', 'p')
+             and c.relname not in ('pagamentos', 'quitacoes', 'titulo_previsoes', 'usuarios', 'listas_financeiro', 'regra_adiantamento') loop
+    execute format('create policy teste on erp.%I for all to erp_teste_perfil using (true) with check (true)', t.relname);
+  end loop;
+end $$;
+create policy teste_ver on erp.pagamentos for select to erp_teste_perfil using (centro_custo_id = '45000000-0000-0000-0000-000000000002');
+create policy teste_mudar on erp.pagamentos for update to erp_teste_perfil using (centro_custo_id = '45000000-0000-0000-0000-000000000002');
+create policy teste_gravar on erp.pagamentos for insert to erp_teste_perfil with check (true);
+create policy teste_gravar on erp.quitacoes for insert to erp_teste_perfil with check (true);
+-- o que um usuário com tudo à vista enxerga (aqui, superusuário)
+select pg_temp.como(:'diretor');
+insert into erp.listas_financeiro (lista, user_id) values ('AD', :'diretor');
+select (select parcela_id from erp.quitacoes order by parcela_id limit 1) as qpar \gset
+select (select previsao_id from erp.titulo_previsoes order by previsao_id limit 1) as qprev \gset
+select erp.parcela_saldo(:'qpar') as ps, erp.pagamento_saldo('80000000-0000-0000-0000-000000000003') as gs,
+       erp.previsao_saldo(:'qprev') as prs \gset
+select pg_temp.ok(:'ps'::numeric < (select valor from erp.parcelas where id = :'qpar')
+                  and :'prs'::numeric < (select valor from erp.previsoes where id = :'qprev') and :'gs'::numeric > 0,
+  'S-034: há parcela com quitação, previsão consumida e adiantamento em aberto para conferir');
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+values ('70000000-0000-0000-0000-000000000008', :'spe', '10000000-0000-0000-0000-000000000005', 'nfse', '108', '2026-03-05', '2026-03-01', 100);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('70000000-0000-0000-0000-000000000008', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select erp.lancar_documento('70000000-0000-0000-0000-000000000008', array['2026-03-20']::date[]) as tit8 \gset
+select id as p8 from erp.parcelas where titulo_id = :'tit8' \gset
+select set_config('teste.p8', :'p8', true);
+set local role erp_teste_perfil;
+select pg_temp.ok(not exists (select 1 from erp.pagamentos where id = '80000000-0000-0000-0000-000000000003')
+                  and not exists (select 1 from erp.quitacoes) and not exists (select 1 from erp.usuarios),
+  'S-034: o usuário de teste não vê o adiantamento da Obra, as quitações nem os usuários');
+select pg_temp.ok(erp.eu() = :'diretor' and erp.meu_papel() = 'diretor', 'S-034: erp.eu() e o papel são lidos por baixo do RLS');
+select pg_temp.ok(erp.estou_nas_listas('{AD}') and (erp.regra_adiantamento_atual()).trava,
+  'S-034: as listas e a regra do adiantamento são lidas por baixo do RLS');
+select pg_temp.ok(erp.parcela_saldo(:'qpar') = :'ps'::numeric and erp.pagamento_saldo('80000000-0000-0000-0000-000000000003') = :'gs'::numeric
+                  and erp.previsao_saldo(:'qprev') = :'prs'::numeric,
+  'S-034: parcela_saldo, pagamento_saldo e previsao_saldo somam o que o usuário não vê');
+do $$ begin
+  perform erp.pagar_parcela(current_setting('teste.p8')::uuid, '50000000-0000-0000-0000-000000000001', '2026-03-20');
+  raise exception 'passou';
+exception when others then
+  if sqlerrm not like 'O fornecedor tem adiantamento em aberto%' then raise exception 'trava: %', sqlerrm; end if;
+end $$;
+select pg_temp.ok(true, 'S-034: o adiantamento da Obra, que o usuário não vê, ainda barra pagar o título do Marketing');
+reset role;
+rollback;
+
+-- catálogo: só o dono do esquema e papéis erp_* têm privilégio no `erp` (pega papel de qualquer provedor)
+select pg_temp.ok(not exists (
+  with dono as (select nspowner from pg_namespace where nspname = 'erp'),
+  acl as (
+    select a.grantee from pg_class c join pg_namespace n on n.oid = c.relnamespace,
+           lateral aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a where n.nspname = 'erp'
+    union all
+    select a.grantee from pg_proc p join pg_namespace n on n.oid = p.pronamespace,
+           lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a where n.nspname = 'erp'
+    union all
+    select a.grantee from pg_namespace n, lateral aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a where n.nspname = 'erp')
+  select 1 from acl where grantee not in (select nspowner from dono)
+    and (grantee = 0 or (select rolname from pg_roles where oid = grantee) not like 'erp\_%')),
+  'catálogo: nenhum privilégio no `erp` para papel que não seja o dono ou erp_*');
+-- catálogo: todo security definer do `erp` tem search_path fixo e é do erp_conferencia (não do superusuário)
+select pg_temp.ok(not exists (
+  select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'erp' and p.prosecdef
+    and (not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) c where c like 'search\_path=%')
+         or p.proowner <> 'erp_conferencia'::regrole)),
+  'catálogo: todo security definer do `erp` tem search_path fixo e é do erp_conferencia');
+select pg_temp.ok((select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                   where n.nspname = 'erp' and p.prosecdef) >= 15,
+  'catálogo: as funções de conferência são security definer');
+select pg_temp.ok((select not rolcanlogin and not rolsuper and not rolbypassrls from pg_roles where rolname = 'erp_conferencia')
+                  and not exists (select 1 from pg_auth_members where roleid = 'erp_conferencia'::regrole),
+  'catálogo: erp_conferencia não entra, não ignora RLS e não tem membros');
+select pg_temp.ok(not exists (
+  select 1 from pg_policies where schemaname = 'erp' and policyname <> 'sistema'
+    and not (policyname = 'conferencia' and cmd = 'SELECT' and roles = '{erp_conferencia}')),
+  'catálogo: no `erp` só há as políticas sistema e conferencia (as de perfil entram com o grant a authenticated)');
 
 \echo '# fim'
 do $$ begin raise notice 'TODOS OS TESTES PASSARAM'; end $$;
