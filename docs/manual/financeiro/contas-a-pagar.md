@@ -65,16 +65,19 @@ Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depo
 
 > ⚠️ **Passo manual no Sienge:** apagar o título de previsão que foi substituído ou excluído. A API não apaga título, e o título criado por ela só aceita mudar o vencimento e o PIX (testes de 6 e 8/nov/2026). Ver [O que ainda é feito à mão no Sienge](../transversais/passos-manuais-no-sienge.md).
 
+✅ Também decidido (Moises, 14/nov/2026):
+
+- O título de previsão vai ao Sienge **sem forma de pagamento**, só como previsão, para não ser pago por engano.
+- **O Sienge é monitorado:** a leitura diária aponta os títulos de previsão que deveriam ter sido apagados e continuam lá, com aviso também por **e-mail**.
+- **A planilha se refaz sozinha:** todo dia o ERP BKM puxa a lista dos títulos que devem ser apagados, cruza com a planilha e grava de novo o que estiver faltando. Se alguém apagar uma linha, ela volta no dia seguinte.
+- Cada linha traz o **número do título**, o **tipo de documento de previsão** e o **link para a previsão** no ERP BKM. O financeiro confere o tipo antes de apagar.
+- Se sumir do Sienge um título que **não estava na planilha**, a leitura diária avisa a **AF**.
+
 🟡 Propostas ainda sem confirmação do Moises:
 
+- **Linha incluída por alguém:** o cruzamento diário cobre a linha apagada, mas não a linha acrescentada à mão (que poderia levar o financeiro a apagar um título definitivo). Proposta: o mesmo cruzamento marca ou tira a linha que não existe no ERP BKM e avisa a AF (achado de segurança S-029).
 - **A previsão é aprovada** pelas mesmas regras do pedido de pagamento. Assim ela faz o papel do pedido antes do serviço que o diretor financeiro pediu. A nota que chega sem previsão aprovada pede uma aprovação a mais (a AD, por padrão), salvo uma verba pequena sem previsão por área.
 - **Previsão vencida sem nota** há X dias aparece numa lista para quem lançou, que reprograma ou cancela com motivo.
-- **Fechar o ciclo da planilha:** a leitura diária do Sienge marca na planilha quando o título foi de fato apagado, e avisa o que continua lá depois de X dias.
-- O título de previsão vai ao Sienge **sem dados de pagamento**, para não ser pago por engano.
-- **Segurança da planilha** (achado S-029): quem puder editar a planilha pode acrescentar uma linha e fazer o financeiro apagar qualquer título, até um definitivo. Por isso:
-  - só a conta do ERP BKM escreve na planilha; as pessoas leem e marcam "apagado" numa coluna própria;
-  - cada linha traz o número do título, o tipo de documento de previsão e o link para a previsão no ERP BKM, e o financeiro confere o tipo antes de apagar;
-  - a leitura diária avisa a AD se sumir do Sienge um título que não estava na planilha.
 - A previsão nasce com os mesmos campos da futura linha de orçamento (Área, Centro, Natureza, mês e valor, com fornecedor opcional), para virar o histórico do módulo de Orçamentos sem retrabalho.
 
 ⏳ Em discussão: tirar no Sienge a permissão de criar e alterar títulos e dados bancários dos departamentos que entrarem no ERP BKM, para fechar a brecha de pagar fora do fluxo. O custo é que um lançamento urgente passa a depender do ERP BKM.
