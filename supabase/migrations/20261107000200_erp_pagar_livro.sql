@@ -29,10 +29,15 @@ begin
   end if;
 end $$;
 
--- O centro de custo precisa estar ligado no núcleo econômico (erp.nucleo_centros).
-create function erp.checar_centro(p_nucleo uuid, p_centro uuid)
+-- O centro de custo precisa estar ligado no núcleo econômico (erp.nucleo_centros), e o núcleo
+-- é da empresa do registro (S-056).
+create function erp.checar_centro(p_nucleo uuid, p_centro uuid, p_empresa uuid)
 returns void language plpgsql stable as $$
 begin
+  if p_nucleo is not null
+     and (select empresa_id from erp.nucleos_economicos where id = p_nucleo) is distinct from p_empresa then
+    raise exception 'O núcleo econômico é de outra empresa';
+  end if;
   if p_centro is not null and p_nucleo is null then
     raise exception 'Centro de custo só vale dentro de um núcleo econômico';
   end if;
@@ -371,7 +376,7 @@ begin
       raise exception 'O livro só recebe linhas pelas operações do sistema';
     end if;
     perform erp.checar_natureza(new.natureza_id, new.nucleo_economico_id, new.centro_custo_id, new.estagio = 'orcado');
-    perform erp.checar_centro(new.nucleo_economico_id, new.centro_custo_id);
+    perform erp.checar_centro(new.nucleo_economico_id, new.centro_custo_id, new.empresa_id);
   else
     perform erp.checar_natureza(new.natureza_id, new.nucleo_economico_id, new.centro_custo_id, new.estagio = 'orcado');
   end if;
@@ -394,23 +399,46 @@ create or replace function erp.natureza_em_uso(p_id uuid) returns boolean langua
       or exists (select 1 from erp.naturezas_sistema where natureza_id in (select id from sub))
 $$;
 
--- Natureza válida em toda tabela de classificação.
+-- Natureza válida em toda tabela de classificação, e núcleo da empresa do registro pai (S-056).
 create function erp.tg_classificacao() returns trigger language plpgsql as $$
+declare j jsonb := to_jsonb(new); v_empresa uuid;
 begin
+  v_empresa := case tg_table_name
+    when 'previsoes' then (j->>'empresa_id')::uuid
+    when 'compromisso_rateios' then (select empresa_id from erp.compromissos where id = (j->>'compromisso_id')::uuid)
+    when 'documento_rateios' then (select empresa_id from erp.documentos_fiscais where id = (j->>'documento_id')::uuid)
+    when 'titulo_rateios' then (select empresa_id from erp.titulos where id = (j->>'titulo_id')::uuid)
+    when 'orcamento_linhas' then (select empresa_id from erp.orcamento_versoes where id = (j->>'versao_id')::uuid) end;
   perform erp.checar_natureza(new.natureza_id, new.nucleo_economico_id, new.centro_custo_id, tg_table_name = 'orcamento_linhas');
-  perform erp.checar_centro(new.nucleo_economico_id, new.centro_custo_id);
+  perform erp.checar_centro(new.nucleo_economico_id, new.centro_custo_id, v_empresa);
   return new;
 end $$;
-create trigger t_class before insert or update of natureza_id, nucleo_economico_id, centro_custo_id on erp.compromisso_rateios
+create trigger t_class before insert or update of natureza_id, nucleo_economico_id, centro_custo_id, compromisso_id on erp.compromisso_rateios
   for each row execute function erp.tg_classificacao();
-create trigger t_class before insert or update of natureza_id, nucleo_economico_id, centro_custo_id on erp.documento_rateios
+create trigger t_class before insert or update of natureza_id, nucleo_economico_id, centro_custo_id, documento_id on erp.documento_rateios
   for each row execute function erp.tg_classificacao();
-create trigger t_class before insert or update of natureza_id, nucleo_economico_id, centro_custo_id on erp.titulo_rateios
+create trigger t_class before insert or update of natureza_id, nucleo_economico_id, centro_custo_id, titulo_id on erp.titulo_rateios
   for each row execute function erp.tg_classificacao();
-create trigger t_class before insert or update of natureza_id, nucleo_economico_id, centro_custo_id on erp.previsoes
+create trigger t_class before insert or update of natureza_id, nucleo_economico_id, centro_custo_id, empresa_id on erp.previsoes
   for each row execute function erp.tg_classificacao();
-create trigger t_class before insert or update of natureza_id, nucleo_economico_id, centro_custo_id on erp.orcamento_linhas
+create trigger t_class before insert or update of natureza_id, nucleo_economico_id, centro_custo_id, versao_id on erp.orcamento_linhas
   for each row execute function erp.tg_classificacao();
+
+-- A empresa de um registro não muda depois de criado (S-056): o rateio, o livro e a caução
+-- foram conferidos contra ela.
+create function erp.tg_empresa_fixa() returns trigger language plpgsql as $$
+begin
+  if new.empresa_id <> old.empresa_id then raise exception 'A empresa do registro não muda; crie outro'; end if;
+  return new;
+end $$;
+do $$
+declare t text;
+begin
+  foreach t in array array['compromissos', 'documentos_fiscais', 'titulos', 'orcamento_versoes', 'pagamentos', 'contas_bancarias'] loop
+    execute format('create trigger t_empresa_fixa before update of empresa_id on erp.%I
+                      for each row execute function erp.tg_empresa_fixa()', t);
+  end loop;
+end $$;
 
 -- Rateio de um registro (compromisso, documento ou título) dividindo um total em centavos exatos:
 -- cada parte = arredondamento do acumulado menos o do acumulado anterior, então a soma fecha.
@@ -646,6 +674,15 @@ begin
   if tg_op = 'INSERT' and new.situacao <> 'rascunho' then
     raise exception 'Título nasce em rascunho; é aberto pelo confirmar_titulo';
   end if;
+  -- de fora das operações (nota, caução, sócios) só nasce título avulso, sem nota nem contrato (S-057)
+  if tg_op = 'INSERT' and not erp.agindo_como('erp_situacao')
+     and (new.tipo <> 'avulso' or new.documento_id is not null or new.compromisso_id is not null) then
+    raise exception 'De fora das operações só se cria título avulso, sem nota nem contrato';
+  end if;
+  if tg_op = 'UPDATE' and not erp.agindo_como('erp_situacao')
+     and (new.tipo, new.documento_id, new.compromisso_id) is distinct from (old.tipo, old.documento_id, old.compromisso_id) then
+    raise exception 'O título não muda de tipo, nota ou contrato';
+  end if;
   -- a situação (inclusive rascunho → aberto) só muda pelas operações do banco: confirmar e quitar
   if tg_op = 'UPDATE' and new.situacao is distinct from old.situacao and not erp.agindo_como('erp_situacao') then
     raise exception 'A situação do título muda pelas quitações';
@@ -664,10 +701,13 @@ create trigger t_titulo before insert or update or delete on erp.titulos
 
 -- Parcelas e rateio só mudam com o título em rascunho (a natureza também pela reclassificação).
 create function erp.tg_filho_titulo() returns trigger language plpgsql as $$
-declare v_sit text;
 begin
-  select situacao into v_sit from erp.titulos where id = coalesce(new.titulo_id, old.titulo_id);
-  if v_sit is null or v_sit = 'rascunho' then return coalesce(new, old); end if;
+  -- o pai de antes e o de depois (mudar o titulo_id tiraria a linha de um título confirmado)
+  if not exists (select 1 from erp.titulos where situacao <> 'rascunho'
+                  and id in (case when tg_op <> 'DELETE' then new.titulo_id end,
+                             case when tg_op <> 'INSERT' then old.titulo_id end)) then
+    return coalesce(new, old);
+  end if;
   if tg_op = 'UPDATE' and tg_table_name = 'titulo_rateios'
      and erp.agindo_como('erp_reclassificacao')
      and (to_jsonb(new) - 'natureza_id') = (to_jsonb(old) - 'natureza_id') then
@@ -675,6 +715,26 @@ begin
   end if;
   raise exception 'O título já foi confirmado; % não muda', tg_table_name;
 end $$;
+
+-- Rateio e retenções da nota só mudam com ela em rascunho (S-057; a natureza também pela reclassificação).
+create function erp.tg_filho_documento() returns trigger language plpgsql as $$
+begin
+  if not exists (select 1 from erp.documentos_fiscais where situacao <> 'rascunho'
+                  and id in (case when tg_op <> 'DELETE' then new.documento_id end,
+                             case when tg_op <> 'INSERT' then old.documento_id end)) then
+    return coalesce(new, old);
+  end if;
+  if tg_op = 'UPDATE' and tg_table_name = 'documento_rateios'
+     and erp.agindo_como('erp_reclassificacao')
+     and (to_jsonb(new) - 'natureza_id') = (to_jsonb(old) - 'natureza_id') then
+    return new;
+  end if;
+  raise exception 'A nota já foi lançada; % não muda', tg_table_name;
+end $$;
+create trigger t_filho before insert or update or delete on erp.documento_rateios
+  for each row execute function erp.tg_filho_documento();
+create trigger t_filho before insert or update or delete on erp.documento_retencoes
+  for each row execute function erp.tg_filho_documento();
 create trigger t_filho before insert or update or delete on erp.parcelas
   for each row execute function erp.tg_filho_titulo();
 create trigger t_filho before insert or update or delete on erp.titulo_rateios
@@ -855,7 +915,7 @@ begin
      and (select empresa_id from erp.nucleos_economicos where id = new.nucleo_economico_id) <> new.empresa_id then
     raise exception 'O núcleo econômico não é da empresa do pagamento';
   end if;
-  perform erp.checar_centro(new.nucleo_economico_id, new.centro_custo_id);
+  perform erp.checar_centro(new.nucleo_economico_id, new.centro_custo_id, new.empresa_id);
   insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_caixa, valor, pagamento_id)
   values ('realizado', new.empresa_id, new.nucleo_economico_id, new.centro_custo_id, erp.natureza_sistema('adiantamentos'),
           erp.mes(new.data), new.data, -new.valor, new.id);
@@ -1153,6 +1213,23 @@ end $$;
 create trigger t_caucao after insert on erp.caucao_movimentos
   for each row execute function erp.tg_caucao();
 
+-- Com caução retida, o rateio do contrato não muda (S-057): a liberação usa esse rateio.
+create function erp.tg_filho_compromisso() returns trigger language plpgsql as $$
+begin
+  if not exists (select 1 from erp.caucao_movimentos
+                  where compromisso_id in (case when tg_op <> 'DELETE' then new.compromisso_id end,
+                                           case when tg_op <> 'INSERT' then old.compromisso_id end)) then
+    return coalesce(new, old);
+  end if;
+  if tg_op = 'UPDATE' and erp.agindo_como('erp_reclassificacao')
+     and (to_jsonb(new) - 'natureza_id') = (to_jsonb(old) - 'natureza_id') then
+    return new;
+  end if;
+  raise exception 'O contrato já tem caução retida; o rateio não muda';
+end $$;
+create trigger t_filho before insert or update or delete on erp.compromisso_rateios
+  for each row execute function erp.tg_filho_compromisso();
+
 -- Libera (para o próprio fornecedor) ou usa (para um terceiro, com motivo) parte da caução.
 -- A aprovação do gestor do contrato entra no módulo de aprovação.
 create function erp.liberar_caucao(p_compromisso uuid, p_valor numeric, p_vencimento date,
@@ -1192,6 +1269,17 @@ begin
   values (p_tipo, p_pagadora, p_recebedora, p_data, p_valor, v_pag, v_rec, p_descricao) returning id into v_id;
   return v_id;
 end $$;
+-- O movimento entre sócios só se registra pela função acima (definer erp_situacao, S-057) e não muda.
+create function erp.tg_movimento_societario() returns trigger language plpgsql as $$
+begin
+  if tg_op <> 'INSERT' then raise exception 'Movimento entre sócios não se altera nem se apaga'; end if;
+  if not erp.agindo_como('erp_situacao') then
+    raise exception 'O movimento entre sócios só se registra pelo registrar_movimento_societario';
+  end if;
+  return new;
+end $$;
+create trigger t_movimento_societario before insert or update or delete on erp.movimentos_societarios
+  for each row execute function erp.tg_movimento_societario();
 
 -- ---------------------------------------------------------------------
 -- Visões
