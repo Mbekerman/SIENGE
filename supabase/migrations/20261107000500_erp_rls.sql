@@ -117,7 +117,7 @@ begin
     ('erp.decidir_sucessao_master(uuid, boolean, text)', 'erp_acesso'), ('erp.vetar_sucessao_master(uuid)', 'erp_acesso'),
     ('erp.efetivar_sucessao_master(uuid)', 'erp_acesso'), ('erp.sou_master()', 'erp_conferencia'),
     ('erp.gerar_avisos_sucessao()', 'erp_acesso'), ('erp._sucessao_unanime(uuid)', 'erp_acesso'), ('erp.vetar_sucessao_por_link(text)', 'erp_acesso'), ('erp.registrar_envio_aviso(uuid, date, text, text, text)', 'erp_acesso'),
-    ('erp.recusar_so_sucessao(uuid)', 'erp_conferencia'), ('erp._beneficiarios_acesso(text, jsonb, jsonb)', 'erp_conferencia'),
+    ('erp.recusar_so_sucessao(uuid)', 'erp_conferencia'), ('erp.recusar_admin_aprovador(uuid)', 'erp_conferencia'), ('erp._beneficiarios_acesso(text, jsonb, jsonb)', 'erp_conferencia'),
     -- quem escreve na auditoria (S-052)
     ('erp.tg_auditoria()', 'erp_auditoria')) v(f, dono) loop
     execute format('alter function %s security definer set search_path = erp, pg_catalog, pg_temp', r.f);

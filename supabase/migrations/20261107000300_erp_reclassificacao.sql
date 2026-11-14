@@ -380,7 +380,8 @@ end $$;
 create or replace function erp.exigir_admin() returns void language plpgsql stable as $$
 begin
   if erp.sistema() or erp.agindo_como('erp_reclassificacao') then return; end if;
-  if not coalesce((erp.meu_usuario()).administrador, false) then
+  -- o master faz qualquer coisa (Moises, 14/11/2026); erp.sou_master entra na migration _erp_perfis
+  if not coalesce((erp.meu_usuario()).administrador, false) and not erp.sou_master() then
     raise exception 'Só o administrador pode mudar a configuração';
   end if;
 end $$;

@@ -306,7 +306,7 @@ create table erp.sucessoes_master (
   pedida_por   uuid not null references erp.usuarios,
   pedida_em    timestamptz not null default clock_timestamp(),
   unanime_em   timestamptz,                                  -- quando todo o grupo aprovou
-  vale_em      timestamptz,                                  -- unanimidade + 7 dias: a troca vale daqui, sem veto
+  vale_em      timestamptz,                                  -- primeiro aviso enviado + 7 dias: a troca vale daqui, sem veto (S-083)
   aprovadores  uuid[] not null,                              -- o grupo na hora do pedido: todos precisam aprovar
   situacao     text not null default 'pendente' check (situacao in ('pendente','aplicada','recusada','vetada','obsoleta')),
   encerrada_em timestamptz
@@ -337,6 +337,40 @@ create table erp.sucessao_votos (
   check (aprova or length(trim(coalesce(justificativa, ''))) > 0)
 );
 insert into erp.regra_acesso default values;
+
+-- Quais mudanças do administrador precisam de aprovação (Moises, 14/11/2026: "determinar aprovação
+-- para as mudanças, uma a uma, principalmente as mais sensíveis"). Só o master muda. Começa tudo
+-- exigindo aprovação. O master nunca precisa; a lista de aprovadores, fora do master, sempre
+-- precisa da unanimidade dela.
+create table erp.regras_mudanca_acesso (
+  tabela          text primary key,
+  rotulo          text not null,
+  exige_aprovacao boolean not null default true
+);
+insert into erp.regras_mudanca_acesso (tabela, rotulo) values
+  ('perfis_modelo', 'Modelos de acesso'), ('perfil_centros', 'Centros de um modelo'),
+  ('perfil_naturezas', 'Naturezas restritas liberadas por um modelo'), ('atribuicoes', 'Atribuições de modelo a pessoas'),
+  ('atribuicao_tipos', 'Tipos de núcleo de uma atribuição'), ('atribuicao_nucleos', 'Núcleos de uma atribuição'),
+  ('excecoes_centro', 'Exceções de centro'), ('excecoes_natureza', 'Exceções de natureza'),
+  ('centro_diretores', 'Diretor da área'), ('centro_aprovadores', 'Gestor da área'),
+  ('listas_financeiro', 'AF, AO e AD'), ('tipos_nucleo', 'Tipos de núcleo'),
+  ('aprovadores_acesso', 'Aprovadores de acesso'), ('regra_acesso', 'Mínimo de aprovações e prazo da sucessão'),
+  ('naturezas', 'Marca restrita e galho restrito de natureza'), ('nucleos_economicos', 'Tipo de um núcleo'),
+  ('usuarios', 'Papel e contador de um usuário');
+create function erp.tg_regras_mudanca_acesso() returns trigger language plpgsql as $$
+begin
+  if erp.sistema() or erp.sou_master() then
+    if not erp.sistema() and (tg_op in ('INSERT', 'DELETE', 'TRUNCATE') or new.tabela <> old.tabela or new.rotulo <> old.rotulo) then
+      raise exception 'As regras são fixas; mude só a exigência';
+    end if;
+    return coalesce(new, old);
+  end if;
+  raise exception 'Só o master decide quais mudanças precisam de aprovação';
+end $$;
+create trigger t_regras_mudanca_acesso before insert or update or delete on erp.regras_mudanca_acesso
+  for each row execute function erp.tg_regras_mudanca_acesso();
+create trigger t_aud_regras_mudanca_acesso after insert or update or delete on erp.regras_mudanca_acesso
+  for each row execute function erp.tg_auditoria('tabela');
 
 create table erp.mudancas_acesso (
   id            uuid primary key default gen_random_uuid(),
@@ -395,15 +429,40 @@ create function erp.sou_master() returns boolean language sql stable as
 -- grupo de sucessão e administradores: só o master (ou o sistema)
 create function erp.tg_so_master() returns trigger language plpgsql as $$
 begin
-  if erp.sistema() or erp.sou_master() then return coalesce(new, old); end if;
-  if tg_table_name = 'usuarios' then
-    if (tg_op = 'INSERT' and not new.administrador)
-       or (tg_op = 'UPDATE' and not old.administrador and not new.administrador) then
+  if not (erp.sistema() or erp.sou_master()) then
+    if tg_table_name = 'usuarios' then
+      if tg_op = 'DELETE' then raise exception 'Só o master apaga usuário'; end if;
+      if new.administrador or (tg_op = 'UPDATE' and old.administrador) then
+        raise exception 'Só o master cria e administra os administradores';
+      end if;
+      if new.so_sucessao or (tg_op = 'UPDATE' and old.so_sucessao) then
+        raise exception 'Só o master cria e muda usuário de sucessão';
+      end if;
+      if tg_op = 'UPDATE' and (new.login_id <> old.login_id or new.ativo <> old.ativo) then
+        raise exception 'Só o master muda o login ou a situação de um usuário';
+      end if;
+      -- usuário novo nasce sem papel; o papel e o contador vêm pelo pedido aprovado
+      if tg_op = 'INSERT' and (new.papel <> 'leitura' or new.contador) then
+        raise exception 'Usuário novo nasce como leitura; papel e contador só por pedido aprovado (erp.pedir_mudanca_acesso)';
+      end if;
+      if tg_op = 'UPDATE' and (new.papel <> old.papel or new.contador <> old.contador) and not erp.agindo_como('erp_acesso') then
+        raise exception 'Papel e contador só mudam por pedido aprovado (erp.pedir_mudanca_acesso)';
+      end if;
       return new;
     end if;
-    raise exception 'Só o master cria e administra os administradores';
+    raise exception 'Só o master define o grupo de sucessão';
   end if;
-  raise exception 'Só o master define o grupo de sucessão';
+  -- o administrador é o TI: não aprova nada (Moises, 14/11/2026), nem quando o master o cria
+  if tg_table_name <> 'usuarios' or tg_op = 'DELETE' then return coalesce(new, old); end if;
+  if new.administrador and (tg_op = 'INSERT' or not old.administrador)
+     and (exists (select 1 from erp.listas_financeiro where user_id = new.id)
+          or exists (select 1 from erp.centro_aprovadores where user_id = new.id)
+          or exists (select 1 from erp.centro_diretores where user_id = new.id)
+          or exists (select 1 from erp.aprovadores_acesso where user_id = new.id)
+          or exists (select 1 from erp.grupo_sucessao where user_id = new.id)) then
+    raise exception 'Administrador não aprova nada no ERP: tire a pessoa das listas de aprovação antes';
+  end if;
+  return coalesce(new, old);
 end $$;
 create trigger t_so_master before insert or update or delete on erp.grupo_sucessao
   for each row execute function erp.tg_so_master();
@@ -417,6 +476,18 @@ begin
   if exists (select 1 from erp.usuarios where id = p_user and so_sucessao) then
     raise exception 'Usuário só de sucessão não recebe acesso no ERP';
   end if;
+end $$;
+-- administrador (o TI) não aprova nada no ERP (Moises, 14/11/2026)
+create function erp.recusar_admin_aprovador(p_user uuid) returns void language plpgsql stable as $$
+begin
+  if exists (select 1 from erp.usuarios where id = p_user and administrador) then
+    raise exception 'Administrador não aprova nada no ERP';
+  end if;
+end $$;
+create function erp.tg_aprovador_nao_admin() returns trigger language plpgsql as $$
+begin
+  if tg_op <> 'DELETE' then perform erp.recusar_admin_aprovador(new.user_id); end if;
+  return coalesce(new, old);
 end $$;
 create or replace function erp.tg_acesso_admin() returns trigger language plpgsql as $$
 begin
@@ -490,6 +561,7 @@ begin
     when 'regra_acesso' then (select to_jsonb(t) from erp.regra_acesso t)
     when 'naturezas' then (select jsonb_build_object('id', id, 'mae_id', mae_id, 'restrita', restrita) from erp.naturezas where id = (d->>'id')::uuid)
     when 'nucleos_economicos' then (select jsonb_build_object('id', id, 'tipo', tipo) from erp.nucleos_economicos where id = (d->>'id')::uuid)
+    when 'usuarios' then (select jsonb_build_object('id', id, 'papel', papel, 'contador', contador) from erp.usuarios where id = (d->>'id')::uuid)
   end;
 end $$;
 
@@ -505,6 +577,8 @@ create function erp._beneficiarios_acesso(p_tabela text, d jsonb, a jsonb) retur
 begin
   if p_tabela in ('atribuicoes','excecoes_centro','excecoes_natureza','centro_diretores','centro_aprovadores','listas_financeiro','aprovadores_acesso') then
     return array_remove(array[(d->>'user_id')::uuid, (a->>'user_id')::uuid], null);
+  elsif p_tabela = 'usuarios' then
+    return array[(d->>'id')::uuid];
   elsif p_tabela in ('atribuicao_tipos','atribuicao_nucleos') then
     return array(select user_id from erp.atribuicoes where id = (d->>'atribuicao_id')::uuid
                  union select (m.dados->>'user_id')::uuid from erp.mudancas_acesso m
@@ -532,17 +606,18 @@ begin
   -- a lista de aprovadores e as regras dela: o master muda sozinho; os outros, com a unanimidade
   v_lista := p_tabela in ('aprovadores_acesso','regra_acesso');
   -- dentro desta definer a marca erp_acesso vale; o administrador é conferido pelo cadastro
-  if not coalesce((erp.meu_usuario()).administrador, false) and not (v_lista and erp.sou_master()) then
+  if not coalesce((erp.meu_usuario()).administrador, false) and not erp.sou_master() then
     raise exception 'Só o administrador pode mudar a configuração';
   end if;
-  if p_tabela not in ('perfis_modelo','perfil_centros','perfil_naturezas','atribuicoes','atribuicao_tipos','atribuicao_nucleos',
-                      'excecoes_centro','excecoes_natureza','centro_diretores','centro_aprovadores','listas_financeiro',
-                      'tipos_nucleo','aprovadores_acesso','regra_acesso','naturezas','nucleos_economicos') then
+  if not exists (select 1 from erp.regras_mudanca_acesso where tabela = p_tabela) then
     raise exception 'A tabela % não é de acesso', p_tabela;
   end if;
   if p_operacao not in ('incluir','alterar','excluir') then raise exception 'Operação inválida: %', p_operacao; end if;
-  if p_tabela in ('naturezas','nucleos_economicos','regra_acesso') and p_operacao <> 'alterar' then
+  if p_tabela in ('naturezas','nucleos_economicos','regra_acesso','usuarios') and p_operacao <> 'alterar' then
     raise exception 'Em % o pedido só altera', p_tabela;
+  end if;
+  if p_tabela = 'usuarios' and exists (select 1 from jsonb_object_keys(p_dados) k where k not in ('id','papel','contador')) then
+    raise exception 'O pedido de usuário só muda o papel e o contador (login, situação e marca de sucessor: só o master)';
   end if;
   if p_tabela = 'naturezas' and exists (select 1 from jsonb_object_keys(p_dados) k where k not in ('id','restrita','mae_id')) then
     raise exception 'O pedido de natureza só muda a marca restrita e o galho';
@@ -563,10 +638,12 @@ begin
 
   select count(*) into v_aprov from erp.aprovadores_acesso a join erp.usuarios u on u.id = a.user_id and u.ativo
    where a.user_id <> v_eu and a.user_id <> all (v_benef);
-  if v_lista and erp.sou_master() then
+  -- o master faz qualquer mudança na hora; o administrador, nas que o master dispensou da aprovação
+  if erp.sou_master()
+     or (not v_lista and not (select exige_aprovacao from erp.regras_mudanca_acesso where tabela = p_tabela)) then
     insert into erp.mudancas_acesso (tabela, operacao, dados, antes, beneficiarios, motivo, pedida_por, minimo)
     values (p_tabela, p_operacao, v_dados, v_antes, v_benef, p_motivo, v_eu, 0) returning id into v_id;
-    perform erp._aplicar_mudanca_acesso(v_id);              -- o master não precisa de aprovação
+    perform erp._aplicar_mudanca_acesso(v_id);
     return v_id;
   end if;
   if v_lista then
@@ -654,6 +731,7 @@ begin
   when 'regra_acesso' then update erp.regra_acesso set minimo = (d->>'minimo')::int, sucessao_dias = (d->>'sucessao_dias')::int;
   when 'naturezas' then update erp.naturezas set restrita = (d->>'restrita')::boolean, mae_id = (d->>'mae_id')::uuid where id = (d->>'id')::uuid;
   when 'nucleos_economicos' then update erp.nucleos_economicos set tipo = d->>'tipo' where id = (d->>'id')::uuid;
+  when 'usuarios' then update erp.usuarios set papel = d->>'papel', contador = (d->>'contador')::boolean where id = (d->>'id')::uuid;
   end case;
   update erp.mudancas_acesso set situacao = 'aplicada', encerrada_em = clock_timestamp() where id = p_id;
 end $$;
@@ -755,12 +833,12 @@ begin
   end if;
 end $$;
 
--- Todo o grupo aprovou: começa o prazo de veto do master, com os avisos.
+-- Todo o grupo aprovou: saem os avisos ao master. O prazo de veto conta do primeiro aviso
+-- enviado (S-083, Moises 14/11/2026), não da unanimidade.
 create function erp._sucessao_unanime(p_id uuid) returns void language plpgsql as $$
 begin
   update erp.sucessoes_master s
-     set unanime_em = clock_timestamp(),
-         vale_em = clock_timestamp() + make_interval(days => (select sucessao_dias from erp.regra_acesso))
+     set unanime_em = clock_timestamp()
    where s.id = p_id and s.unanime_em is null
      and not exists (select 1 from unnest(s.aprovadores) a(u)
                       where not exists (select 1 from erp.sucessao_votos v where v.sucessao_id = s.id and v.user_id = a.u and v.aprova));
@@ -782,6 +860,7 @@ begin
   select * into s from erp.sucessoes_master where id = p_id for update;
   if s.id is null or s.situacao <> 'pendente' then raise exception 'Não há essa sucessão pendente'; end if;
   if s.unanime_em is null then raise exception 'A sucessão precisa da aprovação de todo o grupo de sucessão'; end if;
+  if s.vale_em is null then raise exception 'O prazo da sucessão só corre depois do primeiro aviso enviado ao master'; end if;
   if clock_timestamp() < s.vale_em then raise exception 'A sucessão só vale depois de %', s.vale_em; end if;
   if (select user_id from erp.master) <> s.master_id then
     update erp.sucessoes_master set situacao = 'obsoleta', encerrada_em = clock_timestamp() where id = p_id;
@@ -815,6 +894,10 @@ begin
   update erp.avisos_sucessao set enviado_em = clock_timestamp(), token_hash = erp.hash_token(p_token)
    where sucessao_id = p_sucessao and dia = p_dia and turno = p_turno and canal = p_canal and enviado_em is null;
   if not found then raise exception 'Aviso não encontrado ou já enviado'; end if;
+  -- o primeiro aviso enviado começa o prazo de veto; os seguintes não o mudam
+  update erp.sucessoes_master
+     set vale_em = clock_timestamp() + make_interval(days => (select sucessao_dias from erp.regra_acesso))
+   where id = p_sucessao and vale_em is null and situacao = 'pendente';
 end $$;
 
 -- Veto pelo link do aviso, sem login (o servidor chama com o token do link).
@@ -826,4 +909,13 @@ begin
    where a.token_hash = erp.hash_token(p_token) and s.situacao = 'pendente' and s.master_id = (select user_id from erp.master);
   if v_id is null then raise exception 'Link inválido ou sucessão já encerrada'; end if;
   update erp.sucessoes_master set situacao = 'vetada', encerrada_em = clock_timestamp() where id = v_id;
+end $$;
+
+do $$
+declare t text;
+begin
+  foreach t in array array['listas_financeiro','centro_aprovadores','centro_diretores','aprovadores_acesso','grupo_sucessao'] loop
+    execute format('create trigger t_aprovador_nao_admin before insert or update on erp.%I
+                      for each row execute function erp.tg_aprovador_nao_admin()', t);
+  end loop;
 end $$;

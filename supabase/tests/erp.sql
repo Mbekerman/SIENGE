@@ -38,10 +38,12 @@ set client_min_messages = notice;
 \set analista '00000000-0000-0000-0000-00000000000b'
 \set leitor   '00000000-0000-0000-0000-00000000000d'
 \set contador '00000000-0000-0000-0000-00000000000c'
+\set ti       '00000000-0000-0000-0000-000000000011'
 
 -- no teste, o login de cada um é o próprio id em texto (pg_temp.como põe o login na sessão)
 insert into erp.usuarios (id, login_id, nome, papel, administrador, contador) values
-  (:'diretor', :'diretor', 'Moises', 'diretor', true, false),
+  (:'diretor', :'diretor', 'Moises', 'diretor', false, false),   -- master: faz o que o administrador faz, sem ser administrador
+  (:'ti', :'ti', 'TI', 'leitura', true, false),
   (:'diretor2', :'diretor2', 'Sócia', 'diretor', false, false),
   (:'gestor', :'gestor', 'Paula', 'gestor', false, false),
   (:'analista', :'analista', 'Rafael', 'analista', false, false),
@@ -591,8 +593,7 @@ select pg_temp.falha($$insert into erp.previsoes (empresa_id, origem, nucleo_eco
   'natureza desativada não recebe lançamento novo');
 update erp.naturezas set ativa = true where codigo = '04.06';
 -- mover galho com lançamentos: só diretoria (o administrador não diretor não move)
-update erp.usuarios set administrador = true where id = :'gestor';
-select pg_temp.como(:'gestor');
+select pg_temp.como(:'ti');
 select pg_temp.falha($$update erp.naturezas set linha_dre = 'despesas_gerais' where codigo = '04.01'$$,
   'mudar DRE de natureza com lançamentos (muda relatório do passado) só pela diretoria');
 select pg_temp.como(:'diretor');
@@ -1195,17 +1196,33 @@ select pg_temp.erro_igual(format($$update erp.contas_bancarias set conta = '0000
 select pg_temp.erro_igual(format($$insert into erp.codigos_externos (sistema, tabela, registro_id, codigo) values ('sienge', 'pessoas', %L, '999')$$, :'analista'),
   'Só o administrador pode mudar a configuração', 'S-055: analista não grava código externo');
 select pg_temp.como(:'diretor');
-select pg_temp.erro_igual(format($$update erp.usuarios set administrador = false where id = %L$$, :'diretor'),
-  'Ninguém muda o próprio papel, acesso ou login', 'S-055: nem o administrador muda o próprio acesso');
+select pg_temp.erro_igual(format($$update erp.usuarios set papel = 'gestor' where id = %L$$, :'diretor'),
+  'Ninguém muda o próprio papel, acesso ou login', 'S-055: nem o master muda o próprio papel');
 select pg_temp.erro_igual(format($$update erp.usuarios set login_id = 'outro' where id = %L$$, :'diretor'),
-  'Ninguém muda o próprio papel, acesso ou login', 'S-055: nem o administrador muda o próprio login');
+  'Ninguém muda o próprio papel, acesso ou login', 'S-055: nem o master muda o próprio login');
 select pg_temp.erro_igual(format($$delete from erp.usuarios where id = %L$$, :'diretor'),
-  'Ninguém muda o próprio papel, acesso ou login', 'S-055: o administrador não se apaga');
+  'Ninguém muda o próprio papel, acesso ou login', 'S-055: o master não se apaga');
 update erp.usuarios set nome = 'Moises B.' where id = :'diretor';
 update erp.usuarios set papel = 'gestor' where id = :'analista';
 select pg_temp.ok((select papel = 'gestor' from erp.usuarios where id = :'analista')
                   and exists (select 1 from erp.auditoria where tabela = 'usuarios' and registro = :'analista' and por = :'diretor'),
-  'S-055: o administrador muda o papel de outra pessoa, e fica na auditoria');
+  'S-055: o master muda o papel de outra pessoa na hora, e fica na auditoria');
+select pg_temp.como(:'ti');
+select pg_temp.erro_igual(format($$update erp.usuarios set papel = 'leitura' where id = %L$$, :'ti'),
+  'Só o master cria e administra os administradores', 'S-081: o administrador não muda o próprio cadastro');
+select pg_temp.erro_igual(format($$update erp.usuarios set papel = 'diretor' where id = %L$$, :'analista'),
+  'Papel e contador só mudam por pedido aprovado (erp.pedir_mudanca_acesso)', 'S-081: o administrador não muda papel direto');
+select pg_temp.erro_igual(format($$update erp.usuarios set contador = true where id = %L$$, :'analista'),
+  'Papel e contador só mudam por pedido aprovado (erp.pedir_mudanca_acesso)', 'S-081: o administrador não muda contador direto');
+select pg_temp.erro_igual(format($$update erp.usuarios set login_id = 'outro' where id = %L$$, :'gestor'),
+  'Só o master muda o login ou a situação de um usuário', 'S-081: o administrador não troca o login de ninguém');
+select pg_temp.erro_igual(format($$update erp.usuarios set ativo = false where id = %L$$, :'gestor'),
+  'Só o master muda o login ou a situação de um usuário', 'S-081: o administrador não desativa ninguém');
+select pg_temp.erro_igual(format($$delete from erp.usuarios where id = %L$$, :'leitor'),
+  'Só o master apaga usuário', 'S-081: o administrador não apaga usuário');
+update erp.usuarios set nome = 'Paula G.' where id = :'gestor';
+select pg_temp.ok((select nome from erp.usuarios where id = :'gestor') = 'Paula G.', 'S-081: o administrador muda o nome de quem não é administrador');
+select pg_temp.como(:'diretor');
 select pg_temp.erro_igual($$update erp.orcamento_versoes set situacao = 'rascunho' where id = '90000000-0000-0000-0000-000000000001'$$,
   'A situação do orçamento só muda pela publicação', 'S-055: orçamento vigente não volta a rascunho');
 select pg_temp.erro_igual($$update erp.orcamento_versoes set nome = 'outro' where id = '90000000-0000-0000-0000-000000000001'$$,
@@ -2518,7 +2535,7 @@ select pg_temp.ok(not erp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.
 select pg_temp.como(null);
 insert into erp.aprovadores_acesso values (:'diretor2'), (:'leitor');
 update erp.regra_acesso set minimo = 1;
-select pg_temp.como(:'diretor');
+select pg_temp.como(:'ti');
 select pg_temp.erro_igual(format($$insert into erp.mudancas_acesso (tabela, operacao, dados, motivo, pedida_por, minimo) values ('atribuicoes', 'incluir', '{}', 'x', %L, 0)$$, :'diretor'),
   'Mudança de acesso só pelo pedido (erp.pedir_mudanca_acesso) e pela decisão (erp.decidir_mudanca_acesso)', 'acesso: ninguém grava pedido direto na tabela');
 select pg_temp.como(:'analista');
@@ -2526,7 +2543,7 @@ select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('listas_finan
   'Só o administrador pode mudar a configuração', 'acesso: só o administrador pede mudança de acesso');
 
 -- atribuição nova com o núcleo, em dois pedidos; cada um vale quando aprovado
-select pg_temp.como(:'diretor');
+select pg_temp.como(:'ti');
 select erp.pedir_mudanca_acesso('atribuicoes', 'incluir',
   jsonb_build_object('user_id', :'contador', 'perfil_id', 'a0000000-0000-0000-0000-000000000004', 'escopo', 'lista'), 'Coordenação de Marketing') as m_atr \gset
 select dados->>'id' as atr_nova from erp.mudancas_acesso where id = :'m_atr' \gset
@@ -2552,10 +2569,10 @@ select pg_temp.ok(exists (select 1 from erp.auditoria where tabela = 'atribuicoe
 -- quem pediu e quem ganha acesso não aprovam; recusa precisa de justificativa
 select pg_temp.como(null);
 insert into erp.aprovadores_acesso values (:'diretor');
-select pg_temp.como(:'diretor');
+select pg_temp.como(:'ti');
 select erp.pedir_mudanca_acesso('listas_financeiro', 'incluir', jsonb_build_object('lista', 'AO', 'user_id', :'leitor'), 'Leitor no AO') as m_ao \gset
 select pg_temp.erro_igual(format($$select erp.decidir_mudanca_acesso(%L, true)$$, :'m_ao'),
-  'Quem pediu a mudança de acesso não a aprova', 'acesso: quem pediu não aprova');
+  'Só um aprovador de acesso decide o pedido', 'acesso: quem pediu (o administrador) não está na lista e não aprova');
 select pg_temp.como(:'leitor');
 select pg_temp.erro_igual(format($$select erp.decidir_mudanca_acesso(%L, true)$$, :'m_ao'),
   'Quem ganha acesso com a mudança não a aprova', 'acesso: quem ganha acesso não aprova');
@@ -2567,7 +2584,7 @@ select pg_temp.ok(:'r_ao' = 'recusada'
                   and not exists (select 1 from erp.listas_financeiro where lista = 'AO' and user_id = :'leitor'),
   'acesso: recusado, o pedido não vale');
 -- o modelo: quem está ligado a ele não aprova a mudança
-select pg_temp.como(:'diretor');
+select pg_temp.como(:'ti');
 select erp.pedir_mudanca_acesso('perfil_centros', 'alterar',
   jsonb_build_object('perfil_id', 'a0000000-0000-0000-0000-000000000001', 'centro_custo_id', :'cc_mkt', 'nivel', 'lancador'), 'Analista lança e vê') as m_mod \gset
 select pg_temp.ok((select :'analista'::uuid = any (beneficiarios) from erp.mudancas_acesso where id = :'m_mod'),
@@ -2579,28 +2596,28 @@ select pg_temp.erro_igual(format($$select erp.decidir_mudanca_acesso(%L, true)$$
   'Quem ganha acesso com a mudança não a aprova', 'acesso: quem se ligou ao modelo depois do pedido também não aprova');
 select pg_temp.como(null);
 delete from erp.atribuicoes where user_id = :'diretor2';
-select pg_temp.como(:'diretor');
--- o próprio administrador pode pedir acesso para si: outro aprova
+select pg_temp.como(:'ti');
+-- o administrador pede acesso para outro: a lista aprova
 select erp.pedir_mudanca_acesso('listas_financeiro', 'incluir', jsonb_build_object('lista', 'AO', 'user_id', :'diretor'), 'Moises no AO') as m_eu \gset
 select pg_temp.como(:'diretor2');
 select erp.decidir_mudanca_acesso(:'m_eu', true);
 select pg_temp.ok(exists (select 1 from erp.listas_financeiro where lista = 'AO' and user_id = :'diretor'),
-  'acesso: o administrador ganha acesso só com a aprovação de outro');
+  'acesso: o pedido do administrador vale com a aprovação da lista');
 
 -- mínimo de aprovações e pedido que fica velho
 select pg_temp.como(null);
 update erp.regra_acesso set minimo = 2;
-select pg_temp.como(:'diretor');
+select pg_temp.como(:'ti');
 select erp.pedir_mudanca_acesso('excecoes_centro', 'incluir',
   jsonb_build_object('user_id', :'gestor', 'nucleo_economico_id', :'ne_vm', 'centro_custo_id', :'cc_obra', 'nivel', 'leitor'), 'Gestor vê obra') as m_dois \gset
 select pg_temp.como(:'diretor2');
 select pg_temp.ok(erp.decidir_mudanca_acesso(:'m_dois', true) = 'pendente', 'acesso: com mínimo 2, uma aprovação não basta');
 select pg_temp.como(:'leitor');
 select pg_temp.ok(erp.decidir_mudanca_acesso(:'m_dois', true) = 'aplicada', 'acesso: com mínimo 2, a segunda aprovação aplica');
-select pg_temp.como(:'diretor');
+select pg_temp.como(null); update erp.regra_acesso set minimo = 3; select pg_temp.como(:'ti');
 select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('listas_financeiro', 'incluir', jsonb_build_object('lista', 'AF', 'user_id', %L), 'x')$$, :'leitor'),
-  'Não há aprovadores de acesso suficientes para esta mudança (precisa de 2, há 1)', 'acesso: sem aprovadores suficientes, o pedido nem abre');
-select pg_temp.como(null); update erp.regra_acesso set minimo = 1; select pg_temp.como(:'diretor');
+  'Não há aprovadores de acesso suficientes para esta mudança (precisa de 3, há 2)', 'acesso: sem aprovadores suficientes, o pedido nem abre');
+select pg_temp.como(null); update erp.regra_acesso set minimo = 1; select pg_temp.como(:'ti');
 select erp.pedir_mudanca_acesso('excecoes_centro', 'alterar',
   jsonb_build_object('user_id', :'gestor', 'nucleo_economico_id', :'ne_vm', 'centro_custo_id', :'cc_obra', 'nivel', 'lancador'), 'Gestor lança obra') as m_velho \gset
 select pg_temp.como(null);
@@ -2613,7 +2630,7 @@ select pg_temp.ok(:'r_velho' = 'obsoleta'
 select pg_temp.como(:'diretor2');
 select pg_temp.erro_igual(format($$select erp.cancelar_mudanca_acesso(%L)$$, :'m_mod'),
   'Só quem pediu cancela o pedido pendente', 'acesso: só quem pediu cancela');
-select pg_temp.como(:'diretor');
+select pg_temp.como(:'ti');
 select erp.cancelar_mudanca_acesso(:'m_mod');
 select pg_temp.ok((select situacao = 'cancelada' from erp.mudancas_acesso where id = :'m_mod'), 'acesso: quem pediu cancela o pedido pendente');
 
@@ -2629,7 +2646,7 @@ select erp.decidir_mudanca_acesso(:'m_res', true);
 select pg_temp.ok(not (select restrita from erp.naturezas where codigo = '05.01.04'), 'acesso: a marca restrita muda pelo pedido aprovado');
 select pg_temp.como(null);
 update erp.naturezas set restrita = true where codigo = '05.01';
-select pg_temp.como(:'diretor');
+select pg_temp.como(:'ti');
 select pg_temp.erro_igual($$update erp.naturezas set mae_id = (select id from erp.naturezas where codigo = '05.01') where codigo = '05.02'$$,
   'Marcar natureza restrita ou mudá-la de galho restrito só por pedido aprovado (erp.pedir_mudanca_acesso)', 'acesso: pôr natureza dentro de galho restrito só pelo pedido');
 select erp.pedir_mudanca_acesso('nucleos_economicos', 'alterar', jsonb_build_object('id', :'ne_loja', 'tipo', 'outro'), 'Loja vira outro') as m_tipo \gset
@@ -2643,7 +2660,7 @@ select erp.pedir_mudanca_acesso('aprovadores_acesso', 'incluir', jsonb_build_obj
 select pg_temp.ok((select situacao = 'aplicada' and minimo = 0 from erp.mudancas_acesso where id = :'m_lista')
                   and exists (select 1 from erp.aprovadores_acesso where user_id = :'analista'),
   'acesso: o master muda a lista de aprovadores sozinho');
-select pg_temp.como(:'gestor');      -- administrador, não master
+select pg_temp.como(:'ti');      -- administrador, não master
 select erp.pedir_mudanca_acesso('regra_acesso', 'alterar', jsonb_build_object('minimo', 2), 'Duas chaves') as m_regra \gset
 select pg_temp.ok((select minimo = 4 from erp.mudancas_acesso where id = :'m_regra'),
   'acesso: fora do master, mudar a lista ou o mínimo pede a unanimidade da lista');
@@ -2660,23 +2677,85 @@ select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('aprovadores_
   'Só o administrador pode mudar a configuração', 'acesso: quem não é administrador nem master não pede mudança na lista');
 
 -- master: administradores, grupo de sucessão, passar o papel; sucessão com unanimidade, prazos e veto
-select pg_temp.como(:'gestor');      -- administrador, não master
+\set ti2 '00000000-0000-0000-0000-000000000012'
+select pg_temp.como(:'diretor');
+insert into erp.usuarios (id, login_id, nome, papel, administrador) values (:'ti2', :'ti2', 'TI 2', 'leitura', true);
+select pg_temp.ok(exists (select 1 from erp.usuarios where id = :'ti2' and administrador), 'master: o master cria administrador');
+select pg_temp.erro_igual(format($$update erp.usuarios set administrador = true where id = %L$$, :'diretor2'),
+  'Administrador não aprova nada no ERP: tire a pessoa das listas de aprovação antes', 'S-081: nem o master faz administrador quem está numa lista de aprovação');
+-- S-081: o administrador (TI) não aprova nada; o master configura o que precisa de aprovação
+select pg_temp.como(null);
+select pg_temp.erro_igual(format($$insert into erp.listas_financeiro values ('AF', %L)$$, :'ti'), 'Administrador não aprova nada no ERP', 'S-081: administrador não entra em AF, AO ou AD');
+select pg_temp.erro_igual(format($$insert into erp.centro_aprovadores (centro_custo_id, user_id) values (%L, %L)$$, :'cc_mkt', :'ti'), 'Administrador não aprova nada no ERP', 'S-081: administrador não é gestor de área');
+select pg_temp.erro_igual(format($$insert into erp.centro_diretores values (%L, %L)$$, :'cc_mkt', :'ti'), 'Administrador não aprova nada no ERP', 'S-081: administrador não é diretor de área');
+select pg_temp.erro_igual(format($$insert into erp.aprovadores_acesso values (%L)$$, :'ti'), 'Administrador não aprova nada no ERP', 'S-081: administrador não aprova acesso');
+select pg_temp.erro_igual(format($$insert into erp.grupo_sucessao values (%L)$$, :'ti'), 'Administrador não aprova nada no ERP', 'S-081: administrador não está no grupo de sucessão');
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('listas_financeiro', 'incluir', jsonb_build_object('lista', 'AO', 'user_id', %L), 'x')$$, :'ti'),
+  'Administrador não aprova nada no ERP', 'S-081: nem o master põe o administrador numa lista');
+select pg_temp.como(:'ti');
+select pg_temp.erro_igual($$update erp.regras_mudanca_acesso set exige_aprovacao = false where tabela = 'excecoes_centro'$$,
+  'Só o master decide quais mudanças precisam de aprovação', 'S-081: o administrador não dispensa a própria aprovação');
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual($$update erp.regras_mudanca_acesso set rotulo = 'x' where tabela = 'excecoes_centro'$$,
+  'As regras são fixas; mude só a exigência', 'S-081: o master muda só a exigência');
+select pg_temp.erro_igual($$delete from erp.regras_mudanca_acesso where tabela = 'excecoes_centro'$$,
+  'As regras são fixas; mude só a exigência', 'S-081: as regras não se apagam');
+update erp.regras_mudanca_acesso set exige_aprovacao = false where tabela in ('excecoes_centro', 'aprovadores_acesso');
+select pg_temp.como(:'ti');
+select erp.pedir_mudanca_acesso('excecoes_centro', 'incluir',
+  jsonb_build_object('user_id', :'leitor', 'nucleo_economico_id', :'ne_vm', 'centro_custo_id', :'cc_obra', 'nivel', 'leitor'), 'Leitor vê obra') as m_disp \gset
+select pg_temp.ok((select situacao = 'aplicada' from erp.mudancas_acesso where id = :'m_disp')
+                  and exists (select 1 from erp.excecoes_centro where user_id = :'leitor' and centro_custo_id = :'cc_obra'),
+  'S-081: tipo dispensado pelo master: a mudança do administrador vale na hora, registrada');
+select erp.pedir_mudanca_acesso('aprovadores_acesso', 'excluir', jsonb_build_object('user_id', :'leitor'), 'x') as m_ld \gset
+select pg_temp.ok((select situacao = 'pendente' from erp.mudancas_acesso where id = :'m_ld'),
+  'S-081: a lista de aprovadores nunca se dispensa da unanimidade fora do master');
+select erp.cancelar_mudanca_acesso(:'m_ld');
+select erp.pedir_mudanca_acesso('excecoes_natureza', 'incluir',
+  jsonb_build_object('user_id', :'leitor', 'natureza_id', pg_temp.nat('05.01.04'), 'centro_custo_id', :'cc_mkt', 'efeito', 'liberar'), 'x') as m_nd \gset
+select pg_temp.ok((select situacao = 'pendente' from erp.mudancas_acesso where id = :'m_nd'), 'S-081: tipo não dispensado continua pedindo aprovação');
+select erp.cancelar_mudanca_acesso(:'m_nd');
+-- papel e contador: pedido aprovado (login, situação e sucessor, só o master)
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('usuarios', 'alterar', jsonb_build_object('id', %L, 'login_id', 'outro'), 'x')$$, :'gestor'),
+  'O pedido de usuário só muda o papel e o contador (login, situação e marca de sucessor: só o master)', 'S-081: o pedido não troca o login');
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('usuarios', 'incluir', jsonb_build_object('id', %L, 'papel', 'diretor'), 'x')$$, :'gestor'),
+  'Em usuarios o pedido só altera', 'S-081: o pedido não cria usuário');
+insert into erp.usuarios (id, login_id, nome, papel) values ('00000000-0000-0000-0000-000000000096', 'novo2', 'Novo 2', 'leitura');
+select erp.pedir_mudanca_acesso('usuarios', 'alterar', jsonb_build_object('id', '00000000-0000-0000-0000-000000000096', 'papel', 'analista', 'contador', true), 'Novo analista') as m_pap \gset
+select pg_temp.ok((select situacao = 'pendente' and beneficiarios = array['00000000-0000-0000-0000-000000000096'::uuid] from erp.mudancas_acesso where id = :'m_pap')
+                  and (select papel = 'leitura' from erp.usuarios where id = '00000000-0000-0000-0000-000000000096'),
+  'S-081: o pedido de papel só vale depois da aprovação, e o usuário é quem ganha');
+select pg_temp.como(:'diretor2'); select erp.decidir_mudanca_acesso(:'m_pap', true);
+select pg_temp.como(:'leitor'); select erp.decidir_mudanca_acesso(:'m_pap', true);
+select pg_temp.ok((select papel = 'analista' and contador from erp.usuarios where id = '00000000-0000-0000-0000-000000000096'),
+  'S-081: papel e contador mudam pelo pedido aprovado');
+select pg_temp.como(:'diretor');
+select erp.pedir_mudanca_acesso('excecoes_natureza', 'incluir',
+  jsonb_build_object('user_id', :'leitor', 'natureza_id', pg_temp.nat('05.01.04'), 'centro_custo_id', :'cc_mkt', 'efeito', 'liberar'), 'x') as m_mst \gset
+select pg_temp.ok((select situacao = 'aplicada' from erp.mudancas_acesso where id = :'m_mst'), 'S-081: o que o master pede vale na hora, em qualquer tabela');
+
+select pg_temp.como(:'ti');      -- administrador, não master
 select pg_temp.erro_igual(format($$update erp.usuarios set administrador = true where id = %L$$, :'analista'),
   'Só o master cria e administra os administradores', 'master: só o master cria administrador');
-select pg_temp.erro_igual(format($$update erp.usuarios set papel = 'leitura' where id = %L$$, :'diretor'),
+select pg_temp.erro_igual(format($$update erp.usuarios set nome = 'x' where id = %L$$, :'ti2'),
   'Só o master cria e administra os administradores', 'master: só o master mexe no cadastro de um administrador');
+select pg_temp.erro_igual($$insert into erp.usuarios (id, login_id, nome, papel) values ('00000000-0000-0000-0000-000000000098', 'novo', 'Novo', 'diretor')$$,
+  'Usuário novo nasce como leitura; papel e contador só por pedido aprovado (erp.pedir_mudanca_acesso)', 'S-081: o administrador não cria usuário já diretor');
+insert into erp.usuarios (id, login_id, nome, papel) values ('00000000-0000-0000-0000-000000000098', 'novo', 'Novo', 'leitura');
+select pg_temp.ok((select papel = 'leitura' from erp.usuarios where id = '00000000-0000-0000-0000-000000000098'), 'S-081: o administrador cria usuário como leitura');
 select pg_temp.erro_igual(format($$insert into erp.grupo_sucessao values (%L)$$, :'leitor'),
   'Só o master define o grupo de sucessão', 'master: só o master define o grupo de sucessão');
 select pg_temp.como(:'diretor');
 insert into erp.grupo_sucessao values (:'leitor'), (:'analista'), (:'diretor2');
-select pg_temp.como(:'gestor');
+select pg_temp.como(:'ti');
 select pg_temp.erro_igual(format($$select erp.pedir_sucessao_master(%L, 'x')$$, :'diretor2'),
   'Só quem está no grupo de sucessão pede a sucessão do master', 'master: só quem está no grupo de sucessão pede a sucessão');
 select pg_temp.como(:'analista');
 select pg_temp.erro_igual(format($$select erp.passar_master(%L, 'x')$$, :'analista'),
   'Só o master passa o papel de master', 'master: só o master passa o papel');
-select pg_temp.como(:'gestor');
-select pg_temp.erro_igual(format($$update erp.usuarios set administrador = false where id = %L$$, :'diretor'),
+select pg_temp.como(:'ti');
+select pg_temp.erro_igual(format($$update erp.usuarios set administrador = false where id = %L$$, :'ti2'),
   'Só o master cria e administra os administradores', 'master: só o master tira um administrador');
 -- usuário só de sucessão (pode ser de fora da empresa) não recebe outro acesso
 select pg_temp.como(:'diretor');
@@ -2687,7 +2766,18 @@ select pg_temp.erro_igual($$insert into erp.listas_financeiro values ('AD', '000
   'Usuário só de sucessão não recebe acesso no ERP', 'master: usuário só de sucessão não entra em AF, AO ou AD');
 select pg_temp.erro_igual($$insert into erp.atribuicoes (user_id, perfil_id, escopo) values ('00000000-0000-0000-0000-000000000099', 'a0000000-0000-0000-0000-000000000003', 'todos')$$,
   'Usuário só de sucessão não recebe acesso no ERP', 'master: usuário só de sucessão não recebe modelo de acesso');
-select pg_temp.erro_igual($$update erp.usuarios set administrador = true where id = '00000000-0000-0000-0000-000000000099'$$,
+insert into erp.usuarios (id, login_id, nome, papel, so_sucessao) values ('00000000-0000-0000-0000-000000000097', '00000000-0000-0000-0000-000000000097', 'Familiar 2', 'leitura', true);
+select pg_temp.como(:'ti');
+select pg_temp.erro_igual($$insert into erp.usuarios (id, login_id, nome, papel, so_sucessao) values ('00000000-0000-0000-0000-000000000095', 'f3', 'Familiar 3', 'leitura', true)$$,
+  'Só o master cria e muda usuário de sucessão', 'S-081: o administrador não cria usuário de sucessão');
+select pg_temp.erro_igual($$update erp.usuarios set nome = 'x' where id = '00000000-0000-0000-0000-000000000097'$$,
+  'Só o master cria e muda usuário de sucessão', 'S-081: o administrador não mexe em usuário de sucessão');
+select pg_temp.erro_igual(format($$update erp.usuarios set so_sucessao = true, papel = 'leitura' where id = %L$$, :'leitor'),
+  'Só o master cria e muda usuário de sucessão', 'S-081: o administrador não marca ninguém como sucessor');
+select pg_temp.erro_igual($$update erp.usuarios set so_sucessao = false where id = '00000000-0000-0000-0000-000000000097'$$,
+  'Só o master cria e muda usuário de sucessão', 'S-081: o administrador não tira a marca de sucessor (para depois dar acesso)');
+select pg_temp.como(null);
+select pg_temp.erro_igual($$update erp.usuarios set administrador = true where id = '00000000-0000-0000-0000-000000000097'$$,
   'new row for relation "usuarios" violates check constraint "usuarios_check"', 'master: usuário só de sucessão não vira administrador');
 
 -- sucessão: sem prazo para a unanimidade; da unanimidade, 7 dias para o veto, com avisos
@@ -2704,14 +2794,14 @@ select pg_temp.erro_igual(format($$select erp.efetivar_sucessao_master(%L)$$, :'
   'A sucessão precisa da aprovação de todo o grupo de sucessão', 'master: sem o grupo inteiro, não há sucessão');
 select pg_temp.como('00000000-0000-0000-0000-000000000099');
 select erp.decidir_sucessao_master(:'suc1', true);
-select pg_temp.ok((select unanime_em is not null and vale_em::date = current_date + 7 from erp.sucessoes_master where id = :'suc1'),
-  'master: com a unanimidade, a troca vale em 7 dias');
+select pg_temp.ok((select unanime_em is not null and vale_em is null from erp.sucessoes_master where id = :'suc1'),
+  'S-083: a unanimidade não começa o prazo; ele espera o primeiro aviso enviado');
 select pg_temp.ok((select count(*) = 2 and bool_and(para = :'diretor'::uuid) from erp.avisos_sucessao where sucessao_id = :'suc1'),
   'master: a unanimidade já gera o aviso ao master (e-mail e WhatsApp)');
 select erp.gerar_avisos_sucessao();
 select pg_temp.ok((select count(*) = 2 from erp.avisos_sucessao where sucessao_id = :'suc1'), 'master: um aviso por turno e canal, sem repetir');
 select pg_temp.erro_igual(format($$select erp.efetivar_sucessao_master(%L)$$, :'suc1'),
-  (select format('A sucessão só vale depois de %s', vale_em) from erp.sucessoes_master where id = :'suc1'), 'master: a sucessão não vale antes dos 7 dias');
+  'O prazo da sucessão só corre depois do primeiro aviso enviado ao master', 'S-083: sem aviso enviado, a sucessão não vale');
 select pg_temp.erro_igual(format($$select erp.vetar_sucessao_master(%L)$$, :'suc1'),
   'Só o master veta a sucessão', 'master: só o master veta');
 -- veto de um clique pelo link do aviso (o servidor chama, sem login)
@@ -2724,6 +2814,16 @@ select erp.registrar_envio_aviso(:'suc1', :'av_dia', :'av_turno', 'whatsapp', :'
 select pg_temp.ok((select enviado_em is not null and token_hash = erp.hash_token(:'tok') and token_hash <> :'tok'
                    from erp.avisos_sucessao where sucessao_id = :'suc1' and canal = 'whatsapp'),
   'master: o envio fica registrado e o banco guarda só o hash do token');
+select pg_temp.ok((select vale_em::date = current_date + 7 from erp.sucessoes_master where id = :'suc1'),
+  'S-083: o primeiro aviso enviado começa os 7 dias');
+select vale_em as vale1 from erp.sucessoes_master where id = :'suc1' \gset
+select erp.registrar_envio_aviso(:'suc1', :'av_dia', :'av_turno', 'email', 'c2f4e6a8b0d2f4a6c8e0b2d4f6a8c0e2d4f6a8');
+select pg_temp.ok((select vale_em = :'vale1'::timestamptz from erp.sucessoes_master where id = :'suc1'),
+  'S-083: os avisos seguintes não mudam o prazo');
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format($$select erp.efetivar_sucessao_master(%L)$$, :'suc1'),
+  (select format('A sucessão só vale depois de %s', vale_em) from erp.sucessoes_master where id = :'suc1'), 'master: a sucessão não vale antes dos 7 dias');
+select pg_temp.como(null);
 select pg_temp.como(:'diretor');
 select pg_temp.erro_igual(format($$select erp.vetar_sucessao_por_link(%L)$$, :'tok'), 'Só o servidor recebe o veto pelo link', 'master: o veto pelo link é só pelo servidor');
 select pg_temp.erro_igual(format($$select erp.registrar_envio_aviso(%L, %L, %L, 'email', %L)$$, :'suc1', :'av_dia', :'av_turno', :'tok'),
