@@ -7,7 +7,7 @@
 ✅ **Decidido** (Moises, 7/nov/2026): o sistema terá fechamento de mês, um conceito que a BKM ainda não usa. Fechar um mês trava o passado: mudar algo dele exige alçada mais alta, porque o número já pode ter sido entregue ao banco, à Caixa, a um sócio ou ao contador.
 
 - O fechamento é por empresa.
-- 🟡 Só a diretoria fecha e reabre, e sempre em ordem (não se fecha março com fevereiro aberto). Assim está no banco de dados de 7/nov/2026; falta confirmação explícita.
+- ✅ Só a diretoria fecha e reabre, pelas funções próprias, sem atalho, e sempre em ordem (não se fecha março com fevereiro aberto). Quem fechou e quando ficam gravados (trava autorizada pelo Moises, 14/nov/2026).
 - O trimestre é o **do calendário** (jan–mar, abr–jun...) e fecha quando o último mês dele é fechado ✅ (Moises, 7/nov/2026).
 - ⏳ Falta decidir o que fazer com um pagamento atrasado de uma competência já fechada: travar, ou lançar no primeiro mês aberto.
 

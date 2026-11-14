@@ -225,6 +225,13 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 8. Todo pagamento tem pelo menos uma aprovação. No PJ, a aprovação são os dois "ok" do mês.
 9. Toda mudança de configuração fica registrada.
 
+✅ Travas novas, autorizadas pelo Moises em 14/nov/2026 (S-053 a S-055), também no banco e sem tela que as desligue:
+
+- **Só o administrador** cadastra e altera os usuários e as contas bancárias da empresa, e tudo fica na auditoria.
+- **Ninguém muda o próprio papel, acesso ou login**, nem o administrador.
+- O mês só fecha e reabre pelas funções da diretoria (ver [Fechamento](../financeiro/reclassificacao-e-fechamento.md)).
+- Orçamento publicado não se edita (ver [Orçamento](../financeiro/orcamento-e-fluxo-de-caixa.md)).
+
 ## Quem muda a configuração
 
 - ✅ **Listas AF e AO:** qualquer pessoa da AD pode mexer, menos numa lista da qual ela mesma faça parte. Toda mudança avisa o master e as outras pessoas da AD (Moises, 7/nov/2026).

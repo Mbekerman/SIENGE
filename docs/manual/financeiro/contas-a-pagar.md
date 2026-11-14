@@ -29,7 +29,9 @@ Compromisso  →  Previsão  →  Documento  →  Título (parcelas)  →  Pagam
 
 ✅ **Decidido** (6 e 7/nov/2026): as previsões ficam **só no ERP BKM** e não são lançadas no Sienge. Motivo, comprovado em teste no Sienge em 6/nov/2026: um título criado pela API não pode ter tipo, número nem valor alterados depois, então uma previsão no Sienge nunca vira título real e teria de ser apagada à mão todo mês.
 
-Quando a nota chega e o título nasce, ele **consome** a previsão correspondente, e a diferença entre o previsto e o realizado fica registrada. Uma previsão não se edita: se mudou, cancela-se e cria-se outra.
+Quando a nota chega e o título nasce, ele **consome** a previsão correspondente, e a diferença entre o previsto e o realizado fica registrada. Uma previsão pode ser editada (volta para aprovação) ou cancelada e substituída por outra (Moises, 14/nov/2026).
+
+✅ A nota só consome a previsão que casa com ela: **mesma empresa, mesmo fornecedor, mesmo núcleo econômico, mesmo centro de custo e mesma natureza** (trava autorizada pelo Moises, 14/nov/2026).
 
 ## Primeira etapa da implantação: o pedido de pagamento
 

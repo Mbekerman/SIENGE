@@ -25,7 +25,7 @@ Hoje, para ter orçamento de uma área administrativa, a BKM cadastra a área co
 2. **Aprovado**: a base de comparação.
 3. **Reprojeções**: as revisões ao longo do tempo.
 
-Publicada, a versão não muda mais. Publicar uma nova viabilidade ou um novo aprovado substitui a vigente do mesmo tipo, e a anterior fica no histórico.
+✅ Publicada, a versão não muda mais: não volta a rascunho, não se edita e não se apaga. Para mudar, cria-se uma reprojeção (trava autorizada pelo Moises, 14/nov/2026). Publicar uma nova viabilidade ou um novo aprovado substitui a vigente do mesmo tipo, e a anterior fica no histórico.
 
 O **custo de capital** (permuta financeira, pagamento do terreno) existe só no orçado, porque nunca vira pagamento. 🟡 Proposta, uma das 4 divergências da árvore ainda em aberto.
 
