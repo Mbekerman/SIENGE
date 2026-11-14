@@ -875,6 +875,14 @@ exception when others then
 end $$;
 select pg_temp.ok(true, 'S-037: as linhas do pedido não se tiram por fora');
 select pg_temp.falha($$delete from erp.reclassificacoes where id = current_setting('teste.rc37')::uuid$$, 'S-037: pedido não se apaga');
+do $$ begin
+  insert into erp.reclassificacao_votos (reclassificacao_id, user_id, como, aprovou)
+  values (current_setting('teste.rc37')::uuid, '00000000-0000-0000-0000-00000000000f', 'diretor', true);
+  raise exception 'passou';
+exception when others then
+  if sqlerrm <> 'O pedido de reclassificação só muda pelas funções dele (pedir, decidir, cancelar)' then raise exception 'voto: %', sqlerrm; end if;
+end $$;
+select pg_temp.ok(true, 'S-038: voto não se grava por fora (nem em nome de outra pessoa)');
 select pg_temp.falha($$truncate erp.reclassificacoes cascade$$, 'S-037: pedidos não se apagam nem por truncate');
 select pg_temp.como(:'analista');
 select erp.cancelar_reclassificacao(current_setting('teste.rc37')::uuid);

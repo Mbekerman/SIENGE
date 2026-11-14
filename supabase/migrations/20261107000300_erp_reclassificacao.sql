@@ -134,8 +134,9 @@ create table erp.reclassificacao_votos (
   check (aprovou or length(trim(coalesce(justificativa, ''))) > 0)
 );
 
--- O pedido e suas linhas só mudam pelas funções da reclassificação (pedir, decidir, cancelar),
--- definer de erp_reclassificacao (S-037). Fora delas, não se gravam, alteram nem apagam.
+-- O pedido, suas linhas e os votos só mudam pelas funções da reclassificação (pedir, decidir,
+-- cancelar), definer de erp_reclassificacao (S-037, S-038). Fora delas, não se gravam, alteram
+-- nem apagam: voto forjado em nome de outra pessoa não entra.
 create function erp.tg_reclassificacao_protegida() returns trigger language plpgsql as $$
 begin
   -- a única mudança de fora: a chave estrangeira apagando a natureza que já não existe
@@ -159,6 +160,10 @@ create trigger t_protegida before insert or update or delete on erp.reclassifica
   for each row execute function erp.tg_reclassificacao_protegida();
 create trigger t_protegida before insert or update or delete on erp.reclassificacao_itens
   for each row execute function erp.tg_reclassificacao_protegida();
+create trigger t_protegida before insert or update or delete on erp.reclassificacao_votos
+  for each row execute function erp.tg_reclassificacao_protegida();
+create trigger t_sem_truncate before truncate on erp.reclassificacao_votos
+  for each statement execute function erp.tg_recusa_truncate();
 create trigger t_sem_truncate before truncate on erp.reclassificacoes
   for each statement execute function erp.tg_recusa_truncate();
 create trigger t_sem_truncate before truncate on erp.reclassificacao_itens
