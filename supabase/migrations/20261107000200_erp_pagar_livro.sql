@@ -841,8 +841,12 @@ create trigger t_aud_regra_adiantamento after update on erp.regra_adiantamento
   for each row execute function erp.tg_auditoria('id');
 
 create function erp.estou_nas_listas(p_listas text[]) returns boolean language sql stable as $$
-  select exists (select 1 from erp.listas_financeiro l join erp.usuarios u on u.user_id = l.user_id
+  select exists (select 1 from erp.listas_financeiro l join erp.usuarios u on u.id = l.user_id
                  where l.user_id = erp.eu() and u.ativo and l.lista = any(p_listas)) $$;
+
+-- A regra vigente (security definer na migration _erp_rls: a trava lê a regra por baixo do RLS).
+create function erp.regra_adiantamento_atual() returns erp.regra_adiantamento language sql stable as
+  $$ select * from erp.regra_adiantamento $$;
 
 -- Abatimento de adiantamento em título de outro núcleo ou centro: aprovação registrada.
 create table erp.abatimentos_cruzados (
@@ -862,16 +866,33 @@ create table erp.liberacoes_sem_abater (
   aprovado_por  uuid not null default erp.eu(),
   aprovado_em   timestamptz not null default clock_timestamp()
 );
+-- Conferências da trava do adiantamento (S-034): security definer na migration _erp_rls, para
+-- enxergar pagamentos, quitações e aprovações de núcleos e centros que quem lança não vê.
+-- Recebem só ids de pagamento e título; não escolhem empresa nem usuário.
+create function erp.autor_lancamento(p_tipo text, p_id uuid) returns uuid language sql stable as $$
+  select case p_tipo when 'pagamento' then (select criado_por from erp.pagamentos where id = p_id)
+                     when 'titulo'    then (select criado_por from erp.titulos where id = p_id) end $$;
+create function erp.abatimento_aprovado(p_pagamento uuid, p_titulo uuid) returns boolean language sql stable as $$
+  select exists (select 1 from erp.abatimentos_cruzados where pagamento_id = p_pagamento and titulo_id = p_titulo) $$;
+-- Há adiantamento mais antigo do mesmo fornecedor, na mesma empresa, com saldo, sem liberação do
+-- título feita depois dele?
+create function erp.adiantamento_anterior_em_aberto(p_pagamento uuid, p_titulo uuid) returns boolean language sql stable as $$
+  select exists (select 1 from erp.pagamentos g join erp.pagamentos g2
+                   on g2.empresa_id = g.empresa_id and g2.pessoa_id = g.pessoa_id and g2.id <> g.id
+                 where g.id = p_pagamento and g2.criado_em < g.criado_em and erp.pagamento_saldo(g2.id) > 0
+                   and not exists (select 1 from erp.liberacoes_sem_abater l
+                                   where l.titulo_id = p_titulo and l.aprovado_em >= g2.criado_em)) $$;
+
 create function erp.tg_aprovacao_adiantamento() returns trigger language plpgsql as $$
 declare v_listas text[]; v_lancou uuid;
 begin
   if tg_op <> 'INSERT' then raise exception 'Aprovação não se altera nem se apaga'; end if;
   if tg_table_name = 'abatimentos_cruzados' then
-    select aprova_cruzado into v_listas from erp.regra_adiantamento;
-    select criado_por into v_lancou from erp.pagamentos where id = new.pagamento_id;
+    v_listas := (erp.regra_adiantamento_atual()).aprova_cruzado;
+    v_lancou := erp.autor_lancamento('pagamento', new.pagamento_id);
   else
-    select libera_sem_abater into v_listas from erp.regra_adiantamento;
-    select criado_por into v_lancou from erp.titulos where id = new.titulo_id;
+    v_listas := (erp.regra_adiantamento_atual()).libera_sem_abater;
+    v_lancou := erp.autor_lancamento('titulo', new.titulo_id);
   end if;
   if not erp.estou_nas_listas(v_listas) then
     raise exception 'Só quem está em % aprova isto', array_to_string(v_listas, ', ');
@@ -905,23 +926,19 @@ begin
   if t.sentido <> 'pagar' then raise exception 'Recebimentos ficam para o módulo de contas a receber'; end if;
   if g.empresa_id <> t.empresa_id then raise exception 'Pagamento e título são de empresas diferentes'; end if;
   if g.pessoa_id <> t.pessoa_id then raise exception 'O pagamento foi para outra pessoa'; end if;
-  if (select trava from erp.regra_adiantamento) then
+  if (erp.regra_adiantamento_atual()).trava then
     -- adiantamento só abate título do mesmo núcleo e centro do carimbo; em outro, só aprovado
     if g.nucleo_economico_id is not null
        and not exists (select 1 from erp.titulo_rateios tr where tr.titulo_id = t.id
                        and tr.nucleo_economico_id = g.nucleo_economico_id and tr.centro_custo_id is not distinct from g.centro_custo_id)
-       and not exists (select 1 from erp.abatimentos_cruzados a where a.pagamento_id = g.id and a.titulo_id = t.id) then
+       and not erp.abatimento_aprovado(g.id, t.id) then
       raise exception 'Este pagamento é de outro núcleo ou centro de custo; abater aqui precisa de aprovação de %',
-        array_to_string((select aprova_cruzado from erp.regra_adiantamento), ', ');
+        array_to_string((erp.regra_adiantamento_atual()).aprova_cruzado, ', ');
     end if;
     -- o título não é pago com dinheiro novo enquanto o fornecedor tiver adiantamento em aberto
-    if exists (select 1 from erp.pagamentos g2
-               where g2.empresa_id = g.empresa_id and g2.pessoa_id = g.pessoa_id and g2.id <> g.id
-                 and g2.criado_em < g.criado_em and erp.pagamento_saldo(g2.id) > 0
-                 and not exists (select 1 from erp.liberacoes_sem_abater l
-                                 where l.titulo_id = t.id and l.aprovado_em >= g2.criado_em)) then
+    if erp.adiantamento_anterior_em_aberto(g.id, t.id) then
       raise exception 'O fornecedor tem adiantamento em aberto: abata-o primeiro ou peça a liberação de %',
-        array_to_string((select libera_sem_abater from erp.regra_adiantamento), ', ');
+        array_to_string((erp.regra_adiantamento_atual()).libera_sem_abater, ', ');
     end if;
   end if;
   -- roda depois da gravação: a própria quitação já entra nos saldos

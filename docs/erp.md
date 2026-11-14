@@ -2,7 +2,7 @@
 
 Versão 0, de 7/nov/2026. Ela traduz em tabelas o desenho da sabatina, que está no doc [Núcleo do ERP BKM: modelo v1](https://claude.ai/artifact/YXuHgVNLaMPRtpxJ8YWCPt). Todas as tabelas ficam no esquema `erp`, no mesmo Supabase do BKM Terrenos, acima do espelho do Sienge (`sienge_bruto` e `sienge`).
 
-O SQL está em `supabase/migrations/` e os testes em `supabase/tests/erp.sql` (169 testes). Para rodar: `bash supabase/tests/run.sh`.
+O SQL está em `supabase/migrations/` e os testes em `supabase/tests/erp.sql` (188 testes). Para rodar: `bash supabase/tests/run.sh`.
 
 Este documento cobre o contas a pagar, a raiz (empresas e sócios), a árvore de naturezas, o livro de lançamentos e a reclassificação. Contas a receber, bancos, aprovação geral e engenharia ficam para as próximas sessões.
 
@@ -16,7 +16,7 @@ Este documento cobre o contas a pagar, a raiz (empresas e sócios), a árvore de
 
 | Tabela | O que guarda | Regras principais |
 |---|---|---|
-| `usuarios` | Quem usa o ERP: papel (diretor, gestor, analista, leitura), se é contador, se é administrador | Administrador mexe na configuração. Contador vota nas alçadas que pedem o contador |
+| `usuarios` | Quem usa o ERP: id nosso, `login_id` (o `sub` que o provedor de login dá), papel (diretor, gestor, analista, leitura), se é contador, se é administrador | Administrador mexe na configuração. Contador vota nas alçadas que pedem o contador. Sem chave estrangeira para `auth.users`: `erp.eu()` acha o usuário pelo `login_id` lido em `erp.login_atual()`, o único ponto que conhece o provedor |
 | `pessoas` | Uma tabela só para todo mundo: fornecedor, cliente, sócio, corretor, funcionário, órgão público, banco | CPF ou CNPJ único, só dígitos, com o tamanho certo |
 | `pessoa_papeis` | Os papéis de cada pessoa | A mesma pessoa pode ser fornecedora e cliente sem cadastro duplicado |
 | `empresas` | Empresas do grupo: holding, incorporadora, construtora, SPE | Cada empresa é uma pessoa (o CNPJ fica em `pessoas`) |
@@ -149,7 +149,7 @@ Exemplo de alçada configurada pelo administrador: "gestor aprova até R$ 11 mil
 
 ## O que ficou de fora desta versão (de propósito)
 
-- **Permissões por linha (RLS) e telas.** O esquema fica fechado à API (anon e authenticated sem nenhum acesso) e as regras de papel estão nas funções. Toda tabela já tem RLS ligado e forçado (S-003, migration `_erp_rls`), negando por padrão: a única política é a do sistema (`erp.sistema()`), e só as rotinas do servidor passam sem usuário. As políticas por perfil (núcleo econômico × centro de custo × natureza, com PJ isolado) entram com o primeiro grant a `authenticated`, no mesmo PR. O teste de catálogo recusa tabela sem RLS forçado e política `using (true)`.
+- **Permissões por linha (RLS) e telas.** O esquema fica fechado à API (anon, authenticated e service_role sem nenhum acesso; o teste de catálogo só admite privilégio do dono e de papéis `erp_*`). Toda tabela tem RLS ligado e forçado (S-003, migration `_erp_rls`), negando por padrão, com duas políticas: `sistema` (tudo, quando `erp.sistema()`) e `conferencia` (só leitura, para o papel `erp_conferencia`). Sistema é só a chamada sem login do papel nosso `erp_sistema` ou da sessão do dono do esquema sem SET ROLE (migration e cron); a chave de serviço do Supabase e qualquer outro papel não são (S-033). As conferências das travas (`eu`, `meu_usuario`, `meu_papel`, `exigir_*`, `estou_nas_listas`, `regra_adiantamento_atual`, `autor_lancamento`, `abatimento_aprovado`, `adiantamento_anterior_em_aberto`, os saldos de previsão, parcela e pagamento e `centro_ligado`) são security definer, donas `erp_conferencia`, com `search_path` fixo, e recebem só ids: a trava enxerga o que quem lança não vê (S-034, testado com um usuário comum que só vê um centro). As políticas por perfil (núcleo econômico × centro de custo × natureza, com PJ isolado) entram com o primeiro grant a `authenticated`, no mesmo PR. Ainda invoker, e por isso dependentes das políticas de perfil para enxergar os cadastros: as checagens de natureza, núcleo e centro nos gatilhos (`checar_natureza`, `checar_centro`, `tg_nucleo_economico`) e as leituras de votos da reclassificação.
 - **Contas a receber.** Por isso a quitação só aceita título a pagar. O título a receber já existe para o dinheiro entre sócios.
 - **Módulo de aprovação geral.** Ficam para ele as alçadas de pagamento, a liberação de caução e as avaliações do gestor do contrato.
 - **Estorno de pagamento, conciliação e remessa.** Ficam para o módulo de bancos.

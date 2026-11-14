@@ -9,7 +9,8 @@ create schema if not exists erp;
 -- Usuários e papéis do ERP
 -- ---------------------------------------------------------------------
 create table erp.usuarios (
-  user_id       uuid primary key,              -- auth.users.id
+  id            uuid primary key default gen_random_uuid(), -- id nosso, não o do provedor de login
+  login_id      text not null unique,          -- quem o provedor de login diz que é (o `sub` do token)
   nome          text not null,
   papel         text not null check (papel in ('diretor','gestor','analista','leitura')),
   contador      boolean not null default false, -- vota nas alçadas que pedem o contador
@@ -18,31 +19,43 @@ create table erp.usuarios (
   criado_em     timestamptz not null default now()
 );
 
--- Quem está agindo (o usuário logado no Supabase).
-create function erp.eu() returns uuid language sql stable as
-  $$ select auth.uid() $$;
+-- Portabilidade (regra do Moises, 14/11/2026): o ERP não chama auth.uid() nem aponta para
+-- auth.users. O único ponto de contato com o provedor de login é erp.login_atual(), que lê o
+-- `sub` do token que o PostgREST põe na sessão (o mesmo que o auth.uid() do Supabase lê).
+-- Trocar de provedor é trocar só esta função.
+create function erp.login_atual() returns text language sql stable as $$
+  select coalesce(nullif(current_setting('request.jwt.claim.sub', true), ''),
+                  nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub') $$;
 
--- Rotina do sistema (migration, cron, função do servidor): sem usuário e fora dos papéis da API.
--- Chamada anônima pela API também tem auth.uid() nulo; ela entra como `authenticator` e troca de
--- papel com SET ROLE. Não se usa current_user, que dentro de função security definer é o dono.
--- A chave de serviço (papel service_role, segredo do servidor) conta como sistema, para as
--- funções do servidor (Edge Functions, adaptador do Sienge) que chamam pela API.
--- Por isso o service_role nunca recebe privilégio no esquema `erp` (S-015: o projeto Supabase
--- é compartilhado com o monitor de mercado, cuja chave é service_role); o teste de catálogo confere.
--- O adaptador usará papel próprio (a decidir com o Moises junto com projeto separado ou não).
+-- Quem está agindo: o usuário do ERP com esse login (security definer na migration _erp_rls,
+-- para ler erp.usuarios por baixo do RLS).
+create function erp.eu() returns uuid language sql stable as
+  $$ select id from erp.usuarios where login_id = erp.login_atual() $$;
+
+-- Rotina do sistema (S-033): sem login e só em dois casos, (1) o papel nosso `erp_sistema`
+-- (o servidor e o adaptador do Sienge recebem esse papel; a chave de serviço do Supabase
+-- não é sistema), ou (2) a sessão do dono do esquema sem SET ROLE (migration e cron).
+-- Qualquer outro papel sem login, de qualquer provedor, não é sistema. Não se usa
+-- current_user, que dentro de função security definer é o dono; o `role` da sessão não muda
+-- dentro dela.
 create function erp.sistema() returns boolean language sql stable as $$
-  select erp.eu() is null
-     and (current_setting('role', true) = 'service_role'
-          or (session_user::text not in ('authenticator', 'anon', 'authenticated')
-              and coalesce(nullif(current_setting('role', true), ''), 'none') not in ('anon', 'authenticated'))) $$;
+  select erp.login_atual() is null
+     and (current_setting('role', true) = 'erp_sistema'
+          or (coalesce(nullif(current_setting('role', true), ''), 'none') = 'none'
+              and session_user::text = (select r.rolname::text from pg_namespace n join pg_roles r on r.oid = n.nspowner
+                                         where n.nspname = 'erp'))) $$;
+
+-- O próprio cadastro de quem está agindo (security definer na migration _erp_rls).
+create function erp.meu_usuario() returns erp.usuarios language sql stable as
+  $$ select * from erp.usuarios where id = erp.eu() and ativo $$;
 
 create function erp.meu_papel() returns text language sql stable as
-  $$ select papel from erp.usuarios where user_id = erp.eu() and ativo $$;
+  $$ select papel from erp.usuarios where id = erp.eu() and ativo $$;
 
 create function erp.exigir_admin() returns void language plpgsql stable as $$
 begin
   if erp.sistema() then return; end if;
-  if not exists (select 1 from erp.usuarios where user_id = erp.eu() and ativo and administrador) then
+  if not exists (select 1 from erp.usuarios where id = erp.eu() and ativo and administrador) then
     raise exception 'Só o administrador pode mudar a configuração';
   end if;
 end $$;
