@@ -1300,6 +1300,101 @@ rollback;
 select pg_temp.ok(not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
                               where n.nspname = 'erp' and p.prosrc ~* 'coalesce\s*\(\s*erp\.eu\(\)'),
   'catálogo: nenhuma função troca erp.eu() nulo por outro valor');
+-- S-059: um teste por trava, com a mensagem exata
+begin;
+select pg_temp.como(:'diretor');
+select id as tit101 from erp.titulos where documento_id = '70000000-0000-0000-0000-000000000001' and tipo = 'fornecedor' \gset
+-- livro
+select pg_temp.erro_igual($$update erp.lancamentos set valor = valor * 2$$,
+  'O livro não muda; a natureza só muda pela reclassificação', 'S-059: o livro não muda de valor');
+set local role erp_reclassificacao;
+select pg_temp.erro_igual($$update erp.lancamentos set valor = valor + 1 where id = (select min(id) from erp.lancamentos)$$,
+  'A reclassificação só muda a natureza', 'S-059: nem a reclassificação muda outra coluna do livro');
+reset role;
+-- consumo de previsão
+insert into erp.previsoes (id, empresa_id, origem, pessoa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+values ('68000000-0000-0000-0000-000000000591', :'spe', 'manual', '10000000-0000-0000-0000-000000000005', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), '2026-03-01', '2026-03-20', 100);
+set local role erp_situacao;
+select pg_temp.erro_igual(format($$insert into erp.titulo_previsoes (titulo_id, previsao_id, valor)
+  select %L, id, 1 from erp.previsoes where compromisso_id = '60000000-0000-0000-0000-000000000001' and situacao = 'aberta' limit 1$$, :'tit101'),
+  'Previsão e título são de empresas diferentes', 'S-059: título não consome previsão de outra empresa');
+select pg_temp.erro_igual(format($$insert into erp.titulo_previsoes (titulo_id, previsao_id, valor) values (%L, '68000000-0000-0000-0000-000000000591', 1000)$$, :'tit101'),
+  'O consumo (1000.00) passa do saldo da previsão (100.00)', 'S-059: consumo não passa do saldo da previsão');
+reset role;
+-- previsão
+select pg_temp.erro_igual($$update erp.previsoes set natureza_id = (select id from erp.naturezas where codigo = '04.02') where id = '68000000-0000-0000-0000-000000000591'$$,
+  'A natureza da previsão só muda pela reclassificação', 'S-059: a natureza da previsão não muda por fora');
+select pg_temp.erro_igual($$update erp.previsoes set valor = 200 where id = '68000000-0000-0000-0000-000000000591'$$,
+  'Previsão não se edita; cancele e crie outra', 'S-059: previsão não se edita');
+-- título, parcelas, rateio e quitação
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('80000000-0000-0000-0000-000000000591', :'incorp', 'avulso', '10000000-0000-0000-0000-000000000005', '2026-03-05', '2026-03-01', 100),
+  ('80000000-0000-0000-0000-000000000592', :'spe', 'avulso', '10000000-0000-0000-0000-000000000005', '2026-03-05', '2026-03-01', 100);
+insert into erp.parcelas (id, titulo_id, numero, vencimento, valor) values
+  ('81000000-0000-0000-0000-000000000591', '80000000-0000-0000-0000-000000000591', 1, '2026-03-20', 100),
+  ('81000000-0000-0000-0000-000000000592', '80000000-0000-0000-0000-000000000592', 1, '2026-03-20', 50);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('80000000-0000-0000-0000-000000000591', :'ne_corp', :'cc_mkt', pg_temp.nat('05.01.04'), 100),
+  ('80000000-0000-0000-0000-000000000592', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), 100);
+select pg_temp.erro_igual($$insert into erp.quitacoes (pagamento_id, parcela_id, principal) values ('80000000-0000-0000-0000-000000000001', '81000000-0000-0000-0000-000000000592', 10)$$,
+  'O título não está aberto', 'S-059: título em rascunho não se quita');
+select pg_temp.erro_igual($$select erp.confirmar_titulo('80000000-0000-0000-0000-000000000592')$$,
+  'As parcelas não somam o valor do título', 'S-059: parcelas precisam somar o título');
+select erp.confirmar_titulo('80000000-0000-0000-0000-000000000591');
+select pg_temp.erro_igual($$insert into erp.quitacoes (pagamento_id, parcela_id, principal) values ('80000000-0000-0000-0000-000000000001', '81000000-0000-0000-0000-000000000591', 10)$$,
+  'Pagamento e título são de empresas diferentes', 'S-059: pagamento da SPE não quita título da Incorporadora');
+select pg_temp.erro_igual($$update erp.titulo_rateios set percentual = 50 where titulo_id = '80000000-0000-0000-0000-000000000591'$$,
+  'O título já foi confirmado; titulo_rateios não muda', 'S-059: rateio de título confirmado não muda');
+select pg_temp.erro_igual($$delete from erp.titulos where id = '80000000-0000-0000-0000-000000000591'$$,
+  'Título confirmado não se apaga', 'S-059: título confirmado não se apaga');
+-- pagamento
+select pg_temp.erro_igual(format($$insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor)
+  values (%L, %L, '10000000-0000-0000-0000-000000000005', %L, %L, '2026-03-20', 10)$$, :'spe', :'conta_inc', :'ne_vm', :'cc_obra'),
+  'A conta não é da empresa do pagamento', 'S-059: pagamento não sai de conta de outra empresa');
+-- caução
+select pg_temp.erro_igual(format($$select erp.liberar_caucao('60000000-0000-0000-0000-000000000002', %s, '2026-12-01')$$,
+  erp.caucao_saldo('60000000-0000-0000-0000-000000000002') + 1),
+  format('A caução do contrato tem só %s de saldo', erp.caucao_saldo('60000000-0000-0000-0000-000000000002')),
+  'S-059: a caução não fica negativa');
+select erp.caucao_saldo('60000000-0000-0000-0000-000000000002') as saldo_caucao \gset
+set local role erp_situacao;
+select pg_temp.erro_igual(format($$insert into erp.caucao_movimentos (compromisso_id, tipo, valor, titulo_id)
+  values ('60000000-0000-0000-0000-000000000002', 'liberacao', %s, %L)$$, :'saldo_caucao'::numeric + 1, :'tit101'),
+  format('A caução do contrato tem só %s de saldo', :'saldo_caucao'), 'S-059: nem por dentro a caução fica negativa');
+reset role;
+-- nota
+select pg_temp.erro_igual($$delete from erp.documentos_fiscais where id = '70000000-0000-0000-0000-000000000001'$$,
+  'Documento lançado não se apaga', 'S-059: nota lançada não se apaga');
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+values ('70000000-0000-0000-0000-000000000591', :'spe', '10000000-0000-0000-0000-000000000005', 'nfse', '591', '2026-03-05', '2026-03-01', 100);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+values ('70000000-0000-0000-0000-000000000591', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), 100);
+insert into erp.documento_retencoes (documento_id, imposto, valor, orgao_id, vencimento)
+values ('70000000-0000-0000-0000-000000000591', 'iss', 150, '10000000-0000-0000-0000-000000000006', '2026-04-10');
+select pg_temp.erro_igual($$select erp.lancar_documento('70000000-0000-0000-0000-000000000591', array['2026-03-20']::date[])$$,
+  'Retenções e caução passam do valor da nota', 'S-059: retenções não passam do valor da nota');
+select pg_temp.como(:'leitor');
+select pg_temp.erro_igual($$select erp.lancar_documento('70000000-0000-0000-0000-000000000591', array['2026-03-20']::date[])$$,
+  'Seu papel só permite consulta', 'S-059: leitura não lança nota');
+select pg_temp.como(:'diretor');
+update erp.usuarios set ativo = false where id = :'gestor';
+select pg_temp.como(:'gestor');
+select pg_temp.ok(erp.meu_papel() is null, 'S-059: usuário inativo não tem papel');
+select pg_temp.erro_igual($$select erp.lancar_documento('70000000-0000-0000-0000-000000000591', array['2026-03-20']::date[])$$,
+  'Seu papel só permite consulta', 'S-059: usuário inativo não lança nota');
+-- reclassificação
+select pg_temp.como(:'diretor');
+update erp.alcadas_reclassificacao set nivel = 'diretor_e_contador';
+select pg_temp.como(:'analista');
+select set_config('teste.rc59', erp.pedir_reclassificacao(pg_temp.nat('04.02'), pg_temp.nat('04.03'), 'S-059')::text, true);
+select pg_temp.erro_igual(format($$select erp.decidir_reclassificacao(%L, true)$$, current_setting('teste.rc59')),
+  'Quem pediu a reclassificação não pode aprová-la', 'S-059: quem pediu não aprova');
+select pg_temp.como(:'diretor');
+select pg_temp.ok(erp.decidir_reclassificacao(current_setting('teste.rc59')::uuid, true) = 'pendente',
+  'S-059: diretoria e contador: o voto da diretoria sozinho deixa pendente');
+select pg_temp.erro_igual(format($$select erp.decidir_reclassificacao(%L, true)$$, current_setting('teste.rc59')),
+  'Você já votou neste pedido', 'S-059: ninguém vota duas vezes');
+rollback;
 select pg_temp.ok(not exists (
   select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
   where n.nspname = 'erp' and c.relkind in ('r', 'p')
