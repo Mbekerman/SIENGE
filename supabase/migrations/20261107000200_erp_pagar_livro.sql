@@ -365,6 +365,11 @@ begin
     end if;
   end if;
   if tg_op = 'INSERT' then
+    -- o livro só recebe linhas das operações do banco (S-052): nota, título, pagamento, quitação,
+    -- previsão, caução e orçamento, todas definer de erp_situacao
+    if not erp.agindo_como('erp_situacao') then
+      raise exception 'O livro só recebe linhas pelas operações do sistema';
+    end if;
     perform erp.checar_natureza(new.natureza_id, new.nucleo_economico_id, new.centro_custo_id, new.estagio = 'orcado');
     perform erp.checar_centro(new.nucleo_economico_id, new.centro_custo_id);
   else
@@ -485,15 +490,12 @@ create function erp.previsao_saldo(p_id uuid) returns numeric language sql stabl
   select p.valor - coalesce((select sum(valor) from erp.titulo_previsoes where previsao_id = p.id), 0)
   from erp.previsoes p where p.id = p_id $$;
 
-create function erp.tg_previsao() returns trigger language plpgsql as $$
-declare v_saldo numeric;
+-- Guarda (invoker, confere a marca de quem grava) e escrita no livro (definer erp_situacao, na
+-- migration _erp_rls) separadas: dentro da definer, a marca seria sempre a dela.
+create function erp.tg_previsao_guarda() returns trigger language plpgsql as $$
 begin
   if tg_op = 'INSERT' then
     if new.situacao <> 'aberta' then raise exception 'Previsão nasce aberta'; end if;
-    insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, fase_id, centro_custo_id,
-                                    competencia, data_caixa, valor, previsao_id)
-    values ('previsto', new.empresa_id, new.nucleo_economico_id, new.natureza_id, new.fase_id, new.centro_custo_id,
-            new.competencia, new.data_prevista, erp.sinal(new.sentido) * new.valor, new.id);
     return new;
   end if;
   if (to_jsonb(new) - 'situacao' - 'natureza_id') <> (to_jsonb(old) - 'situacao' - 'natureza_id') then
@@ -501,6 +503,25 @@ begin
   end if;
   if new.natureza_id <> old.natureza_id and not erp.agindo_como('erp_reclassificacao') then
     raise exception 'A natureza da previsão só muda pela reclassificação';
+  end if;
+  if new.situacao <> old.situacao and not (new.situacao = 'cancelada' and old.situacao = 'aberta')
+     and not erp.agindo_como('erp_situacao') then
+    raise exception 'A previsão só pode ser cancelada; ela é consumida pelos títulos';
+  end if;
+  return new;
+end $$;
+create trigger t_previsao_guarda before insert or update on erp.previsoes
+  for each row execute function erp.tg_previsao_guarda();
+
+create function erp.tg_previsao() returns trigger language plpgsql as $$
+declare v_saldo numeric;
+begin
+  if tg_op = 'INSERT' then
+    insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, fase_id, centro_custo_id,
+                                    competencia, data_caixa, valor, previsao_id)
+    values ('previsto', new.empresa_id, new.nucleo_economico_id, new.natureza_id, new.fase_id, new.centro_custo_id,
+            new.competencia, new.data_prevista, erp.sinal(new.sentido) * new.valor, new.id);
+    return new;
   end if;
   if new.situacao = 'cancelada' and old.situacao = 'aberta' then
     v_saldo := erp.previsao_saldo(new.id);
@@ -510,8 +531,6 @@ begin
       values ('previsto', new.empresa_id, new.nucleo_economico_id, new.natureza_id, new.fase_id, new.centro_custo_id,
               new.competencia, new.data_prevista, -erp.sinal(new.sentido) * v_saldo, new.id);
     end if;
-  elsif new.situacao <> old.situacao and not erp.agindo_como('erp_situacao') then
-    raise exception 'A previsão só pode ser cancelada; ela é consumida pelos títulos';
   end if;
   return new;
 end $$;
@@ -1027,6 +1046,20 @@ create function erp.caucao_saldo(p_compromisso uuid) returns numeric language sq
 
 -- Retida, a caução é dívida sem data (comprometido sem data de caixa); liberada ou usada,
 -- sai do sem data e o título gerado passa a carregá-la com vencimento.
+-- O extrato só cresce, e só pelo lancar_documento (retenção) e pelo liberar_caucao (S-051).
+create function erp.tg_caucao_guarda() returns trigger language plpgsql as $$
+begin
+  if tg_op <> 'INSERT' then raise exception 'O extrato da caução não se altera'; end if;
+  if not erp.agindo_como('erp_situacao') then
+    raise exception 'A caução só se movimenta pelo lançamento da nota e pela liberação';
+  end if;
+  new.por := erp.eu();
+  new.em := now();
+  return new;
+end $$;
+create trigger t_caucao_guarda before insert or update or delete on erp.caucao_movimentos
+  for each row execute function erp.tg_caucao_guarda();
+
 create function erp.tg_caucao() returns trigger language plpgsql as $$
 declare c erp.compromissos; r record; v_sinal int;
 begin
