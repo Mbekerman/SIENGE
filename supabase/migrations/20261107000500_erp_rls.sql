@@ -76,7 +76,7 @@ begin
     ('erp.adiantamento_anterior_em_aberto(uuid, uuid)', 'erp_conferencia'),
     ('erp.previsao_saldo(uuid)', 'erp_conferencia'), ('erp.parcela_saldo(uuid)', 'erp_conferencia'),
     ('erp.pagamento_saldo(uuid)', 'erp_conferencia'), ('erp.centro_ligado(uuid, uuid)', 'erp_conferencia'),
-    ('erp.checar_natureza(uuid, uuid, uuid, boolean)', 'erp_conferencia'), ('erp.checar_centro(uuid, uuid)', 'erp_conferencia'),
+    ('erp.checar_natureza(uuid, uuid, uuid, boolean)', 'erp_conferencia'), ('erp.checar_centro(uuid, uuid, uuid)', 'erp_conferencia'),
     ('erp.tg_nucleo_economico()', 'erp_conferencia'),
     -- operações que mudam situação (S-035)
     ('erp.confirmar_titulo(uuid)', 'erp_situacao'), ('erp.tg_quitacao()', 'erp_situacao'),
@@ -91,6 +91,8 @@ begin
     ('erp.tg_previsao()', 'erp_situacao'), ('erp.tg_pagamento()', 'erp_situacao'),
     ('erp.liberar_caucao(uuid, numeric, date, uuid, text)', 'erp_situacao'),
     ('erp.publicar_orcamento(uuid)', 'erp_situacao'),
+    -- movimento entre sócios cria os títulos ligados (S-057)
+    ('erp.registrar_movimento_societario(text, uuid, uuid, numeric, date, text)', 'erp_situacao'),
     -- fechar e reabrir o mês (S-053)
     ('erp.fechar_mes(uuid, date)', 'erp_situacao'), ('erp.reabrir_mes(uuid, date)', 'erp_situacao'),
     -- quem escreve na auditoria (S-052)

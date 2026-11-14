@@ -203,6 +203,7 @@ language plpgsql as $$
 declare v_id uuid; v_valor numeric; v_acum numeric; v_faixa text; v_nivel text; v_n int;
 begin
   perform erp.exigir_editor();
+  if erp.eu() is null then raise exception 'A reclassificação é pedida por quem tem cadastro no ERP'; end if;
   if p_origem = p_destino then raise exception 'Origem e destino são a mesma natureza'; end if;
   perform erp.checar_natureza(p_destino, gen_random_uuid(), gen_random_uuid(), false);  -- destino: último nível, ativo, não só orçado
   if p_apagar_origem and p_filtro <> '{}' then
@@ -239,7 +240,7 @@ begin
     select greatest(coalesce(sum(l.valor) filter (where l.valor > 0), 0), coalesce(-sum(l.valor) filter (where l.valor < 0), 0)) as s
     from erp.lancamentos l join _itens i on i.lancamento_id = l.id group by l.estagio) e;
   select coalesce(sum(valor), 0) + v_valor into v_acum from erp.reclassificacoes
-   where solicitante = coalesce(erp.eu(), '00000000-0000-0000-0000-000000000000')
+   where solicitante = erp.eu()
      and situacao in ('pendente','aprovada') and date_trunc('month', pedida_em) = date_trunc('month', now());
   select f into v_faixa from (
     select distinct erp.faixa_periodo(l.empresa_id, l.competencia) as f
@@ -256,7 +257,7 @@ begin
                                        valor, acumulado_mes, faixa, nivel, solicitante)
   values (p_origem, p_destino, (select caminho from erp.v_naturezas where id = p_origem),
           (select caminho from erp.v_naturezas where id = p_destino), p_filtro, p_motivo, p_apagar_origem,
-          v_valor, v_acum, v_faixa, v_nivel, coalesce(erp.eu(), '00000000-0000-0000-0000-000000000000'))
+          v_valor, v_acum, v_faixa, v_nivel, erp.eu())
   returning id into v_id;
   insert into erp.reclassificacao_itens (reclassificacao_id, lancamento_id, natureza_antes, natureza_depois)
   select v_id, lancamento_id, p_origem, p_destino from _itens;
@@ -366,8 +367,10 @@ end $$;
 
 create function erp.cancelar_reclassificacao(p_id uuid) returns void language plpgsql as $$
 begin
+  -- só quem pediu, com cadastro no ERP (S-058): erp.eu() nulo não é igual a ninguém
+  perform erp.exigir_editor();
   update erp.reclassificacoes set situacao = 'cancelada'
-   where id = p_id and situacao = 'pendente' and solicitante = coalesce(erp.eu(), solicitante);
+   where id = p_id and situacao = 'pendente' and solicitante = erp.eu();
   if not found then raise exception 'Só quem pediu cancela, e só pedido pendente'; end if;
 end $$;
 
