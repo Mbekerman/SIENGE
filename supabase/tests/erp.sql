@@ -447,7 +447,7 @@ select pg_temp.ok((select count(*) from erp.auditoria where tabela = 'naturezas'
 \echo '# acesso pela API'
 select pg_temp.como(null);
 set role anon;
-select pg_temp.falha($$select erp.fechar_mes('20000000-0000-0000-0000-000000000002', '2026-04-01')$$, 'chamada anônima não executa função do núcleo');
+select pg_temp.falha($$select erp.fechar_mes('20000000-0000-0000-0000-000000000002', '2026-04-01')$$, 'chamada anônima não executa função do ERP');
 select pg_temp.falha($$select count(*) from erp.lancamentos$$, 'chamada anônima não lê o livro');
 reset role;
 set role authenticated;

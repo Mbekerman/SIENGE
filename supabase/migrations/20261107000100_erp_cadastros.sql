@@ -85,11 +85,11 @@ begin
   return coalesce(new, old);
 end $$;
 
--- Códigos de outros sistemas (Sienge, CRM, BKM Terrenos) para cada registro do núcleo.
+-- Códigos de outros sistemas (Sienge, CRM, BKM Terrenos) para cada registro do ERP.
 -- Trocar de ERP é trocar as linhas desta tabela, não o modelo.
 create table erp.codigos_externos (
   sistema     text not null,          -- 'sienge', 'crm', 'bkm_terrenos'
-  tabela      text not null,          -- tabela do núcleo: 'pessoas', 'titulos'...
+  tabela      text not null,          -- tabela do ERP: 'pessoas', 'titulos'...
   registro_id uuid not null,
   codigo      text not null,          -- código lá fora
   primary key (sistema, tabela, codigo),
