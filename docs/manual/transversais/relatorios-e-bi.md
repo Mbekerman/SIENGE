@@ -15,7 +15,16 @@
 
 ✅ O Power BI não fica nem como ponte (Moises, 8/nov/2026).
 
-🟡 Proposta ainda não decidida: a natureza PJ fica fora de qualquer combinação, com acesso próprio.
+### Perfis de acesso (Moises, 14/nov/2026)
+
+- ✅ O acesso é dado por **perfis-modelo** salvos. Em cada centro de custo, o perfil é **Leitor**, **Lançador restrito** (vê só o que ele mesmo lançou) ou **Lançador**. A pessoa fica ligada ao modelo, e uma pessoa pode ter vários.
+- ✅ Cada atribuição tem **validade** e um **escopo de núcleos**, de um de três jeitos: (a) os núcleos marcados na hora, mais os criados depois nos tipos escolhidos; (b) todos, inclusive os futuros; (c) todos dos tipos escolhidos. Os três aceitam exceções.
+- ✅ Quando duas atribuições se sobrepõem, vale o nível maior. A exceção individual vence o modelo.
+- ✅ Os **tipos de núcleo** são uma lista que o administrador edita.
+- ✅ **Natureza restrita** é uma marca que o administrador põe na natureza; ela só abre com liberação própria. No início, pró-labore e folha PJ.
+- ✅ Ninguém muda o próprio acesso.
+
+🟡 Proposta ainda não decidida: a natureza PJ fica fora de qualquer combinação, com acesso próprio (a "natureza restrita" acima já cobre parte disso).
 
 ## Controle de prazos do pagamento (SLA)
 
