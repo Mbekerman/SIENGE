@@ -402,7 +402,7 @@ Assim, o realizado do sistema sempre bate com o dinheiro que saiu do banco.
 - Quem lançou o pagamento não aprova o abatimento dele, e quem lançou o título não libera o pagamento dele sem abater o adiantamento (regra geral: quem lança não aprova).
 - 🟡 Regra do código, a confirmar com o Moises: a liberação para pagar sem deduzir vale só para os adiantamentos que já existiam quando ela foi aprovada. Se sair um adiantamento novo para o fornecedor, o título precisa de nova liberação.
 - Quem criou o título ou o pagamento, e quando, o sistema grava sozinho; ninguém altera.
-- 🟡 A conferir com o Moises: se "o mesmo lugar" é só o mesmo centro de custo (como ele disse) ou também o mesmo núcleo econômico (como está no código).
+- ✅ O abatimento sem aprovação exige **o mesmo núcleo econômico e o mesmo centro de custo**; e, entre os adiantamentos que servem, **abate-se primeiro o mais antigo** (Moises, 14/nov/2026).
 - O adiantamento sem nota passa pela mesma aprovação do título, mais o gestor do contrato (ver [Aprovações](../transversais/aprovacoes.md#os-cinco-momentos-de-aprovação)).
 
 ## Tarefa: pedir um adiantamento sem nota
