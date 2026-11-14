@@ -2,9 +2,9 @@
 
 Primeiro módulo do sistema. Escopo (Moises, 6/nov/2026): lançar as notas mensais sobre contratos já criados à mão no Sienge, inclusive os pagamentos do dia a dia.
 
-Situação: o lado do banco próprio (documento, título, parcela, pagamento, quitação, caução, livro) está **[Construído em branch]** no `nucleo` v0 (ver [03](03-banco-de-dados.md)). O lançamento no Sienge, a leitura de PDF, as telas e a aprovação estão **[Desenhados]**.
+Situação: o lado do banco próprio (documento, título, parcela, pagamento, quitação, caução, livro) está **[Construído em branch]** no `erp` v0 (ver [03](03-banco-de-dados.md)). O lançamento no Sienge, a leitura de PDF, as telas e a aprovação estão **[Desenhados]**.
 
-## 5.1 Ciclo de vida no `nucleo` [Construído em branch]
+## 5.1 Ciclo de vida no `erp` [Construído em branch]
 
 ```
 compromisso (contrato, pedido, assinatura recorrente, avulsa, guia, folha)
@@ -43,8 +43,8 @@ Experiência pedida pelo Moises (6/nov/2026), com o que cada passo exige tecnica
 1. Upload do PDF (e do XML, opcional, que é exato). Leitura por IA devolve emitente, tomador, número, data, valores, retenções e descrição. Serviço de leitura não escolhido.
 2. Achar o contrato pelo par **CNPJ do emitente + CNPJ do tomador** (o tomador diz a empresa ou SPE). Se ficar ambíguo, o usuário escolhe entre os contratos do perfil dele.
 3. Formulário preenchido: valores e retenções da nota, forma de pagamento padrão do fornecedor (o Sienge já traz o Pix do credor; boleto exige código de barras por cobrança).
-4. Travas: nota repetida (já no `nucleo`), valor acima do saldo do contrato (aditivo só no Sienge), tomador que não é empresa da BKM, divergência de retenção com alerta para o financeiro.
-5. Confirmação gera o documento no `nucleo` e o pedido de envio ao Sienge.
+4. Travas: nota repetida (já no `erp`), valor acima do saldo do contrato (aditivo só no Sienge), tomador que não é empresa da BKM, divergência de retenção com alerta para o financeiro.
+5. Confirmação gera o documento no `erp` e o pedido de envio ao Sienge.
 
 Recomendações aceitas pelo Moises em 6/nov/2026: contratos novos do dia a dia com item a R$ 1,00 por unidade (o CTP/28 já é assim).
 

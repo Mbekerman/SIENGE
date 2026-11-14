@@ -12,11 +12,11 @@
 | Gravar `tax-information` muda o valor retido do título? | Se impostos podem ser completados depois da liberação | 6/nov |
 | Como a BKM paga hoje (remessa, integração bancária, internet banking)? | O que o sistema enxerga entre autorizado e pago | 6/nov |
 | Qual é o CRM e como ligar a venda dele ao contrato de venda do Sienge (`externalId`?) | Esquemas `crm` e a ponte de vendas | 6/nov |
-| Pagamento de competência já fechada: travar ou lançar no primeiro mês aberto? | Regra no `nucleo` | 7/nov |
+| Pagamento de competência já fechada: travar ou lançar no primeiro mês aberto? | Regra no `erp` | 7/nov |
 | As 4 divergências da árvore em relação à viabilidade (impostos em Deduções, custo de capital só orçado, taxas de gestão intercompany, ITBI e registro de vendas em Comerciais) | Carga inicial (o v0 usa a proposta) | 7/nov |
-| Onde fica o fluxo de aprovação do contas a pagar (esquema `pagar` do plano ou `nucleo`) | Organização dos esquemas | 7/nov |
+| Onde fica o fluxo de aprovação do contas a pagar (esquema `pagar` do plano ou `erp`) | Organização dos esquemas | 7/nov |
 | Servidor do adaptador (funções do Supabase, Cloud Run...) e serviço de leitura de PDF | Infraestrutura | 7/nov |
-| `nucleo.usuarios` e `app.membros` do BKM Terrenos: um cadastro só? | Login e papéis compartilhados | 7/nov |
+| `erp.usuarios` e `app.membros` do BKM Terrenos: um cadastro só? | Login e papéis compartilhados | 7/nov |
 | A Nexxera ou o banco exigem assinatura eletrônica da remessa? Quem assina e quantas assinaturas? Pergunta ao financeiro (pedido do Moises, 7/nov, para ficar no fim do documento de aprovação). Antes: exigem assinatura da remessa (certificado, dupla assinatura)? O Moises não sabe; perguntar à Nexxera | Onde fica o certificado (Vault) e se a remessa precisa de uma segunda aprovação humana | 7/nov |
 
 ## Riscos técnicos
@@ -26,7 +26,7 @@
 | Falhas de segurança do código | Lista própria em [08-seguranca.md](08-seguranca.md) |
 | Cota diária pequena (pacote desconhecido); CRM, Terrenos e pagar dividem a mesma cota | Saber o pacote; medir na primeira carga; usar massa para cargas grandes |
 | Aviso perdido (5 tentativas em ~10 h) e eventos inexistentes | Varredura por data de alteração e conferência periódica desde o primeiro dia |
-| Título em dobro (`POST /bills` não recusa repetição; NFSE aceita número repetido) | Trava no `nucleo` + procura no espelho e na fila antes de criar |
+| Título em dobro (`POST /bills` não recusa repetição; NFSE aceita número repetido) | Trava no `erp` + procura no espelho e na fila antes de criar |
 | Título errado criado pela API só se corrige no Sienge, à mão | Conferir empresa, credor, parcelas, emissão e impostos antes de enviar |
 | Lançamento pelos dois lados (financeiro lançando direto no Sienge) | Regra de exceção combinada; o espelho mostra títulos que nasceram fora |
 | Webhook sem assinatura documentada | Nunca confiar no conteúdo; sempre reler pela API |

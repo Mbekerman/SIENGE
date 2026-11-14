@@ -23,7 +23,7 @@ Ressalva registrada desde o início: isso torna o **código** trocável. Trocar 
                  │  só falam com o núcleo, em português
                  ▼
  ┌──────────────────────────── Supabase, projeto próprio do ERP ───────────┐
- │  nucleo        modelo neutro da BKM + nucleo.codigos_externos             │
+ │  erp           modelo neutro da BKM + erp.codigos_externos             │
  │  pagar*        documentos a pagar, conferência, aprovação                 │
  │  sienge        espelho do Sienge (uma tabela por entidade da API)         │
  │  sienge_bruto  resposta inteira de cada chamada, nunca alterada           │
@@ -40,11 +40,11 @@ Ressalva registrada desde o início: isso torna o **código** trocável. Trocar 
             └─────────────────────── API do Sienge ──────────────────┘
 ```
 
-\* O esquema `pagar` aparece no plano de 6/nov/2026. No modelo v1 do núcleo (7/nov/2026) compromisso, documento, título e pagamento passaram a ser tabelas do `nucleo`. Qual esquema guarda o fluxo de aprovação do contas a pagar ainda não foi fechado; ver [07-pendencias.md](07-pendencias.md).
+\* O esquema `pagar` aparece no plano de 6/nov/2026. No modelo v1 do núcleo (7/nov/2026) compromisso, documento, título e pagamento passaram a ser tabelas do `erp`. Qual esquema guarda o fluxo de aprovação do contas a pagar ainda não foi fechado; ver [07-pendencias.md](07-pendencias.md).
 
 ### Regras que mantêm o ERP trocável [Desenhado, aprovado em 6 e 7/nov/2026]
 
-1. **Só o adaptador conhece o Sienge.** Nenhuma tabela fora de `sienge`/`sienge_bruto` guarda código do Sienge; a ligação "nosso id ↔ id do Sienge" mora em `nucleo.codigos_externos` (sistema, entidade, código lá, código nosso). Trocar de ERP = criar outras camadas bruto/espelho e preencher outra correspondência.
+1. **Só o adaptador conhece o Sienge.** Nenhuma tabela fora de `sienge`/`sienge_bruto` guarda código do Sienge; a ligação "nosso id ↔ id do Sienge" mora em `erp.codigos_externos` (sistema, entidade, código lá, código nosso). Trocar de ERP = criar outras camadas bruto/espelho e preencher outra correspondência.
 2. **Cada dado tem um dono.** O Sienge é dono do fato financeiro (título, parcela, baixa, contábil, fiscal); a nossa cópia é só leitura. O nosso banco é dono do caminho até lá (o que chegou, quem conferiu, quem aprovou, a que terreno se liga). Nunca os dois escrevem o mesmo campo.
 3. **Envio por fila.** Aprovar no nosso sistema grava um pedido de envio; um processo no servidor manda ao Sienge, respeita os limites por minuto, tenta de novo e registra o número devolvido. A pessoa nunca espera o Sienge na tela.
 4. **Recebimento em duas etapas.** O aviso do Sienge é gravado como chegou e respondido na hora (o Sienge espera 2,5 s); o processamento vem depois.
@@ -58,7 +58,7 @@ Mesma do BKM Terrenos, por decisão do Moises (instruções do projeto):
 - Front: React 18 + TypeScript + Vite, TanStack Query, react-router, supabase-js, sem biblioteca de UI. Visual Material 3 sobre a marca BKM, reaproveitando componentes do BKM Terrenos.
 - Banco: Supabase (Postgres + Auth + Storage), num **projeto próprio do ERP**, separado do BKM_Desenvolvimento_Imobiliario do Terrenos e do monitor (decisão do Moises, 7/nov/2026, 21h56; motivo na S-015 do [08](08-seguranca.md)). O projeto só é criado quando as tabelas forem para um banco. Estudo Supabase × AWS de 7/nov/2026: https://claude.ai/artifact/Rmq8G8PR7hcg1Fo6RFjG7P (projeto próprio no Supabase estimado em US$ 115–165/mês; RDS Multi-AZ da AWS em sa-east-1, US$ 335–400/mês mais operação; preços de trechos de busca).
 - **Portal único** (requisito do Moises, 7/nov/2026): ERP, CRM, Terrenos, obras e o resto num portal só, com um login pelo Google e uma sessão em cada projeto, aberta sem nova tela (a validar em protótipo; requisitos na S-018).
-- Portabilidade (estudo de 7/nov/2026): o que hoje prende o `nucleo` ao Supabase é só `auth.uid()` em `nucleo.eu()`, os papéis do PostgREST e `request.jwt.claim.sub` em `nucleo.sistema()`; o `shim_supabase.sql` dos testes já roda tudo num Postgres comum. Regras propostas, à espera do Moises: usuário só por `nucleo.eu()`; adaptador do Sienge em contêiner (Cloud Run), não em Edge Function; arquivo acessado só por função nossa; segredo lido num ponto só; cópia diária do banco e dos arquivos fora do Supabase, com teste de restauração a cada trimestre.
+- Portabilidade (estudo de 7/nov/2026): o que hoje prende o `erp` ao Supabase é só `auth.uid()` em `erp.eu()`, os papéis do PostgREST e `request.jwt.claim.sub` em `erp.sistema()`; o `shim_supabase.sql` dos testes já roda tudo num Postgres comum. Regras propostas, à espera do Moises: usuário só por `erp.eu()`; adaptador do Sienge em contêiner (Cloud Run), não em Edge Function; arquivo acessado só por função nossa; segredo lido num ponto só; cópia diária do banco e dos arquivos fora do Supabase, com teste de restauração a cada trimestre.
 - Regra de negócio no banco (funções Postgres chamadas por RPC), sempre com teste.
 - Adaptador do Sienge: servidor ainda não escolhido (funções do Supabase, serviço no Cloud Run ou outro). **[A decidir]**
 - Deploy do front: provavelmente o mesmo padrão do BKM Terrenos (Google Cloud Run, projeto `bkm-terrenos`, região `southamerica-east1`). **[A decidir]**
