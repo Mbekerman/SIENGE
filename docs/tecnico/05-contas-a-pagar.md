@@ -2,9 +2,9 @@
 
 Primeiro módulo do sistema. Escopo (Moises, 6/nov/2026): lançar as notas mensais sobre contratos já criados à mão no Sienge, inclusive os pagamentos do dia a dia.
 
-Situação: o lado do banco próprio (documento, título, parcela, pagamento, quitação, caução, livro) está **[Construído em branch]** no `erp` v0 (ver [03](03-banco-de-dados.md)). O lançamento no Sienge, a leitura de PDF, as telas e a aprovação estão **[Desenhados]**.
+Situação: o lado do banco próprio (documento, título, parcela, pagamento, quitação, caução, livro) está **[Construído]** (na `develop` desde 14/nov/2026) no `erp` v0 (ver [03](03-banco-de-dados.md)). O lançamento no Sienge, a leitura de PDF, as telas e a aprovação estão **[Desenhados]**.
 
-## 5.1 Ciclo de vida no `erp` [Construído em branch]
+## 5.1 Ciclo de vida no `erp` [Construído]
 
 ```
 compromisso (contrato, pedido, assinatura recorrente, avulsa, guia, folha)
