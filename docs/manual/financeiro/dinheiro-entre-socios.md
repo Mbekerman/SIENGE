@@ -8,6 +8,8 @@
 
 Os tipos de movimento: **aporte**, **integralização de capital**, **distribuição de lucro**, **mútuo** (empréstimo entre empresas) e **devolução de mútuo**.
 
+✅ Entre empresas do grupo, o aporte pode ser feito por **integralização de capital**, **AFAC** (adiantamento para futuro aumento de capital) ou **mútuo**. Além do aporte, valem **reembolso**, **rateio** e **distribuição**, sempre lançados em par, um em cada empresa (Moises, 14/nov/2026).
+
 ✅ Cada movimento é um **par ligado**: sai de uma empresa e entra na outra. O sistema cria as duas pontas de uma vez, um título a pagar na empresa que paga e um a receber na que recebe. Esses valores ficam fora da DRE, porque são dinheiro mudando de lugar, não despesa.
 
 A participação vigente na data diz quanto cabe a cada sócio numa distribuição ou numa chamada de aporte.

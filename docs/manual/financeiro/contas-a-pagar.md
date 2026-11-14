@@ -397,7 +397,10 @@ Assim, o realizado do sistema sempre bate com o dinheiro que saiu do banco.
 - ✅ Enquanto houver um adiantamento sem nota, o fornecedor **só recebe outro adiantamento com a aprovação da AD** (Moises, 7/nov/2026; antes era "nenhum").
 - ~~Nenhum título desse fornecedor é pago sem deduzir o adiantamento em aberto, mesmo que seja de outro centro, salvo com a AD (7/nov/2026)~~. Substituído em 14/nov/2026:
 - ✅ **O adiantamento é carimbado** com o núcleo econômico e o centro de custo, e **só se abate em título do mesmo centro de custo**. Abater num título de outro centro só com a aprovação de alguém da **AF, da AO ou da AD**. Essa regra é **configurável** pelo administrador, e toda mudança fica registrada (Moises, 14/nov/2026).
-- 🟡 Proposta: o título de um fornecedor que tem adiantamento aberto em outro centro fica pendente até essa aprovação, ou até a AD liberar o pagamento sem deduzir.
+- ✅ O título de um fornecedor que tem adiantamento aberto em outro centro **fica pendente** até alguém da AF, da AO ou da AD aprovar o abatimento cruzado, com justificativa, ou até a AD liberar o pagamento sem deduzir (Moises, 14/nov/2026).
+- ✅ **O que o administrador configura**, com registro de cada mudança: se a trava vale; quais camadas aprovam o abatimento em outro centro (padrão AF, AO ou AD); quem libera pagar sem deduzir (padrão AD); e quem está em cada camada (Moises, 14/nov/2026).
+- Quem lançou o pagamento não aprova o abatimento dele (regra geral: quem lança não aprova).
+- 🟡 A conferir com o Moises: se "o mesmo lugar" é só o mesmo centro de custo (como ele disse) ou também o mesmo núcleo econômico (como está no código).
 - O adiantamento sem nota passa pela mesma aprovação do título, mais o gestor do contrato (ver [Aprovações](../transversais/aprovacoes.md#os-cinco-momentos-de-aprovação)).
 
 ## Tarefa: pedir um adiantamento sem nota

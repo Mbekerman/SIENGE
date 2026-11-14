@@ -6,6 +6,8 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
+| 14/nov/2026 | Título de fornecedor com adiantamento aberto em outro centro fica pendente até AF, AO ou AD aprovar o abatimento cruzado ou a AD liberar sem deduzir; o administrador configura a trava e as camadas, com registro | [Contas a pagar](financeiro/contas-a-pagar.md#adiantamento-sem-nota-prazo-e-travas) |
+| 14/nov/2026 | Integralização de capital fica entre as operações entre empresas, como forma de aporte, ao lado de AFAC e mútuo | [Dinheiro entre sócios](financeiro/dinheiro-entre-socios.md) |
 | 14/nov/2026 | Adiantamento carimbado com núcleo e centro de custo; só abate título do mesmo centro de custo; em outro centro, só com AF, AO ou AD; configurável. Substitui a regra de 7/nov de deduzir o adiantamento de qualquer centro | [Contas a pagar](financeiro/contas-a-pagar.md#adiantamento-sem-nota-prazo-e-travas) |
 | 14/nov/2026 | Verba livre sem previsão por centro de custo, com limite por nota e acumulado no mês, configuráveis | [Contas a pagar](financeiro/contas-a-pagar.md#previsões-de-despesa-na-transição) |
 | 14/nov/2026 | Todo pagamento e adiantamento sai do banco com núcleo econômico e centro de custo; só a transferência entre contas da própria empresa dispensa | [Contas a pagar](financeiro/contas-a-pagar.md#adiantamento-sem-nota-prazo-e-travas) |
