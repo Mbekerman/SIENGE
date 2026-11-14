@@ -1,12 +1,12 @@
 name: CI
 # Regra de CI do projeto (Moises, 7/nov/2026): só em PR para develop e main, ou à mão;
-# sem push; cancela rodada antiga do mesmo PR; só quando a parte testada muda; com tempo máximo.
+# sem push; cancela rodada antiga do mesmo PR; com tempo máximo.
+# Desde 14/nov/2026 roda em todo PR, sem filtro de caminho (Moises): o repositório é público,
+# o runner padrão não gasta minutos, e o check é obrigatório na proteção de branch, então
+# um PR só de documentação também precisa recebê-lo.
 on:
   pull_request:
     branches: [develop, main]
-    paths:
-      - 'supabase/**'
-      - '.github/workflows/**'
   workflow_dispatch:
 
 permissions:
