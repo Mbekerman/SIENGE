@@ -319,24 +319,54 @@ select pg_temp.ok((select sum(valor) from erp.lancamentos where estagio = 'reali
 select pg_temp.falha($$insert into erp.quitacoes (pagamento_id, parcela_id, principal) values ('80000000-0000-0000-0000-000000000003',
   (select id from erp.parcelas where titulo_id = (select id from erp.titulos where tipo = 'imposto')), 100)$$,
   'adiantamento de um fornecedor não paga título de outra pessoa');
--- adiantamento em aberto: só abate no mesmo núcleo e centro; fora dele, aprovado (regra configurável)
+-- adiantamento em aberto (80..03, lançado pelo analista, carimbado na Obra da Vila Maria):
+-- só abate no mesmo núcleo e centro; fora dele, aprovado; regra configurável
+select pg_temp.ok((select criado_por from erp.pagamentos where id = '80000000-0000-0000-0000-000000000003') = :'analista',
+  'quem lançou o pagamento vem do servidor');
 begin;
+select pg_temp.como(:'analista');
+select pg_temp.falha($$insert into erp.listas_financeiro (lista, user_id) values ('AD', '00000000-0000-0000-0000-00000000000b')$$,
+  'quem não é administrador não se põe nas listas AF, AO e AD');
+select pg_temp.falha($$insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor, criado_por)
+  values ('20000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000005',
+          '40000000-0000-0000-0000-000000000001', '45000000-0000-0000-0000-000000000001', '2026-03-01', 1, '00000000-0000-0000-0000-00000000000e')
+  returning case when criado_por = '00000000-0000-0000-0000-00000000000e' then 1/0 end$$,
+  'quem grava não escolhe quem lançou o pagamento');
 select pg_temp.como(:'diretor');
-insert into erp.listas_financeiro (lista, user_id) values ('AF', :'gestor'), ('AD', :'diretor2');
+insert into erp.listas_financeiro (lista, user_id) values ('AF', :'gestor'), ('AF', :'analista'), ('AF', :'contador'), ('AD', :'diretor2'), ('AD', :'diretor');
+update erp.usuarios set ativo = false where user_id = :'contador';
 insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
 values ('70000000-0000-0000-0000-000000000008', :'spe', '10000000-0000-0000-0000-000000000005', 'nfse', '108', '2026-03-05', '2026-03-01', 100);
 insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
   ('70000000-0000-0000-0000-000000000008', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
 select erp.lancar_documento('70000000-0000-0000-0000-000000000008', array['2026-03-20']::date[]) as tit8 \gset
 select id as p8 from erp.parcelas where titulo_id = :'tit8' \gset
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+values ('70000000-0000-0000-0000-000000000007', :'spe', '10000000-0000-0000-0000-000000000005', 'nfse', '107', '2026-03-05', '2026-03-01', 100);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('70000000-0000-0000-0000-000000000007', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select erp.lancar_documento('70000000-0000-0000-0000-000000000007', array['2026-03-20']::date[]) as tit7 \gset
+select id as p7 from erp.parcelas where titulo_id = :'tit7' \gset
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+values ('70000000-0000-0000-0000-000000000006', :'spe', '10000000-0000-0000-0000-000000000005', 'nfse', '106', '2026-03-05', '2026-03-01', 100);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('70000000-0000-0000-0000-000000000006', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), 100);
+select erp.lancar_documento('70000000-0000-0000-0000-000000000006', array['2026-03-20']::date[]) as tit6 \gset
+select id as p6 from erp.parcelas where titulo_id = :'tit6' \gset
 select pg_temp.falha(format($$insert into erp.quitacoes (pagamento_id, parcela_id, principal) values ('80000000-0000-0000-0000-000000000003', %L, 100)$$, :'p8'),
   'adiantamento de um centro de custo não abate título de outro centro sem aprovação');
 select pg_temp.falha(format($$select erp.pagar_parcela(%L, '50000000-0000-0000-0000-000000000001', '2026-03-20')$$, :'p8'),
   'título do fornecedor com adiantamento em aberto não se paga com dinheiro novo');
-select pg_temp.como(:'analista');
+select pg_temp.como(:'leitor');
 select pg_temp.falha(format($$insert into erp.abatimentos_cruzados (pagamento_id, titulo_id, justificativa) values ('80000000-0000-0000-0000-000000000003', %L, 'x')$$, :'tit8'),
   'quem não está em AF, AO ou AD não aprova abatimento em outro centro');
-select pg_temp.falha(format($$update erp.regra_adiantamento set trava = false$$), 'só o administrador muda a regra do adiantamento');
+select pg_temp.falha($$update erp.regra_adiantamento set trava = false$$, 'só o administrador muda a regra do adiantamento');
+select pg_temp.como(:'contador');
+select pg_temp.falha(format($$insert into erp.abatimentos_cruzados (pagamento_id, titulo_id, justificativa) values ('80000000-0000-0000-0000-000000000003', %L, 'x')$$, :'tit8'),
+  'usuário inativo na lista não aprova');
+select pg_temp.como(:'analista');
+select pg_temp.falha(format($$insert into erp.abatimentos_cruzados (pagamento_id, titulo_id, justificativa) values ('80000000-0000-0000-0000-000000000003', %L, 'x')$$, :'tit8'),
+  'quem lançou o adiantamento não aprova o abatimento dele, mesmo estando na AF');
 select pg_temp.como(:'gestor');
 select pg_temp.falha(format($$insert into erp.liberacoes_sem_abater (titulo_id, justificativa) values (%L, 'x')$$, :'tit8'),
   'AF não libera pagar sem abater (padrão: só AD)');
@@ -346,7 +376,36 @@ insert into erp.abatimentos_cruzados (pagamento_id, titulo_id, justificativa)
 values ('80000000-0000-0000-0000-000000000003', :'tit8', 'Adiantamento da obra usado no estande, combinado com o fornecedor');
 insert into erp.quitacoes (pagamento_id, parcela_id, principal) values ('80000000-0000-0000-0000-000000000003', :'p8', 100);
 select pg_temp.ok(erp.parcela_saldo(:'p8') = 0, 'AF aprova e o adiantamento abate o título do outro centro');
+select pg_temp.falha(format($$insert into erp.quitacoes (pagamento_id, parcela_id, principal) values ('80000000-0000-0000-0000-000000000003', %L, 100)$$, :'p7'),
+  'a aprovação de um título não vale para outro título do mesmo centro');
+select pg_temp.como(:'diretor');
+-- adiantamento mais novo em aberto não impede usar o mais antigo; o mais antigo impede o mais novo
+insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values
+  ('80000000-0000-0000-0000-000000000009', :'spe', :'conta_spe', '10000000-0000-0000-0000-000000000005', :'ne_vm', :'cc_mkt', '2026-03-10', 300);
+insert into erp.quitacoes (pagamento_id, parcela_id, principal) values ('80000000-0000-0000-0000-000000000003', :'p6', 100);
+select pg_temp.ok(erp.parcela_saldo(:'p6') = 0, 'o adiantamento mais antigo abate mesmo com outro mais novo em aberto');
+select pg_temp.falha(format($$insert into erp.quitacoes (pagamento_id, parcela_id, principal) values ('80000000-0000-0000-0000-000000000009', %L, 100)$$, :'p7'),
+  'com um adiantamento mais antigo em aberto, o mais novo não abate antes dele');
 select pg_temp.falha($$delete from erp.abatimentos_cruzados$$, 'aprovação de abatimento não se apaga');
+select pg_temp.falha($$truncate erp.abatimentos_cruzados$$, 'aprovação de abatimento não se apaga nem por truncate');
+select pg_temp.falha($$truncate erp.liberacoes_sem_abater$$, 'liberação não se apaga nem por truncate');
+rollback;
+begin;
+select pg_temp.como(:'diretor');
+insert into erp.listas_financeiro (lista, user_id) values ('AD', :'diretor2'), ('AD', :'diretor');
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+values ('70000000-0000-0000-0000-000000000008', :'spe', '10000000-0000-0000-0000-000000000005', 'nfse', '108', '2026-03-05', '2026-03-01', 100);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('70000000-0000-0000-0000-000000000008', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select erp.lancar_documento('70000000-0000-0000-0000-000000000008', array['2026-03-20']::date[]) as tit8 \gset
+select id as p8 from erp.parcelas where titulo_id = :'tit8' \gset
+select pg_temp.falha(format($$insert into erp.liberacoes_sem_abater (titulo_id, justificativa) values (%L, 'x')$$, :'tit8'),
+  'quem lançou o título não libera pagá-lo sem abater');
+select pg_temp.como(:'diretor2');
+insert into erp.liberacoes_sem_abater (titulo_id, justificativa) values (:'tit8', 'Adiantamento será usado na próxima medição');
+select pg_temp.como(:'diretor');
+select erp.pagar_parcela(:'p8', :'conta_spe', '2026-03-20') is not null as pagou \gset
+select pg_temp.ok(:'pagou' and erp.parcela_saldo(:'p8') = 0, 'com a liberação da AD, o título se paga sem abater o adiantamento');
 rollback;
 begin;
 select pg_temp.como(:'diretor');
@@ -358,10 +417,26 @@ insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_cus
 select erp.lancar_documento('70000000-0000-0000-0000-000000000008', array['2026-03-20']::date[]) as tit8 \gset
 select id as p8 from erp.parcelas where titulo_id = :'tit8' \gset
 select pg_temp.como(:'diretor2');
-insert into erp.liberacoes_sem_abater (titulo_id, justificativa) values (:'tit8', 'Adiantamento será usado na próxima medição');
+insert into erp.liberacoes_sem_abater (titulo_id, justificativa) values (:'tit8', 'Liberado antes do adiantamento novo');
 select pg_temp.como(:'diretor');
-select erp.pagar_parcela(:'p8', :'conta_spe', '2026-03-20') is not null as pagou \gset
-select pg_temp.ok(:'pagou' and erp.parcela_saldo(:'p8') = 0, 'com a liberação da AD, o título se paga sem abater o adiantamento');
+insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values
+  (:'spe', :'conta_spe', '10000000-0000-0000-0000-000000000005', :'ne_vm', :'cc_mkt', '2026-03-10', 300);
+select pg_temp.falha(format($$select erp.pagar_parcela(%L, '50000000-0000-0000-0000-000000000001', '2026-03-20')$$, :'p8'),
+  'adiantamento que aparece depois da liberação pede nova liberação');
+rollback;
+begin;
+-- adiantamento do mesmo fornecedor em outra empresa não trava o título desta
+select pg_temp.como(:'diretor');
+insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values
+  (:'incorp', :'conta_inc', '10000000-0000-0000-0000-000000000007', :'ne_corp', :'cc_mkt', '2026-03-01', 500);
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+values ('70000000-0000-0000-0000-000000000005', :'spe', '10000000-0000-0000-0000-000000000007', 'nfse', '105', '2026-03-05', '2026-03-01', 100);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('70000000-0000-0000-0000-000000000005', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), 100);
+select erp.lancar_documento('70000000-0000-0000-0000-000000000005', array['2026-03-20']::date[]) as tit5 \gset
+select id as p5 from erp.parcelas where titulo_id = :'tit5' \gset
+select erp.pagar_parcela(:'p5', :'conta_spe', '2026-03-20') is not null as pagou \gset
+select pg_temp.ok(:'pagou', 'adiantamento do fornecedor em outra empresa não trava o pagamento nesta');
 rollback;
 begin;
 select pg_temp.como(:'diretor');
