@@ -18,4 +18,4 @@ for f in supabase/migrations/*.sql; do
   echo "migration: $(basename "$f")"
   $PSQL -f "$f"
 done
-$PSQL -f supabase/tests/nucleo.sql 2>&1 | sed "s/^psql:[^ ]* NOTICE:  //" | grep -E "^(ok |# |FALHOU|TODOS)|ERROR"
+$PSQL -f supabase/tests/erp.sql 2>&1 | sed "s/^psql:[^ ]* NOTICE:  //" | grep -E "^(ok |# |FALHOU|TODOS)|ERROR"
