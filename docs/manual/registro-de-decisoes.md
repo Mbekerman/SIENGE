@@ -6,6 +6,7 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
+| 14/nov/2026 | Travas S-056 a S-058: núcleo sempre da mesma empresa do registro; registro não muda de empresa (cria-se outro); título à mão é sempre avulso; nota lançada não muda rateio nem retenções, e caução retida trava o rateio do contrato; movimento entre sócios não se altera nem se apaga; reclassificação só por quem tem cadastro, cancelada só por quem pediu | [Aprovações](transversais/aprovacoes.md#travas-fixas) |
 | 14/nov/2026 | Travas S-053 a S-055: mês só fecha e reabre pelas funções da diretoria, com quem fechou gravado; nota só consome previsão da mesma empresa, fornecedor, núcleo, centro e natureza; só o administrador cadastra usuários e contas bancárias da empresa, e ninguém muda o próprio papel, acesso ou login; orçamento publicado não se edita nem se apaga (muda por reprojeção) | [Aprovações](transversais/aprovacoes.md#travas-fixas) |
 | 14/nov/2026 | Adiantamento só se abate sem aprovação no mesmo núcleo econômico e no mesmo centro de custo; abate-se primeiro o mais antigo | [Contas a pagar](financeiro/contas-a-pagar.md#adiantamento-sem-nota-prazo-e-travas) |
 | 14/nov/2026 | Título de fornecedor com adiantamento aberto em outro centro fica pendente até AF, AO ou AD aprovar o abatimento cruzado ou a AD liberar sem deduzir; o administrador configura a trava e as camadas, com registro | [Contas a pagar](financeiro/contas-a-pagar.md#adiantamento-sem-nota-prazo-e-travas) |

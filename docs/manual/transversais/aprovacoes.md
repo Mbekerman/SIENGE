@@ -232,6 +232,15 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 - O mês só fecha e reabre pelas funções da diretoria (ver [Fechamento](../financeiro/reclassificacao-e-fechamento.md)).
 - Orçamento publicado não se edita (ver [Orçamento](../financeiro/orcamento-e-fluxo-de-caixa.md)).
 
+✅ Mais travas autorizadas pelo Moises em 14/nov/2026 (S-056 a S-058):
+
+- Rateio, previsão, orçamento e pagamento só usam **núcleo econômico da mesma empresa** do registro.
+- Depois de criado, contrato, nota, título, orçamento, pagamento ou conta **não muda de empresa**: cria-se outro.
+- **Título criado à mão é sempre avulso**, sem nota e sem contrato. Os títulos de nota, de imposto retido, de caução e de movimento entre sócios só nascem pelas operações do sistema.
+- Com a nota lançada, **o rateio e as retenções dela não mudam**. Com caução retida, o rateio do contrato também não muda.
+- **Movimento entre sócios** não se altera nem se apaga.
+- A **reclassificação** só é pedida por quem tem cadastro no ERP, e só quem pediu pode cancelar.
+
 ## Quem muda a configuração
 
 - ✅ **Listas AF e AO:** qualquer pessoa da AD pode mexer, menos numa lista da qual ela mesma faça parte. Toda mudança avisa o master e as outras pessoas da AD (Moises, 7/nov/2026).
