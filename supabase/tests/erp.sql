@@ -2213,7 +2213,9 @@ select pg_temp.ok(erp.caucao_saldo('60000000-0000-0000-0000-000000000002') = :'c
                   and (select coalesce(sum(l.valor), 0) = -950 from erp.lancamentos l join erp.titulos t on t.id = l.titulo_id
                        where t.documento_id = '70000000-0000-0000-0000-000000000661' and l.estagio = 'comprometido'),
   'revisão: caução, previsão e livro contam a nota uma vez só depois do relançamento');
-select pg_temp.ok(erp.alcada_pendente(:'tit661b') = 'AREA', 'revisão: o título refeito recomeça a alçada');
+select pg_temp.ok(erp.alcada_pendente(:'tit661b') = 'AREA'
+                  and not exists (select 1 from erp.titulo_aprovacoes where titulo_id = :'tit661b' and origem = 'ajuste'),
+  'revisão: o título refeito recomeça a alçada; quem lançou e ajustou (mesmo sendo AF) não ganha aprovação pelo ajuste');
 select pg_temp.erro_igual(format($$select erp.decidir_titulo(%L, true)$$, :'tit661b'),
   'Quem lançou não aprova o próprio lançamento', 'revisão: quem lançou e ajustou a nota não aprova o título refeito');
 -- nova revisão que muda a natureza: a previsão que não casa mais fica livre, e o relançamento segue
@@ -2248,6 +2250,22 @@ select pg_temp.ok((select string_agg(lista || ':' || (por = :'gestor')::text, ',
 select pg_temp.como(:'analista');
 select pg_temp.erro_igual(format($$select erp.decidir_titulo(%L, true)$$, :'tit661e'),
   'Quem lançou não aprova o próprio lançamento', 'revisão: a cadeia de substituições inteira conta, não só a anterior');
+-- dois gestores da área ajustam: o primeiro ganha a área; o outro, fora do AF, não ganha a do AF
+select pg_temp.como(:'diretor');
+insert into erp.centro_aprovadores values (:'cc_obra', :'gestor');
+delete from erp.listas_financeiro where lista = 'AF' and user_id = :'gestor';
+select pg_temp.como(:'diretor2');
+select erp.decidir_titulo(:'tit661e', false, 'conferir a série', true);
+update erp.documento_retencoes set vencimento = '2027-02-12' where documento_id = '70000000-0000-0000-0000-000000000661';
+select pg_temp.como(:'gestor');
+update erp.documentos_fiscais set serie = 'A' where id = '70000000-0000-0000-0000-000000000661';
+select pg_temp.como(:'contador');
+select erp.reenviar_titulo(:'tit661e', 'série conferida') as tit661f \gset
+select pg_temp.ok((select string_agg(lista || ':' || por::text, ',' order by etapa) from erp.titulo_aprovacoes
+                    where titulo_id = :'tit661f' and origem = 'ajuste') = 'AREA:' || :'diretor2' || ',AF:' || :'contador',
+  'revisão: a etapa do AF só vai para quem está no AF');
+select pg_temp.como(:'diretor');
+insert into erp.listas_financeiro (lista, user_id) values ('AF', :'gestor');
 -- recusar o título de uma nota cancela a nota inteira: impostos, previsão e caução voltam
 select pg_temp.como(:'analista');
 select erp.previsao_saldo(id) as prev_antes from erp.previsoes where compromisso_id = '60000000-0000-0000-0000-000000000002' \gset
