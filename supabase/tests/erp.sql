@@ -260,12 +260,12 @@ select pg_temp.falha(format($$delete from erp.parcelas where titulo_id = %L$$, :
 select id as p1 from erp.parcelas where titulo_id = :'tit' and numero = 1 \gset
 select id as p2 from erp.parcelas where titulo_id = :'tit' and numero = 2 \gset
 -- parcela 1 (4.500) paga em duas vezes
-insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, data, valor) values
-  ('80000000-0000-0000-0000-000000000001', :'spe', :'conta_spe', '10000000-0000-0000-0000-000000000005', '2026-02-20', 2000);
+insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values
+  ('80000000-0000-0000-0000-000000000001', :'spe', :'conta_spe', '10000000-0000-0000-0000-000000000005', :'ne_vm', :'cc_obra', '2026-02-20', 2000);
 insert into erp.quitacoes (pagamento_id, parcela_id, principal) values ('80000000-0000-0000-0000-000000000001', :'p1', 2000);
 select pg_temp.ok(erp.parcela_saldo(:'p1') = 2500, 'pagamento parcial: a parcela fica com saldo');
-insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, data, valor) values
-  ('80000000-0000-0000-0000-000000000002', :'spe', :'conta_spe', '10000000-0000-0000-0000-000000000005', '2026-02-25', 2530);
+insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values
+  ('80000000-0000-0000-0000-000000000002', :'spe', :'conta_spe', '10000000-0000-0000-0000-000000000005', :'ne_vm', :'cc_obra', '2026-02-25', 2530);
 insert into erp.quitacoes (pagamento_id, parcela_id, principal, juros, multa) values ('80000000-0000-0000-0000-000000000002', :'p1', 2500, 10, 20);
 select pg_temp.ok(erp.parcela_saldo(:'p1') = 0, 'segunda quitação zera a parcela; juros e multa entram só na hora de pagar');
 select pg_temp.ok((select sum(valor) from erp.lancamentos where natureza_id = pg_temp.nat('08.01.02')) = -30,
@@ -274,10 +274,33 @@ select pg_temp.falha($$insert into erp.quitacoes (pagamento_id, parcela_id, prin
   (select id from erp.parcelas where titulo_id = (select titulo_id from erp.parcelas where id = (select parcela_id from erp.quitacoes limit 1)) and numero = 2), 1)$$,
   'pagamento não quita mais do que o próprio valor');
 
--- adiantamento de 6.000 ao fornecedor, sem título
-insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, compromisso_id, data, valor) values
+-- adiantamento de 6.000 ao fornecedor, sem título: sai carimbado com núcleo e centro
+select pg_temp.falha($$insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, data, valor) values
+  ('20000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000005', '2026-03-01', 1)$$,
+  'adiantamento sem núcleo e centro de custo não sai');
+select pg_temp.falha($$insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, data, valor) values
+  ('20000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000005',
+   '40000000-0000-0000-0000-000000000001', '2026-03-01', 1)$$,
+  'adiantamento só com núcleo, sem centro de custo, não sai');
+select pg_temp.falha($$insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values
+  ('20000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000005',
+   '40000000-0000-0000-0000-000000000001', (select id from erp.centros_custo where nome = 'Jurídico'), '2026-03-01', 1)$$,
+  'adiantamento em centro desligado no núcleo não sai');
+select pg_temp.falha($$insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values
+  ('20000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000005',
+   '40000000-0000-0000-0000-000000000002', '45000000-0000-0000-0000-000000000002', '2026-03-01', 1)$$,
+  'adiantamento não usa núcleo de outra empresa');
+begin;
+insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, data, valor)
+select :'spe', :'conta_spe', pessoa_id, '2026-03-01', 1 from erp.empresas where id = :'spe';
+select pg_temp.ok(true, 'transferência entre contas próprias dispensa o carimbo');
+rollback;
+insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, compromisso_id, nucleo_economico_id, centro_custo_id, data, valor) values
   ('80000000-0000-0000-0000-000000000003', :'spe', :'conta_spe', '10000000-0000-0000-0000-000000000005',
-   '60000000-0000-0000-0000-000000000002', '2026-03-01', 6000);
+   '60000000-0000-0000-0000-000000000002', :'ne_vm', :'cc_obra', '2026-03-01', 6000);
+select pg_temp.ok((select nucleo_economico_id = :'ne_vm' and centro_custo_id = :'cc_obra' from erp.lancamentos
+                   where pagamento_id = '80000000-0000-0000-0000-000000000003' and quitacao_id is null),
+  'o adiantamento entra no livro já carimbado com núcleo e centro');
 select pg_temp.ok((select saldo from erp.v_adiantamentos where pagamento_id = '80000000-0000-0000-0000-000000000003') = 6000,
   'adiantamento = pagamento sem quitação, com saldo a abater');
 insert into erp.quitacoes (pagamento_id, parcela_id, principal, desconto) values ('80000000-0000-0000-0000-000000000003', :'p2', 4500, 100);
@@ -288,6 +311,9 @@ select pg_temp.ok((select sum(valor) from erp.lancamentos where estagio = 'reali
   'realizado na natureza da obra = principal pago (9.000)');
 select pg_temp.ok((select sum(valor) from erp.lancamentos where estagio = 'realizado' and natureza_id = pg_temp.nat('11.02')) = -1600,
   'saldo de adiantamento aparece no livro em Movimentações');
+select pg_temp.ok((select sum(valor) from erp.lancamentos where estagio = 'realizado' and natureza_id = pg_temp.nat('11.02')
+                   and nucleo_economico_id = :'ne_vm' and centro_custo_id = :'cc_obra') = -1600,
+  'o saldo de adiantamento fica no núcleo e no centro do carimbo');
 select pg_temp.ok((select sum(valor) from erp.lancamentos where estagio = 'realizado' and empresa_id = :'spe')
                   = -(2000 + 2530 + 6000), 'o realizado do livro bate com o dinheiro que saiu do banco');
 select pg_temp.falha($$insert into erp.quitacoes (pagamento_id, parcela_id, principal) values ('80000000-0000-0000-0000-000000000003',
