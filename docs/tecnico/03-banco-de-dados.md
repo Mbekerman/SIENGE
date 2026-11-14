@@ -21,6 +21,7 @@ Onde está: branch `claude/project-thread-dknc98` deste repositório (commits `6
 | `supabase/migrations/20261107000200_erp_pagar_livro.sql` | Compromissos, previsões, documentos fiscais e retenções, títulos, parcelas, pagamentos, quitações, caução, movimentos societários, contas e lotes bancários, orçamento, livro de lançamentos e visões (19 tabelas) |
 | `supabase/migrations/20261107000300_erp_reclassificacao.sql` | Fechamento de mês, níveis de aprovação, alçadas, pedidos de reclassificação, itens e votos (6 tabelas) |
 | `supabase/migrations/20261107000400_erp_carga.sql` | Carga inicial: árvore de naturezas v0 (11 grupos), linhas da DRE, naturezas do sistema, níveis e alçada padrão |
+| `supabase/migrations/20261107000500_erp_rls.sql` | RLS ligado e forçado em toda tabela do `erp`, com uma política só, a do sistema (S-003; as políticas por perfil entram com as telas) |
 | `supabase/tests/erp.sql` | 169 testes de regra (os de acesso incluem função `security definer` e catálogo de privilégios) |
 | `supabase/tests/run.sh` | Sobe um Postgres 16 temporário, aplica `shim_supabase.sql` + migrations e roda os testes |
 | `supabase/tests/shim_supabase.sql` | Imita o mínimo do Supabase (`auth.uid()` lido de `request.jwt.claim.sub`) |
