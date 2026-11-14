@@ -763,8 +763,90 @@ select pg_temp.ok((select count(*) from pg_class c join pg_namespace n on n.oid 
 select pg_temp.ok(not exists (
   select 1 from pg_policies where schemaname = 'erp'
   and not (policyname = 'conferencia' and cmd = 'SELECT' and roles = '{erp_conferencia}')
+  and not (policyname = 'operacao' and roles::text[] @> '{erp_situacao,erp_reclassificacao}' and cardinality(roles) = 2)
   and (coalesce(qual, '') ~* '^\(?\s*true\s*\)?$' or coalesce(with_check, '') ~* '^\(?\s*true\s*\)?$')),
   'catálogo: nenhuma política do `erp` é using(true) ou with check(true), fora a leitura do erp_conferencia');
+-- S-035: as variáveis de sessão antigas não abrem nada; só a operação do banco muda situação e natureza
+begin;
+select pg_temp.como(:'analista');
+set local erp.sistema = 'on';
+set local erp.reclassificando = 'on';
+set local erp.sistema_apaga = 'on';
+do $$ begin
+  update erp.titulos set situacao = 'quitado' where id = (select id from erp.titulos where situacao = 'aberto' limit 1);
+  raise exception 'passou';
+exception when others then
+  if sqlerrm <> 'A situação do título muda pelas quitações' then raise exception 'situação do título: %', sqlerrm; end if;
+end $$;
+select pg_temp.ok(true, 'S-035: SET erp.sistema não deixa mudar a situação do título');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor)
+values ('a1000000-0000-0000-0000-000000000035', :'spe', 'avulso', '10000000-0000-0000-0000-000000000005', '2026-03-01', '2026-03-01', 10);
+do $$ begin
+  update erp.titulos set situacao = 'aberto' where id = 'a1000000-0000-0000-0000-000000000035';
+  if not found then raise exception 'sem título em rascunho'; end if;
+  raise exception 'passou';
+exception when others then
+  if sqlerrm <> 'A situação do título muda pelas quitações' then raise exception 'rascunho: %', sqlerrm; end if;
+end $$;
+select pg_temp.ok(true, 'S-035: título em rascunho não vira aberto à mão (sem os lançamentos do confirmar)');
+do $$ begin
+  update erp.previsoes set situacao = 'consumida' where id = (select id from erp.previsoes where situacao = 'aberta' limit 1);
+  raise exception 'passou';
+exception when others then
+  if sqlerrm <> 'A previsão só pode ser cancelada; ela é consumida pelos títulos' then raise exception 'situação da previsão: %', sqlerrm; end if;
+end $$;
+select pg_temp.ok(true, 'S-035: SET erp.sistema não deixa consumir a previsão à mão');
+do $$ begin
+  update erp.lancamentos set natureza_id = natureza_id where id = (select id from erp.lancamentos limit 1);
+  raise exception 'passou';
+exception when others then
+  if sqlerrm <> 'O livro não muda; a natureza só muda pela reclassificação' then raise exception 'livro: %', sqlerrm; end if;
+end $$;
+select pg_temp.ok(true, 'S-035: SET erp.reclassificando não deixa mudar o livro');
+do $$ begin
+  perform erp.exigir_admin();
+  raise exception 'passou';
+exception when others then
+  if sqlerrm <> 'Só o administrador pode mudar a configuração' then raise exception 'admin: %', sqlerrm; end if;
+end $$;
+select pg_temp.ok(true, 'S-035: SET erp.sistema_apaga não faz do analista administrador');
+select pg_temp.ok(not erp.agindo_como('erp_situacao') and not erp.agindo_como('erp_reclassificacao'),
+  'S-035: fora das operações do banco, não há marca');
+rollback;
+-- consumir a previsão inteira (operação do banco, erp_situacao) continua funcionando
+begin;
+select pg_temp.como(:'diretor');
+insert into erp.previsoes (id, empresa_id, origem, pessoa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+values ('68000000-0000-0000-0000-000000000035', :'spe', 'manual', '10000000-0000-0000-0000-000000000005', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), '2026-03-01', '2026-03-20', 100);
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+values ('70000000-0000-0000-0000-000000000035', :'spe', '10000000-0000-0000-0000-000000000005', 'nfse', '135', '2026-03-05', '2026-03-01', 100);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('70000000-0000-0000-0000-000000000035', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), 100);
+select erp.lancar_documento('70000000-0000-0000-0000-000000000035', array['2026-03-20']::date[],
+                            array['68000000-0000-0000-0000-000000000035']::uuid[]) is not null as lancou \gset
+select pg_temp.ok((select situacao from erp.previsoes where id = '68000000-0000-0000-0000-000000000035') = 'consumida',
+  'S-035: a nota que consome a previsão inteira a marca como consumida (pela operação do banco)');
+rollback;
+-- a reclassificação aplicada direto, sem o voto (fora do decidir_reclassificacao), cai na trava do livro
+begin;
+select pg_temp.como(:'analista');
+select set_config('teste.rc', erp.pedir_reclassificacao(pg_temp.nat('04.02'), pg_temp.nat('04.03'), 'aplicar sem voto')::text, true);
+select pg_temp.ok((select count(*) from erp.reclassificacao_itens i join erp.lancamentos l on l.id = i.lancamento_id
+                   where i.reclassificacao_id = current_setting('teste.rc')::uuid and l.natureza_id = pg_temp.nat('04.02')) > 0,
+  'S-035: o pedido pendente tem linhas do livro na origem');
+select pg_temp.como(:'diretor');
+do $$ begin
+  perform erp._aplicar_reclassificacao(current_setting('teste.rc')::uuid);
+  raise exception 'passou';
+exception when others then
+  if sqlerrm not in ('O livro não muda; a natureza só muda pela reclassificação', 'A natureza da previsão só muda pela reclassificação',
+                     'O título já foi confirmado; titulo_rateios não muda') then
+    raise exception 'aplicar direto: %', sqlerrm;
+  end if;
+end $$;
+select pg_temp.ok(true, 'S-035: chamar _aplicar_reclassificacao direto não muda o livro');
+rollback;
+
 -- nega por padrão: papel comum com SELECT, como usuário ou sem login, não vê nada; erp_sistema vê
 begin;
 create role erp_teste_rls nologin;
@@ -864,18 +946,38 @@ select pg_temp.ok(not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'erp' and p.prosecdef
     and (not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) c where c like 'search\_path=%')
-         or p.proowner <> 'erp_conferencia'::regrole)),
-  'catálogo: todo security definer do `erp` tem search_path fixo e é do erp_conferencia');
+         or p.proowner not in ('erp_conferencia'::regrole, 'erp_situacao'::regrole, 'erp_reclassificacao'::regrole))),
+  'catálogo: todo security definer do `erp` tem search_path fixo e é de erp_conferencia, erp_situacao ou erp_reclassificacao');
 select pg_temp.ok((select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-                   where n.nspname = 'erp' and p.prosecdef) >= 15,
+                   where n.nspname = 'erp' and p.prosecdef) >= 21,
   'catálogo: as funções de conferência são security definer');
-select pg_temp.ok((select not rolcanlogin and not rolsuper and not rolbypassrls from pg_roles where rolname = 'erp_conferencia')
-                  and not exists (select 1 from pg_auth_members where roleid = 'erp_conferencia'::regrole),
-  'catálogo: erp_conferencia não entra, não ignora RLS e não tem membros');
+select pg_temp.ok((select count(*) = 4 and bool_and(not rolcanlogin and not rolsuper and not rolbypassrls) from pg_roles
+                   where rolname in ('erp_sistema', 'erp_conferencia', 'erp_situacao', 'erp_reclassificacao'))
+                  and not exists (select 1 from pg_auth_members
+                                  where roleid in ('erp_conferencia'::regrole, 'erp_situacao'::regrole, 'erp_reclassificacao'::regrole)),
+  'catálogo: os papéis erp_* não entram, não ignoram RLS, e conferência, situação e reclassificação não têm membros');
+select pg_temp.ok(not exists (
+  select 1 from pg_auth_members m join pg_roles r on r.oid = m.roleid join pg_roles u on u.oid = m.member
+  where r.rolname like 'erp\_%' and u.rolname in ('anon', 'authenticated', 'authenticator', 'service_role', 'public')),
+  'catálogo: nenhum papel da API é membro de erp_sistema nem de outro papel erp_*');
+select pg_temp.ok(not exists (
+  select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace,
+         lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+  where n.nspname = 'erp' and p.prosecdef and a.privilege_type = 'EXECUTE'
+    and (a.grantee = 0 or a.grantee in (select oid from pg_roles where rolname in ('anon', 'authenticated', 'authenticator', 'service_role')))),
+  'catálogo: saldos e demais funções definer fora do EXECUTE de anon, authenticated, authenticator e service_role');
+-- S-035: nenhuma variável de sessão serve de passe
+select pg_temp.ok(not exists (
+  select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'erp' and (p.prosrc ~ 'current_setting\(\s*''erp\.' or p.prosrc ~ 'set_config\(\s*''erp\.')),
+  'catálogo: nenhuma função do `erp` lê ou põe variável de sessão erp.* (S-035)');
+select pg_temp.ok((select not prosecdef from pg_proc where oid = 'erp.agindo_como(text)'::regprocedure),
+  'catálogo: erp.agindo_como é invoker (dentro de definer, current_user é o dono)');
 select pg_temp.ok(not exists (
   select 1 from pg_policies where schemaname = 'erp' and policyname <> 'sistema'
-    and not (policyname = 'conferencia' and cmd = 'SELECT' and roles = '{erp_conferencia}')),
-  'catálogo: no `erp` só há as políticas sistema e conferencia (as de perfil entram com o grant a authenticated)');
+    and not (policyname = 'conferencia' and cmd = 'SELECT' and roles = '{erp_conferencia}')
+    and not (policyname = 'operacao' and cmd = 'ALL' and roles::text[] @> '{erp_situacao,erp_reclassificacao}' and cardinality(roles) = 2)),
+  'catálogo: no `erp` só há as políticas sistema, conferencia e operacao (as de perfil entram com o grant a authenticated)');
 
 \echo '# fim'
 do $$ begin raise notice 'TODOS OS TESTES PASSARAM'; end $$;
