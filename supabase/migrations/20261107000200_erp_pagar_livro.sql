@@ -759,6 +759,7 @@ begin
     end loop;
   end loop;
   update erp.titulos set situacao = 'aberto' where id = t.id;   -- definer erp_situacao (_erp_rls)
+  perform erp._definir_alcada(t.id);
 end $$;
 
 -- Cria título com parcelas iguais (o resto dos centavos na última) e o rateio dado.
@@ -1022,6 +1023,185 @@ create table erp.liberacoes_sem_abater (
   aprovado_por  uuid not null default erp.eu(),
   aprovado_em   timestamptz not null default clock_timestamp()
 );
+-- ---------------------------------------------------------------------
+-- Alçada de pagamento (decisão do Moises, 14/11/2026; piloto no Marketing)
+-- Vale para o título a pagar com rateio num centro de custo que tem gestor aprovador cadastrado.
+-- Pelo acumulado do mês do centro (somando o próprio título): até 50 mil, gestor da área e
+-- depois AF; acima, gestor da área, AF e AD. Faixas, etapas e como se soma o acumulado são
+-- configuração do administrador, com auditoria. A alçada é fixada quando o título é confirmado;
+-- as etapas são em sequência, quem lançou não aprova, e cada pessoa aprova uma etapa só.
+-- O título não é quitado sem a alçada completa.
+-- ---------------------------------------------------------------------
+create table erp.centro_aprovadores (          -- gestor da área (aprovador nominal do centro)
+  centro_custo_id uuid not null references erp.centros_custo,
+  user_id         uuid not null references erp.usuarios,
+  primary key (centro_custo_id, user_id)
+);
+create trigger t_so_admin before insert or update or delete on erp.centro_aprovadores
+  for each row execute function erp.tg_so_admin();
+create trigger t_aud_centro_aprovadores after insert or update or delete on erp.centro_aprovadores
+  for each row execute function erp.tg_auditoria('centro_custo_id');
+
+create table erp.alcadas_pagamento (
+  id     uuid primary key default gen_random_uuid(),
+  ate    numeric(15,2) check (ate > 0),          -- acumulado do mês até este valor; nulo = acima de todas
+  etapas text[] not null check (cardinality(etapas) > 0 and etapas <@ '{AREA,AF,AO,AD}'),
+  unique nulls not distinct (ate)
+);
+insert into erp.alcadas_pagamento (ate, etapas) values (50000, '{AREA,AF}'), (null, '{AREA,AF,AD}');
+create trigger t_so_admin before insert or update or delete on erp.alcadas_pagamento
+  for each row execute function erp.tg_so_admin();
+create trigger t_aud_alcadas_pagamento after insert or update or delete on erp.alcadas_pagamento
+  for each row execute function erp.tg_auditoria('id');
+
+create table erp.regra_alcada_pagamento (
+  id        boolean primary key default true check (id),   -- uma linha só
+  -- como somar o acumulado do mês: o centro no grupo todo (padrão), o centro na empresa,
+  -- ou o centro dentro do núcleo econômico
+  acumulado text not null default 'centro' check (acumulado in ('centro','empresa_centro','nucleo_centro'))
+);
+insert into erp.regra_alcada_pagamento default values;
+create trigger t_regra_alcada before insert or update or delete on erp.regra_alcada_pagamento
+  for each row execute function erp.tg_regra_adiantamento();
+create trigger t_aud_regra_alcada after update on erp.regra_alcada_pagamento
+  for each row execute function erp.tg_auditoria('id');
+
+-- A alçada fixada na confirmação: as etapas, o centro e o acumulado que decidiu.
+create table erp.titulo_alcadas (
+  titulo_id       uuid primary key references erp.titulos,
+  etapas          text[] not null,
+  centro_custo_id uuid not null references erp.centros_custo,   -- o centro de maior acumulado
+  acumulado       numeric(15,2) not null,
+  definida_em     timestamptz not null default clock_timestamp()
+);
+create table erp.titulo_aprovacoes (
+  titulo_id     uuid not null references erp.titulos,
+  etapa         int not null,                    -- posição em titulo_alcadas.etapas, de 1
+  lista         text not null,
+  aprovado      boolean not null,
+  justificativa text,
+  por           uuid not null,
+  em            timestamptz not null default clock_timestamp(),
+  primary key (titulo_id, etapa),
+  check (aprovado or length(trim(coalesce(justificativa, ''))) > 0)
+);
+-- só pelas operações do banco (confirmar_titulo e decidir_titulo), e não mudam
+create function erp.tg_alcada_titulo() returns trigger language plpgsql as $$
+begin
+  if tg_op <> 'INSERT' then raise exception 'A alçada do título não se altera nem se apaga'; end if;
+  if not erp.agindo_como('erp_situacao') then
+    raise exception 'A alçada do título só se grava pela confirmação e pela aprovação';
+  end if;
+  if tg_table_name = 'titulo_aprovacoes' then
+    new.por := erp.eu();
+    new.em := clock_timestamp();
+  end if;
+  return new;
+end $$;
+create trigger t_alcada_titulo before insert or update or delete on erp.titulo_alcadas
+  for each row execute function erp.tg_alcada_titulo();
+create trigger t_alcada_titulo before insert or update or delete on erp.titulo_aprovacoes
+  for each row execute function erp.tg_alcada_titulo();
+
+-- Fixa a alçada do título na confirmação (chamada pelo confirmar_titulo, que é definer).
+-- O título de imposto retido e o movimento entre sócios seguem a nota e o aporte; não entram.
+create function erp._definir_alcada(p_titulo uuid) returns void language plpgsql as $$
+declare t erp.titulos; v_modo text := (select acumulado from erp.regra_alcada_pagamento);
+        r record; v_soma numeric; v_centro uuid; v_acum numeric; v_etapas text[];
+begin
+  select * into t from erp.titulos where id = p_titulo;
+  if t.sentido <> 'pagar' or t.tipo in ('imposto','societario') then return; end if;
+  -- cada linha do rateio em centro com gestor aprovador; vale o maior acumulado
+  for r in select tr.centro_custo_id, tr.nucleo_economico_id from erp.titulo_rateios tr
+            where tr.titulo_id = t.id
+              and exists (select 1 from erp.centro_aprovadores a where a.centro_custo_id = tr.centro_custo_id) loop
+    select coalesce(sum(t2.valor * r2.percentual / 100), 0) into v_soma
+      from erp.titulos t2 join erp.titulo_rateios r2 on r2.titulo_id = t2.id
+     where r2.centro_custo_id = r.centro_custo_id
+       and t2.sentido = 'pagar' and t2.tipo not in ('imposto','societario')
+       and (t2.situacao in ('aberto','quitado') or t2.id = t.id)
+       and erp.mes(t2.competencia) = erp.mes(t.competencia)
+       and (v_modo = 'centro' or t2.empresa_id = t.empresa_id)
+       and (v_modo <> 'nucleo_centro' or r2.nucleo_economico_id is not distinct from r.nucleo_economico_id);
+    if v_acum is null or v_soma > v_acum then v_acum := v_soma; v_centro := r.centro_custo_id; end if;
+  end loop;
+  if v_centro is null then return; end if;
+  select etapas into v_etapas from erp.alcadas_pagamento
+   where ate is null or v_acum <= ate order by (ate is null), ate limit 1;
+  if v_etapas is null then raise exception 'Não há alçada de pagamento configurada para %', v_acum; end if;
+  insert into erp.titulo_alcadas (titulo_id, etapas, centro_custo_id, acumulado) values (t.id, v_etapas, v_centro, v_acum);
+end $$;
+
+-- Etapa da vez: a primeira sem aprovação; nula quando aprovado por todas (ou sem alçada).
+create function erp.alcada_etapa(p_titulo uuid) returns int language sql stable as $$
+  select min(i) from erp.titulo_alcadas a, generate_subscripts(a.etapas, 1) i
+   where a.titulo_id = p_titulo
+     and not exists (select 1 from erp.titulo_aprovacoes v where v.titulo_id = a.titulo_id and v.etapa = i and v.aprovado) $$;
+create function erp.alcada_pendente(p_titulo uuid) returns text language sql stable as $$
+  select etapas[erp.alcada_etapa(p_titulo)] from erp.titulo_alcadas where titulo_id = p_titulo $$;
+create function erp.alcada_recusada(p_titulo uuid) returns boolean language sql stable as $$
+  select exists (select 1 from erp.titulo_aprovacoes where titulo_id = p_titulo and not aprovado) $$;
+
+-- Os títulos do mês que formaram o acumulado do centro até este título (só consulta), para quem
+-- aprova o título: o gestor da área, quem está numa lista das etapas dele, ou a diretoria.
+create function erp.titulos_do_acumulado(p_titulo uuid)
+returns table (titulo_id uuid, empresa_id uuid, pessoa text, competencia date, valor_no_centro numeric, situacao text)
+language plpgsql stable as $$
+declare a erp.titulo_alcadas; t erp.titulos; v_modo text := (select acumulado from erp.regra_alcada_pagamento);
+begin
+  select * into a from erp.titulo_alcadas where titulo_alcadas.titulo_id = p_titulo;
+  if a.titulo_id is null then raise exception 'Este título não tem alçada de pagamento'; end if;
+  if not (erp.estou_nas_listas(a.etapas) or coalesce(erp.meu_papel(), '') = 'diretor'
+          or exists (select 1 from erp.centro_aprovadores c where c.centro_custo_id = a.centro_custo_id and c.user_id = erp.eu())) then
+    raise exception 'Só quem aprova o título vê o acumulado';
+  end if;
+  select * into t from erp.titulos where id = p_titulo;
+  return query
+    select t2.id, t2.empresa_id, p.nome, t2.competencia, round(sum(t2.valor * r2.percentual / 100), 2), t2.situacao
+      from erp.titulos t2 join erp.titulo_rateios r2 on r2.titulo_id = t2.id join erp.pessoas p on p.id = t2.pessoa_id
+     where r2.centro_custo_id = a.centro_custo_id
+       and t2.sentido = 'pagar' and t2.tipo not in ('imposto','societario')
+       and t2.situacao in ('aberto','quitado') and erp.mes(t2.competencia) = erp.mes(t.competencia)
+       and (v_modo = 'centro' or t2.empresa_id = t.empresa_id)
+       and t2.criado_em <= t.criado_em
+     group by t2.id, t2.empresa_id, p.nome, t2.competencia, t2.situacao, t2.criado_em
+     order by t2.criado_em;
+end $$;
+
+-- Aprovar ou recusar a etapa da vez. Recusar exige justificativa e trava o título.
+create function erp.decidir_titulo(p_titulo uuid, p_aprovar boolean, p_justificativa text default null)
+returns text language plpgsql as $$
+declare a erp.titulo_alcadas; v_etapa int; v_lista text; v_eu uuid := erp.eu();
+begin
+  perform erp.exigir_editor();
+  if v_eu is null then raise exception 'Usuário sem cadastro no ERP'; end if;
+  select * into a from erp.titulo_alcadas where titulo_id = p_titulo for update;
+  if a.titulo_id is null then raise exception 'Este título não tem alçada de pagamento'; end if;
+  if erp.alcada_recusada(p_titulo) then raise exception 'O título foi recusado na alçada'; end if;
+  v_etapa := erp.alcada_etapa(p_titulo);
+  if v_etapa is null then raise exception 'O título já foi aprovado em todas as etapas'; end if;
+  v_lista := a.etapas[v_etapa];
+  if erp.autor_lancamento('titulo', p_titulo) = v_eu then raise exception 'Quem lançou não aprova o próprio lançamento'; end if;
+  if exists (select 1 from erp.titulo_aprovacoes where titulo_id = p_titulo and por = v_eu) then
+    raise exception 'Você já aprovou uma etapa deste título';
+  end if;
+  if v_lista = 'AREA' then
+    if not exists (select 1 from erp.centro_aprovadores c join erp.usuarios u on u.id = c.user_id
+                    where c.centro_custo_id = a.centro_custo_id and c.user_id = v_eu and u.ativo) then
+      raise exception 'Esta etapa é do gestor da área';
+    end if;
+  elsif not erp.estou_nas_listas(array[v_lista]) then
+    raise exception 'Esta etapa é de quem está em %', v_lista;
+  end if;
+  if not p_aprovar and length(trim(coalesce(p_justificativa, ''))) = 0 then
+    raise exception 'Recusar exige justificativa';
+  end if;
+  insert into erp.titulo_aprovacoes (titulo_id, etapa, lista, aprovado, justificativa, por)
+  values (p_titulo, v_etapa, v_lista, p_aprovar, p_justificativa, v_eu);
+  return case when not p_aprovar then 'recusado'
+              when erp.alcada_pendente(p_titulo) is null then 'aprovado' else 'pendente' end;
+end $$;
+
 -- Conferências da trava do adiantamento (S-034): security definer na migration _erp_rls, para
 -- enxergar pagamentos, quitações e aprovações de núcleos e centros que quem lança não vê.
 -- Recebem só ids de pagamento e título; não escolhem empresa nem usuário.
@@ -1082,6 +1262,10 @@ begin
   if t.sentido <> 'pagar' then raise exception 'Recebimentos ficam para o módulo de contas a receber'; end if;
   if g.empresa_id <> t.empresa_id then raise exception 'Pagamento e título são de empresas diferentes'; end if;
   if g.pessoa_id <> t.pessoa_id then raise exception 'O pagamento foi para outra pessoa'; end if;
+  if erp.alcada_recusada(t.id) then raise exception 'O título foi recusado na alçada'; end if;
+  if erp.alcada_pendente(t.id) is not null then
+    raise exception 'O título ainda não foi aprovado: falta %', erp.alcada_pendente(t.id);
+  end if;
   if (erp.regra_adiantamento_atual()).trava then
     -- adiantamento só abate título do mesmo núcleo e centro do carimbo; em outro, só aprovado
     if g.nucleo_economico_id is not null

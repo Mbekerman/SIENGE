@@ -1038,7 +1038,7 @@ select pg_temp.ok(not exists (
          or p.proowner not in ('erp_conferencia'::regrole, 'erp_situacao'::regrole, 'erp_reclassificacao'::regrole, 'erp_auditoria'::regrole))),
   'catálogo: todo security definer do `erp` tem search_path fixo e é de erp_conferencia, erp_situacao ou erp_reclassificacao');
 select pg_temp.ok((select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-                   where n.nspname = 'erp' and p.prosecdef) >= 32,
+                   where n.nspname = 'erp' and p.prosecdef) >= 37,
   'catálogo: as funções de conferência são security definer');
 select pg_temp.ok((select count(*) = 5 and bool_and(not rolcanlogin and not rolsuper and not rolbypassrls) from pg_roles
                    where rolname in ('erp_sistema', 'erp_conferencia', 'erp_situacao', 'erp_reclassificacao', 'erp_auditoria'))
@@ -1394,6 +1394,124 @@ select pg_temp.ok(erp.decidir_reclassificacao(current_setting('teste.rc59')::uui
   'S-059: diretoria e contador: o voto da diretoria sozinho deixa pendente');
 select pg_temp.erro_igual(format($$select erp.decidir_reclassificacao(%L, true)$$, current_setting('teste.rc59')),
   'Você já votou neste pedido', 'S-059: ninguém vota duas vezes');
+rollback;
+-- ---------------------------------------------------------------------
+\echo '# alçada de pagamento (piloto Marketing)'
+begin;
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual($$update erp.alcadas_pagamento set ate = 1000000 where ate = 50000$$,
+  'Só o administrador pode mudar a configuração', 'alçada: analista não muda as faixas');
+select pg_temp.erro_igual(format($$insert into erp.centro_aprovadores values (%L, %L)$$, :'cc_mkt', :'analista'),
+  'Só o administrador pode mudar a configuração', 'alçada: analista não se faz gestor da área');
+select pg_temp.como(:'diretor');
+insert into erp.centro_aprovadores values (:'cc_mkt', :'gestor');
+insert into erp.listas_financeiro (lista, user_id) values ('AF', :'gestor'), ('AF', :'contador'), ('AD', :'diretor2') on conflict do nothing;
+select pg_temp.ok(exists (select 1 from erp.auditoria where tabela = 'centro_aprovadores'), 'alçada: gestor da área entra na auditoria');
+select pg_temp.como(:'analista');
+-- títulos avulsos de Marketing no mesmo mês, lançados pelo analista
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('82000000-0000-0000-0000-000000000001', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-05-02', '2026-05-01', 30000),
+  ('82000000-0000-0000-0000-000000000002', :'incorp', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-05-03', '2026-05-01', 25000),
+  ('82000000-0000-0000-0000-000000000003', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-05-04', '2026-05-01', 1000),
+  ('82000000-0000-0000-0000-000000000004', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-05-04', '2026-05-01', 500);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values
+  ('82000000-0000-0000-0000-000000000001', 1, '2026-05-20', 30000), ('82000000-0000-0000-0000-000000000002', 1, '2026-05-20', 25000),
+  ('82000000-0000-0000-0000-000000000003', 1, '2026-05-20', 1000), ('82000000-0000-0000-0000-000000000004', 1, '2026-05-20', 500);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('82000000-0000-0000-0000-000000000001', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100),
+  ('82000000-0000-0000-0000-000000000002', :'ne_corp', :'cc_mkt', pg_temp.nat('05.01.04'), 100),
+  ('82000000-0000-0000-0000-000000000003', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100),
+  ('82000000-0000-0000-0000-000000000004', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), 100);
+select erp.confirmar_titulo('82000000-0000-0000-0000-000000000001');
+select erp.confirmar_titulo('82000000-0000-0000-0000-000000000002');
+select erp.confirmar_titulo('82000000-0000-0000-0000-000000000003');
+select erp.confirmar_titulo('82000000-0000-0000-0000-000000000004');
+select pg_temp.ok((select etapas = '{AREA,AF}' and acumulado = 30000 from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000001'),
+  'alçada: até 50 mil no mês do centro, gestor da área e AF');
+select pg_temp.ok((select etapas = '{AREA,AF,AD}' and acumulado = 55000 from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000002'),
+  'alçada: o título que passa dos 50 mil (somando o centro em todos os núcleos e empresas) vai ao AD');
+select pg_temp.ok((select etapas = '{AREA,AF,AD}' from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000003'),
+  'alçada: os títulos seguintes do mês também vão ao AD');
+select pg_temp.ok(not exists (select 1 from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000004'),
+  'alçada: centro sem gestor aprovador (fora do piloto) não tem alçada');
+select pg_temp.erro_igual($$insert into erp.titulo_aprovacoes (titulo_id, etapa, lista, aprovado, por) values ('82000000-0000-0000-0000-000000000001', 1, 'AREA', true, '00000000-0000-0000-0000-00000000000e')$$,
+  'A alçada do título só se grava pela confirmação e pela aprovação', 'alçada: aprovação não entra por INSERT direto');
+select pg_temp.erro_igual($$delete from erp.titulo_alcadas$$, 'A alçada do título não se altera nem se apaga', 'alçada: não se apaga');
+insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values
+  ('83000000-0000-0000-0000-000000000001', :'spe', :'conta_spe', '10000000-0000-0000-0000-000000000007', :'ne_vm', :'cc_mkt', '2026-05-20', 31000);
+select pg_temp.erro_igual($$insert into erp.quitacoes (pagamento_id, parcela_id, principal)
+  select '83000000-0000-0000-0000-000000000001', id, 30000 from erp.parcelas where titulo_id = '82000000-0000-0000-0000-000000000001'$$,
+  'O título ainda não foi aprovado: falta AREA', 'alçada: não se paga antes da aprovação');
+select pg_temp.erro_igual($$select erp.decidir_titulo('82000000-0000-0000-0000-000000000001', true)$$,
+  'Quem lançou não aprova o próprio lançamento', 'alçada: quem lançou não aprova');
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual($$select erp.decidir_titulo('82000000-0000-0000-0000-000000000001', true)$$,
+  'Esta etapa é do gestor da área', 'alçada: a primeira etapa é do gestor da área, nem a diretoria pula');
+select pg_temp.como(:'gestor');
+select pg_temp.ok(erp.decidir_titulo('82000000-0000-0000-0000-000000000001', true) = 'pendente', 'alçada: o gestor da área aprova a etapa dele');
+select pg_temp.erro_igual($$select erp.decidir_titulo('82000000-0000-0000-0000-000000000001', true)$$,
+  'Você já aprovou uma etapa deste título', 'alçada: a mesma pessoa não aprova duas etapas (o gestor também está no AF)');
+select pg_temp.como(:'diretor2');
+select pg_temp.erro_igual($$select erp.decidir_titulo('82000000-0000-0000-0000-000000000001', true)$$,
+  'Esta etapa é de quem está em AF', 'alçada: AF vem depois do gestor, em sequência');
+select pg_temp.como(:'contador');
+select pg_temp.ok(erp.decidir_titulo('82000000-0000-0000-0000-000000000001', true) = 'aprovado', 'alçada: AF aprova e o título fica liberado');
+select pg_temp.como(:'analista');
+insert into erp.quitacoes (pagamento_id, parcela_id, principal)
+select '83000000-0000-0000-0000-000000000001', id, 30000 from erp.parcelas where titulo_id = '82000000-0000-0000-0000-000000000001';
+select pg_temp.ok((select situacao from erp.titulos where id = '82000000-0000-0000-0000-000000000001') = 'quitado', 'alçada: aprovado, o título se paga');
+-- acima dos 50 mil: gestor, AF e AD; o AD vê os títulos que formaram o acumulado
+select pg_temp.como(:'gestor');
+select erp.decidir_titulo('82000000-0000-0000-0000-000000000002', true);
+select pg_temp.como(:'contador');
+select pg_temp.ok(erp.decidir_titulo('82000000-0000-0000-0000-000000000002', true) = 'pendente', 'alçada: acima dos 50 mil, falta o AD');
+select pg_temp.como(:'diretor2');
+select pg_temp.ok((select array_agg(titulo_id order by titulo_id) from erp.titulos_do_acumulado('82000000-0000-0000-0000-000000000002'))
+                  = array['82000000-0000-0000-0000-000000000001', '82000000-0000-0000-0000-000000000002']::uuid[],
+  'alçada: o AD consulta os títulos do mês que levaram o acumulado até este');
+select pg_temp.ok(erp.decidir_titulo('82000000-0000-0000-0000-000000000002', true) = 'aprovado', 'alçada: AD aprova por último');
+select pg_temp.como(:'leitor');
+select pg_temp.erro_igual($$select * from erp.titulos_do_acumulado('82000000-0000-0000-0000-000000000002')$$,
+  'Só quem aprova o título vê o acumulado', 'alçada: quem não aprova não vê o acumulado');
+-- recusa
+select pg_temp.como(:'gestor');
+select pg_temp.erro_igual($$select erp.decidir_titulo('82000000-0000-0000-0000-000000000003', false)$$,
+  'Recusar exige justificativa', 'alçada: recusar exige justificativa');
+select pg_temp.ok(erp.decidir_titulo('82000000-0000-0000-0000-000000000003', false, 'serviço não prestado') = 'recusado', 'alçada: o gestor recusa');
+select pg_temp.como(:'contador');
+select pg_temp.erro_igual($$select erp.decidir_titulo('82000000-0000-0000-0000-000000000003', true)$$,
+  'O título foi recusado na alçada', 'alçada: recusado não segue para as próximas etapas');
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual($$insert into erp.quitacoes (pagamento_id, parcela_id, principal)
+  select '83000000-0000-0000-0000-000000000001', id, 1000 from erp.parcelas where titulo_id = '82000000-0000-0000-0000-000000000003'$$,
+  'O título foi recusado na alçada', 'alçada: recusado não se paga');
+-- outro mês começa do zero; exatamente 50 mil ainda é a faixa de baixo
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('82000000-0000-0000-0000-000000000006', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-06-02', '2026-06-01', 20000),
+  ('82000000-0000-0000-0000-000000000007', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-06-03', '2026-06-01', 30000);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values
+  ('82000000-0000-0000-0000-000000000006', 1, '2026-06-20', 20000), ('82000000-0000-0000-0000-000000000007', 1, '2026-06-20', 30000);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('82000000-0000-0000-0000-000000000006', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100),
+  ('82000000-0000-0000-0000-000000000007', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select erp.confirmar_titulo('82000000-0000-0000-0000-000000000006');
+select erp.confirmar_titulo('82000000-0000-0000-0000-000000000007');
+select pg_temp.ok((select acumulado = 20000 from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000006'),
+  'alçada: o acumulado é do mês; maio não conta em junho');
+select pg_temp.ok((select acumulado = 50000 and etapas = '{AREA,AF}' from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000007'),
+  'alçada: chegar a 50 mil exatos ainda fica com gestor e AF');
+-- modo do acumulado por empresa: a outra empresa não conta
+select pg_temp.como(:'diretor');
+update erp.regra_alcada_pagamento set acumulado = 'empresa_centro';
+select pg_temp.como(:'analista');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('82000000-0000-0000-0000-000000000005', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-05-05', '2026-05-01', 100);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('82000000-0000-0000-0000-000000000005', 1, '2026-05-20', 100);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('82000000-0000-0000-0000-000000000005', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select erp.confirmar_titulo('82000000-0000-0000-0000-000000000005');
+select pg_temp.ok((select acumulado = 31100 and etapas = '{AREA,AF}' from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000005'),
+  'alçada: somando só a empresa, a Incorporadora fica de fora (configurável)');
 rollback;
 select pg_temp.ok(not exists (
   select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
