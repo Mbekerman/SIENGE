@@ -28,7 +28,7 @@ Igual ao BKM Terrenos (instruções do projeto):
 
 | Ambiente | Situação |
 | --- | --- |
-| Banco de desenvolvimento (Supabase) | Não criado **[A decidir]** |
+| Banco de desenvolvimento (Supabase) | **[Construído, 14/nov/2026]** Projeto `bkm_dev` (ref `zwxvmotxnjvnoigroqds`, `sa-east-1`, Postgres 17.11), base comum a todos os sistemas, com um esquema por sistema (`erp` agora; `terrenos` depois). Esquema `erp` da `develop` aplicado: 47 tabelas com RLS forçado, nenhum privilégio para `anon`, `authenticated`, `service_role`, `authenticator` nem `PUBLIC`. Risco aceito: os sistemas do `bkm_dev` dividem o mesmo Auth. Regra (Moises, 14/nov/2026): **só dados de teste** no `bkm_dev`. Registro completo em `/mnt/project-files/erp-bkm/dev/bkm_dev_registro.md` |
 | Banco de produção | Projeto Supabase **próprio do ERP**, separado do BKM_Desenvolvimento_Imobiliario (decisão do Moises, 7/nov/2026). Ainda não criado: nasce quando as tabelas forem para um banco |
 | Sienge | Só existe a base de produção da BKM conhecida (`bkmincorporadora`). Não sabemos se há base de testes do Sienge **[A decidir]** |
 | Front | Não criado |
@@ -40,7 +40,8 @@ Enquanto não houver base de testes do Sienge, todo teste de escrita é feito **
 - Organização BKM no plano **Pro**. Projetos: `bkm_tarefas`, `BKM_Desenvolvimento_Imobiliario` e `BKM_autodoc`, todos em `sa-east-1`, Postgres 17.
 - O Pro não tem SLA de disponibilidade (só o Enterprise). Recuperação para um instante (PITR) é adicional (cerca de US$ 100/mês, 7 dias) e não cobre os arquivos do Storage: a cópia dos arquivos precisa ser feita à parte.
 - Cópias (decisão do Moises, 7/nov/2026): por ora só a cópia diária do Pro; PITR quando o ERP mandar pagamentos reais; proposta de cópia extra a cada hora no Google Cloud (requisitos em [08](08-seguranca.md), S-018).
-- Os testes do `erp` rodam em Postgres 16 (`run.sh`); o projeto é 17. **[A conferir]** rodar a suíte em 17 antes de aplicar.
+- Os testes do `erp` rodam em Postgres 16 (`run.sh`); o `bkm_dev` é 17.11. A suíte usa `\gset` e não roda pela ferramenta do Supabase: no remoto, em 14/nov, só se fizeram as conferências de catálogo. **[A conferir]** rodar a suíte em Postgres 17.
+- **Aplicar o `erp` no Supabase** (14/nov/2026): lá o `postgres` não é superusuário, e o `ALTER FUNCTION ... OWNER` da `000500` falha sem um preparo, que se faz antes e se desfaz no fim: conceder `erp_conferencia`, `erp_situacao` e `erp_reclassificacao` ao `postgres` e `CREATE` no esquema `erp` aos papéis donos. Proposta: levar o preparo para a própria `000500`. O `postgres` fica com ADMIN OPTION sobre os papéis `erp_*` (padrão do Postgres 16 ou mais novo para quem cria o papel): quem tem a senha do banco pode se conceder esses papéis e agir como as funções donas, o que é o poder normal de administrador do banco.
 
 ### Onde moram os segredos [Desenhado, 7/nov/2026]
 
@@ -57,7 +58,7 @@ Nenhum valor de segredo é escrito no repositório, em documento ou no chat.
 | Segredo | Para quê | Onde mora hoje | Onde vai morar |
 | --- | --- | --- | --- |
 | Usuário e senha da API do Sienge | Autenticação Basic nas chamadas à API | Segredo do tipo **Basic** no ambiente de nuvem do Claude (Project settings › ambiente), restrito ao host `api.sienge.com.br` e ao prefixo `/bkmincorporadora/`. O proxy do ambiente injeta a autenticação; a senha nunca passa pela sessão | Vault do Supabase, lido só pelo adaptador **[Desenhado]** |
-| Token do webhook do Sienge | Conferir que o aviso veio do Sienge | Não criado | Vault do Supabase. A documentação não diz como o token chega ao nosso servidor: testar ao cadastrar o primeiro webhook |
+| Token do webhook do Sienge | Conferir que o aviso veio do Sienge | Não criado | Secret Manager do Google Cloud (regra de portabilidade de 14/nov; não o Vault do Supabase). A documentação não diz como o token chega ao nosso servidor: testar ao cadastrar o primeiro webhook |
 | Chaves do Supabase, do Google e de leitura de PDF por IA | | Não criadas | A definir com o servidor |
 
 ### Dados da conta de API do Sienge (sem segredo)
