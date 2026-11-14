@@ -218,8 +218,9 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 
 - ✅ **Recusar** exige justificativa e **cancela o título**. Se o título é de uma nota, cancela a nota inteira, com os impostos retidos; a previsão e a caução voltam, e o número da nota fica livre para ser lançado de novo.
 - ✅ **Pedir revisão** exige o motivo. O título fica aberto, mas ninguém aprova nem paga até ele ser reenviado. Podem ajustar quem lançou, o gestor da área e a AF. No título avulso, muda-se o título, as parcelas e o rateio; no título de nota, muda-se a nota.
-- ✅ **Reenvio:** a aprovação recomeça do zero.
-- 🟡 A confirmar com o Moises: quem reenviou não aprova essa volta.
+- ✅ **Reenvio:** a aprovação recomeça, mas **quem ajustou ou reenviou já aprova a própria etapa** na volta nova: a gestora da área aprova a etapa da área, a AF aprova a etapa da AF. Quem lançou continua sendo o autor, e o título segue para a próxima etapa que falta. Quem ajustou não aprova nenhuma outra etapa (Moises, 14/nov/2026, 21h35; substitui a leitura anterior de que quem reenvia não aprova a volta).
+- ✅ Cada mudança do ajuste fica registrada com quem fez, o valor de antes e o de depois. Linha nova (uma parcela, uma linha de rateio) segue a regra de cada campo.
+- ⏳ Futuro (Moises): por ora esses passos são fixos. Depois ele quer cadastrar fluxos de aprovação e ligar cada um a um processo ou área.
 - ✅ **O que se pode ajustar:** o administrador define, por campo e por papel, se o campo pode mudar e, nos números e datas, se só para mais, só para menos ou para os dois lados. Começa tudo liberado.
 
 ## Pagamento com multa ou juros
