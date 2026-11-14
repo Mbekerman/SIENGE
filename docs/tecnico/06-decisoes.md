@@ -2,6 +2,10 @@
 
 Decisões que mudam a arquitetura ou o código, da mais recente para a mais antiga. Quem decide é o Moises; "proposta" é sugestão ainda não confirmada por ele. Decisões de negócio detalhadas (regras para o usuário) ficam no manual do usuário; aqui só o que o desenvolvedor precisa saber.
 
+## 14/nov/2026
+
+- **Previsões de despesa na transição** (Moises; manual, `financeiro/contas-a-pagar.md`, commit `b942434`): o módulo de Orçamentos fica para depois. As áreas lançam previsões no ERP e cada uma vira um título de previsão no Sienge pela API, com a ligação guardada. Previsão substituída (a nota chegou e nasceu o título definitivo) ou excluída gera uma linha numa planilha do Google com o título de previsão que o financeiro apaga à mão no Sienge. Não há tela de fluxo de caixa no ERP por ora. Propostas ainda sem confirmação: a previsão passa pela aprovação; previsão vencida sem nota entra numa lista; a leitura diária marca na planilha quando o título foi apagado; o título de previsão vai sem dados de pagamento. Substitui, para a transição, a regra de 6/nov de que a previsão não ia ao Sienge. Riscos em [08](08-seguranca.md), S-029.
+
 ## 8/nov/2026
 
 - **Acesso e aprovação por Área × Centro** (Moises, 8/nov, 21h11 a 21h21; sem código; registrado em `docs/nucleo.md`, commit `ae3e875` do branch do núcleo): centro de custo = obra, e o tipo de produto passa a ser coluna de filtro. As obras ficam numa árvore de grupos (região, cidade, estado...), com um ramo Corporativo para o que não é obra; cada obra fica num nó só. As áreas formam uma árvore até a menor unidade com orçamento próprio, e cada nível tem uma lista nominal de aprovadores com quantos precisam aprovar. A fase sai do acesso e da aprovação e vira coluna derivada do centro e da data. Mover obra ou área na árvore é ato aprovado. Riscos em [08](08-seguranca.md), S-028. De-para dos 97 centros do Sienge: https://claude.ai/artifact/KyPFhBfcL1UfG418euHmVq.
