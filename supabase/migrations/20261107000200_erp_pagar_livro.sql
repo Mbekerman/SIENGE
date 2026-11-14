@@ -465,6 +465,33 @@ end $$;
 create trigger t_orc_linha before insert or update or delete on erp.orcamento_linhas
   for each row execute function erp.tg_orcamento_linha();
 
+-- A versão nasce em rascunho e só a publicação muda a situação dela (S-055); publicada, não se
+-- edita nem se apaga.
+create function erp.tg_orcamento_versao() returns trigger language plpgsql as $$
+begin
+  if tg_op = 'INSERT' then
+    if new.situacao <> 'rascunho' then raise exception 'Versão de orçamento nasce em rascunho'; end if;
+    new.criada_por := erp.eu();
+    new.criada_em := clock_timestamp();
+    return new;
+  end if;
+  if tg_op = 'DELETE' then
+    if old.situacao <> 'rascunho' then raise exception 'Versão de orçamento % não se apaga', old.situacao; end if;
+    return old;
+  end if;
+  if new.situacao <> old.situacao and not erp.agindo_como('erp_situacao') then
+    raise exception 'A situação do orçamento só muda pela publicação';
+  end if;
+  if (to_jsonb(new) - 'situacao') <> (to_jsonb(old) - 'situacao')
+     and (old.situacao <> 'rascunho' or new.id <> old.id or new.criada_por is distinct from old.criada_por
+          or new.criada_em <> old.criada_em) then
+    raise exception 'Versão de orçamento % não muda; crie uma reprojeção', old.situacao;
+  end if;
+  return new;
+end $$;
+create trigger t_orcamento_versao before insert or update or delete on erp.orcamento_versoes
+  for each row execute function erp.tg_orcamento_versao();
+
 -- Publicar a versão grava as linhas no livro e substitui a vigente do mesmo tipo.
 create function erp.publicar_orcamento(p_versao uuid) returns void language plpgsql as $$
 declare v erp.orcamento_versoes;
@@ -538,13 +565,31 @@ create trigger t_previsao after insert or update on erp.previsoes
   for each row execute function erp.tg_previsao();
 
 -- Consumo da previsão pelo título: estorna o previsto na data da previsão.
+-- Só pelo lancar_documento (S-054): a guarda (invoker) confere a marca de quem grava, e o
+-- consumo (definer erp_situacao, na migration _erp_rls) confere de novo se a previsão casa
+-- com a nota do título.
+create function erp.tg_titulo_previsao_guarda() returns trigger language plpgsql as $$
+begin
+  if not erp.agindo_como('erp_situacao') then
+    raise exception 'A previsão só é consumida pelo lançamento da nota';
+  end if;
+  return new;
+end $$;
+create trigger t_guarda_titulo_previsao before insert on erp.titulo_previsoes
+  for each row execute function erp.tg_titulo_previsao_guarda();
+
 create function erp.tg_titulo_previsao() returns trigger language plpgsql as $$
-declare p erp.previsoes; v_saldo numeric;
+declare p erp.previsoes; d erp.documentos_fiscais; v_saldo numeric;
 begin
   select * into p from erp.previsoes where id = new.previsao_id for update;
   if p.situacao <> 'aberta' then raise exception 'A previsão não está aberta'; end if;
   if p.empresa_id <> (select empresa_id from erp.titulos where id = new.titulo_id) then
     raise exception 'Previsão e título são de empresas diferentes';
+  end if;
+  select dc.* into d from erp.documentos_fiscais dc join erp.titulos t on t.documento_id = dc.id
+   where t.id = new.titulo_id;
+  if d.id is null or not erp._previsao_casa(p, d) then
+    raise exception 'A previsão não casa com a nota do título';
   end if;
   v_saldo := p.valor - coalesce((select sum(valor) from erp.titulo_previsoes
                                  where previsao_id = p.id and titulo_id <> new.titulo_id), 0);
@@ -845,6 +890,31 @@ create trigger t_listas_financeiro before insert or update or delete on erp.list
   for each row execute function erp.tg_so_admin();
 create trigger t_aud_listas_financeiro after insert or update or delete on erp.listas_financeiro
   for each row execute function erp.tg_auditoria('user_id');
+
+-- Configuração e cadastros sensíveis (S-055): só o administrador (ou o sistema) grava, com auditoria.
+-- Em usuarios, ninguém muda o próprio papel, acesso ou login, nem se apaga.
+create function erp.tg_usuario() returns trigger language plpgsql as $$
+begin
+  if tg_op = 'UPDATE' and new.id <> old.id then raise exception 'O id do usuário não muda'; end if;
+  if tg_op <> 'INSERT' and old.id = erp.eu()
+     and (tg_op = 'DELETE' or (to_jsonb(new) - 'nome') <> (to_jsonb(old) - 'nome')) then
+    raise exception 'Ninguém muda o próprio papel, acesso ou login';
+  end if;
+  return coalesce(new, old);
+end $$;
+do $$
+declare t record;
+begin
+  for t in select * from (values ('usuarios', 'id'), ('naturezas_sistema', 'chave'),
+                                 ('contas_bancarias', 'id'), ('codigos_externos', 'registro_id')) v(tabela, chave) loop
+    execute format('create trigger t_so_admin before insert or update or delete on erp.%I
+                      for each row execute function erp.tg_so_admin()', t.tabela);
+    execute format('create trigger t_aud_%s after insert or update or delete on erp.%I
+                      for each row execute function erp.tg_auditoria(%L)', t.tabela, t.tabela, t.chave);
+  end loop;
+end $$;
+create trigger t_usuario before update or delete on erp.usuarios
+  for each row execute function erp.tg_usuario();
 
 create table erp.regra_adiantamento (
   id                  boolean primary key default true check (id),   -- uma linha só

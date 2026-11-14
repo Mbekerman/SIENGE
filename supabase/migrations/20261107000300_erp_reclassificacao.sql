@@ -15,6 +15,21 @@ create table erp.meses_fechados (
 );
 create trigger t_aud_mes after insert or delete on erp.meses_fechados
   for each row execute function erp.tg_auditoria('mes');
+-- O mês só fecha e reabre por fechar_mes e reabrir_mes (definer erp_situacao, S-053).
+create function erp.tg_mes_fechado() returns trigger language plpgsql as $$
+begin
+  if tg_op = 'UPDATE' then raise exception 'Mês fechado não se altera'; end if;
+  if not erp.agindo_como('erp_situacao') then
+    raise exception 'O mês só fecha e reabre pela diretoria';
+  end if;
+  if tg_op = 'INSERT' then
+    new.fechado_por := erp.eu();
+    new.fechado_em := clock_timestamp();
+  end if;
+  return coalesce(new, old);
+end $$;
+create trigger t_mes_fechado before insert or update or delete on erp.meses_fechados
+  for each row execute function erp.tg_mes_fechado();
 
 create function erp.fechar_mes(p_empresa uuid, p_mes date) returns void language plpgsql as $$
 begin
@@ -60,6 +75,10 @@ insert into erp.niveis_aprovacao values
   ('gestor', 'Gestor', 1),
   ('diretor', 'Diretoria', 2),
   ('diretor_e_contador', 'Diretoria e contador', 3);
+create trigger t_so_admin before insert or update or delete on erp.niveis_aprovacao
+  for each row execute function erp.tg_so_admin();
+create trigger t_aud_niveis_aprovacao after insert or update or delete on erp.niveis_aprovacao
+  for each row execute function erp.tg_auditoria('codigo');
 
 create table erp.alcadas_reclassificacao (
   id       uuid primary key default gen_random_uuid(),
