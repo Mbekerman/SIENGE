@@ -387,6 +387,8 @@ Assim, o realizado do sistema sempre bate com o dinheiro que saiu do banco.
 
 ## Adiantamento sem nota: prazo e travas
 
+- ✅ **Todo pagamento e todo adiantamento** (a fornecedor, a funcionário ou a qualquer outro) **sai do banco com núcleo econômico e centro de custo**. Sem os dois, o pagamento não sai. Só a transferência entre contas da própria empresa dispensa (Moises, 14/nov/2026).
+
 - ✅ Há um **prazo para a nota chegar**, de **30 dias** por padrão, que o master ou um administrador pode mudar (Moises, 7/nov/2026).
 - ✅ Quando o prazo vence, o sistema avisa o financeiro e o gestor do contrato (Moises, 7/nov/2026).
 - ✅ Enquanto houver um adiantamento sem nota, o fornecedor **só recebe outro adiantamento com a aprovação da AD** (Moises, 7/nov/2026; antes era "nenhum").
