@@ -659,7 +659,7 @@ $$;
 create function erp.lancar_documento(p_documento uuid, p_vencimentos date[], p_previsoes uuid[] default null)
 returns uuid language plpgsql as $$
 declare d erp.documentos_fiscais; v_ret numeric; v_liquido numeric; v_tit uuid; v_imp uuid; r record;
-        v_resta numeric; v_cons numeric; p record;
+        v_resta numeric; v_cons numeric; v_lim numeric; p record;
 begin
   perform erp.exigir_editor();
   select * into d from erp.documentos_fiscais where id = p_documento for update;
@@ -701,14 +701,29 @@ begin
   end if;
   v_resta := d.valor_bruto;
   for p in
-    select pr.id from erp.previsoes pr
+    select pr.id, pr.nucleo_economico_id, pr.centro_custo_id, pr.natureza_id from erp.previsoes pr
     where erp._previsao_casa(pr, d)
       and (case when p_previsoes is not null then pr.id = any(p_previsoes)
                 else d.compromisso_id is not null and pr.compromisso_id = d.compromisso_id end)
     order by pr.data_prevista, pr.criada_em
   loop
     exit when v_resta <= 0;
-    v_cons := least(v_resta, erp.previsao_saldo(p.id));
+    -- só até a parte do bruto rateada no mesmo núcleo, centro e natureza da previsão,
+    -- descontado o que outras previsões da mesma combinação já consumiram nesta nota
+    select round(d.valor_bruto * coalesce(sum(dr.percentual), 0) / 100, 2)
+           - coalesce((select sum(tp.valor) from erp.titulo_previsoes tp join erp.previsoes q on q.id = tp.previsao_id
+                       where tp.titulo_id = v_tit
+                         and q.nucleo_economico_id is not distinct from p.nucleo_economico_id
+                         and q.centro_custo_id is not distinct from p.centro_custo_id
+                         and q.natureza_id = p.natureza_id), 0)
+      into v_lim
+      from erp.documento_rateios dr
+     where dr.documento_id = d.id
+       and dr.nucleo_economico_id is not distinct from p.nucleo_economico_id
+       and dr.centro_custo_id is not distinct from p.centro_custo_id
+       and dr.natureza_id = p.natureza_id;
+    v_cons := least(v_resta, erp.previsao_saldo(p.id), v_lim);
+    continue when v_cons <= 0;
     insert into erp.titulo_previsoes (titulo_id, previsao_id, valor) values (v_tit, p.id, v_cons);
     v_resta := v_resta - v_cons;
   end loop;
