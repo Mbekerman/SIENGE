@@ -168,6 +168,7 @@ create table erp.documentos_fiscais (
   caucao_valor   numeric(15,2) check (caucao_valor >= 0),  -- vem do contrato; pode ser alterada aqui
   situacao       text not null default 'rascunho' check (situacao in ('rascunho','lancado','cancelado')),
   lancado_em     timestamptz,
+  criado_por     uuid,
   criado_em      timestamptz not null default now()
 );
 -- Trava de duplicidade que o Sienge não tem (lá a NFS-e aceita número repetido).
@@ -225,6 +226,8 @@ begin
   return new;
 end $$;
 create trigger t_autor before insert or update on erp.titulos
+  for each row execute function erp.tg_autor();
+create trigger t_autor before insert or update on erp.documentos_fiscais
   for each row execute function erp.tg_autor();
 
 create table erp.titulo_rateios (
@@ -747,6 +750,7 @@ begin
   select * into t from erp.titulos where id = p_titulo for update;
   if t.situacao <> 'rascunho' then raise exception 'O título já foi confirmado'; end if;
   if not erp.rateio_completo('titulo', t.id) then raise exception 'O rateio do título não soma 100%%'; end if;
+  if t.tipo = 'avulso' then perform erp.checar_competencia('titulo', t.id, t.emissao, t.competencia); end if;
   if coalesce((select sum(valor) from erp.parcelas where titulo_id = t.id), 0) <> t.valor then
     raise exception 'As parcelas não somam o valor do título';
   end if;
@@ -812,6 +816,7 @@ begin
   if d.situacao <> 'rascunho' then raise exception 'O documento já foi lançado'; end if;
   if coalesce(array_length(p_vencimentos, 1), 0) = 0 then raise exception 'Informe ao menos um vencimento'; end if;
   if not erp.rateio_completo('documento', d.id) then raise exception 'O rateio do documento não soma 100%%'; end if;
+  perform erp.checar_competencia('documento', d.id, d.emissao, d.competencia);
   if d.caucao_valor is null then
     d.caucao_valor := round(d.valor_bruto * coalesce((select caucao_percentual from erp.compromissos where id = d.compromisso_id), 0) / 100, 2);
   end if;
@@ -1041,6 +1046,20 @@ create trigger t_so_admin before insert or update or delete on erp.centro_aprova
   for each row execute function erp.tg_so_admin();
 create trigger t_aud_centro_aprovadores after insert or update or delete on erp.centro_aprovadores
   for each row execute function erp.tg_auditoria('centro_custo_id');
+-- O último gestor do centro não sai enquanto houver título esperando por ele (S-066).
+create function erp.tg_centro_aprovador() returns trigger language plpgsql as $$
+begin
+  if not exists (select 1 from erp.centro_aprovadores
+                  where centro_custo_id = old.centro_custo_id and user_id <> old.user_id)
+     and exists (select 1 from erp.titulo_alcadas a join erp.titulos t on t.id = a.titulo_id
+                  where a.centro_custo_id = old.centro_custo_id and t.situacao = 'aberto'
+                    and erp.alcada_pendente(a.titulo_id) = 'AREA' and not erp.alcada_recusada(a.titulo_id)) then
+    raise exception 'O centro tem títulos esperando o gestor da área; cadastre outro gestor antes';
+  end if;
+  return coalesce(new, old);
+end $$;
+create trigger t_centro_aprovador before update or delete on erp.centro_aprovadores
+  for each row execute function erp.tg_centro_aprovador();
 
 create table erp.alcadas_pagamento (
   id     uuid primary key default gen_random_uuid(),
@@ -1058,11 +1077,25 @@ create table erp.regra_alcada_pagamento (
   id        boolean primary key default true check (id),   -- uma linha só
   -- como somar o acumulado do mês: o centro no grupo todo (padrão), o centro na empresa,
   -- ou o centro dentro do núcleo econômico
-  acumulado text not null default 'centro' check (acumulado in ('centro','empresa_centro','nucleo_centro'))
+  acumulado text not null default 'centro' check (acumulado in ('centro','empresa_centro','nucleo_centro')),
+  -- o acumulado do centro soma também o que o mesmo fornecedor tem no mês em outros centros (S-063)
+  soma_fornecedor boolean not null default true,
+  -- competência da nota e do título avulso: no máximo N meses antes ou depois do mês da emissão;
+  -- fora disso, só com exceção aprovada por quem está nas listas (S-063)
+  competencia_meses_antes  int not null default 1 check (competencia_meses_antes >= 0),
+  competencia_meses_depois int not null default 1 check (competencia_meses_depois >= 0),
+  excecao_competencia      text[] not null default '{AF,AD}'
+                           check (cardinality(excecao_competencia) > 0 and excecao_competencia <@ '{AF,AO,AD}')
 );
 insert into erp.regra_alcada_pagamento default values;
+create function erp.tg_regra_alcada() returns trigger language plpgsql as $$
+begin
+  perform erp.exigir_admin();
+  if tg_op <> 'UPDATE' then raise exception 'A regra da alçada de pagamento é uma só; altere os valores'; end if;
+  return new;
+end $$;
 create trigger t_regra_alcada before insert or update or delete on erp.regra_alcada_pagamento
-  for each row execute function erp.tg_regra_adiantamento();
+  for each row execute function erp.tg_regra_alcada();
 create trigger t_aud_regra_alcada after update on erp.regra_alcada_pagamento
   for each row execute function erp.tg_auditoria('id');
 
@@ -1072,6 +1105,7 @@ create table erp.titulo_alcadas (
   etapas          text[] not null,
   centro_custo_id uuid not null references erp.centros_custo,   -- o centro de maior acumulado
   acumulado       numeric(15,2) not null,
+  titulos         uuid[] not null,              -- os títulos que formaram o acumulado (S-064)
   definida_em     timestamptz not null default clock_timestamp()
 );
 create table erp.titulo_aprovacoes (
@@ -1103,33 +1137,92 @@ create trigger t_alcada_titulo before insert or update or delete on erp.titulo_a
 create trigger t_alcada_titulo before insert or update or delete on erp.titulo_aprovacoes
   for each row execute function erp.tg_alcada_titulo();
 
+-- Exceção à janela da competência, para uma nota ou um título avulso (S-063).
+create table erp.excecoes_competencia (
+  id            uuid primary key default gen_random_uuid(),
+  documento_id  uuid references erp.documentos_fiscais,
+  titulo_id     uuid references erp.titulos,
+  competencia   date,                            -- a competência aprovada; mudou, a exceção não vale
+  justificativa text not null check (length(trim(justificativa)) > 0),
+  aprovado_por  uuid,
+  aprovado_em   timestamptz not null default clock_timestamp(),
+  check (num_nonnulls(documento_id, titulo_id) = 1)
+);
+create function erp.tg_excecao_competencia() returns trigger language plpgsql as $$
+declare v_listas text[] := (select excecao_competencia from erp.regra_alcada_pagamento);
+begin
+  if tg_op <> 'INSERT' then raise exception 'Exceção de competência não se altera nem se apaga'; end if;
+  perform erp.exigir_editor();
+  if not erp.estou_nas_listas(v_listas) then
+    raise exception 'Só quem está em % aprova isto', array_to_string(v_listas, ', ');
+  end if;
+  if erp.eu() = coalesce(erp.autor_lancamento('documento', new.documento_id),
+                         erp.autor_lancamento('titulo', new.titulo_id)) then
+    raise exception 'Quem lançou não aprova o próprio lançamento';
+  end if;
+  new.competencia := coalesce((select competencia from erp.documentos_fiscais where id = new.documento_id),
+                              (select competencia from erp.titulos where id = new.titulo_id));
+  new.aprovado_por := erp.eu();
+  new.aprovado_em := clock_timestamp();
+  return new;
+end $$;
+create trigger t_excecao_competencia before insert or update or delete on erp.excecoes_competencia
+  for each row execute function erp.tg_excecao_competencia();
+
+-- A competência está na janela da emissão, ou tem exceção aprovada?
+create function erp.checar_competencia(p_tipo text, p_id uuid, p_emissao date, p_competencia date)
+returns void language plpgsql stable as $$
+declare g erp.regra_alcada_pagamento := (select g0 from erp.regra_alcada_pagamento g0);
+begin
+  if p_competencia between (erp.mes(p_emissao) - make_interval(months => g.competencia_meses_antes))::date
+                       and (erp.mes(p_emissao) + make_interval(months => g.competencia_meses_depois))::date then
+    return;
+  end if;
+  if exists (select 1 from erp.excecoes_competencia
+              where ((p_tipo = 'documento' and documento_id = p_id) or (p_tipo = 'titulo' and titulo_id = p_id))
+                and erp.mes(competencia) = erp.mes(p_competencia)) then
+    return;
+  end if;
+  raise exception 'A competência está fora da janela da emissão; peça a exceção a quem está em %',
+    array_to_string(g.excecao_competencia, ', ');
+end $$;
+
 -- Fixa a alçada do título na confirmação (chamada pelo confirmar_titulo, que é definer).
 -- O título de imposto retido e o movimento entre sócios seguem a nota e o aporte; não entram.
 create function erp._definir_alcada(p_titulo uuid) returns void language plpgsql as $$
 declare t erp.titulos; v_modo text := (select acumulado from erp.regra_alcada_pagamento);
-        r record; v_soma numeric; v_centro uuid; v_acum numeric; v_etapas text[];
+        v_forn boolean := (select soma_fornecedor from erp.regra_alcada_pagamento);
+        r record; v_soma numeric; v_ids uuid[]; v_centro uuid; v_acum numeric; v_titulos uuid[]; v_etapas text[];
 begin
   select * into t from erp.titulos where id = p_titulo;
   if t.sentido <> 'pagar' or t.tipo in ('imposto','societario') then return; end if;
+  -- dois títulos do mesmo centro confirmados ao mesmo tempo se enxergam (S-060): trava os
+  -- centros do rateio, sempre na mesma ordem, até o fim da transação
+  perform 1 from erp.centros_custo c
+   where c.id in (select tr.centro_custo_id from erp.titulo_rateios tr where tr.titulo_id = t.id)
+   order by c.id for update;
   -- cada linha do rateio em centro com gestor aprovador; vale o maior acumulado
   for r in select tr.centro_custo_id, tr.nucleo_economico_id from erp.titulo_rateios tr
             where tr.titulo_id = t.id
               and exists (select 1 from erp.centro_aprovadores a where a.centro_custo_id = tr.centro_custo_id) loop
-    select coalesce(sum(t2.valor * r2.percentual / 100), 0) into v_soma
+    -- a parte de cada título no centro; com soma_fornecedor, o mesmo fornecedor conta inteiro
+    select round(coalesce(sum(t2.valor * r2.percentual / 100), 0), 2), array_agg(distinct t2.id) into v_soma, v_ids
       from erp.titulos t2 join erp.titulo_rateios r2 on r2.titulo_id = t2.id
-     where r2.centro_custo_id = r.centro_custo_id
+     where (r2.centro_custo_id = r.centro_custo_id or (v_forn and t2.pessoa_id = t.pessoa_id))
        and t2.sentido = 'pagar' and t2.tipo not in ('imposto','societario')
        and (t2.situacao in ('aberto','quitado') or t2.id = t.id)
        and erp.mes(t2.competencia) = erp.mes(t.competencia)
        and (v_modo = 'centro' or t2.empresa_id = t.empresa_id)
-       and (v_modo <> 'nucleo_centro' or r2.nucleo_economico_id is not distinct from r.nucleo_economico_id);
-    if v_acum is null or v_soma > v_acum then v_acum := v_soma; v_centro := r.centro_custo_id; end if;
+       and (v_modo <> 'nucleo_centro' or r2.centro_custo_id <> r.centro_custo_id
+            or r2.nucleo_economico_id is not distinct from r.nucleo_economico_id);
+    if v_acum is null or v_soma > v_acum then v_acum := v_soma; v_centro := r.centro_custo_id; v_titulos := v_ids; end if;
   end loop;
   if v_centro is null then return; end if;
   select etapas into v_etapas from erp.alcadas_pagamento
    where ate is null or v_acum <= ate order by (ate is null), ate limit 1;
   if v_etapas is null then raise exception 'Não há alçada de pagamento configurada para %', v_acum; end if;
-  insert into erp.titulo_alcadas (titulo_id, etapas, centro_custo_id, acumulado) values (t.id, v_etapas, v_centro, v_acum);
+  insert into erp.titulo_alcadas (titulo_id, etapas, centro_custo_id, acumulado, titulos)
+  values (t.id, v_etapas, v_centro, v_acum, v_titulos);
 end $$;
 
 -- Etapa da vez: a primeira sem aprovação; nula quando aprovado por todas (ou sem alçada).
@@ -1145,9 +1238,10 @@ create function erp.alcada_recusada(p_titulo uuid) returns boolean language sql 
 -- Os títulos do mês que formaram o acumulado do centro até este título (só consulta), para quem
 -- aprova o título: o gestor da área, quem está numa lista das etapas dele, ou a diretoria.
 create function erp.titulos_do_acumulado(p_titulo uuid)
-returns table (titulo_id uuid, empresa_id uuid, pessoa text, competencia date, valor_no_centro numeric, situacao text)
+returns table (titulo_id uuid, empresa_id uuid, pessoa text, competencia date, valor_no_centro numeric,
+               valor_total numeric, situacao text)
 language plpgsql stable as $$
-declare a erp.titulo_alcadas; t erp.titulos; v_modo text := (select acumulado from erp.regra_alcada_pagamento);
+declare a erp.titulo_alcadas;
 begin
   select * into a from erp.titulo_alcadas where titulo_alcadas.titulo_id = p_titulo;
   if a.titulo_id is null then raise exception 'Este título não tem alçada de pagamento'; end if;
@@ -1155,16 +1249,16 @@ begin
           or exists (select 1 from erp.centro_aprovadores c where c.centro_custo_id = a.centro_custo_id and c.user_id = erp.eu())) then
     raise exception 'Só quem aprova o título vê o acumulado';
   end if;
-  select * into t from erp.titulos where id = p_titulo;
+  -- exatamente os títulos que entraram na soma, com a parte deles no centro
+  -- (com as políticas por perfil, filtrar pelo que quem pergunta vê: S-062)
   return query
-    select t2.id, t2.empresa_id, p.nome, t2.competencia, round(sum(t2.valor * r2.percentual / 100), 2), t2.situacao
-      from erp.titulos t2 join erp.titulo_rateios r2 on r2.titulo_id = t2.id join erp.pessoas p on p.id = t2.pessoa_id
-     where r2.centro_custo_id = a.centro_custo_id
-       and t2.sentido = 'pagar' and t2.tipo not in ('imposto','societario')
-       and t2.situacao in ('aberto','quitado') and erp.mes(t2.competencia) = erp.mes(t.competencia)
-       and (v_modo = 'centro' or t2.empresa_id = t.empresa_id)
-       and t2.criado_em <= t.criado_em
-     group by t2.id, t2.empresa_id, p.nome, t2.competencia, t2.situacao, t2.criado_em
+    select t2.id, t2.empresa_id, p.nome, t2.competencia,
+           round(coalesce(sum(t2.valor * r2.percentual / 100) filter (where r2.centro_custo_id = a.centro_custo_id), 0), 2),
+           t2.valor, t2.situacao
+      from erp.titulos t2 join erp.titulo_rateios r2 on r2.titulo_id = t2.id
+      join erp.pessoas p on p.id = t2.pessoa_id
+     where t2.id = any(a.titulos)
+     group by t2.id, t2.empresa_id, p.nome, t2.competencia, t2.valor, t2.situacao, t2.criado_em
      order by t2.criado_em;
 end $$;
 
@@ -1207,7 +1301,8 @@ end $$;
 -- Recebem só ids de pagamento e título; não escolhem empresa nem usuário.
 create function erp.autor_lancamento(p_tipo text, p_id uuid) returns uuid language sql stable as $$
   select case p_tipo when 'pagamento' then (select criado_por from erp.pagamentos where id = p_id)
-                     when 'titulo'    then (select criado_por from erp.titulos where id = p_id) end $$;
+                     when 'titulo'    then (select criado_por from erp.titulos where id = p_id)
+                     when 'documento' then (select criado_por from erp.documentos_fiscais where id = p_id) end $$;
 create function erp.abatimento_aprovado(p_pagamento uuid, p_titulo uuid) returns boolean language sql stable as $$
   select exists (select 1 from erp.abatimentos_cruzados where pagamento_id = p_pagamento and titulo_id = p_titulo) $$;
 -- Há adiantamento mais antigo do mesmo fornecedor, na mesma empresa, com saldo, sem liberação do
