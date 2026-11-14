@@ -357,7 +357,7 @@ create function erp.tg_lancamento() returns trigger language plpgsql as $$
 begin
   if tg_op = 'DELETE' then raise exception 'O livro não apaga linhas; estorne com uma linha de sinal contrário'; end if;
   if tg_op = 'UPDATE' then
-    if current_setting('erp.reclassificando', true) is distinct from 'on' then
+    if not erp.agindo_como('erp_reclassificacao') then
       raise exception 'O livro não muda; a natureza só muda pela reclassificação';
     end if;
     if (to_jsonb(new) - 'natureza_id') <> (to_jsonb(old) - 'natureza_id') then
@@ -498,7 +498,7 @@ begin
   if (to_jsonb(new) - 'situacao' - 'natureza_id') <> (to_jsonb(old) - 'situacao' - 'natureza_id') then
     raise exception 'Previsão não se edita; cancele e crie outra';
   end if;
-  if new.natureza_id <> old.natureza_id and current_setting('erp.reclassificando', true) is distinct from 'on' then
+  if new.natureza_id <> old.natureza_id and not erp.agindo_como('erp_reclassificacao') then
     raise exception 'A natureza da previsão só muda pela reclassificação';
   end if;
   if new.situacao = 'cancelada' and old.situacao = 'aberta' then
@@ -509,7 +509,7 @@ begin
       values ('previsto', new.empresa_id, new.nucleo_economico_id, new.natureza_id, new.fase_id, new.centro_custo_id,
               new.competencia, new.data_prevista, -erp.sinal(new.sentido) * v_saldo, new.id);
     end if;
-  elsif new.situacao <> old.situacao and current_setting('erp.sistema', true) is distinct from 'on' then
+  elsif new.situacao <> old.situacao and not erp.agindo_como('erp_situacao') then
     raise exception 'A previsão só pode ser cancelada; ela é consumida pelos títulos';
   end if;
   return new;
@@ -534,9 +534,7 @@ begin
   values ('previsto', p.empresa_id, p.nucleo_economico_id, p.natureza_id, p.fase_id, p.centro_custo_id,
           p.competencia, p.data_prevista, -erp.sinal(p.sentido) * new.valor, p.id, new.titulo_id);
   if new.valor = v_saldo then
-    perform set_config('erp.sistema', 'on', true);
-    update erp.previsoes set situacao = 'consumida' where id = p.id;
-    perform set_config('erp.sistema', 'off', true);
+    update erp.previsoes set situacao = 'consumida' where id = p.id;   -- definer erp_situacao (_erp_rls)
   end if;
   return new;
 end $$;
@@ -580,13 +578,13 @@ end $$;
 -- ---------------------------------------------------------------------
 create function erp.tg_titulo() returns trigger language plpgsql as $$
 begin
-  if tg_op = 'UPDATE' and old.situacao <> 'rascunho' then
-    if (to_jsonb(new) - 'situacao') <> (to_jsonb(old) - 'situacao') then
-      raise exception 'Título confirmado não se edita';
-    end if;
-    if current_setting('erp.sistema', true) is distinct from 'on' then
-      raise exception 'A situação do título muda pelas quitações';
-    end if;
+  -- a situação (inclusive rascunho → aberto) só muda pelas operações do banco: confirmar e quitar
+  if tg_op = 'UPDATE' and new.situacao is distinct from old.situacao and not erp.agindo_como('erp_situacao') then
+    raise exception 'A situação do título muda pelas quitações';
+  end if;
+  if tg_op = 'UPDATE' and old.situacao <> 'rascunho'
+     and (to_jsonb(new) - 'situacao') <> (to_jsonb(old) - 'situacao') then
+    raise exception 'Título confirmado não se edita';
   end if;
   if tg_op = 'DELETE' and old.situacao <> 'rascunho' then
     raise exception 'Título confirmado não se apaga';
@@ -603,7 +601,7 @@ begin
   select situacao into v_sit from erp.titulos where id = coalesce(new.titulo_id, old.titulo_id);
   if v_sit is null or v_sit = 'rascunho' then return coalesce(new, old); end if;
   if tg_op = 'UPDATE' and tg_table_name = 'titulo_rateios'
-     and current_setting('erp.reclassificando', true) = 'on'
+     and erp.agindo_como('erp_reclassificacao')
      and (to_jsonb(new) - 'natureza_id') = (to_jsonb(old) - 'natureza_id') then
     return new;
   end if;
@@ -632,9 +630,7 @@ begin
               t.competencia, p.vencimento, erp.sinal(t.sentido) * r.valor, t.id, p.id);
     end loop;
   end loop;
-  perform set_config('erp.sistema', 'on', true);
-  update erp.titulos set situacao = 'aberto' where id = t.id;
-  perform set_config('erp.sistema', 'off', true);
+  update erp.titulos set situacao = 'aberto' where id = t.id;   -- definer erp_situacao (_erp_rls)
 end $$;
 
 -- Cria título com parcelas iguais (o resto dos centavos na última) e o rateio dado.
@@ -982,9 +978,7 @@ begin
   end if;
   -- título sem saldo vira quitado
   if not exists (select 1 from erp.parcelas p where p.titulo_id = t.id and erp.parcela_saldo(p.id) > 0) then
-    perform set_config('erp.sistema', 'on', true);
-    update erp.titulos set situacao = 'quitado' where id = t.id;
-    perform set_config('erp.sistema', 'off', true);
+    update erp.titulos set situacao = 'quitado' where id = t.id;   -- definer erp_situacao (_erp_rls)
   end if;
   return new;
 end $$;
