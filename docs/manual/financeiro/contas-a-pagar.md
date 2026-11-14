@@ -71,6 +71,10 @@ Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depo
 - **Previsão vencida sem nota** há X dias aparece numa lista para quem lançou, que reprograma ou cancela com motivo.
 - **Fechar o ciclo da planilha:** a leitura diária do Sienge marca na planilha quando o título foi de fato apagado, e avisa o que continua lá depois de X dias.
 - O título de previsão vai ao Sienge **sem dados de pagamento**, para não ser pago por engano.
+- **Segurança da planilha** (achado S-029): quem puder editar a planilha pode acrescentar uma linha e fazer o financeiro apagar qualquer título, até um definitivo. Por isso:
+  - só a conta do ERP BKM escreve na planilha; as pessoas leem e marcam "apagado" numa coluna própria;
+  - cada linha traz o número do título, o tipo de documento de previsão e o link para a previsão no ERP BKM, e o financeiro confere o tipo antes de apagar;
+  - a leitura diária avisa a AD se sumir do Sienge um título que não estava na planilha.
 - A previsão nasce com os mesmos campos da futura linha de orçamento (Área, Centro, Natureza, mês e valor, com fornecedor opcional), para virar o histórico do módulo de Orçamentos sem retrabalho.
 
 ⏳ Em discussão: tirar no Sienge a permissão de criar e alterar títulos e dados bancários dos departamentos que entrarem no ERP BKM, para fechar a brecha de pagar fora do fluxo. O custo é que um lançamento urgente passa a depender do ERP BKM.
