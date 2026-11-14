@@ -205,8 +205,22 @@ create table erp.titulos (
   valor          numeric(15,2) not null check (valor > 0),
   descricao      text,
   situacao       text not null default 'rascunho' check (situacao in ('rascunho','aberto','quitado','cancelado')),
-  criado_em      timestamptz not null default now()
+  criado_por     uuid,
+  criado_em      timestamptz not null default clock_timestamp()
 );
+-- Quem lançou e quando vêm do servidor, nunca de quem grava (base de "quem lançou não aprova").
+create function erp.tg_autor() returns trigger language plpgsql as $$
+begin
+  if tg_op = 'INSERT' then
+    new.criado_por := erp.eu();
+    new.criado_em := clock_timestamp();
+  elsif new.criado_por is distinct from old.criado_por or new.criado_em is distinct from old.criado_em then
+    raise exception 'Quem lançou e quando não mudam';
+  end if;
+  return new;
+end $$;
+create trigger t_autor before insert or update on erp.titulos
+  for each row execute function erp.tg_autor();
 
 create table erp.titulo_rateios (
   id              uuid primary key default gen_random_uuid(),
@@ -253,9 +267,11 @@ create table erp.pagamentos (
   valor          numeric(15,2) not null check (valor > 0),
   forma          text not null default 'pix' check (forma in ('pix','ted','boleto','debito','cheque','dinheiro','outro')),
   descricao      text,
-  criado_por     uuid default erp.eu(),
+  criado_por     uuid,
   criado_em      timestamptz not null default clock_timestamp()
 );
+create trigger t_autor before insert or update on erp.pagamentos
+  for each row execute function erp.tg_autor();
 
 create table erp.quitacoes (
   id           uuid primary key default gen_random_uuid(),
@@ -837,9 +853,11 @@ create table erp.abatimentos_cruzados (
   aprovado_em   timestamptz not null default clock_timestamp(),
   primary key (pagamento_id, titulo_id)
 );
--- Liberação para pagar o título sem abater o adiantamento em aberto do fornecedor.
+-- Liberação para pagar o título sem abater o adiantamento em aberto do fornecedor. Cobre só os
+-- adiantamentos que já existiam na hora da liberação; um novo pede nova liberação.
 create table erp.liberacoes_sem_abater (
-  titulo_id     uuid primary key references erp.titulos,
+  id            uuid primary key default gen_random_uuid(),
+  titulo_id     uuid not null references erp.titulos,
   justificativa text not null check (length(trim(justificativa)) > 0),
   aprovado_por  uuid not null default erp.eu(),
   aprovado_em   timestamptz not null default clock_timestamp()
@@ -853,12 +871,13 @@ begin
     select criado_por into v_lancou from erp.pagamentos where id = new.pagamento_id;
   else
     select libera_sem_abater into v_listas from erp.regra_adiantamento;
+    select criado_por into v_lancou from erp.titulos where id = new.titulo_id;
   end if;
   if not erp.estou_nas_listas(v_listas) then
     raise exception 'Só quem está em % aprova isto', array_to_string(v_listas, ', ');
   end if;
   if v_lancou is not null and v_lancou = erp.eu() then
-    raise exception 'Quem lançou o pagamento não aprova o abatimento dele';
+    raise exception 'Quem lançou não aprova o próprio lançamento';
   end if;
   new.aprovado_por := erp.eu();
   new.aprovado_em := clock_timestamp();
@@ -898,8 +917,9 @@ begin
     -- o título não é pago com dinheiro novo enquanto o fornecedor tiver adiantamento em aberto
     if exists (select 1 from erp.pagamentos g2
                where g2.empresa_id = g.empresa_id and g2.pessoa_id = g.pessoa_id and g2.id <> g.id
-                 and g2.criado_em < g.criado_em and erp.pagamento_saldo(g2.id) > 0)
-       and not exists (select 1 from erp.liberacoes_sem_abater l where l.titulo_id = t.id) then
+                 and g2.criado_em < g.criado_em and erp.pagamento_saldo(g2.id) > 0
+                 and not exists (select 1 from erp.liberacoes_sem_abater l
+                                 where l.titulo_id = t.id and l.aprovado_em >= g2.criado_em)) then
       raise exception 'O fornecedor tem adiantamento em aberto: abata-o primeiro ou peça a liberação de %',
         array_to_string((select libera_sem_abater from erp.regra_adiantamento), ', ');
     end if;

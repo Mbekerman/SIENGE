@@ -2,7 +2,7 @@
 
 Versão 0, de 7/nov/2026. Ela traduz em tabelas o desenho da sabatina, que está no doc [Núcleo do ERP BKM: modelo v1](https://claude.ai/artifact/YXuHgVNLaMPRtpxJ8YWCPt). Todas as tabelas ficam no esquema `erp`, no mesmo Supabase do BKM Terrenos, acima do espelho do Sienge (`sienge_bruto` e `sienge`).
 
-O SQL está em `supabase/migrations/` e os testes em `supabase/tests/erp.sql` (147 testes). Para rodar: `bash supabase/tests/run.sh`.
+O SQL está em `supabase/migrations/` e os testes em `supabase/tests/erp.sql` (160 testes). Para rodar: `bash supabase/tests/run.sh`.
 
 Este documento cobre o contas a pagar, a raiz (empresas e sócios), a árvore de naturezas, o livro de lançamentos e a reclassificação. Contas a receber, bancos, aprovação geral e engenharia ficam para as próximas sessões.
 
@@ -60,14 +60,14 @@ A carga inicial é o rascunho v0 do doc, com 11 grupos e 4 níveis em Marketing.
 | `documentos_fiscais` | A nota, o boleto ou a guia que chegou, com o valor bruto e a caução retida | Não aceita nota repetida do mesmo emitente (mesmo tipo, número e série), uma trava que o Sienge não tem. Depois de lançada, não se edita |
 | `documento_retencoes` | Os impostos retidos na nota (ISS, INSS, IR, PIS, COFINS, CSLL) e o órgão que recebe cada um | |
 | `documento_rateios` | O rateio da nota | |
-| `titulos` | A dívida real (ou o direito a receber), em rascunho até ser confirmada | Confirmado, o título não se edita e só muda de situação pelas quitações |
+| `titulos` | A dívida real (ou o direito a receber), em rascunho até ser confirmada | Confirmado, o título não se edita e só muda de situação pelas quitações. Quem criou e quando (`criado_por`, `criado_em`) o banco grava sozinho e não se mudam |
 | `titulo_rateios` | O rateio do título | Muda só com o título em rascunho, ou pela reclassificação |
 | `parcelas` | Os vencimentos do título | Precisam somar o valor do título |
 | `titulo_previsoes` | Quanto de cada previsão o título consumiu | Não passa do saldo da previsão. A previsão zerada fica "consumida" |
-| `pagamentos` | O dinheiro que saiu do banco, numa operação, carimbado com núcleo econômico e centro de custo desde a saída | Não se altera; o estorno virá com o módulo de bancos. Sem núcleo e centro (ligado no núcleo, da mesma empresa) não sai; só a transferência entre contas próprias dispensa. O atalho de pagar parcela carimba com o núcleo e o centro de maior peso do título |
+| `pagamentos` | O dinheiro que saiu do banco, numa operação, carimbado com núcleo econômico e centro de custo desde a saída | Não se altera; o estorno virá com o módulo de bancos. Sem núcleo e centro (ligado no núcleo, da mesma empresa) não sai; só a transferência entre contas próprias dispensa. O atalho de pagar parcela carimba com o núcleo e o centro de maior peso do título. Quem criou e quando o banco grava sozinho e não se mudam |
 | `regra_adiantamento` | A regra do adiantamento em aberto, configurável: se a trava vale, quais listas aprovam o abatimento em outro núcleo ou centro (padrão AF, AO, AD) e quais liberam pagar sem abater (padrão AD) | Uma linha só; só o administrador muda, com auditoria |
 | `listas_financeiro` | Quem está em cada lista de aprovação do financeiro (AF, AO, AD) | Só o administrador mexe, com auditoria |
-| `abatimentos_cruzados`, `liberacoes_sem_abater` | Aprovações do abatimento de adiantamento em título de outro núcleo ou centro, e da liberação para pagar o título sem abater o adiantamento em aberto | Com justificativa; quem está na lista aprova; quem lançou o pagamento não aprova o abatimento dele; não se alteram nem se apagam. Com a trava ligada, sem elas a quitação é recusada |
+| `abatimentos_cruzados`, `liberacoes_sem_abater` | Aprovações do abatimento de adiantamento em título de outro núcleo ou centro, e da liberação para pagar o título sem abater o adiantamento em aberto | Com justificativa; quem está na lista aprova; quem lançou o pagamento não aprova o abatimento dele e quem lançou o título não libera; a liberação cobre só os adiantamentos que já existiam quando foi aprovada (adiantamento novo pede outra); não se alteram nem se apagam. Com a trava ligada, sem elas a quitação é recusada |
 | `quitacoes` | Quanto de um pagamento quitou cada parcela, mais juros, multa e desconto | Não passa do saldo da parcela nem do saldo do pagamento. Só vale para a mesma empresa e a mesma pessoa. Não se apaga |
 | `caucao_movimentos` | O extrato da caução por contrato: retenção, liberação e uso para pagar terceiro | O saldo nunca fica negativo. O uso para pagar terceiro exige motivo |
 | `movimentos_societarios` | Aporte, integralização, distribuição, mútuo e devolução de mútuo | Cada movimento é um par ligado: título a pagar numa empresa e a receber na outra |
