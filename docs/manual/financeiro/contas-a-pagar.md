@@ -69,10 +69,11 @@ Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depo
 
 - O título de previsão vai ao Sienge **sem forma de pagamento**, só como previsão, para não ser pago por engano.
 - **O Sienge é monitorado:** a leitura diária aponta os títulos de previsão que deveriam ter sido apagados e continuam lá, com aviso também por **e-mail**.
+- **A planilha é só de leitura** para as pessoas. Ninguém marca "apagado": o próprio ERP BKM marca, na verificação diária do Sienge, quando o título foi de fato apagado (Moises, 14/nov/2026, 14h32).
 - **A planilha se refaz sozinha:** todo dia o ERP BKM puxa a lista dos títulos que devem ser apagados, cruza com a planilha e grava de novo o que estiver faltando. Se alguém apagar uma linha, ela volta no dia seguinte.
 - Cada linha traz o **número do título**, o **tipo de documento de previsão** e o **link para a previsão** no ERP BKM. O financeiro confere o tipo antes de apagar.
 - Se sumir do Sienge um título que **não estava na planilha**, a leitura diária avisa a **AF**.
-- **Linha incluída à mão na planilha:** o mesmo cruzamento diário marca como **inválida** a linha que não existe no ERP BKM e avisa a **AF**. Assim ninguém leva o financeiro a apagar um título definitivo acrescentando uma linha (Moises, 14/nov/2026, 14h30).
+- **Linha incluída à mão na planilha** (defesa caso a permissão de leitura seja mudada): o mesmo cruzamento diário marca como **inválida** a linha que não existe no ERP BKM e avisa a **AF**. Assim ninguém leva o financeiro a apagar um título definitivo acrescentando uma linha (Moises, 14/nov/2026, 14h30).
 
 🟡 Propostas ainda sem confirmação do Moises:
 
