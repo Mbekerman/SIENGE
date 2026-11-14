@@ -65,15 +65,15 @@ Regra do Moises (8/nov/2026): controles, segurança da informação e SLA são a
 
 | Id | Gravidade | Onde | Desde |
 | --- | --- | --- | --- |
-| S-059 | Média | Cobertura de testes das travas | 14/nov/2026 |
-| S-058 | Média (latente; primeiro EXECUTE a `authenticated`) | `cancelar_reclassificacao` | 14/nov/2026 |
-| S-057 | Média (latente; primeiro grant) | Título por fora do fluxo; filhos da nota e do contrato | 14/nov/2026 |
-| S-056 | Média (latente; primeiro grant) | Núcleo de outra empresa no rateio (`tg_classificacao`, `checar_centro`) | 14/nov/2026 |
-| S-055 | Alta (latente; primeiro grant) | `usuarios`, `naturezas_sistema`, `niveis_aprovacao`, `orcamento_versoes`, `contas_bancarias`, `codigos_externos` sem gatilho | 14/nov/2026 |
-| S-054 | Alta (latente; primeiro grant) | `erp.titulo_previsoes` (INSERT direto) | 14/nov/2026 |
-| S-053 | Alta (latente; primeiro grant) | `erp.meses_fechados` sem trava | 14/nov/2026 |
-| S-052 | Alta (latente; primeiro grant; apagar pelo `erp_sistema`: hoje) | Livro (`lancamentos`) e auditoria graváveis pelo usuário | 14/nov/2026 |
-| S-051 | Crítica (latente; primeiro grant) | `erp.caucao_movimentos` (gatilho só AFTER INSERT) | 14/nov/2026 |
+| S-059 | Média · correção aprovada pelo Moises (14/nov, 18h59), antes do primeiro grant | Cobertura de testes das travas | 14/nov/2026 |
+| S-058 | Média (latente; primeiro EXECUTE a `authenticated`) · correção aprovada pelo Moises (14/nov, 18h59), antes do primeiro grant | `cancelar_reclassificacao` | 14/nov/2026 |
+| S-057 | Média (latente; primeiro grant) · correção aprovada pelo Moises (14/nov, 18h59), antes do primeiro grant | Título por fora do fluxo; filhos da nota e do contrato | 14/nov/2026 |
+| S-056 | Média (latente; primeiro grant) · correção aprovada pelo Moises (14/nov, 18h59), antes do primeiro grant | Núcleo de outra empresa no rateio (`tg_classificacao`, `checar_centro`) | 14/nov/2026 |
+| S-055 | Alta (latente; primeiro grant) · correção aprovada pelo Moises (14/nov, 18h59), antes do primeiro grant | `usuarios`, `naturezas_sistema`, `niveis_aprovacao`, `orcamento_versoes`, `contas_bancarias`, `codigos_externos` sem gatilho | 14/nov/2026 |
+| S-054 | Alta (latente; primeiro grant) · correção aprovada pelo Moises (14/nov, 18h59), antes do primeiro grant | `erp.titulo_previsoes` (INSERT direto) | 14/nov/2026 |
+| S-053 | Alta (latente; primeiro grant) · correção aprovada pelo Moises (14/nov, 18h59), antes do primeiro grant | `erp.meses_fechados` sem trava | 14/nov/2026 |
+| S-052 | Alta (latente; primeiro grant; apagar pelo `erp_sistema`: hoje) · correção aprovada pelo Moises (14/nov, 18h59), antes do primeiro grant | Livro (`lancamentos`) e auditoria graváveis pelo usuário | 14/nov/2026 |
+| S-051 | Crítica (latente; primeiro grant) · correção aprovada pelo Moises (14/nov, 18h59), antes do primeiro grant | `erp.caucao_movimentos` (gatilho só AFTER INSERT) | 14/nov/2026 |
 | S-050 | Baixa | Deploy do `bkm_dev` colado à mão | 14/nov/2026 |
 | S-049 | Baixa | CI e repositório | 14/nov/2026 |
 | S-048 | Média (desenho) | Portal PJ no mesmo Auth | 14/nov/2026 |
@@ -82,8 +82,8 @@ Regra do Moises (8/nov/2026): controles, segurança da informação e SLA são a
 | S-045 | Alta (latente; primeiro grant) | Auth compartilhado do `bkm_dev` e funções que só conferem "logado" | 14/nov/2026 |
 | S-044 | Alta (desenho) · **transição** | Fila de envio ao Sienge | 14/nov/2026 |
 | S-043 | Alta (desenho) | Adaptador do Sienge: releitura pelo id do webhook | 14/nov/2026 |
-| S-042 | Alta · **transição** | Senha da API do Sienge injetada pelo proxy do ambiente de nuvem do Claude | 14/nov/2026 |
-| S-041 | Alta | Proteção de branch no GitHub | 14/nov/2026 |
+| S-042 | Alta · **transição** · correção aprovada pelo Moises (14/nov, 18h59): usuário de API só de leitura para as sessões | Senha da API do Sienge injetada pelo proxy do ambiente de nuvem do Claude | 14/nov/2026 |
+| S-041 | Alta · correção aprovada pelo Moises (14/nov, 18h59), feita por ele no GitHub | Proteção de branch no GitHub | 14/nov/2026 |
 | S-040 | Crítica · **risco aceito pelo Moises** (14/nov/2026: o repositório fica público "por um bom tempo"; ele liga o secret scanning e o push protection) | Repositório Mbekerman/SIENGE público; secret scanning e push protection desligados | 14/nov/2026 |
 | S-039 | Média (latente; banco de desenvolvimento, 14/nov/2026; aviso 0011 do Supabase) | 49 funções `security invoker` do `erp` sem `search_path` fixo | 14/nov/2026 |
 | S-032 | Média (código, 14/nov/2026; corrigido no PR #1, `5bff23f`, `25d9737` e `438daca`, todas as mutações pegas) | Pagamento de título com adiantamento em aberto do mesmo fornecedor | 14/nov/2026 |
