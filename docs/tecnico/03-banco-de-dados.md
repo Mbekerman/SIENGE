@@ -22,12 +22,12 @@ Onde está: branch `claude/project-thread-dknc98` deste repositório (commits `6
 | `supabase/migrations/20261107000300_erp_reclassificacao.sql` | Fechamento de mês, níveis de aprovação, alçadas, pedidos de reclassificação, itens e votos (6 tabelas) |
 | `supabase/migrations/20261107000400_erp_carga.sql` | Carga inicial: árvore de naturezas v0 (11 grupos), linhas da DRE, naturezas do sistema, níveis e alçada padrão |
 | `supabase/migrations/20261107000500_erp_rls.sql` | RLS ligado e forçado em toda tabela do `erp`, com uma política só, a do sistema (S-003; as políticas por perfil entram com as telas) |
-| `supabase/tests/erp.sql` | 463 testes de regra (os de acesso incluem função `security definer` e catálogo de privilégios) |
+| `supabase/tests/erp.sql` | 518 testes de regra (os de acesso incluem função `security definer` e catálogo de privilégios) |
 | `supabase/tests/run.sh` | Sobe um Postgres 16 temporário, aplica `shim_supabase.sql` + migrations e roda os testes |
 | `supabase/tests/shim_supabase.sql` | Imita o mínimo do Supabase (`auth.uid()` lido de `request.jwt.claim.sub`) |
 | `docs/erp.md` | Dicionário das tabelas e regras, em português (fonte principal para o detalhe de cada tabela) |
 
-Conferido nesta documentação em 14/nov/2026 (`develop` em `c6edc93`): `bash supabase/tests/run.sh` aplica as 5 migrations e passa os 463 testes. Até 14/nov o esquema se chamava `nucleo`; os commits antigos citados nesta pasta usam esse nome.
+Conferido nesta documentação em 14/nov/2026 (`develop` em `ea859c9`): `bash supabase/tests/run.sh` aplica as 5 migrations e passa os 518 testes. Até 14/nov o esquema se chamava `nucleo`; os commits antigos citados nesta pasta usam esse nome.
 
 **Três dimensões (14/nov/2026):** `erp.nucleos_economicos` (antigo `centros_custo`: empreendimento, corporativo ou outro; nunca uma área), `erp.centros_custo` (antigo `departamentos`: lista raiz única, com Novos negócios, Terreno, Incorporação, Projetos, Obra, Assistência técnica, Comercial, Marketing, Financeiro, Administrativo, Jurídico e Diretoria) e a natureza. `erp.nucleo_centros` diz qual centro está ligado em cada núcleo: sem linha vale como desligado, só o administrador mexe, com auditoria, e nada se apaga. `erp.checar_centro` recusa centro desligado nos rateios, nas previsões, nas linhas de orçamento e no livro. Despesa exige núcleo **e** centro de custo; movimentação dispensa o centro.
 
