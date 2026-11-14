@@ -52,10 +52,18 @@ create function erp.meu_usuario() returns erp.usuarios language sql stable as
 create function erp.meu_papel() returns text language sql stable as
   $$ select papel from erp.usuarios where id = erp.eu() and ativo $$;
 
+-- Marca de função do banco (S-035): o código roda dentro de uma função security definer cujo
+-- dono é o papel dado (erp_situacao, erp_reclassificacao). Esses papéis não entram e não têm
+-- membros, então só o banco põe a marca; não há variável de sessão que o cliente possa setar.
+-- Invoker de propósito: dentro de uma definer, current_user é o dono dela.
+create function erp.agindo_como(p_papel text) returns boolean language sql stable as
+  $$ select current_user::text = p_papel $$;
+
+-- Invoker (lê o cadastro pelo erp.meu_usuario, que é definer) para enxergar a marca de quem chama.
 create function erp.exigir_admin() returns void language plpgsql stable as $$
 begin
   if erp.sistema() then return; end if;
-  if not exists (select 1 from erp.usuarios where id = erp.eu() and ativo and administrador) then
+  if not coalesce((erp.meu_usuario()).administrador, false) then
     raise exception 'Só o administrador pode mudar a configuração';
   end if;
 end $$;

@@ -1,33 +1,45 @@
--- Segurança do esquema `erp` (S-003, S-033 e S-034; aval do Moises em 14/11/2026).
+-- Segurança do esquema `erp` (S-003, S-033, S-034 e S-035; aval do Moises em 14/11/2026).
 --
 -- 1. Papéis nossos, sem login e sem membros aqui:
 --    - erp_sistema: rotina do servidor (adaptador do Sienge, funções do servidor). Quem recebe
 --      esse papel é decidido na implantação; sem login (erp.login_atual() nulo) ele é sistema.
+--      Nenhum papel da API (anon, authenticated, authenticator, service_role) é membro dele.
 --    - erp_conferencia: dono das funções de conferência (security definer). Só lê, e só por
---      dentro dessas funções; ninguém entra com ele.
+--      dentro dessas funções.
+--    - erp_situacao e erp_reclassificacao (S-035): donos das operações que mudam o que o
+--      cliente não muda direto: a situação de título e previsão (confirmar, quitar, consumir) e
+--      a natureza já lançada (reclassificação aprovada). As travas conferem
+--      erp.agindo_como(papel), isto é, se o código roda dentro dessas funções. Nenhum desses
+--      papéis entra ou tem membros, então ninguém de fora põe a marca (antes eram variáveis de
+--      sessão que qualquer SET ligava).
 -- 2. RLS ligado e forçado em toda tabela, negando por padrão. Políticas:
 --    - sistema: tudo, só quando erp.sistema();
---    - conferencia: só SELECT, só para o papel erp_conferencia.
+--    - conferencia: só SELECT, só para erp_conferencia;
+--    - operacao: tudo, só para erp_situacao e erp_reclassificacao.
 --    As políticas por perfil (núcleo econômico × centro de custo × natureza, com PJ isolado)
---    entram junto com o primeiro grant a `authenticated`, no mesmo PR.
--- 3. As conferências que as travas usam passam a security definer, donas erp_conferencia, com
---    search_path fixo: assim a trava enxerga o que quem lança não vê (adiantamento de outro
---    núcleo, quitações, listas, regra). Recebem só ids; nenhuma escolhe empresa nem usuário.
+--    entram junto com o primeiro grant a `authenticated`, no mesmo PR. Quando entrarem, as
+--    operações (confirmar_titulo, decidir_reclassificacao, as quitações) conferem por conta
+--    própria se quem chama vê o registro, porque por dentro elas enxergam tudo.
+-- 3. Conferências das travas em security definer, donas erp_conferencia, search_path fixo:
+--    a trava enxerga o que quem lança não vê. Recebem só ids; nenhuma escolhe empresa nem usuário.
 -- Superusuário ignora RLS mesmo forçado; por isso o dono das funções não é o superusuário.
+-- Implantação: ALTER FUNCTION ... OWNER exige poder agir como o novo dono e CREATE no esquema;
+-- sem superusuário, conferir no projeto antes de aplicar.
 -- Portabilidade: SQL puro, sem extensão nem papel do Supabase.
 
-do $$ begin
-  if not exists (select 1 from pg_roles where rolname = 'erp_sistema') then
-    create role erp_sistema nologin;
-  end if;
-  if not exists (select 1 from pg_roles where rolname = 'erp_conferencia') then
-    create role erp_conferencia nologin;
-  end if;
+do $$
+declare p text;
+begin
+  foreach p in array array['erp_sistema', 'erp_conferencia', 'erp_situacao', 'erp_reclassificacao'] loop
+    if not exists (select 1 from pg_roles where rolname = p) then
+      execute format('create role %I nologin', p);
+    end if;
+  end loop;
 end $$;
 
-grant usage on schema erp to erp_sistema, erp_conferencia;
-grant select, insert, update, delete on all tables in schema erp to erp_sistema;
-grant execute on all functions in schema erp to erp_sistema;
+grant usage on schema erp to erp_sistema, erp_conferencia, erp_situacao, erp_reclassificacao;
+grant select, insert, update, delete on all tables in schema erp to erp_sistema, erp_situacao, erp_reclassificacao;
+grant execute on all functions in schema erp to erp_sistema, erp_situacao, erp_reclassificacao;
 grant select on all tables in schema erp to erp_conferencia;
 grant execute on all functions in schema erp to erp_conferencia;
 
@@ -40,21 +52,29 @@ begin
     execute format('alter table erp.%I force row level security', t.relname);
     execute format('create policy sistema on erp.%I using (erp.sistema()) with check (erp.sistema())', t.relname);
     execute format('create policy conferencia on erp.%I for select to erp_conferencia using (true)', t.relname);
+    execute format('create policy operacao on erp.%I to erp_situacao, erp_reclassificacao using (true) with check (true)', t.relname);
   end loop;
 end $$;
 
 do $$
-declare f text;
+declare r record;
 begin
-  foreach f in array array[
-    'erp.eu()', 'erp.meu_usuario()', 'erp.meu_papel()',
-    'erp.exigir_admin()', 'erp.exigir_editor()', 'erp.exigir_diretor()',
-    'erp.estou_nas_listas(text[])', 'erp.regra_adiantamento_atual()',
-    'erp.autor_lancamento(text, uuid)', 'erp.abatimento_aprovado(uuid, uuid)',
-    'erp.adiantamento_anterior_em_aberto(uuid, uuid)',
-    'erp.previsao_saldo(uuid)', 'erp.parcela_saldo(uuid)', 'erp.pagamento_saldo(uuid)',
-    'erp.centro_ligado(uuid, uuid)'] loop
-    execute format('alter function %s security definer set search_path = erp, pg_catalog', f);
-    execute format('alter function %s owner to erp_conferencia', f);
+  for r in select * from (values
+    ('erp.eu()', 'erp_conferencia'), ('erp.meu_usuario()', 'erp_conferencia'), ('erp.meu_papel()', 'erp_conferencia'),
+    ('erp.exigir_editor()', 'erp_conferencia'), ('erp.exigir_diretor()', 'erp_conferencia'),
+    ('erp.estou_nas_listas(text[])', 'erp_conferencia'), ('erp.regra_adiantamento_atual()', 'erp_conferencia'),
+    ('erp.autor_lancamento(text, uuid)', 'erp_conferencia'), ('erp.abatimento_aprovado(uuid, uuid)', 'erp_conferencia'),
+    ('erp.adiantamento_anterior_em_aberto(uuid, uuid)', 'erp_conferencia'),
+    ('erp.previsao_saldo(uuid)', 'erp_conferencia'), ('erp.parcela_saldo(uuid)', 'erp_conferencia'),
+    ('erp.pagamento_saldo(uuid)', 'erp_conferencia'), ('erp.centro_ligado(uuid, uuid)', 'erp_conferencia'),
+    ('erp.checar_natureza(uuid, uuid, uuid, boolean)', 'erp_conferencia'), ('erp.checar_centro(uuid, uuid)', 'erp_conferencia'),
+    ('erp.tg_nucleo_economico()', 'erp_conferencia'),
+    -- operações que mudam situação (S-035)
+    ('erp.confirmar_titulo(uuid)', 'erp_situacao'), ('erp.tg_quitacao()', 'erp_situacao'),
+    ('erp.tg_titulo_previsao()', 'erp_situacao'),
+    -- reclassificação aprovada (S-035); os votos também são lidos por baixo do RLS
+    ('erp.decidir_reclassificacao(uuid, boolean, text)', 'erp_reclassificacao')) v(f, dono) loop
+    execute format('alter function %s security definer set search_path = erp, pg_catalog', r.f);
+    execute format('alter function %s owner to %I', r.f, r.dono);
   end loop;
 end $$;

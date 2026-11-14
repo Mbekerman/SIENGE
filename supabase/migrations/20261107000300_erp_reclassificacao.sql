@@ -228,11 +228,14 @@ create function erp.previa_reclassificacao(p_id uuid) returns jsonb language sql
   where r.id = p_id
   group by r.id, r.valor, r.faixa, r.nivel, r.natureza_origem_id, r.natureza_destino_id $$;
 
+-- Roda dentro do erp.decidir_reclassificacao, que é security definer do erp_reclassificacao
+-- (migration _erp_rls): é essa marca que deixa o livro, as previsões e o rateio do título
+-- confirmado mudarem só a natureza, e a natureza esvaziada ser apagada. Chamada direta, fora
+-- dela, cai nas travas.
 create function erp._aplicar_reclassificacao(p_id uuid) returns void language plpgsql as $$
 declare r erp.reclassificacoes;
 begin
   select * into r from erp.reclassificacoes where id = p_id;
-  perform set_config('erp.reclassificando', 'on', true);
   -- linhas do livro (só as que ainda estão na origem)
   update erp.lancamentos l set natureza_id = r.natureza_destino_id
     from erp.reclassificacao_itens i
@@ -253,15 +256,12 @@ begin
       from erp.orcamento_versoes v
      where v.id = l.versao_id and v.situacao = 'rascunho' and l.natureza_id = r.natureza_origem_id;
   end if;
-  perform set_config('erp.reclassificando', 'off', true);
   update erp.reclassificacoes set situacao = 'aprovada', aplicada_em = now() where id = r.id;
   if r.apagar_origem then
     if erp.natureza_em_uso(r.natureza_origem_id) then
       raise exception 'A natureza de origem ainda tem uso (orçamento vigente ou natureza do sistema); não pode ser apagada';
     end if;
-    perform set_config('erp.sistema_apaga', 'on', true);
     delete from erp.naturezas where id = r.natureza_origem_id;
-    perform set_config('erp.sistema_apaga', 'off', true);
   end if;
 end $$;
 
@@ -322,8 +322,8 @@ end $$;
 -- diretoria que aprovou, mesmo que quem aprovou não seja administrador.
 create or replace function erp.exigir_admin() returns void language plpgsql stable as $$
 begin
-  if erp.sistema() or current_setting('erp.sistema_apaga', true) = 'on' then return; end if;
-  if not exists (select 1 from erp.usuarios where id = erp.eu() and ativo and administrador) then
+  if erp.sistema() or erp.agindo_como('erp_reclassificacao') then return; end if;
+  if not coalesce((erp.meu_usuario()).administrador, false) then
     raise exception 'Só o administrador pode mudar a configuração';
   end if;
 end $$;
