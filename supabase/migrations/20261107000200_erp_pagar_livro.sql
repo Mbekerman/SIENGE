@@ -167,11 +167,13 @@ create table erp.documentos_fiscais (
   valor_bruto    numeric(15,2) not null check (valor_bruto > 0),
   caucao_valor   numeric(15,2) check (caucao_valor >= 0),  -- vem do contrato; pode ser alterada aqui
   situacao       text not null default 'rascunho' check (situacao in ('rascunho','lancado','cancelado')),
+  cancelamento   text check (cancelamento in ('recusa')),   -- cancelada porque a alçada recusou o título
   lancado_em     timestamptz,
   criado_por     uuid,
   criado_em      timestamptz not null default now()
 );
 -- Trava de duplicidade que o Sienge não tem (lá a NFS-e aceita número repetido).
+-- A nota cancelada (inclusive a recusada na alçada) libera o número para a versão certa.
 create unique index documentos_fiscais_unico on erp.documentos_fiscais (emitente_id, tipo, numero, serie)
   where situacao <> 'cancelado';
 
@@ -212,6 +214,10 @@ create table erp.titulos (
   valor          numeric(15,2) not null check (valor > 0),
   descricao      text,
   situacao       text not null default 'rascunho' check (situacao in ('rascunho','aberto','quitado','cancelado')),
+  -- cancelado pela alçada: recusado, ou refeito no reenvio da nota em revisão
+  cancelamento   text check (cancelamento in ('recusa','revisao')),
+  substitui_id   uuid references erp.titulos,     -- o título que a nota relançada na revisão refez
+  rodada         int not null default 1,          -- volta da alçada; o reenvio da revisão abre outra
   criado_por     uuid,
   criado_em      timestamptz not null default clock_timestamp()
 );
@@ -303,15 +309,16 @@ create index on erp.quitacoes (pagamento_id);
 create table erp.caucao_movimentos (
   id             uuid primary key default gen_random_uuid(),
   compromisso_id uuid not null references erp.compromissos,
-  tipo           text not null check (tipo in ('retencao','liberacao','uso_terceiro')),
+  -- estorno: a retenção desfeita quando a nota é cancelada pela alçada
+  tipo           text not null check (tipo in ('retencao','estorno','liberacao','uso_terceiro')),
   valor          numeric(15,2) not null check (valor > 0),
   documento_id   uuid references erp.documentos_fiscais,   -- na retenção
   titulo_id      uuid references erp.titulos,              -- na liberação e no uso
   motivo         text,
   em             timestamptz not null default now(),
   por            uuid default erp.eu(),
-  check ((tipo = 'retencao') = (documento_id is not null)),
-  check (tipo = 'retencao' or titulo_id is not null),
+  check ((tipo in ('retencao','estorno')) = (documento_id is not null)),
+  check (tipo in ('retencao','estorno') or titulo_id is not null),
   check (tipo <> 'uso_terceiro' or motivo is not null)
 );
 
@@ -547,7 +554,8 @@ end $$;
 -- Previsão → livro (estágio previsto)
 -- ---------------------------------------------------------------------
 create function erp.previsao_saldo(p_id uuid) returns numeric language sql stable as $$
-  select p.valor - coalesce((select sum(valor) from erp.titulo_previsoes where previsao_id = p.id), 0)
+  select p.valor - coalesce((select sum(tp.valor) from erp.titulo_previsoes tp join erp.titulos t on t.id = tp.titulo_id
+                              where tp.previsao_id = p.id and t.situacao <> 'cancelado'), 0)
   from erp.previsoes p where p.id = p_id $$;
 
 -- Guarda (invoker, confere a marca de quem grava) e escrita no livro (definer erp_situacao, na
@@ -624,8 +632,8 @@ begin
   if d.id is null or not erp._previsao_casa(p, d) then
     raise exception 'A previsão não casa com a nota do título';
   end if;
-  v_saldo := p.valor - coalesce((select sum(valor) from erp.titulo_previsoes
-                                 where previsao_id = p.id and titulo_id <> new.titulo_id), 0);
+  v_saldo := p.valor - coalesce((select sum(tp.valor) from erp.titulo_previsoes tp join erp.titulos t on t.id = tp.titulo_id
+                                 where tp.previsao_id = p.id and tp.titulo_id <> new.titulo_id and t.situacao <> 'cancelado'), 0);
   if new.valor > v_saldo then raise exception 'O consumo (%) passa do saldo da previsão (%)', new.valor, v_saldo; end if;
   insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, fase_id, centro_custo_id,
                                   competencia, data_caixa, valor, previsao_id, titulo_id)
@@ -690,12 +698,28 @@ begin
     raise exception 'O título não muda de tipo, nota ou contrato';
   end if;
   -- a situação (inclusive rascunho → aberto) só muda pelas operações do banco: confirmar e quitar
-  if tg_op = 'UPDATE' and new.situacao is distinct from old.situacao and not erp.agindo_como('erp_situacao') then
+  if tg_op = 'UPDATE' and (new.situacao, new.cancelamento) is distinct from (old.situacao, old.cancelamento)
+     and not erp.agindo_como('erp_situacao') then
     raise exception 'A situação do título muda pelas quitações';
   end if;
+  if tg_op = 'UPDATE' and (new.rodada, new.substitui_id) is distinct from (old.rodada, old.substitui_id)
+     and not erp.agindo_como('erp_situacao') then
+    raise exception 'A volta da alçada muda pelo reenvio da revisão';
+  end if;
+  -- confirmado não se edita; em revisão, quem pode ajustar muda tudo menos empresa, tipo, nota,
+  -- contrato e sentido (título de nota se ajusta pela nota)
   if tg_op = 'UPDATE' and old.situacao <> 'rascunho'
-     and (to_jsonb(new) - 'situacao') <> (to_jsonb(old) - 'situacao') then
+     and (to_jsonb(new) - 'situacao' - 'cancelamento' - 'rodada' - 'substitui_id')
+         <> (to_jsonb(old) - 'situacao' - 'cancelamento' - 'rodada' - 'substitui_id')
+     and not (old.documento_id is null and erp.em_revisao(old.id) and erp.pode_ajustar(old.id)
+              and (new.empresa_id, new.tipo, new.sentido, new.compromisso_id) = (old.empresa_id, old.tipo, old.sentido, old.compromisso_id)
+              and new.documento_id is null) then
     raise exception 'Título confirmado não se edita';
+  end if;
+  if tg_op = 'UPDATE' and old.situacao <> 'rascunho' and not erp.agindo_como('erp_situacao') then
+    perform erp.conferir_ajuste(old.id, 'titulos',
+      to_jsonb(old) - 'situacao' - 'cancelamento' - 'rodada' - 'substitui_id',
+      to_jsonb(new) - 'situacao' - 'cancelamento' - 'rodada' - 'substitui_id');
   end if;
   if tg_op = 'DELETE' and old.situacao <> 'rascunho' then
     raise exception 'Título confirmado não se apaga';
@@ -719,6 +743,15 @@ begin
      and (to_jsonb(new) - 'natureza_id') = (to_jsonb(old) - 'natureza_id') then
     return new;
   end if;
+  -- em revisão, quem pode ajustar muda parcelas e rateio do título avulso ou do pedido
+  -- (parcela já lançada no livro não se apaga: ajuste o valor e o vencimento)
+  if (tg_op <> 'UPDATE' or (case when tg_op = 'UPDATE' then new.titulo_id = old.titulo_id end))
+     and erp._ajustavel(case when tg_op = 'DELETE' then old.titulo_id else new.titulo_id end) then
+    perform erp.conferir_ajuste(case when tg_op = 'DELETE' then old.titulo_id else new.titulo_id end, tg_table_name,
+      case when tg_op <> 'INSERT' then to_jsonb(old) - 'id' - 'titulo_id' end,
+      case when tg_op <> 'DELETE' then to_jsonb(new) - 'id' - 'titulo_id' end);
+    return coalesce(new, old);
+  end if;
   raise exception 'O título já foi confirmado; % não muda', tg_table_name;
 end $$;
 
@@ -735,6 +768,15 @@ begin
      and (to_jsonb(new) - 'natureza_id') = (to_jsonb(old) - 'natureza_id') then
     return new;
   end if;
+  -- em revisão, quem pode ajustar muda o rateio e as retenções da nota (relançada no reenvio)
+  if (tg_op <> 'UPDATE' or (case when tg_op = 'UPDATE' then new.documento_id = old.documento_id end))
+     and erp._nota_ajustavel(case when tg_op = 'DELETE' then old.documento_id else new.documento_id end) then
+    perform erp.conferir_ajuste(erp._titulo_em_revisao_da_nota(case when tg_op = 'DELETE' then old.documento_id else new.documento_id end),
+      tg_table_name,
+      case when tg_op <> 'INSERT' then to_jsonb(old) - 'id' - 'documento_id' end,
+      case when tg_op <> 'DELETE' then to_jsonb(new) - 'id' - 'documento_id' end);
+    return coalesce(new, old);
+  end if;
   raise exception 'A nota já foi lançada; % não muda', tg_table_name;
 end $$;
 create trigger t_filho before insert or update or delete on erp.documento_rateios
@@ -746,8 +788,36 @@ create trigger t_filho before insert or update or delete on erp.parcelas
 create trigger t_filho before insert or update or delete on erp.titulo_rateios
   for each row execute function erp.tg_filho_titulo();
 
+-- O comprometido do título no livro: uma linha por parcela e linha do rateio.
+create function erp._comprometer_titulo(t erp.titulos) returns void language plpgsql as $$
+declare p record; r record;
+begin
+  for p in select * from erp.parcelas where titulo_id = t.id and t.tipo <> 'adiantamento' order by numero loop
+    for r in select * from erp.ratear('titulo', t.id, p.valor) loop
+      insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, fase_id, centro_custo_id,
+                                      competencia, data_caixa, valor, titulo_id, parcela_id)
+      values ('comprometido', t.empresa_id, r.nucleo_economico_id, r.natureza_id, r.fase_id, r.centro_custo_id,
+              t.competencia, p.vencimento, erp.sinal(t.sentido) * r.valor, t.id, p.id);
+    end loop;
+  end loop;
+end $$;
+-- Estorna o que o título deixou no livro (só cresce: linha de sinal contrário pelo saldo de cada
+-- combinação). p_estagio nulo estorna tudo; 'comprometido', só o comprometido.
+create function erp._estornar_titulo(p_titulo uuid, p_estagio text) returns void language plpgsql as $$
+begin
+  insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, fase_id, centro_custo_id,
+                               competencia, data_caixa, valor, titulo_id, parcela_id, previsao_id)
+  select estagio, empresa_id, nucleo_economico_id, natureza_id, fase_id, centro_custo_id,
+         competencia, data_caixa, -sum(valor), p_titulo, parcela_id, previsao_id
+    from erp.lancamentos
+   where titulo_id = p_titulo and (p_estagio is null or estagio = p_estagio)
+   group by estagio, empresa_id, nucleo_economico_id, natureza_id, fase_id, centro_custo_id,
+            competencia, data_caixa, parcela_id, previsao_id
+  having sum(valor) <> 0;
+end $$;
+
 create function erp.confirmar_titulo(p_titulo uuid) returns void language plpgsql as $$
-declare t erp.titulos; p record; r record;
+declare t erp.titulos;
 begin
   perform erp.exigir_editor();
   select * into t from erp.titulos where id = p_titulo for update;
@@ -761,14 +831,7 @@ begin
   if t.tipo = 'adiantamento' and (select count(*) from erp.titulo_rateios where titulo_id = t.id) <> 1 then
     raise exception 'O pedido de adiantamento tem um núcleo e um centro de custo só';
   end if;
-  for p in select * from erp.parcelas where titulo_id = t.id and t.tipo <> 'adiantamento' order by numero loop
-    for r in select * from erp.ratear('titulo', t.id, p.valor) loop
-      insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, fase_id, centro_custo_id,
-                                      competencia, data_caixa, valor, titulo_id, parcela_id)
-      values ('comprometido', t.empresa_id, r.nucleo_economico_id, r.natureza_id, r.fase_id, r.centro_custo_id,
-              t.competencia, p.vencimento, erp.sinal(t.sentido) * r.valor, t.id, p.id);
-    end loop;
-  end loop;
+  perform erp._comprometer_titulo(t);
   update erp.titulos set situacao = 'aberto' where id = t.id;   -- definer erp_situacao (_erp_rls)
   perform erp._definir_alcada(t.id);
 end $$;
@@ -896,12 +959,22 @@ begin
   if tg_op = 'INSERT' and new.situacao <> 'rascunho' then
     raise exception 'Documento nasce em rascunho; é lançado pelo lancar_documento';
   end if;
-  if tg_op = 'UPDATE' and new.situacao is distinct from old.situacao and not erp.agindo_como('erp_situacao') then
+  if tg_op = 'UPDATE' and (new.situacao, new.cancelamento) is distinct from (old.situacao, old.cancelamento)
+     and not erp.agindo_como('erp_situacao') then
     raise exception 'A situação do documento muda pelo lançamento';
   end if;
   if tg_op = 'DELETE' and old.situacao <> 'rascunho' then raise exception 'Documento lançado não se apaga'; end if;
-  if tg_op = 'UPDATE' and old.situacao <> 'rascunho' and (to_jsonb(new) - 'situacao') <> (to_jsonb(old) - 'situacao') then
+  if tg_op = 'UPDATE' and old.situacao <> 'rascunho'
+     and (to_jsonb(new) - 'situacao' - 'cancelamento' - 'lancado_em') <> (to_jsonb(old) - 'situacao' - 'cancelamento' - 'lancado_em')
+     and not (erp._nota_ajustavel(old.id) and new.empresa_id = old.empresa_id) then
     raise exception 'Documento lançado não se edita';
+  end if;
+  if tg_op = 'UPDATE' and old.situacao <> 'rascunho' and not erp.agindo_como('erp_situacao') then
+    perform erp.conferir_ajuste(erp._titulo_em_revisao_da_nota(old.id), 'documentos_fiscais',
+      to_jsonb(old) - 'situacao' - 'cancelamento' - 'lancado_em', to_jsonb(new) - 'situacao' - 'cancelamento' - 'lancado_em');
+  end if;
+  if tg_op = 'UPDATE' and new.lancado_em is distinct from old.lancado_em and not erp.agindo_como('erp_situacao') then
+    raise exception 'A situação do documento muda pelo lançamento';
   end if;
   return coalesce(new, old);
 end $$;
@@ -1124,22 +1197,25 @@ create trigger t_aud_regra_alcada after update on erp.regra_alcada_pagamento
 
 -- A alçada fixada na confirmação: as etapas, o centro e o acumulado que decidiu.
 create table erp.titulo_alcadas (
-  titulo_id       uuid primary key references erp.titulos,
+  titulo_id       uuid not null references erp.titulos,
+  rodada          int not null default 1,       -- a volta da alçada (titulos.rodada)
   etapas          text[] not null,
   centro_custo_id uuid not null references erp.centros_custo,   -- o centro de maior acumulado
   acumulado       numeric(15,2) not null,
   titulos         uuid[] not null,              -- os títulos que formaram o acumulado (S-064)
-  definida_em     timestamptz not null default clock_timestamp()
+  definida_em     timestamptz not null default clock_timestamp(),
+  primary key (titulo_id, rodada)
 );
 create table erp.titulo_aprovacoes (
   titulo_id     uuid not null references erp.titulos,
+  rodada        int not null default 1,
   etapa         int not null,                    -- posição em titulo_alcadas.etapas, de 1
   lista         text not null,
   aprovado      boolean not null,
   justificativa text,
   por           uuid not null,
   em            timestamptz not null default clock_timestamp(),
-  primary key (titulo_id, etapa),
+  primary key (titulo_id, rodada, etapa),
   check (aprovado or length(trim(coalesce(justificativa, ''))) > 0)
 );
 -- só pelas operações do banco (confirmar_titulo e decidir_titulo), e não mudam
@@ -1159,6 +1235,167 @@ create trigger t_alcada_titulo before insert or update or delete on erp.titulo_a
   for each row execute function erp.tg_alcada_titulo();
 create trigger t_alcada_titulo before insert or update or delete on erp.titulo_aprovacoes
   for each row execute function erp.tg_alcada_titulo();
+
+-- Pedido de revisão (decisões do Moises, 14/11/2026): o aprovador da etapa pede um ajuste com
+-- motivo; o título fica aberto e no livro, não é aprovado nem pago enquanto a revisão está
+-- aberta. Quem lançou, o gestor da área e o AF ajustam qualquer coisa (o título avulso direto; o
+-- de nota, pela nota) e reenviam; a alçada recomeça do zero, numa volta nova.
+create table erp.titulo_revisoes (
+  id            uuid primary key default gen_random_uuid(),
+  titulo_id     uuid not null references erp.titulos,
+  rodada        int not null,
+  etapa         int not null,
+  motivo        text not null check (length(trim(motivo)) > 0),
+  pedida_por    uuid not null,
+  pedida_em     timestamptz not null default clock_timestamp(),
+  resposta      text,
+  reenviada_por uuid,
+  reenviada_em  timestamptz,
+  check ((reenviada_em is null) = (reenviada_por is null) and (reenviada_em is null) = (resposta is null))
+);
+create unique index titulo_revisoes_aberta on erp.titulo_revisoes (titulo_id) where reenviada_em is null;
+create function erp.tg_titulo_revisao() returns trigger language plpgsql as $$
+begin
+  if tg_op = 'DELETE' then raise exception 'A revisão do título não se apaga'; end if;
+  if not erp.agindo_como('erp_situacao') then
+    raise exception 'A revisão do título só se grava pela aprovação e pelo reenvio';
+  end if;
+  if tg_op = 'INSERT' then
+    new.pedida_por := erp.eu();
+    new.pedida_em := clock_timestamp();
+    new.resposta := null; new.reenviada_por := null; new.reenviada_em := null;
+  else
+    if old.reenviada_em is not null
+       or (to_jsonb(new) - 'resposta' - 'reenviada_por' - 'reenviada_em') <> (to_jsonb(old) - 'resposta' - 'reenviada_por' - 'reenviada_em') then
+      raise exception 'A revisão do título já foi respondida';
+    end if;
+    new.reenviada_por := erp.eu();
+    new.reenviada_em := clock_timestamp();
+  end if;
+  return new;
+end $$;
+create trigger t_titulo_revisao before insert or update or delete on erp.titulo_revisoes
+  for each row execute function erp.tg_titulo_revisao();
+create function erp.em_revisao(p_titulo uuid) returns boolean language sql stable as $$
+  select exists (select 1 from erp.titulo_revisoes where titulo_id = p_titulo and reenviada_em is null) $$;
+-- Quem ajusta o título em revisão: quem lançou, quem está no AF e o gestor ativo de um centro do
+-- rateio. (O escopo de núcleo, centro e natureza de cada um entra com os perfis, no primeiro grant.)
+create function erp.pode_ajustar(p_titulo uuid) returns boolean language plpgsql stable as $$
+begin return (erp.eu() is not null and (
+         erp.autor_lancamento('titulo', p_titulo) = erp.eu()
+      or erp.estou_nas_listas(array['AF'])
+      or exists (select 1 from erp.titulo_rateios tr join erp.centro_aprovadores c on c.centro_custo_id = tr.centro_custo_id
+                 join erp.usuarios u on u.id = c.user_id and u.ativo
+                  where tr.titulo_id = p_titulo and c.user_id = erp.eu()))); end $$;
+-- Título avulso ou pedido em revisão, e quem grava pode ajustar?
+create function erp._ajustavel(p_titulo uuid) returns boolean language plpgsql stable as $$
+begin return (exists (select 1 from erp.titulos where id = p_titulo and documento_id is null)
+     and erp.em_revisao(p_titulo) and erp.pode_ajustar(p_titulo)); end $$;
+-- O título do fornecedor da nota que está em revisão.
+create function erp._titulo_em_revisao_da_nota(p_documento uuid) returns uuid language plpgsql stable as $$
+begin return (select t.id from erp.titulos t where t.documento_id = p_documento and t.tipo = 'fornecedor'
+                 and t.situacao = 'aberto' and erp.em_revisao(t.id)); end $$;
+-- Nota com o título do fornecedor em revisão, e quem grava pode ajustar?
+create function erp._nota_ajustavel(p_documento uuid) returns boolean language plpgsql stable as $$
+begin return (exists (select 1 from erp.titulos t where t.documento_id = p_documento and t.tipo = 'fornecedor'
+                  and t.situacao = 'aberto' and erp.em_revisao(t.id) and erp.pode_ajustar(t.id))); end $$;
+
+-- O que cada um pode mudar no ajuste da revisão: uma linha por campo e por quem ajusta (AF, o
+-- gestor da área, quem lançou). Em número e data, também para que lado: só para mais, só para
+-- menos ou os dois. "linhas" é incluir ou tirar parcela, linha do rateio ou retenção. O admin muda
+-- os valores (com auditoria); as linhas são fixas. Começa tudo liberado, para os dois lados
+-- (decisão do Moises, 14/11). Quem tem mais de um papel pode o que algum deles pode.
+create table erp.regras_ajuste (
+  campo     text not null,                 -- tabela.coluna, ou tabela.linhas
+  quem      text not null check (quem in ('AF','AREA','AUTOR')),
+  rotulo    text not null,
+  tipo      text not null check (tipo in ('numero','data','outro')),
+  permitido boolean not null default true,
+  direcao   text not null default 'ambos' check (direcao in ('ambos','maior','menor')),
+  primary key (campo, quem),
+  check (direcao = 'ambos' or tipo in ('numero','data'))
+);
+insert into erp.regras_ajuste (campo, quem, rotulo, tipo)
+select c.campo, q.quem, c.rotulo, c.tipo from (values
+  ('titulos.pessoa_id', 'o fornecedor do título', 'outro'), ('titulos.numero', 'o número do título', 'outro'),
+  ('titulos.emissao', 'a emissão do título', 'data'), ('titulos.competencia', 'a competência do título', 'data'),
+  ('titulos.valor', 'o valor do título', 'numero'), ('titulos.descricao', 'a descrição do título', 'outro'),
+  ('parcelas.linhas', 'as parcelas (incluir ou tirar)', 'outro'), ('parcelas.numero', 'o número da parcela', 'outro'),
+  ('parcelas.vencimento', 'o vencimento da parcela', 'data'), ('parcelas.valor', 'o valor da parcela', 'numero'),
+  ('titulo_rateios.linhas', 'as linhas do rateio (incluir ou tirar)', 'outro'),
+  ('titulo_rateios.nucleo_economico_id', 'o núcleo econômico do rateio', 'outro'),
+  ('titulo_rateios.centro_custo_id', 'o centro de custo do rateio', 'outro'),
+  ('titulo_rateios.natureza_id', 'a natureza do rateio', 'outro'), ('titulo_rateios.fase_id', 'a fase do rateio', 'outro'),
+  ('titulo_rateios.percentual', 'o percentual do rateio', 'outro'),
+  ('documentos_fiscais.emitente_id', 'o emitente da nota', 'outro'), ('documentos_fiscais.tipo', 'o tipo da nota', 'outro'),
+  ('documentos_fiscais.numero', 'o número da nota', 'outro'), ('documentos_fiscais.serie', 'a série da nota', 'outro'),
+  ('documentos_fiscais.emissao', 'a emissão da nota', 'data'), ('documentos_fiscais.competencia', 'a competência da nota', 'data'),
+  ('documentos_fiscais.valor_bruto', 'o valor bruto da nota', 'numero'), ('documentos_fiscais.caucao_valor', 'a caução da nota', 'numero'),
+  ('documento_rateios.linhas', 'as linhas do rateio da nota (incluir ou tirar)', 'outro'),
+  ('documento_rateios.nucleo_economico_id', 'o núcleo econômico do rateio da nota', 'outro'),
+  ('documento_rateios.centro_custo_id', 'o centro de custo do rateio da nota', 'outro'),
+  ('documento_rateios.natureza_id', 'a natureza do rateio da nota', 'outro'),
+  ('documento_rateios.fase_id', 'a fase do rateio da nota', 'outro'),
+  ('documento_rateios.percentual', 'o percentual do rateio da nota', 'outro'),
+  ('documento_retencoes.linhas', 'as retenções da nota (incluir ou tirar)', 'outro'),
+  ('documento_retencoes.imposto', 'o imposto retido', 'outro'), ('documento_retencoes.orgao_id', 'o órgão da retenção', 'outro'),
+  ('documento_retencoes.valor', 'o valor da retenção', 'numero'), ('documento_retencoes.vencimento', 'o vencimento da retenção', 'data')
+) c(campo, rotulo, tipo) cross join (values ('AF'), ('AREA'), ('AUTOR')) q(quem);
+create function erp.tg_regras_ajuste() returns trigger language plpgsql as $$
+begin
+  perform erp.exigir_admin();
+  if tg_op <> 'UPDATE' or (new.campo, new.quem, new.rotulo, new.tipo) is distinct from (old.campo, old.quem, old.rotulo, old.tipo) then
+    raise exception 'As regras do ajuste são fixas; altere só se pode e para que lado';
+  end if;
+  return new;
+end $$;
+create trigger t_regras_ajuste before insert or update or delete on erp.regras_ajuste
+  for each row execute function erp.tg_regras_ajuste();
+create trigger t_aud_regras_ajuste after update on erp.regras_ajuste
+  for each row execute function erp.tg_auditoria('campo');
+
+-- Confere uma linha mudada no ajuste da revisão contra as regras (security definer na migration
+-- _erp_rls). p_titulo é o título em revisão (o do fornecedor, quando o ajuste é na nota).
+create function erp.conferir_ajuste(p_titulo uuid, p_tabela text, p_antes jsonb, p_depois jsonb)
+returns void language plpgsql stable as $$
+declare v_papeis text[] := '{}'; v_doc uuid; k text; v_campo text; v_sent int; v_tipo text; v_rotulo text; v_dir text[];
+begin
+  select documento_id into v_doc from erp.titulos where id = p_titulo;
+  if erp.estou_nas_listas(array['AF']) then v_papeis := v_papeis || 'AF'::text; end if;
+  if exists (select 1 from erp.titulo_rateios tr join erp.centro_aprovadores c on c.centro_custo_id = tr.centro_custo_id
+             join erp.usuarios u on u.id = c.user_id and u.ativo
+              where tr.titulo_id = p_titulo and c.user_id = erp.eu()) then
+    v_papeis := v_papeis || 'AREA'::text;
+  end if;
+  if erp.eu() in (erp.autor_lancamento('titulo', p_titulo), erp.autor_lancamento('documento', v_doc)) then
+    v_papeis := v_papeis || 'AUTOR'::text;
+  end if;
+  for k in
+    select '.linhas' where p_antes is null or p_depois is null
+    union all
+    select '.' || n.key from jsonb_each(p_depois) n
+     where p_antes is not null and n.value is distinct from p_antes -> n.key
+  loop
+    v_campo := p_tabela || k;
+    select min(tipo), min(rotulo) into v_tipo, v_rotulo from erp.regras_ajuste where campo = v_campo;
+    if v_tipo is null then raise exception 'O ajuste não muda %', v_campo; end if;
+    v_sent := 0;
+    if k <> '.linhas' and v_tipo = 'numero' then
+      v_sent := sign((p_depois ->> substr(k, 2))::numeric - (p_antes ->> substr(k, 2))::numeric);
+    elsif k <> '.linhas' and v_tipo = 'data' then
+      v_sent := sign((p_depois ->> substr(k, 2))::date - (p_antes ->> substr(k, 2))::date);
+    end if;
+    select array_agg(distinct direcao) into v_dir from erp.regras_ajuste
+     where campo = v_campo and quem = any(v_papeis) and permitido;
+    if v_dir is null then
+      raise exception 'No ajuste, você não pode mudar %', v_rotulo;
+    end if;
+    if v_sent <> 0 and not ('ambos' = any(v_dir) or (v_sent > 0 and 'maior' = any(v_dir)) or (v_sent < 0 and 'menor' = any(v_dir))) then
+      raise exception 'No ajuste, % só pode mudar para %', v_rotulo,
+        case when v_sent > 0 then 'menos' else 'mais' end;
+    end if;
+  end loop;
+end $$;
 
 -- Exceção à janela da competência, para uma nota ou um título avulso (S-063).
 create table erp.excecoes_competencia (
@@ -1215,16 +1452,19 @@ end $$;
 -- fica coberta pelo que já foi pago dos pedidos e ainda não cobriu outro título (o mais antigo
 -- primeiro), e soma só o que passa dele.
 create table erp.titulo_coberturas (
-  rateio_id       uuid not null references erp.titulo_rateios,
+  titulo_id       uuid not null references erp.titulos,
+  rodada          int not null,                  -- vale só na volta atual do título
+  rateio_id       uuid not null,                 -- a linha do rateio (pode sair no ajuste da revisão)
   adiantamento_id uuid not null references erp.titulos,
   valor           numeric(15,2) not null check (valor > 0),
-  primary key (rateio_id, adiantamento_id)
+  primary key (rateio_id, adiantamento_id, rodada)
 );
 create trigger t_alcada_titulo before insert or update or delete on erp.titulo_coberturas
   for each row execute function erp.tg_alcada_titulo();
 
 create function erp.cobertura(p_rateio uuid) returns numeric language sql stable as $$
-  select coalesce(sum(valor), 0) from erp.titulo_coberturas where rateio_id = p_rateio $$;
+  select coalesce(sum(c.valor), 0) from erp.titulo_coberturas c join erp.titulos t on t.id = c.titulo_id
+   where c.rateio_id = p_rateio and c.rodada = t.rodada $$;
 
 create function erp._cobrir_adiantamento(t erp.titulos) returns void language plpgsql as $$
 declare r record; a record; v_resto numeric; v_disp numeric; v_c numeric;
@@ -1245,16 +1485,17 @@ begin
       -- o abatido num título que não recebeu cobertura também já foi usado)
       v_disp := coalesce((select sum(valor) from erp.pagamentos where adiantamento_id = a.id), 0)
               - coalesce((select sum(greatest(coalesce(cob.v, 0), coalesce(ab.v, 0)))
-                            from (select tr.titulo_id as t, sum(c.valor) as v
-                                    from erp.titulo_coberturas c join erp.titulo_rateios tr on tr.id = c.rateio_id
-                                   where c.adiantamento_id = a.id group by tr.titulo_id) cob
+                            from (select c.titulo_id as t, sum(c.valor) as v
+                                    from erp.titulo_coberturas c join erp.titulos tc on tc.id = c.titulo_id
+                                   where c.adiantamento_id = a.id and tc.situacao <> 'cancelado' and c.rodada = tc.rodada
+                                   group by c.titulo_id) cob
                             full join (select pa.titulo_id as t, sum(q.principal + q.juros + q.multa - q.desconto) as v
                                          from erp.quitacoes q join erp.pagamentos g on g.id = q.pagamento_id
                                          join erp.parcelas pa on pa.id = q.parcela_id
                                         where g.adiantamento_id = a.id group by pa.titulo_id) ab using (t)), 0);
       v_c := least(v_resto, v_disp);
       if v_c > 0 then
-        insert into erp.titulo_coberturas (rateio_id, adiantamento_id, valor) values (r.id, a.id, v_c);
+        insert into erp.titulo_coberturas (titulo_id, rodada, rateio_id, adiantamento_id, valor) values (t.id, t.rodada, r.id, a.id, v_c);
         v_resto := v_resto - v_c;
       end if;
     end loop;
@@ -1322,19 +1563,24 @@ begin
   select etapas into v_etapas from erp.alcadas_pagamento
    where ate is null or v_acum <= ate order by (ate is null), ate limit 1;
   if v_etapas is null then raise exception 'Não há alçada de pagamento configurada para %', v_acum; end if;
-  insert into erp.titulo_alcadas (titulo_id, etapas, centro_custo_id, acumulado, titulos)
-  values (t.id, v_etapas, v_centro, v_acum, v_titulos);
+  insert into erp.titulo_alcadas (titulo_id, rodada, etapas, centro_custo_id, acumulado, titulos)
+  values (t.id, t.rodada, v_etapas, v_centro, v_acum, v_titulos);
 end $$;
 
 -- Etapa da vez: a primeira sem aprovação; nula quando aprovado por todas (ou sem alçada).
+-- Tudo da alçada vale na volta atual do título (titulos.rodada); as anteriores ficam no histórico.
 create function erp.alcada_etapa(p_titulo uuid) returns int language sql stable as $$
-  select min(i) from erp.titulo_alcadas a, generate_subscripts(a.etapas, 1) i
+  select min(i) from erp.titulo_alcadas a join erp.titulos t on t.id = a.titulo_id and t.rodada = a.rodada,
+         generate_subscripts(a.etapas, 1) i
    where a.titulo_id = p_titulo
-     and not exists (select 1 from erp.titulo_aprovacoes v where v.titulo_id = a.titulo_id and v.etapa = i and v.aprovado) $$;
+     and not exists (select 1 from erp.titulo_aprovacoes v where v.titulo_id = a.titulo_id and v.rodada = a.rodada
+                     and v.etapa = i and v.aprovado) $$;
 create function erp.alcada_pendente(p_titulo uuid) returns text language sql stable as $$
-  select etapas[erp.alcada_etapa(p_titulo)] from erp.titulo_alcadas where titulo_id = p_titulo $$;
+  select a.etapas[erp.alcada_etapa(p_titulo)] from erp.titulo_alcadas a join erp.titulos t on t.id = a.titulo_id and t.rodada = a.rodada
+   where a.titulo_id = p_titulo $$;
 create function erp.alcada_recusada(p_titulo uuid) returns boolean language sql stable as $$
-  select exists (select 1 from erp.titulo_aprovacoes where titulo_id = p_titulo and not aprovado) $$;
+  select exists (select 1 from erp.titulo_aprovacoes v join erp.titulos t on t.id = v.titulo_id and t.rodada = v.rodada
+                  where v.titulo_id = p_titulo and not v.aprovado) $$;
 
 -- Os títulos do mês que formaram o acumulado do centro até este título (só consulta), para quem
 -- aprova o título: o gestor da área, quem está numa lista das etapas dele, ou a diretoria.
@@ -1344,7 +1590,8 @@ returns table (titulo_id uuid, empresa_id uuid, pessoa text, competencia date, v
 language plpgsql stable as $$
 declare a erp.titulo_alcadas;
 begin
-  select * into a from erp.titulo_alcadas where titulo_alcadas.titulo_id = p_titulo;
+  select a0.* into a from erp.titulo_alcadas a0 join erp.titulos t0 on t0.id = a0.titulo_id and t0.rodada = a0.rodada
+   where a0.titulo_id = p_titulo;
   if a.titulo_id is null then raise exception 'Este título não tem alçada de pagamento'; end if;
   if not (erp.estou_nas_listas(a.etapas) or coalesce(erp.meu_papel(), '') = 'diretor'
           or exists (select 1 from erp.centro_aprovadores c where c.centro_custo_id = a.centro_custo_id and c.user_id = erp.eu())) then
@@ -1364,20 +1611,34 @@ begin
 end $$;
 
 -- Aprovar ou recusar a etapa da vez. Recusar exige justificativa e trava o título.
-create function erp.decidir_titulo(p_titulo uuid, p_aprovar boolean, p_justificativa text default null)
+-- p_revisao: em vez de decidir, pede o ajuste (p_aprovar é ignorado; o motivo vai em p_justificativa).
+-- Recusar cancela o título (e a nota dele) com estorno no livro.
+create function erp.decidir_titulo(p_titulo uuid, p_aprovar boolean, p_justificativa text default null,
+                                   p_revisao boolean default false)
 returns text language plpgsql as $$
 declare a erp.titulo_alcadas; v_etapa int; v_lista text; v_eu uuid := erp.eu();
 begin
   perform erp.exigir_editor();
   if v_eu is null then raise exception 'Usuário sem cadastro no ERP'; end if;
-  select * into a from erp.titulo_alcadas where titulo_id = p_titulo for update;
+  select a0.* into a from erp.titulo_alcadas a0 join erp.titulos t0 on t0.id = a0.titulo_id and t0.rodada = a0.rodada
+   where a0.titulo_id = p_titulo for update of t0;
   if a.titulo_id is null then raise exception 'Este título não tem alçada de pagamento'; end if;
   if erp.alcada_recusada(p_titulo) then raise exception 'O título foi recusado na alçada'; end if;
+  if erp.em_revisao(p_titulo) then raise exception 'O título está em revisão; aguarde o ajuste de quem lançou'; end if;
   v_etapa := erp.alcada_etapa(p_titulo);
   if v_etapa is null then raise exception 'O título já foi aprovado em todas as etapas'; end if;
   v_lista := a.etapas[v_etapa];
   if erp.autor_lancamento('titulo', p_titulo) = v_eu then raise exception 'Quem lançou não aprova o próprio lançamento'; end if;
-  if exists (select 1 from erp.titulo_aprovacoes where titulo_id = p_titulo and por = v_eu) then
+  -- quem ajustou e reenviou não aprova o ajuste; na nota relançada, quem lançou a de antes também não
+  if erp.autor_lancamento('titulo', (select substitui_id from erp.titulos where id = p_titulo)) = v_eu then
+    raise exception 'Quem lançou não aprova o próprio lançamento';
+  end if;
+  if (select r.reenviada_por from erp.titulo_revisoes r
+       where r.titulo_id in (p_titulo, (select substitui_id from erp.titulos where id = p_titulo))
+         and r.reenviada_em is not null order by r.reenviada_em desc limit 1) = v_eu then
+    raise exception 'Quem ajustou não aprova o ajuste';
+  end if;
+  if exists (select 1 from erp.titulo_aprovacoes where titulo_id = p_titulo and rodada = a.rodada and por = v_eu) then
     raise exception 'Você já aprovou uma etapa deste título';
   end if;
   if v_lista = 'AREA' then
@@ -1388,13 +1649,111 @@ begin
   elsif not erp.estou_nas_listas(array[v_lista]) then
     raise exception 'Esta etapa é de quem está em %', v_lista;
   end if;
+  if p_revisao then
+    if length(trim(coalesce(p_justificativa, ''))) = 0 then raise exception 'Pedir revisão exige o motivo'; end if;
+    insert into erp.titulo_revisoes (titulo_id, rodada, etapa, motivo, pedida_por) values (p_titulo, a.rodada, v_etapa, p_justificativa, v_eu);
+    return 'revisao';
+  end if;
   if not p_aprovar and length(trim(coalesce(p_justificativa, ''))) = 0 then
     raise exception 'Recusar exige justificativa';
   end if;
-  insert into erp.titulo_aprovacoes (titulo_id, etapa, lista, aprovado, justificativa, por)
-  values (p_titulo, v_etapa, v_lista, p_aprovar, p_justificativa, v_eu);
-  return case when not p_aprovar then 'recusado'
-              when erp.alcada_pendente(p_titulo) is null then 'aprovado' else 'pendente' end;
+  insert into erp.titulo_aprovacoes (titulo_id, rodada, etapa, lista, aprovado, justificativa, por)
+  values (p_titulo, a.rodada, v_etapa, v_lista, p_aprovar, p_justificativa, v_eu);
+  if not p_aprovar then
+    perform erp._cancelar_recusado(p_titulo);
+    return 'recusado';
+  end if;
+  return case when erp.alcada_pendente(p_titulo) is null then 'aprovado' else 'pendente' end;
+end $$;
+
+-- Desfaz o título na alçada, com estorno no livro. Título de nota desfaz a nota inteira
+-- (fornecedor e impostos), devolve as previsões consumidas e estorna a caução retida.
+-- 'recusa': a nota fica cancelada (o número fica livre); 'revisao': a nota volta a rascunho para
+-- ser relançada no reenvio. Nada pago volta por aqui: o estorno de pagamento fica para bancos.
+create function erp._desfazer_titulos(p_titulo uuid, p_motivo text) returns void language plpgsql as $$
+declare t erp.titulos; d erp.documentos_fiscais; v_ids uuid[]; x uuid;
+begin
+  select * into t from erp.titulos where id = p_titulo for update;
+  if t.documento_id is not null then
+    select * into d from erp.documentos_fiscais where id = t.documento_id for update;
+    select array_agg(id order by id) into v_ids from erp.titulos where documento_id = d.id and situacao <> 'cancelado';
+  else
+    v_ids := array[t.id];
+  end if;
+  if exists (select 1 from erp.quitacoes q join erp.parcelas pa on pa.id = q.parcela_id where pa.titulo_id = any(v_ids))
+     or exists (select 1 from erp.pagamentos where adiantamento_id = any(v_ids)) then
+    raise exception 'O título ou a nota dele já tem pagamento; o estorno do pagamento fica para o módulo de bancos';
+  end if;
+  foreach x in array v_ids loop
+    perform erp._estornar_titulo(x, null);
+    update erp.previsoes set situacao = 'aberta'
+     where situacao = 'consumida' and id in (select previsao_id from erp.titulo_previsoes where titulo_id = x);
+    update erp.titulos set situacao = 'cancelado', cancelamento = p_motivo where id = x;
+  end loop;
+  if d.id is not null then
+    if coalesce(d.caucao_valor, 0) > 0 then
+      insert into erp.caucao_movimentos (compromisso_id, tipo, valor, documento_id)
+      values (d.compromisso_id, 'estorno', d.caucao_valor, d.id);
+    end if;
+    if p_motivo = 'recusa' then
+      update erp.documentos_fiscais set situacao = 'cancelado', cancelamento = 'recusa' where id = d.id;
+    else
+      update erp.documentos_fiscais set situacao = 'rascunho', lancado_em = null where id = d.id;
+    end if;
+  end if;
+end $$;
+create function erp._cancelar_recusado(p_titulo uuid) returns void language plpgsql as $$
+begin perform erp._desfazer_titulos(p_titulo, 'recusa'); end $$;
+
+-- Reenvio depois do ajuste: a alçada recomeça do zero, numa volta nova. Título avulso ou pedido:
+-- confere de novo o que a confirmação confere, estorna o comprometido e lança o ajustado. Título
+-- de nota: a nota é relançada (p_vencimentos, ou os vencimentos de antes) e os títulos refeitos,
+-- consumindo p_previsoes ou, sem elas, as previsões que a nota consumia e que ainda casam com ela
+-- ajustada (vazio = nenhuma; nunca outras do contrato que a nota não consumia).
+create function erp.reenviar_titulo(p_titulo uuid, p_resposta text, p_vencimentos date[] default null,
+                                    p_previsoes uuid[] default null)
+returns uuid language plpgsql as $$
+declare t erp.titulos; d erp.documentos_fiscais; v_venc date[]; v_prev uuid[]; v_novo uuid;
+begin
+  perform erp.exigir_editor();
+  select * into t from erp.titulos where id = p_titulo for update;
+  if not erp.em_revisao(p_titulo) then raise exception 'O título não está em revisão'; end if;
+  if not erp.pode_ajustar(p_titulo) then
+    raise exception 'Quem reenvia é quem lançou, o gestor da área ou o AF';
+  end if;
+  if length(trim(coalesce(p_resposta, ''))) = 0 then raise exception 'Reenviar exige a resposta ao pedido'; end if;
+  update erp.titulo_revisoes set resposta = p_resposta where titulo_id = p_titulo and reenviada_em is null;
+  if t.documento_id is not null then
+    v_venc := coalesce(p_vencimentos,
+                       (select array_agg(vencimento order by numero) from erp.parcelas where titulo_id = t.id));
+    select array_agg(distinct tp.previsao_id) into v_prev
+      from erp.titulo_previsoes tp join erp.titulos x on x.id = tp.titulo_id
+     where x.documento_id = t.documento_id and x.situacao <> 'cancelado';
+    perform erp._desfazer_titulos(t.id, 'revisao');
+    if p_previsoes is null then
+      select * into d from erp.documentos_fiscais where id = t.documento_id;
+      select coalesce(array_agg(pr.id), '{}') into v_prev
+        from erp.previsoes pr where pr.id = any(coalesce(v_prev, '{}')) and erp._previsao_casa(pr, d);
+    else
+      v_prev := p_previsoes;
+    end if;
+    v_novo := erp.lancar_documento(t.documento_id, v_venc, v_prev);
+    update erp.titulos set substitui_id = t.id where id = v_novo;
+    return v_novo;
+  end if;
+  if not erp.rateio_completo('titulo', t.id) then raise exception 'O rateio do título não soma 100%%'; end if;
+  if coalesce((select sum(valor) from erp.parcelas where titulo_id = t.id), 0) <> t.valor then
+    raise exception 'As parcelas não somam o valor do título';
+  end if;
+  if t.tipo = 'adiantamento' and (select count(*) from erp.titulo_rateios where titulo_id = t.id) <> 1 then
+    raise exception 'O pedido de adiantamento tem um núcleo e um centro de custo só';
+  end if;
+  perform erp.checar_competencia('titulo', t.id, t.emissao, t.competencia);
+  perform erp._estornar_titulo(t.id, 'comprometido');
+  update erp.titulos set rodada = rodada + 1 where id = t.id returning * into t;
+  perform erp._comprometer_titulo(t);
+  perform erp._definir_alcada(t.id);
+  return t.id;
 end $$;
 
 -- Conferências da trava do adiantamento (S-034): security definer na migration _erp_rls, para
@@ -1460,6 +1819,7 @@ begin
   if g.empresa_id <> t.empresa_id then raise exception 'Pagamento e título são de empresas diferentes'; end if;
   if g.pessoa_id <> t.pessoa_id then raise exception 'O pagamento foi para outra pessoa'; end if;
   if erp.alcada_recusada(t.id) then raise exception 'O título foi recusado na alçada'; end if;
+  if erp.em_revisao(t.id) then raise exception 'O título está em revisão'; end if;
   if erp.alcada_pendente(t.id) is not null then
     raise exception 'O título ainda não foi aprovado: falta %', erp.alcada_pendente(t.id);
   end if;
@@ -1682,7 +2042,7 @@ from erp.pagamentos g where erp.pagamento_saldo(g.id) > 0;
 
 create view erp.v_caucao with (security_invoker = true) as
 select compromisso_id,
-       sum(valor) filter (where tipo = 'retencao') as retido,
+       sum(valor) filter (where tipo = 'retencao') - coalesce(sum(valor) filter (where tipo = 'estorno'), 0) as retido,
        coalesce(sum(valor) filter (where tipo = 'liberacao'), 0) as liberado,
        coalesce(sum(valor) filter (where tipo = 'uso_terceiro'), 0) as usado_com_terceiros,
        erp.caucao_saldo(compromisso_id) as saldo
@@ -1692,7 +2052,8 @@ from erp.caucao_movimentos group by compromisso_id;
 create view erp.v_previsoes with (security_invoker = true) as
 select p.*, coalesce(c.consumido, 0) as consumido, p.valor - coalesce(c.consumido, 0) as saldo
 from erp.previsoes p
-left join (select previsao_id, sum(valor) as consumido from erp.titulo_previsoes group by 1) c on c.previsao_id = p.id;
+left join (select tp.previsao_id, sum(tp.valor) as consumido from erp.titulo_previsoes tp join erp.titulos t on t.id = tp.titulo_id
+           where t.situacao <> 'cancelado' group by 1) c on c.previsao_id = p.id;
 
 -- Fluxo de caixa: previsto em aberto + comprometido em aberto + realizado, por dia de caixa.
 -- Não é tabela: é a soma do livro.

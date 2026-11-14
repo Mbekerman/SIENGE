@@ -1495,7 +1495,12 @@ select pg_temp.erro_igual($$select erp.decidir_titulo('82000000-0000-0000-0000-0
 select pg_temp.como(:'analista');
 select pg_temp.erro_igual($$insert into erp.quitacoes (pagamento_id, parcela_id, principal)
   select '83000000-0000-0000-0000-000000000001', id, 1000 from erp.parcelas where titulo_id = '82000000-0000-0000-0000-000000000003'$$,
-  'O título foi recusado na alçada', 'alçada: recusado não se paga');
+  'O título não está aberto', 'alçada: recusado é cancelado e não se paga');
+select pg_temp.ok((select situacao = 'cancelado' and cancelamento = 'recusa' from erp.titulos where id = '82000000-0000-0000-0000-000000000003')
+                  and pg_temp.livro('comprometido', '82000000-0000-0000-0000-000000000003') = 0,
+  'alçada: recusado sai do comprometido do livro, por estorno');
+select pg_temp.ok((select count(*) > 1 from erp.lancamentos where titulo_id = '82000000-0000-0000-0000-000000000003'),
+  'alçada: o lançamento original fica no livro; o estorno é outra linha');
 -- outro mês começa do zero; exatamente 50 mil ainda é a faixa de baixo
 insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
   ('82000000-0000-0000-0000-000000000006', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-06-02', '2026-06-01', 20000),
@@ -1592,8 +1597,8 @@ insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('8200000
 insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
   ('82000000-0000-0000-0000-000000000005', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
 select erp.confirmar_titulo('82000000-0000-0000-0000-000000000005');
--- SPE em maio: 30000 + 1000 + 100 em Marketing, mais 500 do mesmo fornecedor em Obra
-select pg_temp.ok((select acumulado = 31600 and etapas = '{AREA,AF}' from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000005'),
+-- SPE em maio: 30000 + 100 em Marketing (o título 3, recusado, foi cancelado), mais 500 do mesmo fornecedor em Obra
+select pg_temp.ok((select acumulado = 30600 and etapas = '{AREA,AF}' from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000005'),
   'alçada: somando só a empresa, a Incorporadora fica de fora (configurável)');
 -- S-063: o mesmo fornecedor soma (padrão); desligado, só o centro
 select pg_temp.como(:'diretor');
@@ -1605,7 +1610,7 @@ insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('8200000
 insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
   ('82000000-0000-0000-0000-000000000011', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
 select erp.confirmar_titulo('82000000-0000-0000-0000-000000000011');
-select pg_temp.ok((select acumulado = 31200 from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000011'),
+select pg_temp.ok((select acumulado = 30200 from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000011'),
   'alçada: sem somar o fornecedor, o que ele tem em Obra fica de fora (configurável)');
 -- S-063: competência no máximo um mês antes ou depois da emissão, salvo exceção
 insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
@@ -1782,7 +1787,7 @@ select erp.decidir_titulo('81000000-0000-0000-0000-000000000011', false, 'sem co
 select pg_temp.como(:'analista');
 select pg_temp.erro_igual(format($$insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor, adiantamento_id) values
   (%L, %L, '10000000-0000-0000-0000-000000000008', %L, %L, '2026-10-05', 100, '81000000-0000-0000-0000-000000000011')$$, :'spe', :'conta_spe', :'ne_vm', :'cc_mkt'),
-  'O título foi recusado na alçada', 'adiantamento: pedido recusado não paga');
+  'O pedido de adiantamento não está aberto', 'adiantamento: pedido recusado é cancelado e não paga');
 -- a transferência entre contas próprias passa a conferência (o 'passou' só vem depois dela)
 select pg_temp.erro_igual(format($$do $x$ begin
   insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, data, valor)
@@ -1920,6 +1925,244 @@ select erp.confirmar_titulo('82000000-0000-0000-0000-000000000034');
 select pg_temp.ok((select sum(c.valor) = 1000 from erp.titulo_coberturas c join erp.titulo_rateios tr on tr.id = c.rateio_id
                    where tr.titulo_id = '82000000-0000-0000-0000-000000000034'),
   'adiantamento: título coberto e depois abatido pelo mesmo adiantamento não consome duas vezes');
+-- pedir revisão: o título fica aberto e no livro; quem lançou, o gestor da área ou o AF ajustam
+-- qualquer coisa e reenviam; a alçada recomeça do zero numa volta nova
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor, descricao) values
+  ('82000000-0000-0000-0000-000000000040', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2027-01-04', '2027-01-01', 1000, 'campanha');
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('82000000-0000-0000-0000-000000000040', 1, '2027-01-20', 1000);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('82000000-0000-0000-0000-000000000040', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select erp.confirmar_titulo('82000000-0000-0000-0000-000000000040');
+select pg_temp.erro_igual($$select erp.decidir_titulo('82000000-0000-0000-0000-000000000040', false, 'trocar a natureza', true)$$,
+  'Quem lançou não aprova o próprio lançamento', 'revisão: quem lançou não pede revisão do próprio título');
+select pg_temp.erro_igual($$update erp.titulos set valor = 1200 where id = '82000000-0000-0000-0000-000000000040'$$,
+  'Título confirmado não se edita', 'revisão: sem pedido de revisão, o título não se edita');
+select pg_temp.erro_igual($$select erp.reenviar_titulo('82000000-0000-0000-0000-000000000040', 'x')$$,
+  'O título não está em revisão', 'revisão: sem pedido de revisão, não há reenvio');
+select pg_temp.erro_igual($$insert into erp.titulo_revisoes (titulo_id, rodada, etapa, motivo, pedida_por)
+  values ('82000000-0000-0000-0000-000000000040', 1, 1, 'x', '00000000-0000-0000-0000-00000000000e')$$,
+  'A revisão do título só se grava pela aprovação e pelo reenvio', 'revisão: o pedido só se grava pela aprovação');
+select pg_temp.como(:'gestor');
+select pg_temp.ok(erp.decidir_titulo('82000000-0000-0000-0000-000000000040', true) = 'pendente', 'revisão: o gestor aprova a etapa dele');
+select pg_temp.como(:'contador');
+select pg_temp.erro_igual($$select erp.decidir_titulo('82000000-0000-0000-0000-000000000040', false, ' ', true)$$,
+  'Pedir revisão exige o motivo', 'revisão: pedir revisão exige o motivo');
+select pg_temp.ok(erp.decidir_titulo('82000000-0000-0000-0000-000000000040', false, 'o valor é 1.200 e a natureza é 05.01.02', true) = 'revisao',
+  'revisão: o AF pede revisão');
+select pg_temp.ok(erp.em_revisao('82000000-0000-0000-0000-000000000040')
+                  and (select situacao = 'aberto' from erp.titulos where id = '82000000-0000-0000-0000-000000000040')
+                  and pg_temp.livro('comprometido', '82000000-0000-0000-0000-000000000040') = -1000,
+  'revisão: o título continua aberto e no livro');
+select pg_temp.erro_igual($$select erp.decidir_titulo('82000000-0000-0000-0000-000000000040', true)$$,
+  'O título está em revisão; aguarde o ajuste de quem lançou', 'revisão: em revisão, ninguém aprova');
+select pg_temp.erro_igual($$insert into erp.quitacoes (pagamento_id, parcela_id, principal)
+  select '83000000-0000-0000-0000-000000000001', id, 1 from erp.parcelas where titulo_id = '82000000-0000-0000-0000-000000000040'$$,
+  'O título está em revisão', 'revisão: em revisão, não se paga');
+select pg_temp.como(:'diretor2');
+select pg_temp.erro_igual($$update erp.titulos set valor = 1200 where id = '82000000-0000-0000-0000-000000000040'$$,
+  'Título confirmado não se edita', 'revisão: quem não lançou, não é gestor da área nem AF não ajusta');
+select pg_temp.erro_igual($$select erp.reenviar_titulo('82000000-0000-0000-0000-000000000040', 'feito')$$,
+  'Quem reenvia é quem lançou, o gestor da área ou o AF', 'revisão: nem reenvia');
+-- o AF ajusta tudo: valor, parcela, vencimento, natureza e observação
+select pg_temp.como(:'contador');
+select pg_temp.erro_igual($$update erp.titulos set empresa_id = '20000000-0000-0000-0000-000000000001' where id = '82000000-0000-0000-0000-000000000040'$$,
+  'A empresa do registro não muda; crie outro', 'revisão: a empresa do título não muda no ajuste');
+update erp.titulos set valor = 1200, descricao = 'campanha de janeiro' where id = '82000000-0000-0000-0000-000000000040';
+select pg_temp.erro_igual($$select erp.reenviar_titulo('82000000-0000-0000-0000-000000000040', 'valor corrigido')$$,
+  'As parcelas não somam o valor do título', 'revisão: o reenvio confere o título como a confirmação');
+update erp.parcelas set valor = 1200, vencimento = '2027-01-25' where titulo_id = '82000000-0000-0000-0000-000000000040';
+update erp.titulo_rateios set natureza_id = pg_temp.nat('05.01.02') where titulo_id = '82000000-0000-0000-0000-000000000040';
+select pg_temp.erro_igual($$select erp.reenviar_titulo('82000000-0000-0000-0000-000000000040', '')$$,
+  'Reenviar exige a resposta ao pedido', 'revisão: reenviar exige a resposta');
+select erp.reenviar_titulo('82000000-0000-0000-0000-000000000040', 'valor e natureza corrigidos');
+select pg_temp.ok(not erp.em_revisao('82000000-0000-0000-0000-000000000040')
+                  and (select rodada = 2 from erp.titulos where id = '82000000-0000-0000-0000-000000000040')
+                  and (select reenviada_por = :'contador' and pedida_por = :'contador' and etapa = 2 and rodada = 1
+                       from erp.titulo_revisoes where titulo_id = '82000000-0000-0000-0000-000000000040'),
+  'revisão: o pedido e o reenvio ficam registrados, e o título passa à volta 2');
+select pg_temp.ok(pg_temp.livro('comprometido', '82000000-0000-0000-0000-000000000040') = -1200
+                  and (select sum(valor) from erp.lancamentos where titulo_id = '82000000-0000-0000-0000-000000000040'
+                       and natureza_id = pg_temp.nat('05.01.02') and data_caixa = '2027-01-25') = -1200
+                  and (select sum(valor) from erp.lancamentos where titulo_id = '82000000-0000-0000-0000-000000000040'
+                       and natureza_id = pg_temp.nat('05.01.04')) = 0,
+  'revisão: o livro estorna o comprometido antigo e lança o ajustado');
+select pg_temp.ok(erp.alcada_pendente('82000000-0000-0000-0000-000000000040') = 'AREA'
+                  and (select acumulado = 1200 from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000040' and rodada = 2),
+  'revisão: a alçada recomeça do zero, recalculada pelo título ajustado');
+select pg_temp.erro_igual($$select erp.reenviar_titulo('82000000-0000-0000-0000-000000000040', 'de novo')$$,
+  'O título não está em revisão', 'revisão: reenviado, não reenvia de novo');
+select pg_temp.como(:'gestor');
+select pg_temp.ok(erp.decidir_titulo('82000000-0000-0000-0000-000000000040', true) = 'pendente', 'revisão: o gestor aprova de novo, na volta nova');
+select pg_temp.como(:'contador');
+select pg_temp.erro_igual($$select erp.decidir_titulo('82000000-0000-0000-0000-000000000040', true)$$,
+  'Quem ajustou não aprova o ajuste', 'revisão: quem ajustou e reenviou não aprova');
+select pg_temp.como(:'diretor');
+insert into erp.listas_financeiro (lista, user_id) values ('AF', :'diretor2') on conflict do nothing;
+select pg_temp.como(:'diretor2');
+select erp.decidir_titulo('82000000-0000-0000-0000-000000000040', true) as dec40 \gset
+select pg_temp.ok(:'dec40' = 'aprovado'
+                  and (select count(*) = 1 from erp.titulo_aprovacoes where titulo_id = '82000000-0000-0000-0000-000000000040' and rodada = 1)
+                  and (select count(*) = 2 from erp.titulo_aprovacoes where titulo_id = '82000000-0000-0000-0000-000000000040' and rodada = 2),
+  'revisão: outro AF aprova; as decisões da volta 1 ficam no histórico');
+-- regras do ajuste: o admin diz o que cada um muda e, em número e data, para que lado
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual($$update erp.regras_ajuste set direcao = 'menor' where campo = 'titulos.valor'$$,
+  'Só o administrador pode mudar a configuração', 'ajuste: só o admin muda as regras do ajuste');
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual($$insert into erp.regras_ajuste (campo, quem, rotulo, tipo) values ('titulos.empresa_id', 'AF', 'a empresa', 'outro')$$,
+  'As regras do ajuste são fixas; altere só se pode e para que lado', 'ajuste: as linhas das regras são fixas');
+select pg_temp.falha($$update erp.regras_ajuste set direcao = 'maior' where campo = 'titulos.descricao'$$,
+  'ajuste: só número e data têm lado');
+update erp.regras_ajuste set direcao = 'menor' where campo = 'titulos.valor' and quem = 'AUTOR';
+update erp.regras_ajuste set permitido = false where campo = 'parcelas.vencimento' and quem = 'AUTOR';
+update erp.regras_ajuste set permitido = false where campo = 'titulo_rateios.natureza_id' and quem = 'AREA';
+update erp.regras_ajuste set direcao = 'maior' where campo = 'titulos.emissao' and quem = 'AUTOR';
+-- cada um com um papel só, para ver a regra de cada papel (quem tem mais de um pode o que algum deles pode)
+select string_agg(user_id::text, ',') as af_antes from erp.listas_financeiro where lista = 'AF' \gset
+delete from erp.listas_financeiro where lista = 'AF' and user_id in (:'gestor', :'analista');
+select pg_temp.ok((select count(*) = 4 from erp.auditoria where tabela = 'regras_ajuste'), 'ajuste: mudar as regras fica na auditoria');
+select pg_temp.como(:'analista');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor, descricao) values
+  ('82000000-0000-0000-0000-000000000041', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2027-01-04', '2027-01-01', 1000, 'evento');
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('82000000-0000-0000-0000-000000000041', 1, '2027-01-20', 1000);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('82000000-0000-0000-0000-000000000041', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select erp.confirmar_titulo('82000000-0000-0000-0000-000000000041');
+select pg_temp.como(:'gestor');
+select erp.decidir_titulo('82000000-0000-0000-0000-000000000041', false, 'rever valor e vencimento', true);
+select pg_temp.erro_igual($$update erp.titulo_rateios set natureza_id = pg_temp.nat('05.01.02') where titulo_id = '82000000-0000-0000-0000-000000000041'$$,
+  'No ajuste, você não pode mudar a natureza do rateio', 'ajuste: campo travado para o gestor da área não muda');
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual($$update erp.titulos set valor = 1100 where id = '82000000-0000-0000-0000-000000000041'$$,
+  'No ajuste, o valor do título só pode mudar para menos', 'ajuste: só para menos recusa aumentar');
+select pg_temp.erro_igual($$update erp.parcelas set vencimento = '2027-01-25' where titulo_id = '82000000-0000-0000-0000-000000000041'$$,
+  'No ajuste, você não pode mudar o vencimento da parcela', 'ajuste: campo travado para quem lançou não muda');
+select pg_temp.erro_igual($$update erp.titulos set emissao = '2027-01-03' where id = '82000000-0000-0000-0000-000000000041'$$,
+  'No ajuste, a emissão do título só pode mudar para mais', 'ajuste: só para mais recusa voltar a data');
+update erp.titulos set valor = 900, descricao = 'evento menor', emissao = '2027-01-05' where id = '82000000-0000-0000-0000-000000000041';
+update erp.parcelas set valor = 900 where titulo_id = '82000000-0000-0000-0000-000000000041';
+update erp.titulo_rateios set natureza_id = pg_temp.nat('05.01.02') where titulo_id = '82000000-0000-0000-0000-000000000041';
+select pg_temp.ok((select valor = 900 from erp.titulos where id = '82000000-0000-0000-0000-000000000041'),
+  'ajuste: quem lançou diminui o valor e muda o que segue liberado');
+select pg_temp.como(:'contador');
+update erp.parcelas set vencimento = '2027-01-25' where titulo_id = '82000000-0000-0000-0000-000000000041';
+select pg_temp.ok((select vencimento = '2027-01-25' from erp.parcelas where titulo_id = '82000000-0000-0000-0000-000000000041'),
+  'ajuste: o AF segue com o que a regra dele libera');
+select pg_temp.erro_igual($$select erp.conferir_ajuste('82000000-0000-0000-0000-000000000041', 'titulos', '{"novo": 1}', '{"novo": 2}')$$,
+  'O ajuste não muda titulos.novo', 'ajuste: coluna que não está nas regras (uma nova, no futuro) não muda');
+select pg_temp.como(:'diretor');
+insert into erp.listas_financeiro (lista, user_id) values ('AF', :'gestor');
+select pg_temp.como(:'gestor');
+update erp.titulo_rateios set natureza_id = pg_temp.nat('05.01.04') where titulo_id = '82000000-0000-0000-0000-000000000041';
+select pg_temp.ok(true, 'ajuste: o gestor que também é AF pode o que o AF pode');
+select pg_temp.como(:'diretor');
+insert into erp.listas_financeiro (lista, user_id)
+select 'AF', x::uuid from unnest(string_to_array(:'af_antes', ',')) x on conflict do nothing;
+update erp.regras_ajuste set direcao = 'ambos', permitido = true;
+-- revisão de título de nota: ajusta-se a nota, e o reenvio a relança
+select pg_temp.como(:'analista');
+select erp.previsao_saldo(id) as prev0 from erp.previsoes where compromisso_id = '60000000-0000-0000-0000-000000000002' \gset
+select erp.caucao_saldo('60000000-0000-0000-0000-000000000002') as cau0 \gset
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, compromisso_id, tipo, numero, emissao, competencia, valor_bruto)
+values ('70000000-0000-0000-0000-000000000661', :'spe', '10000000-0000-0000-0000-000000000005', '60000000-0000-0000-0000-000000000002',
+        'nfse', '661', '2027-01-05', '2027-01-01', 1000);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+values ('70000000-0000-0000-0000-000000000661', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), 100);
+insert into erp.documento_retencoes (documento_id, imposto, valor, orgao_id, vencimento)
+values ('70000000-0000-0000-0000-000000000661', 'iss', 50, '10000000-0000-0000-0000-000000000006', '2027-02-10');
+insert into erp.previsoes (id, empresa_id, origem, pessoa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor) values
+  ('68000000-0000-0000-0000-000000000661', :'spe', 'manual', '10000000-0000-0000-0000-000000000005', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), '2027-01-01', '2027-01-20', 1000);
+select erp.lancar_documento('70000000-0000-0000-0000-000000000661', array['2027-01-20']::date[], array['68000000-0000-0000-0000-000000000661'::uuid]) as tit661 \gset
+select pg_temp.erro_igual($$update erp.documento_retencoes set valor = 60 where documento_id = '70000000-0000-0000-0000-000000000661'$$,
+  'A nota já foi lançada; documento_retencoes não muda', 'revisão: sem revisão, a nota lançada não muda');
+select pg_temp.como(:'diretor2');
+select erp.decidir_titulo(:'tit661', false, 'o ISS é de 60', true);
+select pg_temp.erro_igual(format($$update erp.titulos set valor = 1 where id = %L$$, :'tit661'),
+  'Título confirmado não se edita', 'revisão: título de nota não se edita direto; ajusta-se a nota');
+select pg_temp.como(:'diretor');
+update erp.regras_ajuste set direcao = 'menor' where campo = 'documento_retencoes.valor';
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual($$update erp.documento_retencoes set valor = 60 where documento_id = '70000000-0000-0000-0000-000000000661'$$,
+  'No ajuste, o valor da retenção só pode mudar para menos', 'ajuste: a regra vale também na nota');
+select pg_temp.como(:'diretor');
+update erp.regras_ajuste set direcao = 'ambos' where campo = 'documento_retencoes.valor';
+update erp.regras_ajuste set permitido = false where campo = 'documentos_fiscais.valor_bruto';
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual($$update erp.documentos_fiscais set valor_bruto = 1100 where id = '70000000-0000-0000-0000-000000000661'$$,
+  'No ajuste, você não pode mudar o valor bruto da nota', 'ajuste: a regra vale no cabeçalho da nota');
+select pg_temp.como(:'diretor');
+update erp.regras_ajuste set permitido = true where campo = 'documentos_fiscais.valor_bruto' and quem = 'AUTOR';
+delete from erp.listas_financeiro where lista = 'AF' and user_id = :'analista';
+select pg_temp.como(:'analista');
+update erp.documentos_fiscais set valor_bruto = 1100 where id = '70000000-0000-0000-0000-000000000661';
+update erp.documentos_fiscais set valor_bruto = 1000 where id = '70000000-0000-0000-0000-000000000661';
+select pg_temp.ok(true, 'ajuste: na nota, quem lançou pode o que a regra dele libera');
+select pg_temp.como(:'diretor');
+insert into erp.listas_financeiro (lista, user_id) values ('AF', :'analista');
+update erp.regras_ajuste set permitido = true where campo = 'documentos_fiscais.valor_bruto';
+select pg_temp.como(:'analista');
+update erp.documento_retencoes set valor = 60 where documento_id = '70000000-0000-0000-0000-000000000661';
+update erp.documentos_fiscais set competencia = '2027-01-01' where id = '70000000-0000-0000-0000-000000000661';
+select erp.reenviar_titulo(:'tit661', 'ISS corrigido') as tit661b \gset
+select pg_temp.ok(:'tit661b' <> :'tit661'
+                  and (select situacao = 'cancelado' and cancelamento = 'revisao' from erp.titulos where id = :'tit661')
+                  and (select substitui_id = :'tit661' and valor = 890 and situacao = 'aberto' from erp.titulos where id = :'tit661b')
+                  and (select valor = 60 from erp.titulos where documento_id = '70000000-0000-0000-0000-000000000661'
+                       and tipo = 'imposto' and situacao = 'aberto')
+                  and (select situacao = 'lancado' from erp.documentos_fiscais where id = '70000000-0000-0000-0000-000000000661'),
+  'revisão: a nota ajustada é relançada e os títulos dela refeitos (1.000 − 60 de ISS − 50 de caução)');
+select pg_temp.ok(erp.caucao_saldo('60000000-0000-0000-0000-000000000002') = :'cau0'::numeric + 50
+                  and (select erp.previsao_saldo(id) from erp.previsoes where compromisso_id = '60000000-0000-0000-0000-000000000002') = :'prev0'::numeric
+                  and erp.previsao_saldo('68000000-0000-0000-0000-000000000661') = 0
+                  and (select sum(tp.valor) = 1000 from erp.titulo_previsoes tp where tp.titulo_id = :'tit661b')
+                  and (select coalesce(sum(l.valor), 0) = -950 from erp.lancamentos l join erp.titulos t on t.id = l.titulo_id
+                       where t.documento_id = '70000000-0000-0000-0000-000000000661' and l.estagio = 'comprometido'),
+  'revisão: caução, previsão e livro contam a nota uma vez só depois do relançamento');
+select pg_temp.ok(erp.alcada_pendente(:'tit661b') = 'AREA', 'revisão: o título refeito recomeça a alçada');
+select pg_temp.erro_igual(format($$select erp.decidir_titulo(%L, true)$$, :'tit661b'),
+  'Quem lançou não aprova o próprio lançamento', 'revisão: quem lançou e ajustou a nota não aprova o título refeito');
+-- nova revisão que muda a natureza: a previsão que não casa mais fica livre, e o relançamento segue
+select pg_temp.como(:'diretor2');
+select erp.decidir_titulo(:'tit661b', false, 'a natureza é 04.02', true);
+select pg_temp.como(:'analista');
+update erp.documento_rateios set natureza_id = pg_temp.nat('04.02') where documento_id = '70000000-0000-0000-0000-000000000661';
+select erp.reenviar_titulo(:'tit661b', 'natureza corrigida') as tit661c \gset
+select pg_temp.ok(erp.previsao_saldo('68000000-0000-0000-0000-000000000661') = 1000
+                  and not exists (select 1 from erp.titulo_previsoes where titulo_id = :'tit661c'),
+  'revisão: no relançamento, a previsão que deixou de casar com a nota volta a ficar livre');
+-- recusar o título de uma nota cancela a nota inteira: impostos, previsão e caução voltam
+select pg_temp.como(:'analista');
+select erp.previsao_saldo(id) as prev_antes from erp.previsoes where compromisso_id = '60000000-0000-0000-0000-000000000002' \gset
+select erp.caucao_saldo('60000000-0000-0000-0000-000000000002') as caucao_antes \gset
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, compromisso_id, tipo, numero, emissao, competencia, valor_bruto)
+values ('70000000-0000-0000-0000-000000000660', :'spe', '10000000-0000-0000-0000-000000000005', '60000000-0000-0000-0000-000000000002',
+        'nfse', '660', '2027-01-05', '2027-01-01', 1000);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+values ('70000000-0000-0000-0000-000000000660', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), 100);
+insert into erp.documento_retencoes (documento_id, imposto, valor, orgao_id, vencimento)
+values ('70000000-0000-0000-0000-000000000660', 'iss', 50, '10000000-0000-0000-0000-000000000006', '2027-02-10');
+insert into erp.previsoes (id, empresa_id, origem, pessoa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor) values
+  ('68000000-0000-0000-0000-000000000660', :'spe', 'manual', '10000000-0000-0000-0000-000000000005', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), '2027-01-01', '2027-01-20', 1000);
+select erp.lancar_documento('70000000-0000-0000-0000-000000000660', array['2027-01-20']::date[], array['68000000-0000-0000-0000-000000000660'::uuid]) as tit660 \gset
+select pg_temp.ok(erp.caucao_saldo('60000000-0000-0000-0000-000000000002') = :'caucao_antes'::numeric + 50
+                  and erp.previsao_saldo('68000000-0000-0000-0000-000000000660') = 0,
+  'recusa: (antes) a nota retém caução e consome a previsão');
+select pg_temp.como(:'diretor2');
+select pg_temp.ok(erp.decidir_titulo(:'tit660', false, 'serviço não medido') = 'recusado', 'recusa: o gestor da obra recusa o título da nota');
+select pg_temp.ok((select situacao = 'cancelado' and cancelamento = 'recusa' from erp.documentos_fiscais where id = '70000000-0000-0000-0000-000000000660')
+                  and (select bool_and(situacao = 'cancelado') and count(*) = 2 from erp.titulos where documento_id = '70000000-0000-0000-0000-000000000660'),
+  'recusa: a nota e todos os títulos dela (fornecedor e imposto) são cancelados');
+select pg_temp.ok((select coalesce(sum(l.valor), 0) = 0 from erp.lancamentos l join erp.titulos t on t.id = l.titulo_id
+                   where t.documento_id = '70000000-0000-0000-0000-000000000660'),
+  'recusa: o livro estorna o comprometido dos títulos e o consumo da previsão');
+select pg_temp.ok(erp.caucao_saldo('60000000-0000-0000-0000-000000000002') = :'caucao_antes'::numeric
+                  and erp.previsao_saldo('68000000-0000-0000-0000-000000000660') = 1000
+                  and (select situacao = 'aberta' from erp.previsoes where id = '68000000-0000-0000-0000-000000000660'),
+  'recusa: a caução retida é estornada e a previsão volta a ter o saldo');
+select pg_temp.como(:'analista');
+insert into erp.documentos_fiscais (empresa_id, emitente_id, compromisso_id, tipo, numero, emissao, competencia, valor_bruto)
+values (:'spe', '10000000-0000-0000-0000-000000000005', '60000000-0000-0000-0000-000000000002', 'nfse', '660', '2027-01-05', '2027-01-01', 900);
+select pg_temp.ok(true, 'recusa: a nota recusada libera o número para lançar a versão certa');
 rollback;
 select pg_temp.ok(not exists (
   select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
