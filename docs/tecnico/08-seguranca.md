@@ -65,8 +65,8 @@ Regra do Moises (8/nov/2026): controles, segurança da informação e SLA são a
 
 | Id | Gravidade | Onde | Desde |
 | --- | --- | --- | --- |
-| S-070 | Baixa | Cobertura de testes do adiantamento (PR #19) | 14/nov/2026 |
-| S-069 | Média | Cobertura do adiantamento ignora onde ele foi abatido | 14/nov/2026 |
+| S-070 | Baixa · **corrigida no PR #21** (`6b76924`), conferida; passa a corrigida no merge | Cobertura de testes do adiantamento (PR #19) | 14/nov/2026 |
+| S-069 | Média · **corrigida no PR #21** (`6b76924`), conferida; passa a corrigida no merge | Cobertura do adiantamento ignora onde ele foi abatido | 14/nov/2026 |
 | S-068 | Média (desenho) | Janela da competência ancorada na emissão digitada | 14/nov/2026 |
 | S-062 | Média (latente; primeiro grant) | `titulos_do_acumulado` lê por baixo do RLS | 14/nov/2026 |
 | S-050 | Baixa | Deploy do `bkm_dev` colado à mão | 14/nov/2026 |
@@ -218,3 +218,4 @@ Ainda não há código para revisar nestes pontos; ficam como requisito para que
 | 14/nov/2026 | PR #16 (`770024e`, 347 testes): S-060 conferida fora da suíte, com duas sessões confirmando ao mesmo tempo títulos de 30 mil no Marketing. Com a trava, o segundo espera e soma 60 mil (AD); sem a trava, os dois ficam com 30 mil (AF). 9 mutações nas correções e nas lacunas da S-065, todas pegas. S-062 fica para o primeiro grant; S-061 e S-063 dependem do Moises |
 | 14/nov/2026 | PR #17 (S-063; `f19cce5`, 360 testes, juntado em `dcf133e`): 13 mutações próprias, 9 pegas; as 4 que sobram viram a S-067. Revisão do desenho: a janela se ancora na emissão digitada (S-068). PR #16 juntado (`f9dfff1`): S-060, S-064, S-065 e S-066 passam a corrigidas; S-063 também |
 | 14/nov/2026 | PR #19 (S-061 e S-067; `29e4698`, 386 testes, juntado em `e4851bb`): 28 mutações próprias no adiantamento, 25 pegas, 1 equivalente, 2 lacunas (S-070); as 4 da S-067 pegas. Revisão do desenho: a cobertura não olha onde o adiantamento foi abatido (S-069). Consequência para o adaptador do Sienge e o front: pagamento e quitações na mesma transação, e adiantamento importado precisa de pedido |
+| 14/nov/2026 | PR #21 (S-069 e S-070; `6b76924`, 390 testes): cada título atendido pelo pedido consome o maior entre o que ele cobriu e o que foi abatido nele (as quitações somam juros e multa menos desconto, igual ao `pagamento_saldo`). 6 mutações próprias (inner e left no lugar do full join, abatido de qualquer pagamento, cobertura de qualquer pedido, núcleo, `least`), todas pegas |
