@@ -1,8 +1,8 @@
-# Núcleo do ERP BKM: dicionário das tabelas (v0)
+# ERP BKM: dicionário das tabelas (v0)
 
-Versão 0, de 7/nov/2026. Ela traduz em tabelas o desenho da sabatina, que está no doc [Núcleo do ERP BKM: modelo v1](https://claude.ai/artifact/YXuHgVNLaMPRtpxJ8YWCPt). Todas as tabelas ficam no esquema `nucleo`, no mesmo Supabase do BKM Terrenos, acima do espelho do Sienge (`sienge_bruto` e `sienge`).
+Versão 0, de 7/nov/2026. Ela traduz em tabelas o desenho da sabatina, que está no doc [Núcleo do ERP BKM: modelo v1](https://claude.ai/artifact/YXuHgVNLaMPRtpxJ8YWCPt). Todas as tabelas ficam no esquema `erp`, no mesmo Supabase do BKM Terrenos, acima do espelho do Sienge (`sienge_bruto` e `sienge`).
 
-O SQL está em `supabase/migrations/` e os testes em `supabase/tests/nucleo.sql` (108 testes). Para rodar: `bash supabase/tests/run.sh`.
+O SQL está em `supabase/migrations/` e os testes em `supabase/tests/erp.sql` (121 testes). Para rodar: `bash supabase/tests/run.sh`.
 
 Este documento cobre o contas a pagar, a raiz (empresas e sócios), a árvore de naturezas, o livro de lançamentos e a reclassificação. Contas a receber, bancos, aprovação geral e engenharia ficam para as próximas sessões.
 
@@ -24,8 +24,10 @@ Este documento cobre o contas a pagar, a raiz (empresas e sócios), a árvore de
 | `empreendimentos` | O empreendimento, ligado à sua SPE (1 para 1) | Só em empresa do tipo SPE, e uma SPE tem um empreendimento só. Guarda o código do terreno no BKM Terrenos |
 | `atributos`, `atributo_opcoes` | Lista extensível de atributos de BI (praça, regional, linha de produto, faixa MCMV...) | O administrador cria atributos novos. Atributo de lista só aceita as opções cadastradas |
 | `empreendimento_atributos` | O valor de cada atributo em cada empreendimento, com vigência | Não há dois valores do mesmo atributo no mesmo período. Os relatórios pegam o valor da data do lançamento |
-| `centros_custo` | De quem é o gasto: um empreendimento ou uma área da empresa (Marketing, Administrativo...) | O centro do empreendimento fica na SPE dele. A área deixa de ser cadastrada como obra fingida |
-| `departamentos`, `fases` | Listas de quem responde e do momento do projeto | Editáveis |
+| `nucleos_economicos` | Onde a despesa mora: a SPE ou obra (empreendimento), o Corporativo, uma loja | O núcleo do empreendimento fica na SPE dele. Área não é núcleo |
+| `centros_custo` | Área de apropriação (Novos negócios, Terreno, Incorporação, Projetos, Obra, Assistência técnica, Comercial, Marketing, Financeiro, Administrativo, Jurídico, Diretoria). Lista raiz única | Editável pelo administrador |
+| `nucleo_centros` | Quais centros de custo estão ligados em cada núcleo (o Corporativo não tem Obra; uma loja não tem Incorporação) | Só o administrador liga ou desliga, com auditoria; não se apaga. Sem linha = desligado. Lançamento só em centro ligado no núcleo |
+| `fases` | Momento do projeto, só para relatório | Editável |
 | `codigos_externos` | O código de cada registro no Sienge, no CRM ou no BKM Terrenos | Para trocar de ERP, troca-se esta tabela e não o modelo |
 
 ## 2. Árvore de naturezas
@@ -53,7 +55,7 @@ A carga inicial é o rascunho v0 do doc, com 11 grupos e 4 níveis em Marketing.
 | Tabela | O que guarda | Regras principais |
 |---|---|---|
 | `compromissos` | O acordo que gera gasto: contrato, pedido, assinatura recorrente, avulsa, guia ou folha | A assinatura exige periodicidade e valor por período, e substitui o contrato fictício. O contrato traz o percentual de caução |
-| `compromisso_rateios` | O rateio do compromisso por centro, natureza, fase e departamento | Natureza do último nível e ativa. Despesa exige centro de custo |
+| `compromisso_rateios` | O rateio do compromisso por núcleo econômico, centro de custo, natureza e fase | Natureza do último nível e ativa. Despesa exige núcleo e centro de custo, e o centro precisa estar ligado no núcleo |
 | `previsoes` | O gasto esperado que ainda não é dívida | Não se edita: cancela-se e cria-se outra. É consumida pelos títulos e substitui o título de previsão |
 | `documentos_fiscais` | A nota, o boleto ou a guia que chegou, com o valor bruto e a caução retida | Não aceita nota repetida do mesmo emitente (mesmo tipo, número e série), uma trava que o Sienge não tem. Depois de lançada, não se edita |
 | `documento_retencoes` | Os impostos retidos na nota (ISS, INSS, IR, PIS, COFINS, CSLL) e o órgão que recebe cada um | |
@@ -96,8 +98,8 @@ O realizado do livro sempre bate com o dinheiro que saiu do banco, e a DRE só e
 | Tabela | O que guarda | Regras principais |
 |---|---|---|
 | `orcamento_versoes` | As versões datadas: viabilidade, aprovado e reprojeções | Publicada, a versão não muda. Publicar uma viabilidade ou um aprovado substitui a versão vigente do mesmo tipo |
-| `orcamento_linhas` | Os valores por centro, natureza e mês | O custo de capital ("só no orçado") só entra aqui |
-| `lancamentos` | **O livro:** estágio (orçado, previsto, comprometido, realizado), empresa, centro, natureza, fase, departamento, competência, data de caixa, valor e a origem (previsão, título, parcela, quitação, pagamento, caução ou linha de orçamento) | Não se apaga nem se edita. A natureza só muda pela reclassificação |
+| `orcamento_linhas` | Os valores por núcleo, centro de custo, natureza e mês | O custo de capital ("só no orçado") só entra aqui |
+| `lancamentos` | **O livro:** estágio (orçado, previsto, comprometido, realizado), empresa, núcleo econômico, centro de custo, natureza, fase, competência, data de caixa, valor e a origem (previsão, título, parcela, quitação, pagamento, caução ou linha de orçamento) | Não se apaga nem se edita. A natureza só muda pela reclassificação |
 
 O livro é escrito sozinho, a cada passo:
 
@@ -160,12 +162,12 @@ Decisões do Moises de 08/11/2026, à espera do sinal verde para o código:
 - **Entrada única de notas** (`notas_recebidas`): canal, remetente, arquivo, hash, chave de acesso e situação. O sistema acha a conta recorrente pelo CNPJ do emitente e do tomador (e pela instalação); ambígua vai para o gestor escolher. O rascunho vindo de canal externo fica marcado com o canal e o remetente, quem o envia à aprovação conta como lançador, e o id da mensagem é único (contra repetição).
 - **Dados de pagamento da parcela e contas do fornecedor com histórico.** Enquanto os títulos passarem pelo Sienge, o pedido só se conclui com os dados de pagamento aprovados. Trocar a conta do fornecedor é ato aprovado e devolve os títulos abertos dele para aprovação (S-017).
 - **Arquivos** (nota, contrato, boleto, comprovante): versão e hash, nunca sobrescritos, com o caminho começando pela empresa e entregues por link assinado de poucos minutos (S-024).
-- **Conversas do objeto** (perguntas, respostas, comentários, justificativas), append-only: autor sempre `nucleo.eu()`, tipo "sistema" só gravado por função, ocultar conteúdo só por exceção com log, e a justificativa de uma decisão fica gravada na própria decisão (S-025).
+- **Conversas do objeto** (perguntas, respostas, comentários, justificativas), append-only: autor sempre `erp.eu()`, tipo "sistema" só gravado por função, ocultar conteúdo só por exceção com log, e a justificativa de uma decisão fica gravada na própria decisão (S-025).
 - **Fica para Suprimentos:** contratos de obra, medições e o casamento da nota com o pedido de compra (itens com saldo, recebimento, conferência de três vias).
-- **Plano financeiro em três eixos** (Moises, 08/11/2026, substitui a natureza como eixo de acesso). Cada lançamento leva:
-  - **Centro de custo** = a obra (empreendimento/SPE) ou o ramo Corporativo. Os centros ficam numa árvore de grupos (estado › cidade › região › obra), com cada obra em um nó só, usada para liberar acesso e para relatórios. O tipo de produto é coluna de filtro, não grupo.
-  - **Área** = quem gasta, numa árvore sem limite fixo de níveis (até a menor unidade com orçamento próprio, não o organograma). Pode-se lançar em qualquer nó. Cada nó tem a lista nominal de aprovadores e quantos dela precisam aprovar (de 1 ao tamanho da lista); a mesma pessoa não conta em dois níveis do mesmo pedido.
-  - **Natureza** = só o tipo do gasto (pessoal, malote, assinatura, consultoria...), um plano único que não se repete por área.
-  - **Fase** = coluna de relatório tirada do centro e da data; não entra no acesso nem na aprovação e ninguém a escolhe.
-  - Acesso = Área × Centro, com herança para baixo nas duas árvores e "todos" (que inclui itens futuros, avisado na tela e na revisão trimestral). A natureza PJ fica fora de qualquer par; checagem única na função de acesso, com teste. Total soma só o que a pessoa vê.
-  - Sem ciclo nas árvores (constraint + teste); mover obra ou área na árvore e mudar atributo que define grupo são atos aprovados e registrados (S-028).
+- **Plano financeiro em três dimensões** (Moises, 08/11/2026; nomes trocados em 14/11/2026). Cada lançamento leva:
+  - **Núcleo econômico** = a SPE ou obra, o Corporativo, uma loja (o que no Sienge é o centro de custo). Já está nas tabelas (`nucleos_economicos`). Falta: a árvore de grupos (estado › cidade › região › obra), com cada núcleo num nó só, para liberar acesso e para relatórios; o tipo de produto é coluna de filtro, não grupo.
+  - **Centro de custo** = a área de apropriação (Marketing, Terreno, Incorporação, Obra, Assistência técnica...). Já está nas tabelas: lista raiz única, ligada ou desligada em cada núcleo (`centros_custo`, `nucleo_centros`). Falta: a hierarquia sem limite fixo de níveis (até a menor unidade com orçamento próprio, não o organograma), com lista nominal de aprovadores por nó e quantos dela precisam aprovar (de 1 ao tamanho da lista); a mesma pessoa não conta em dois níveis do mesmo pedido.
+  - **Natureza** = só o tipo do gasto (pessoal, malote, assinatura, consultoria...), um plano único que não se repete por centro de custo.
+  - **Fase** = coluna de relatório tirada do núcleo e da data; não entra no acesso nem na aprovação e ninguém a escolhe.
+  - Travas, alçadas, aprovações e permissão de lançamento nas três dimensões: núcleo, centro de custo e natureza (a permissão por natureza é nova, de 14/11). Herança para baixo nas árvores e "todos" (que inclui itens futuros, avisado na tela e na revisão trimestral). A natureza PJ fica fora de qualquer combinação; checagem única na função de acesso, com teste. Total soma só o que a pessoa vê. Ainda sem código: entra com o motor de aprovação.
+  - Sem ciclo nas árvores (constraint + teste); mover núcleo ou centro na árvore, ligar ou desligar centro num núcleo e mudar atributo que define grupo são atos aprovados e registrados (S-028).
