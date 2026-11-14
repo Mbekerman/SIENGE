@@ -113,6 +113,10 @@ select pg_temp.ok((select count(*) from erp.auditoria where tabela = 'nucleo_cen
   'ligar e desligar centro no núcleo fica na auditoria');
 select pg_temp.falha($$delete from erp.nucleo_centros where nucleo_economico_id = '40000000-0000-0000-0000-000000000002'$$,
   'vínculo não se apaga; desliga');
+select pg_temp.falha($$update erp.nucleo_centros set centro_custo_id = (select id from erp.centros_custo where nome = 'Jurídico')
+  where nucleo_economico_id = '40000000-0000-0000-0000-000000000002' and centro_custo_id = '45000000-0000-0000-0000-000000000002'$$,
+  'vínculo não muda de centro; desliga e liga outro');
+select pg_temp.falha($$truncate erp.nucleo_centros$$, 'vínculos não se apagam nem por truncate');
 select pg_temp.como(null);
 
 -- atributos de BI com vigência
