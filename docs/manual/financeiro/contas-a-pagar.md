@@ -53,6 +53,26 @@ Quando a nota chega e o título nasce, ele **consome** a previsão correspondent
 
 Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depois de criado, e a API aceita os impostos já na criação.
 
+### Previsões de despesa na transição
+
+✅ **Decidido** (Moises, 14/nov/2026, depois dos comentários do diretor financeiro). O módulo de Orçamentos fica para depois. Enquanto isso:
+
+- Cada área lança no ERP BKM as **previsões de despesa** (a projeção dos títulos que vão vir).
+- O ERP BKM cria cada previsão no Sienge como **título de previsão**, pela API, para abastecer o fluxo de caixa do Sienge. Assim não é preciso uma tela de fluxo de caixa no ERP BKM agora.
+- **Cada título de previsão do Sienge fica ligado à previsão do ERP BKM.**
+- Quando a nota chega, o pedido de pagamento cria no Sienge o título definitivo, e a previsão é dada como **substituída**. A previsão também pode ser **excluída** no ERP BKM.
+- Nos dois casos, o ERP BKM avisa o financeiro qual título de previsão apagar no Sienge, numa **planilha do Google** com esses títulos.
+
+> ⚠️ **Passo manual no Sienge:** apagar o título de previsão que foi substituído ou excluído. A API não apaga título, e o título criado por ela só aceita mudar o vencimento e o PIX (testes de 6 e 8/nov/2026). Ver [O que ainda é feito à mão no Sienge](../transversais/passos-manuais-no-sienge.md).
+
+🟡 Propostas ainda sem confirmação do Moises:
+
+- **A previsão é aprovada** pelas mesmas regras do pedido de pagamento. Assim ela faz o papel do pedido antes do serviço que o diretor financeiro pediu. A nota que chega sem previsão aprovada pede uma aprovação a mais (a AD, por padrão), salvo uma verba pequena sem previsão por área.
+- **Previsão vencida sem nota** há X dias aparece numa lista para quem lançou, que reprograma ou cancela com motivo.
+- **Fechar o ciclo da planilha:** a leitura diária do Sienge marca na planilha quando o título foi de fato apagado, e avisa o que continua lá depois de X dias.
+- O título de previsão vai ao Sienge **sem dados de pagamento**, para não ser pago por engano.
+- A previsão nasce com os mesmos campos da futura linha de orçamento (Área, Centro, Natureza, mês e valor, com fornecedor opcional), para virar o histórico do módulo de Orçamentos sem retrabalho.
+
 ⏳ Em discussão: tirar no Sienge a permissão de criar e alterar títulos e dados bancários dos departamentos que entrarem no ERP BKM, para fechar a brecha de pagar fora do fluxo. O custo é que um lançamento urgente passa a depender do ERP BKM.
 
 ### As telas do pedido de pagamento
