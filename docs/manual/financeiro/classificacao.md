@@ -39,6 +39,8 @@ Hoje a BKM usa no Sienge "centro de custo Marketing, natureza MKT Online, motivo
 - **Centro de custo:** onde a despesa é apropriada dentro do núcleo, por exemplo **Marketing, Terreno, Incorporação, Obra, Assistência técnica, Administrativo**. Todos os centros de custo ficam numa **lista única (raiz)** da empresa, e cada um é **ligado ou desligado em cada núcleo**: o Corporativo não tem Obra nem Pós-obra; uma loja não tem Incorporação. Cada centro de custo tem **aprovadores escolhidos pelo nome** e diz **quantos deles precisam aprovar**.
 - **Natureza:** o plano de contas, só o tipo de gasto (Marketing online, Vigilância, Energia...).
 
+**O centro de custo precisa estar ligado no núcleo**, senão o lançamento é recusado. 🟡 Quem liga e desliga: no banco já construído, só o administrador (regra técnica ainda sem confirmação do Moises).
+
 **Travas, alçadas e aprovações** podem ser dadas em qualquer das três dimensões. Também se pode **liberar ou bloquear cada pessoa para lançar** em cada uma delas.
 
 A **fase** (o momento da vida da obra) **é calculada sozinha**, a partir do núcleo e da data, e serve só para os relatórios. Ninguém a escolhe no lançamento, e ela não entra no acesso nem na aprovação.
