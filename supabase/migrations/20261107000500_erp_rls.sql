@@ -73,8 +73,12 @@ begin
     ('erp.confirmar_titulo(uuid)', 'erp_situacao'), ('erp.tg_quitacao()', 'erp_situacao'),
     ('erp.tg_titulo_previsao()', 'erp_situacao'),
     -- reclassificação aprovada (S-035); os votos também são lidos por baixo do RLS
-    ('erp.decidir_reclassificacao(uuid, boolean, text)', 'erp_reclassificacao')) v(f, dono) loop
-    execute format('alter function %s security definer set search_path = erp, pg_catalog', r.f);
+    ('erp.decidir_reclassificacao(uuid, boolean, text)', 'erp_reclassificacao'),
+    ('erp.pedir_reclassificacao(uuid, uuid, text, jsonb, boolean)', 'erp_reclassificacao'),
+    ('erp.cancelar_reclassificacao(uuid)', 'erp_reclassificacao'),
+    -- lançar a nota muda a situação dela (S-036)
+    ('erp.lancar_documento(uuid, date[], uuid[])', 'erp_situacao')) v(f, dono) loop
+    execute format('alter function %s security definer set search_path = erp, pg_catalog, pg_temp', r.f);
     execute format('alter function %s owner to %I', r.f, r.dono);
   end loop;
 end $$;

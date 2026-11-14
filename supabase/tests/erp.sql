@@ -813,6 +813,74 @@ select pg_temp.ok(true, 'S-035: SET erp.sistema_apaga não faz do analista admin
 select pg_temp.ok(not erp.agindo_como('erp_situacao') and not erp.agindo_como('erp_reclassificacao'),
   'S-035: fora das operações do banco, não há marca');
 rollback;
+-- S-036: a situação da nota só muda pelo lançamento; título, nota e previsão nascem no estado inicial
+begin;
+select pg_temp.como(:'analista');
+create function pg_temp.erro_igual(sqlcmd text, esperado text, msg text) returns void language plpgsql as $f$
+begin
+  begin execute sqlcmd; exception when others then
+    if sqlerrm = esperado then raise notice 'ok  %', msg; return; end if;
+    raise exception 'FALHOU: % (erro foi: %)', msg, sqlerrm;
+  end;
+  raise exception 'FALHOU: % (passou)', msg;
+end $f$;
+select pg_temp.erro_igual($$update erp.documentos_fiscais set situacao = 'rascunho' where situacao = 'lancado'$$,
+  'A situação do documento muda pelo lançamento', 'S-036: nota lançada não volta a rascunho');
+select pg_temp.erro_igual($$update erp.documentos_fiscais set situacao = 'cancelado' where situacao = 'lancado'$$,
+  'A situação do documento muda pelo lançamento', 'S-036: nota lançada não se cancela por UPDATE direto');
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+values ('70000000-0000-0000-0000-000000000036', :'spe', '10000000-0000-0000-0000-000000000005', 'nfse', '136', '2026-03-05', '2026-03-01', 100);
+select pg_temp.erro_igual($$update erp.documentos_fiscais set situacao = 'lancado' where id = '70000000-0000-0000-0000-000000000036'$$,
+  'A situação do documento muda pelo lançamento', 'S-036: nota em rascunho não vira lançada sem o lancar_documento');
+select pg_temp.erro_igual($$insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto, situacao)
+  values ('20000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000005', 'nfse', '137', '2026-03-05', '2026-03-01', 100, 'lancado')$$,
+  'Documento nasce em rascunho; é lançado pelo lancar_documento', 'S-036: nota não nasce lançada');
+select pg_temp.erro_igual($$insert into erp.titulos (empresa_id, tipo, pessoa_id, emissao, competencia, valor, situacao)
+  values ('20000000-0000-0000-0000-000000000003', 'avulso', '10000000-0000-0000-0000-000000000005', '2026-03-01', '2026-03-01', 10, 'aberto')$$,
+  'Título nasce em rascunho; é aberto pelo confirmar_titulo', 'S-036: título não nasce aberto (sem os lançamentos do confirmar)');
+select pg_temp.erro_igual($$insert into erp.previsoes (empresa_id, origem, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor, situacao)
+  values ('20000000-0000-0000-0000-000000000003', 'manual', '40000000-0000-0000-0000-000000000001', '45000000-0000-0000-0000-000000000001',
+          (select id from erp.naturezas where codigo = '04.01'), '2026-03-01', '2026-03-20', 10, 'consumida')$$,
+  'Previsão nasce aberta', 'S-036: previsão não nasce consumida');
+rollback;
+-- S-037: o pedido de reclassificação e suas linhas só mudam pelas funções dele
+begin;
+select pg_temp.como(:'analista');
+select set_config('teste.rc37', erp.pedir_reclassificacao(pg_temp.nat('04.02'), pg_temp.nat('04.03'), 'teste S-037')::text, true);
+select pg_temp.ok((select situacao from erp.reclassificacoes where id = current_setting('teste.rc37')::uuid) = 'pendente',
+  'S-037: pedir_reclassificacao continua gravando o pedido');
+select pg_temp.como(:'diretor');
+select pg_temp.falha($$update erp.reclassificacoes set situacao = 'aprovada' where id = current_setting('teste.rc37')::uuid$$,
+  'S-037: pedido não se aprova por UPDATE direto');
+select pg_temp.ok((select situacao from erp.reclassificacoes where id = current_setting('teste.rc37')::uuid) = 'pendente', 'S-037: continua pendente');
+do $$ begin
+  update erp.reclassificacoes set nivel = 'gestor' where id = current_setting('teste.rc37')::uuid;
+  raise exception 'passou';
+exception when others then
+  if sqlerrm <> 'O pedido de reclassificação só muda pelas funções dele (pedir, decidir, cancelar)' then raise exception 'nível: %', sqlerrm; end if;
+end $$;
+select pg_temp.ok(true, 'S-037: o nível de aprovação do pedido não se baixa por UPDATE direto');
+do $$ begin
+  update erp.reclassificacoes set natureza_origem_id = null where id = current_setting('teste.rc37')::uuid;
+  raise exception 'passou';
+exception when others then
+  if sqlerrm <> 'O pedido de reclassificação só muda pelas funções dele (pedir, decidir, cancelar)' then raise exception 'origem: %', sqlerrm; end if;
+end $$;
+select pg_temp.ok(true, 'S-037: a natureza do pedido só some quando a natureza é apagada');
+do $$ begin
+  delete from erp.reclassificacao_itens where reclassificacao_id = current_setting('teste.rc37')::uuid;
+  raise exception 'passou';
+exception when others then
+  if sqlerrm <> 'O pedido de reclassificação só muda pelas funções dele (pedir, decidir, cancelar)' then raise exception 'itens: %', sqlerrm; end if;
+end $$;
+select pg_temp.ok(true, 'S-037: as linhas do pedido não se tiram por fora');
+select pg_temp.falha($$delete from erp.reclassificacoes where id = current_setting('teste.rc37')::uuid$$, 'S-037: pedido não se apaga');
+select pg_temp.falha($$truncate erp.reclassificacoes cascade$$, 'S-037: pedidos não se apagam nem por truncate');
+select pg_temp.como(:'analista');
+select erp.cancelar_reclassificacao(current_setting('teste.rc37')::uuid);
+select pg_temp.ok((select situacao from erp.reclassificacoes where id = current_setting('teste.rc37')::uuid) = 'cancelada',
+  'S-037: quem pediu cancela pela função');
+rollback;
 -- consumir a previsão inteira (operação do banco, erp_situacao) continua funcionando
 begin;
 select pg_temp.como(:'diretor');
@@ -945,11 +1013,11 @@ select pg_temp.ok(not exists (
 select pg_temp.ok(not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'erp' and p.prosecdef
-    and (not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) c where c like 'search\_path=%')
+    and (not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) c where c like 'search\_path=%' and c like '%pg\_temp')
          or p.proowner not in ('erp_conferencia'::regrole, 'erp_situacao'::regrole, 'erp_reclassificacao'::regrole))),
   'catálogo: todo security definer do `erp` tem search_path fixo e é de erp_conferencia, erp_situacao ou erp_reclassificacao');
 select pg_temp.ok((select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-                   where n.nspname = 'erp' and p.prosecdef) >= 21,
+                   where n.nspname = 'erp' and p.prosecdef) >= 24,
   'catálogo: as funções de conferência são security definer');
 select pg_temp.ok((select count(*) = 4 and bool_and(not rolcanlogin and not rolsuper and not rolbypassrls) from pg_roles
                    where rolname in ('erp_sistema', 'erp_conferencia', 'erp_situacao', 'erp_reclassificacao'))
