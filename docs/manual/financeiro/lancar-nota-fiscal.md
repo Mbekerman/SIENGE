@@ -29,6 +29,12 @@ Nota de serviço de R$ 10.000,00, com ISS de 5% retido e caução de 5% do contr
 
 ---
 
+## Competência da nota
+
+- ✅ A competência da nota (e do título avulso) fica **no máximo no mês seguinte ao da emissão**. O administrador pode mudar essa janela (Moises, 14/nov/2026).
+- 🟡 A conferir com o Moises: o código também aceita até **1 mês antes** da emissão. Ele falou só do mês seguinte.
+- ✅ Fora da janela, só com uma **exceção aprovada por alguém da AF ou da AD**, com justificativa. Quem lançou não aprova. Se a competência mudar depois, a exceção deixa de valer e é preciso outra.
+
 ## Tarefa: lançar uma nota fiscal
 
 > ⏳ As telas ainda não existem. Os passos seguem o desenho de 6/nov/2026; alguns pontos dependem de decisões em aberto, indicadas abaixo.

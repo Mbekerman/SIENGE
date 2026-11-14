@@ -209,6 +209,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 - **Faixas:**
   - até R$ 50 mil no acumulado: aprovam o gestor da área e depois a AF;
   - acima de R$ 50 mil: aprovam o gestor da área, depois a AF e depois a AD. Vale para o título que passa dos 50 mil e para todos os seguintes do mês.
+- ✅ O acumulado soma também o que **o mesmo fornecedor** tem no mês em outros centros de custo, para não escapar da alçada repartindo o gasto. O administrador pode desligar (Moises, 14/nov/2026).
 - **Configuração:** as faixas e o modo de somar (grupo, empresa ou núcleo) são valores iniciais; o administrador muda, com registro.
 - **Regras do código** (a conferir com o Moises): a alçada é fixada na confirmação do título, e um título lançado depois não muda a de um anterior; as etapas correm em sequência; quem lançou não aprova e cada pessoa aprova uma etapa só; recusar exige justificativa e trava o título; sem a alçada completa, o título não é pago; quem aprova vê os títulos do mês que formaram o acumulado.
 - **Fora da alçada:** imposto retido e movimento entre sócios.
