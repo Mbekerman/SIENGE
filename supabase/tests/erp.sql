@@ -1531,7 +1531,7 @@ select pg_temp.ok((select titulos = array['82000000-0000-0000-0000-000000000006'
 insert into erp.centro_aprovadores values (:'cc_obra', :'diretor2');
 select pg_temp.como(:'analista');
 insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
-  ('82000000-0000-0000-0000-000000000008', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-07-02', '2026-07-01', 60000),
+  ('82000000-0000-0000-0000-000000000008', :'spe', 'avulso', '10000000-0000-0000-0000-000000000008', '2026-07-02', '2026-07-01', 60000),
   ('82000000-0000-0000-0000-000000000009', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-07-03', '2026-07-01', 1000);
 insert into erp.parcelas (titulo_id, numero, vencimento, valor) values
   ('82000000-0000-0000-0000-000000000008', 1, '2026-07-20', 60000), ('82000000-0000-0000-0000-000000000009', 1, '2026-07-20', 1000);
@@ -1541,7 +1541,8 @@ insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id,
   ('82000000-0000-0000-0000-000000000009', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 50);
 select erp.confirmar_titulo('82000000-0000-0000-0000-000000000008');
 select erp.confirmar_titulo('82000000-0000-0000-0000-000000000009');
-select pg_temp.ok((select centro_custo_id = :'cc_obra' and acumulado = 60500 and etapas = '{AREA,AF,AD}'
+-- obra: 60000 + 500; o mesmo fornecedor soma a outra metade (500): 61000
+select pg_temp.ok((select centro_custo_id = :'cc_obra' and acumulado = 61000 and etapas = '{AREA,AF,AD}'
                    from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000009'),
   'alçada: rateio em dois centros com gestor usa o de maior acumulado');
 -- imposto retido não entra na alçada
@@ -1580,8 +1581,76 @@ insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('8200000
 insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
   ('82000000-0000-0000-0000-000000000005', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
 select erp.confirmar_titulo('82000000-0000-0000-0000-000000000005');
-select pg_temp.ok((select acumulado = 31100 and etapas = '{AREA,AF}' from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000005'),
+-- SPE em maio: 30000 + 1000 + 100 em Marketing, mais 500 do mesmo fornecedor em Obra
+select pg_temp.ok((select acumulado = 31600 and etapas = '{AREA,AF}' from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000005'),
   'alçada: somando só a empresa, a Incorporadora fica de fora (configurável)');
+-- S-063: o mesmo fornecedor soma (padrão); desligado, só o centro
+select pg_temp.como(:'diretor');
+update erp.regra_alcada_pagamento set soma_fornecedor = false;
+select pg_temp.como(:'analista');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('82000000-0000-0000-0000-000000000011', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-05-05', '2026-05-01', 100);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('82000000-0000-0000-0000-000000000011', 1, '2026-05-20', 100);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('82000000-0000-0000-0000-000000000011', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select erp.confirmar_titulo('82000000-0000-0000-0000-000000000011');
+select pg_temp.ok((select acumulado = 31200 from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000011'),
+  'alçada: sem somar o fornecedor, o que ele tem em Obra fica de fora (configurável)');
+-- S-063: competência no máximo um mês antes ou depois da emissão, salvo exceção
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('82000000-0000-0000-0000-000000000012', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-05-02', '2026-07-01', 100),
+  ('82000000-0000-0000-0000-000000000013', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-05-02', '2026-03-01', 100),
+  ('82000000-0000-0000-0000-000000000014', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-05-31', '2026-04-01', 100);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values
+  ('82000000-0000-0000-0000-000000000012', 1, '2026-07-20', 100), ('82000000-0000-0000-0000-000000000013', 1, '2026-05-20', 100),
+  ('82000000-0000-0000-0000-000000000014', 1, '2026-06-20', 100);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('82000000-0000-0000-0000-000000000012', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100),
+  ('82000000-0000-0000-0000-000000000013', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100),
+  ('82000000-0000-0000-0000-000000000014', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select pg_temp.erro_igual($$select erp.confirmar_titulo('82000000-0000-0000-0000-000000000012')$$,
+  'A competência está fora da janela da emissão; peça a exceção a quem está em AF, AD', 'competência: dois meses depois da emissão não se confirma');
+select pg_temp.erro_igual($$select erp.confirmar_titulo('82000000-0000-0000-0000-000000000013')$$,
+  'A competência está fora da janela da emissão; peça a exceção a quem está em AF, AD', 'competência: dois meses antes da emissão não se confirma');
+select erp.confirmar_titulo('82000000-0000-0000-0000-000000000014');
+select pg_temp.ok((select situacao = 'aberto' from erp.titulos where id = '82000000-0000-0000-0000-000000000014'),
+  'competência: um mês antes da emissão ainda passa');
+select pg_temp.erro_igual($$insert into erp.excecoes_competencia (titulo_id, justificativa) values ('82000000-0000-0000-0000-000000000012', 'serviço de julho')$$,
+  'Só quem está em AF, AD aprova isto', 'competência: fora das listas não aprova exceção');
+select pg_temp.como(:'diretor');
+insert into erp.listas_financeiro (lista, user_id) values ('AF', :'analista') on conflict do nothing;
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual($$insert into erp.excecoes_competencia (titulo_id, justificativa) values ('82000000-0000-0000-0000-000000000012', 'serviço de julho')$$,
+  'Quem lançou não aprova o próprio lançamento', 'competência: quem lançou não aprova a própria exceção');
+select pg_temp.como(:'leitor');
+select pg_temp.erro_igual($$insert into erp.excecoes_competencia (titulo_id, justificativa) values ('82000000-0000-0000-0000-000000000012', 'serviço de julho')$$,
+  'Seu papel só permite consulta', 'competência: papel de leitura não aprova exceção, nem estando no AF');
+select pg_temp.como(:'contador');
+select pg_temp.erro_igual($$insert into erp.excecoes_competencia (titulo_id, justificativa) values ('82000000-0000-0000-0000-000000000012', ' ')$$,
+  'new row for relation "excecoes_competencia" violates check constraint "excecoes_competencia_justificativa_check"', 'competência: exceção exige justificativa');
+insert into erp.excecoes_competencia (titulo_id, justificativa) values ('82000000-0000-0000-0000-000000000012', 'serviço de julho');
+select pg_temp.erro_igual($$delete from erp.excecoes_competencia where titulo_id = '82000000-0000-0000-0000-000000000012'$$,
+  'Exceção de competência não se altera nem se apaga', 'competência: a exceção não se apaga');
+select pg_temp.como(:'analista');
+select erp.confirmar_titulo('82000000-0000-0000-0000-000000000012');
+select pg_temp.ok((select situacao = 'aberto' from erp.titulos where id = '82000000-0000-0000-0000-000000000012'),
+  'competência: com a exceção aprovada, o título se confirma');
+-- a nota também; a exceção vale só para a competência aprovada
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+values ('70000000-0000-0000-0000-000000000651', :'spe', '10000000-0000-0000-0000-000000000007', 'nfse', '651', '2026-07-05', '2026-09-01', 1000);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+values ('70000000-0000-0000-0000-000000000651', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select pg_temp.erro_igual($$select erp.lancar_documento('70000000-0000-0000-0000-000000000651', array['2026-09-20']::date[])$$,
+  'A competência está fora da janela da emissão; peça a exceção a quem está em AF, AD', 'competência: a nota fora da janela não se lança');
+select pg_temp.como(:'contador');
+insert into erp.excecoes_competencia (documento_id, justificativa) values ('70000000-0000-0000-0000-000000000651', 'medição de setembro');
+select pg_temp.como(:'analista');
+update erp.documentos_fiscais set competencia = '2026-10-01' where id = '70000000-0000-0000-0000-000000000651';
+select pg_temp.erro_igual($$select erp.lancar_documento('70000000-0000-0000-0000-000000000651', array['2026-10-20']::date[])$$,
+  'A competência está fora da janela da emissão; peça a exceção a quem está em AF, AD', 'competência: mudou a competência, a exceção não vale');
+update erp.documentos_fiscais set competencia = '2026-09-01' where id = '70000000-0000-0000-0000-000000000651';
+select pg_temp.ok(erp.lancar_documento('70000000-0000-0000-0000-000000000651', array['2026-09-20']::date[]) is not null,
+  'competência: com a exceção da competência aprovada, a nota se lança');
 rollback;
 select pg_temp.ok(not exists (
   select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
