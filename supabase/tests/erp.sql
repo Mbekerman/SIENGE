@@ -1823,6 +1823,103 @@ select erp.confirmar_titulo('82000000-0000-0000-0000-000000000023');
 -- 5.000 da nota + 5.000 do pedido (mesmo fornecedor) + 200 da caução usada com ele em novembro
 select pg_temp.ok((select acumulado = 10200 from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000023'),
   'adiantamento: só cobre nota do mesmo núcleo e centro do pedido');
+-- S-069 e S-070, em dezembro, com o fornecedor 05: outro núcleo não cobre; a cobertura não passa da
+-- linha; o que foi abatido num título sem cobertura já foi usado
+select pg_temp.como(:'diretor');
+insert into erp.nucleos_economicos (id, empresa_id, tipo, nome) values ('40000000-0000-0000-0000-000000000019', :'spe', 'outro', 'Loja 2');
+insert into erp.nucleo_centros (nucleo_economico_id, centro_custo_id, ligado) values ('40000000-0000-0000-0000-000000000019', :'cc_mkt', true);
+select pg_temp.como(:'analista');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('81000000-0000-0000-0000-000000000020', :'spe', 'adiantamento', '10000000-0000-0000-0000-000000000005', '2026-12-01', '2026-12-01', 1000),
+  ('81000000-0000-0000-0000-000000000021', :'spe', 'adiantamento', '10000000-0000-0000-0000-000000000005', '2026-12-01', '2026-12-01', 3000),
+  ('82000000-0000-0000-0000-000000000030', :'spe', 'avulso', '10000000-0000-0000-0000-000000000005', '2026-12-01', '2026-12-01', 2000);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values
+  ('81000000-0000-0000-0000-000000000020', 1, '2026-12-02', 1000), ('81000000-0000-0000-0000-000000000021', 1, '2026-12-02', 3000),
+  ('82000000-0000-0000-0000-000000000030', 1, '2026-12-20', 2000);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('81000000-0000-0000-0000-000000000020', '40000000-0000-0000-0000-000000000019', :'cc_mkt', pg_temp.nat('05.01.04'), 100),
+  ('81000000-0000-0000-0000-000000000021', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100),
+  ('82000000-0000-0000-0000-000000000030', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+-- o título 30 é confirmado antes de o adiantamento sair: fica sem cobertura
+select erp.confirmar_titulo('82000000-0000-0000-0000-000000000030');
+select erp.confirmar_titulo('81000000-0000-0000-0000-000000000020');
+select erp.confirmar_titulo('81000000-0000-0000-0000-000000000021');
+select pg_temp.como(:'gestor');
+select erp.decidir_titulo(x, true) from unnest(array['81000000-0000-0000-0000-000000000020', '81000000-0000-0000-0000-000000000021',
+  '82000000-0000-0000-0000-000000000030']::uuid[]) x;
+select pg_temp.como(:'contador');
+select erp.decidir_titulo(x, true) from unnest(array['81000000-0000-0000-0000-000000000020', '81000000-0000-0000-0000-000000000021',
+  '82000000-0000-0000-0000-000000000030']::uuid[]) x;
+select pg_temp.como(:'analista');
+insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor, adiantamento_id) values
+  ('83000000-0000-0000-0000-000000000020', :'spe', :'conta_spe', '10000000-0000-0000-0000-000000000005', '40000000-0000-0000-0000-000000000019', :'cc_mkt', '2026-12-02', 1000, '81000000-0000-0000-0000-000000000020'),
+  ('83000000-0000-0000-0000-000000000021', :'spe', :'conta_spe', '10000000-0000-0000-0000-000000000005', :'ne_vm', :'cc_mkt', '2026-12-02', 3000, '81000000-0000-0000-0000-000000000021');
+-- 2.000 do adiantamento de 3.000 são abatidos no título 30, que não tinha cobertura (os adiantamentos
+-- mais antigos do fornecedor ficam para depois, com a liberação do AD)
+select pg_temp.como(:'diretor2');
+insert into erp.liberacoes_sem_abater (titulo_id, justificativa) values ('82000000-0000-0000-0000-000000000030', 'abater o de dezembro');
+select pg_temp.como(:'analista');
+insert into erp.quitacoes (pagamento_id, parcela_id, principal)
+select '83000000-0000-0000-0000-000000000021', id, 2000 from erp.parcelas where titulo_id = '82000000-0000-0000-0000-000000000030';
+-- a nota 31 (5.000, no ne_vm) só tem 1.000 de cobertura: os 2.000 abatidos já foram usados e o da Loja 2 é de outro núcleo
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('82000000-0000-0000-0000-000000000031', :'spe', 'avulso', '10000000-0000-0000-0000-000000000005', '2026-12-03', '2026-12-01', 5000),
+  ('82000000-0000-0000-0000-000000000032', :'spe', 'avulso', '10000000-0000-0000-0000-000000000005', '2026-12-03', '2026-12-01', 500);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values
+  ('82000000-0000-0000-0000-000000000031', 1, '2026-12-20', 5000), ('82000000-0000-0000-0000-000000000032', 1, '2026-12-20', 500);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('82000000-0000-0000-0000-000000000031', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100),
+  ('82000000-0000-0000-0000-000000000032', '40000000-0000-0000-0000-000000000019', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select erp.confirmar_titulo('82000000-0000-0000-0000-000000000031');
+select pg_temp.ok((select sum(c.valor) = 1000 and min(c.adiantamento_id::text) = '81000000-0000-0000-0000-000000000021'
+                   from erp.titulo_coberturas c join erp.titulo_rateios tr on tr.id = c.rateio_id
+                   where tr.titulo_id = '82000000-0000-0000-0000-000000000031'),
+  'adiantamento: o abatido num título sem cobertura já foi usado, e pedido de outro núcleo não cobre');
+-- dez/26: 2.000 + 1.000 + 3.000 + (5.000 − 1.000) = 10.000
+select pg_temp.ok((select acumulado = 10000 from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000031'),
+  'adiantamento: o acumulado desconta só a cobertura que houve');
+-- a nota 32, na Loja 2, é coberta só até a própria parte (500 dos 1.000)
+select erp.confirmar_titulo('82000000-0000-0000-0000-000000000032');
+select pg_temp.ok((select sum(c.valor) = 500 from erp.titulo_coberturas c join erp.titulo_rateios tr on tr.id = c.rateio_id
+                   where tr.titulo_id = '82000000-0000-0000-0000-000000000032')
+                  and (select acumulado = 10000 from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000032'),
+  'adiantamento: a cobertura não passa da parte da linha');
+-- título coberto e depois abatido pelo mesmo adiantamento consome uma vez só
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('81000000-0000-0000-0000-000000000022', :'spe', 'adiantamento', '10000000-0000-0000-0000-000000000005', '2026-12-04', '2026-12-01', 3000);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('81000000-0000-0000-0000-000000000022', 1, '2026-12-05', 3000);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('81000000-0000-0000-0000-000000000022', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select erp.confirmar_titulo('81000000-0000-0000-0000-000000000022');
+select pg_temp.como(:'gestor');
+select erp.decidir_titulo('81000000-0000-0000-0000-000000000022', true);
+select pg_temp.como(:'contador');
+select erp.decidir_titulo('81000000-0000-0000-0000-000000000022', true);
+select pg_temp.como(:'analista');
+insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor, adiantamento_id) values
+  ('83000000-0000-0000-0000-000000000022', :'spe', :'conta_spe', '10000000-0000-0000-0000-000000000005', :'ne_vm', :'cc_mkt', '2026-12-05', 3000, '81000000-0000-0000-0000-000000000022');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('82000000-0000-0000-0000-000000000033', :'spe', 'avulso', '10000000-0000-0000-0000-000000000005', '2026-12-06', '2026-12-01', 2000),
+  ('82000000-0000-0000-0000-000000000034', :'spe', 'avulso', '10000000-0000-0000-0000-000000000005', '2026-12-07', '2026-12-01', 1000);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values
+  ('82000000-0000-0000-0000-000000000033', 1, '2026-12-20', 2000), ('82000000-0000-0000-0000-000000000034', 1, '2026-12-20', 1000);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('82000000-0000-0000-0000-000000000033', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100),
+  ('82000000-0000-0000-0000-000000000034', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select erp.confirmar_titulo('82000000-0000-0000-0000-000000000033');
+select pg_temp.como(:'gestor');
+select erp.decidir_titulo('82000000-0000-0000-0000-000000000033', true);
+select pg_temp.como(:'contador');
+select erp.decidir_titulo('82000000-0000-0000-0000-000000000033', true);
+select pg_temp.como(:'diretor2');
+insert into erp.liberacoes_sem_abater (titulo_id, justificativa) values ('82000000-0000-0000-0000-000000000033', 'abater o de dezembro');
+select pg_temp.como(:'analista');
+insert into erp.quitacoes (pagamento_id, parcela_id, principal)
+select '83000000-0000-0000-0000-000000000022', id, 2000 from erp.parcelas where titulo_id = '82000000-0000-0000-0000-000000000033';
+select erp.confirmar_titulo('82000000-0000-0000-0000-000000000034');
+select pg_temp.ok((select sum(c.valor) = 1000 from erp.titulo_coberturas c join erp.titulo_rateios tr on tr.id = c.rateio_id
+                   where tr.titulo_id = '82000000-0000-0000-0000-000000000034'),
+  'adiantamento: título coberto e depois abatido pelo mesmo adiantamento não consome duas vezes');
 rollback;
 select pg_temp.ok(not exists (
   select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
