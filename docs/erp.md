@@ -2,7 +2,7 @@
 
 Versão 0, de 7/nov/2026. Ela traduz em tabelas o desenho da sabatina, que está no doc [Núcleo do ERP BKM: modelo v1](https://claude.ai/artifact/YXuHgVNLaMPRtpxJ8YWCPt). Todas as tabelas ficam no esquema `erp`, no mesmo Supabase do BKM Terrenos, acima do espelho do Sienge (`sienge_bruto` e `sienge`).
 
-O SQL está em `supabase/migrations/` e os testes em `supabase/tests/erp.sql` (164 testes). Para rodar: `bash supabase/tests/run.sh`.
+O SQL está em `supabase/migrations/` e os testes em `supabase/tests/erp.sql` (169 testes). Para rodar: `bash supabase/tests/run.sh`.
 
 Este documento cobre o contas a pagar, a raiz (empresas e sócios), a árvore de naturezas, o livro de lançamentos e a reclassificação. Contas a receber, bancos, aprovação geral e engenharia ficam para as próximas sessões.
 
@@ -149,7 +149,7 @@ Exemplo de alçada configurada pelo administrador: "gestor aprova até R$ 11 mil
 
 ## O que ficou de fora desta versão (de propósito)
 
-- **Permissões por linha (RLS) e telas.** Por enquanto, o esquema fica fechado à API (anon e authenticated sem nenhum acesso) e as regras de papel estão nas funções. Só as rotinas do servidor passam sem usuário.
+- **Permissões por linha (RLS) e telas.** O esquema fica fechado à API (anon e authenticated sem nenhum acesso) e as regras de papel estão nas funções. Toda tabela já tem RLS ligado e forçado (S-003, migration `_erp_rls`), negando por padrão: a única política é a do sistema (`erp.sistema()`), e só as rotinas do servidor passam sem usuário. As políticas por perfil (núcleo econômico × centro de custo × natureza, com PJ isolado) entram com o primeiro grant a `authenticated`, no mesmo PR. O teste de catálogo recusa tabela sem RLS forçado e política `using (true)`.
 - **Contas a receber.** Por isso a quitação só aceita título a pagar. O título a receber já existe para o dinheiro entre sócios.
 - **Módulo de aprovação geral.** Ficam para ele as alçadas de pagamento, a liberação de caução e as avaliações do gestor do contrato.
 - **Estorno de pagamento, conciliação e remessa.** Ficam para o módulo de bancos.
