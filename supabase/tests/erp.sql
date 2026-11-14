@@ -2394,9 +2394,15 @@ select pg_temp.erro_igual($$insert into erp.atribuicao_nucleos values ('a1000000
   'Só o escopo lista inclui núcleos; nos outros, o núcleo marcado fica de fora', 'perfis: escopo todos só exclui núcleos');
 select pg_temp.erro_igual($$insert into erp.atribuicao_tipos values ('a1000000-0000-0000-0000-000000000002', 'loja')$$,
   'O escopo todos não escolhe tipos', 'perfis: escopo todos não escolhe tipos');
+select pg_temp.como(null);  -- só o sistema grava a data de criação; aqui, para simular o futuro
 insert into erp.nucleos_economicos (id, empresa_id, tipo, nome, criado_em) values
   ('40000000-0000-0000-0000-000000000032', :'spe', 'loja', 'Loja futura', now() + interval '1 day'),
   ('40000000-0000-0000-0000-000000000033', :'incorp', 'outro', 'Outro futuro', now() + interval '1 day');
+select pg_temp.como(:'diretor');
+insert into erp.nucleos_economicos (id, empresa_id, tipo, nome, criado_em) values
+  ('40000000-0000-0000-0000-000000000034', :'spe', 'loja', 'Loja datada à mão', now() + interval '1 day');
+select pg_temp.ok((select criado_em = now() from erp.nucleos_economicos where id = '40000000-0000-0000-0000-000000000034'),
+  'perfis: quem cadastra o núcleo não escolhe a data de criação (não o faz parecer futuro)');
 \set ne_loja2 '40000000-0000-0000-0000-000000000032'
 \set ne_outro2 '40000000-0000-0000-0000-000000000033'
 select pg_temp.ok((select ve_tudo and not lanca from erp.acesso(:'analista', :'ne_vm', :'cc_obra'))
@@ -2475,6 +2481,56 @@ select pg_temp.ok((select not ve_tudo from erp.acesso(:'gestor', :'ne_corp', :'c
 update erp.perfis_modelo set ativo = true where id = 'a0000000-0000-0000-0000-000000000003';
 update erp.perfil_centros set nivel = 'lancador' where perfil_id = 'a0000000-0000-0000-0000-000000000003';
 select pg_temp.ok((select lanca from erp.acesso(:'gestor', :'ne_corp', :'cc_mkt')), 'perfis: mudar o modelo muda quem está ligado a ele');
+insert into erp.atribuicoes (id, user_id, perfil_id, escopo, criado_em) values
+  ('a1000000-0000-0000-0000-000000000006', :'contador', 'a0000000-0000-0000-0000-000000000003', 'lista', now() - interval '1 year');
+select pg_temp.ok((select criado_em = now() from erp.atribuicoes where id = 'a1000000-0000-0000-0000-000000000006'),
+  'perfis: a foto da atribuição é sempre do momento em que ela é criada');
+select pg_temp.erro_igual(format($$update erp.atribuicoes set user_id = %L where id = 'a1000000-0000-0000-0000-000000000006'$$, :'leitor'),
+  'A atribuição não muda de pessoa nem de data de criação', 'perfis: a atribuição não muda de pessoa');
+update erp.tipos_nucleo set ativo = true where codigo = 'stand';
+select pg_temp.erro_igual($$update erp.tipos_nucleo set codigo = 'stand2' where codigo = 'stand'$$,
+  'O código do tipo de núcleo não muda', 'tipos de núcleo: o código não muda, nem sem núcleos');
+
+-- exceção lançador restrito: lança e não vê tudo
+insert into erp.excecoes_centro values (:'contador', :'ne_corp', :'cc_obra', 'lancador_restrito', null);
+select pg_temp.ok((select not ve_tudo and lanca from erp.acesso(:'contador', :'ne_corp', :'cc_obra')),
+  'perfis: exceção lançador restrito lança e não vê tudo');
+
+-- exceção de natureza vencida deixa de valer (bloquear e liberar)
+update erp.excecoes_natureza set fim = current_date - 1 where user_id = :'analista' and efeito = 'bloquear';
+select pg_temp.ok(erp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.01'))
+                  and erp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04')),
+  'perfis: bloqueio de natureza vencido deixa de valer');
+update erp.excecoes_natureza set fim = current_date - 1 where user_id = :'analista' and efeito = 'liberar';
+select pg_temp.ok(not erp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04')),
+  'perfis: liberação de natureza vencida deixa de valer');
+
+-- o administrador não mexe no próprio acesso nem trocando a pessoa ou a atribuição da linha (S-077)
+select pg_temp.como(null);
+insert into erp.atribuicoes (id, user_id, perfil_id, escopo) values ('a1000000-0000-0000-0000-000000000007', :'diretor', 'a0000000-0000-0000-0000-000000000003', 'todos');
+insert into erp.atribuicao_nucleos values ('a1000000-0000-0000-0000-000000000007', :'ne_corp', false);
+insert into erp.excecoes_centro values (:'diretor', :'ne_vm', :'cc_mkt', 'nenhum', null);
+insert into erp.excecoes_natureza (user_id, natureza_id, centro_custo_id, efeito) values (:'diretor', pg_temp.nat('05.01'), null, 'bloquear');
+insert into erp.centro_aprovadores values (:'cc_obra', :'diretor') on conflict do nothing;
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual($$insert into erp.atribuicao_nucleos values ('a1000000-0000-0000-0000-000000000007', '40000000-0000-0000-0000-000000000031', false)$$,
+  'Ninguém muda o próprio acesso', 'perfis: o administrador não mexe nos núcleos da própria atribuição');
+select pg_temp.erro_igual($$delete from erp.atribuicao_nucleos where atribuicao_id = 'a1000000-0000-0000-0000-000000000007'$$,
+  'Ninguém muda o próprio acesso', 'perfis: o administrador não tira a exclusão da própria atribuição');
+select pg_temp.erro_igual($$update erp.atribuicao_nucleos set atribuicao_id = 'a1000000-0000-0000-0000-000000000006' where atribuicao_id = 'a1000000-0000-0000-0000-000000000007'$$,
+  'Ninguém muda o próprio acesso', 'perfis: o administrador não move a exclusão da própria atribuição para outra');
+select pg_temp.erro_igual($$update erp.atribuicao_nucleos set atribuicao_id = 'a1000000-0000-0000-0000-000000000007' where atribuicao_id = 'a1000000-0000-0000-0000-000000000005'$$,
+  'Ninguém muda o próprio acesso', 'perfis: o administrador não traz núcleo de outra atribuição para a própria');
+select pg_temp.erro_igual($$insert into erp.atribuicao_tipos values ('a1000000-0000-0000-0000-000000000007', 'loja')$$,
+  'Ninguém muda o próprio acesso', 'perfis: o administrador não mexe nos tipos da própria atribuição');
+select pg_temp.erro_igual(format($$update erp.excecoes_centro set user_id = %L where user_id = %L$$, :'leitor', :'diretor'),
+  'Ninguém muda o próprio acesso', 'perfis: o administrador não passa a própria exceção de centro para outro');
+select pg_temp.erro_igual(format($$update erp.excecoes_natureza set user_id = %L where user_id = %L$$, :'leitor', :'diretor'),
+  'Ninguém muda o próprio acesso', 'perfis: o administrador não passa o próprio bloqueio de natureza para outro');
+select pg_temp.erro_igual(format($$update erp.centro_aprovadores set user_id = %L where user_id = %L and centro_custo_id = %L$$, :'leitor', :'diretor', :'cc_obra'),
+  'Ninguém muda o próprio acesso', 'perfis: o administrador não passa o próprio papel de gestor da área para outro');
+select pg_temp.erro_igual(format($$update erp.excecoes_centro set user_id = %L where user_id = %L$$, :'diretor', :'contador'),
+  'Ninguém muda o próprio acesso', 'perfis: o administrador não pega a exceção de outro para si');
 rollback;
 select pg_temp.ok(not exists (
   select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
