@@ -95,6 +95,7 @@ begin
     ('erp.decidir_titulo(uuid, boolean, text)', 'erp_situacao'),
     ('erp.alcada_etapa(uuid)', 'erp_conferencia'), ('erp.alcada_pendente(uuid)', 'erp_conferencia'),
     ('erp.alcada_recusada(uuid)', 'erp_conferencia'), ('erp.titulos_do_acumulado(uuid)', 'erp_conferencia'),
+    ('erp.checar_competencia(text, uuid, date, date)', 'erp_conferencia'),
     -- movimento entre sócios cria os títulos ligados (S-057)
     ('erp.registrar_movimento_societario(text, uuid, uuid, numeric, date, text)', 'erp_situacao'),
     -- fechar e reabrir o mês (S-053)
