@@ -280,14 +280,18 @@ select pg_temp.falha(format($$delete from erp.parcelas where titulo_id = %L$$, :
 \echo '# pagamento, quitação parcial, juros e adiantamento'
 select id as p1 from erp.parcelas where titulo_id = :'tit' and numero = 1 \gset
 select id as p2 from erp.parcelas where titulo_id = :'tit' and numero = 2 \gset
--- parcela 1 (4.500) paga em duas vezes
+-- parcela 1 (4.500) paga em duas vezes; pagamento e quitações na mesma transação (o que sobra é adiantamento)
+begin;
 insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values
   ('80000000-0000-0000-0000-000000000001', :'spe', :'conta_spe', '10000000-0000-0000-0000-000000000005', :'ne_vm', :'cc_obra', '2026-02-20', 2000);
 insert into erp.quitacoes (pagamento_id, parcela_id, principal) values ('80000000-0000-0000-0000-000000000001', :'p1', 2000);
+commit;
 select pg_temp.ok(erp.parcela_saldo(:'p1') = 2500, 'pagamento parcial: a parcela fica com saldo');
+begin;
 insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values
   ('80000000-0000-0000-0000-000000000002', :'spe', :'conta_spe', '10000000-0000-0000-0000-000000000005', :'ne_vm', :'cc_obra', '2026-02-25', 2530);
 insert into erp.quitacoes (pagamento_id, parcela_id, principal, juros, multa) values ('80000000-0000-0000-0000-000000000002', :'p1', 2500, 10, 20);
+commit;
 select pg_temp.ok(erp.parcela_saldo(:'p1') = 0, 'segunda quitação zera a parcela; juros e multa entram só na hora de pagar');
 select pg_temp.ok((select sum(valor) from erp.lancamentos where natureza_id = pg_temp.nat('08.01.02')) = -30,
   'juros e multa no livro, em Financeiras › Juros e multas pagos');
@@ -316,9 +320,16 @@ insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, data, valor)
 select :'spe', :'conta_spe', pessoa_id, '2026-03-01', 1 from erp.empresas where id = :'spe';
 select pg_temp.ok(true, 'transferência entre contas próprias dispensa o carimbo');
 rollback;
-insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, compromisso_id, nucleo_economico_id, centro_custo_id, data, valor) values
+-- o adiantamento sai ligado ao pedido de adiantamento confirmado (S-061)
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('81000000-0000-0000-0000-000000000001', :'spe', 'adiantamento', '10000000-0000-0000-0000-000000000005', '2026-03-01', '2026-03-01', 6000);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('81000000-0000-0000-0000-000000000001', 1, '2026-03-01', 6000);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('81000000-0000-0000-0000-000000000001', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), 100);
+select erp.confirmar_titulo('81000000-0000-0000-0000-000000000001');
+insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, compromisso_id, nucleo_economico_id, centro_custo_id, data, valor, adiantamento_id) values
   ('80000000-0000-0000-0000-000000000003', :'spe', :'conta_spe', '10000000-0000-0000-0000-000000000005',
-   '60000000-0000-0000-0000-000000000002', :'ne_vm', :'cc_obra', '2026-03-01', 6000);
+   '60000000-0000-0000-0000-000000000002', :'ne_vm', :'cc_obra', '2026-03-01', 6000, '81000000-0000-0000-0000-000000000001');
 select pg_temp.ok((select nucleo_economico_id = :'ne_vm' and centro_custo_id = :'cc_obra' from erp.lancamentos
                    where pagamento_id = '80000000-0000-0000-0000-000000000003' and quitacao_id is null),
   'o adiantamento entra no livro já carimbado com núcleo e centro');
@@ -1237,13 +1248,13 @@ begin;
 select pg_temp.como(:'diretor');
 select pg_temp.erro_igual($$insert into erp.titulos (empresa_id, tipo, pessoa_id, documento_id, emissao, competencia, valor)
   values ('20000000-0000-0000-0000-000000000003', 'fornecedor', '10000000-0000-0000-0000-000000000005', '70000000-0000-0000-0000-000000000001', '2026-02-05', '2026-02-01', 9000)$$,
-  'De fora das operações só se cria título avulso, sem nota nem contrato', 'S-057: segundo título para a nota lançada não nasce');
+  'De fora das operações só se cria título avulso ou pedido de adiantamento, sem nota nem contrato', 'S-057: segundo título para a nota lançada não nasce');
 select pg_temp.erro_igual($$insert into erp.titulos (empresa_id, tipo, pessoa_id, documento_id, emissao, competencia, valor)
   values ('20000000-0000-0000-0000-000000000003', 'avulso', '10000000-0000-0000-0000-000000000005', '70000000-0000-0000-0000-000000000001', '2026-02-05', '2026-02-01', 9000)$$,
-  'De fora das operações só se cria título avulso, sem nota nem contrato', 'S-057: título avulso não aponta para nota');
+  'De fora das operações só se cria título avulso ou pedido de adiantamento, sem nota nem contrato', 'S-057: título avulso não aponta para nota');
 select pg_temp.erro_igual($$insert into erp.titulos (empresa_id, tipo, pessoa_id, compromisso_id, emissao, competencia, valor)
   values ('20000000-0000-0000-0000-000000000003', 'avulso', '10000000-0000-0000-0000-000000000005', '60000000-0000-0000-0000-000000000002', '2026-02-05', '2026-02-01', 9000)$$,
-  'De fora das operações só se cria título avulso, sem nota nem contrato', 'S-057: título avulso não aponta para contrato');
+  'De fora das operações só se cria título avulso ou pedido de adiantamento, sem nota nem contrato', 'S-057: título avulso não aponta para contrato');
 insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor)
 values ('80000000-0000-0000-0000-000000000571', :'spe', 'avulso', '10000000-0000-0000-0000-000000000005', '2026-03-05', '2026-03-01', 100);
 select pg_temp.erro_igual($$update erp.titulos set documento_id = '70000000-0000-0000-0000-000000000001' where id = '80000000-0000-0000-0000-000000000571'$$,
@@ -1438,7 +1449,7 @@ select pg_temp.erro_igual($$insert into erp.titulo_aprovacoes (titulo_id, etapa,
   'A alçada do título só se grava pela confirmação e pela aprovação', 'alçada: aprovação não entra por INSERT direto');
 select pg_temp.erro_igual($$delete from erp.titulo_alcadas$$, 'A alçada do título não se altera nem se apaga', 'alçada: não se apaga');
 insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values
-  ('83000000-0000-0000-0000-000000000001', :'spe', :'conta_spe', '10000000-0000-0000-0000-000000000007', :'ne_vm', :'cc_mkt', '2026-05-20', 31000);
+  ('83000000-0000-0000-0000-000000000001', :'spe', :'conta_spe', '10000000-0000-0000-0000-000000000007', :'ne_vm', :'cc_mkt', '2026-05-20', 30000);
 select pg_temp.erro_igual($$insert into erp.quitacoes (pagamento_id, parcela_id, principal)
   select '83000000-0000-0000-0000-000000000001', id, 30000 from erp.parcelas where titulo_id = '82000000-0000-0000-0000-000000000001'$$,
   'O título ainda não foi aprovado: falta AREA', 'alçada: não se paga antes da aprovação');
@@ -1651,6 +1662,167 @@ select pg_temp.erro_igual($$select erp.lancar_documento('70000000-0000-0000-0000
 update erp.documentos_fiscais set competencia = '2026-09-01' where id = '70000000-0000-0000-0000-000000000651';
 select pg_temp.ok(erp.lancar_documento('70000000-0000-0000-0000-000000000651', array['2026-09-20']::date[]) is not null,
   'competência: com a exceção da competência aprovada, a nota se lança');
+-- S-067: a exceção é do registro, quem aprova e a competência vêm do servidor, o autor da nota não aprova
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('82000000-0000-0000-0000-000000000015', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-05-02', '2026-07-01', 100);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('82000000-0000-0000-0000-000000000015', 1, '2026-07-20', 100);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('82000000-0000-0000-0000-000000000015', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select pg_temp.erro_igual($$select erp.confirmar_titulo('82000000-0000-0000-0000-000000000015')$$,
+  'A competência está fora da janela da emissão; peça a exceção a quem está em AF, AD', 'competência: a exceção de outro título não vale para este');
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+values ('70000000-0000-0000-0000-000000000652', :'spe', '10000000-0000-0000-0000-000000000007', 'nfse', '652', '2026-07-05', '2026-09-01', 1000);
+select pg_temp.erro_igual($$insert into erp.excecoes_competencia (documento_id, justificativa) values ('70000000-0000-0000-0000-000000000652', 'medição')$$,
+  'Quem lançou não aprova o próprio lançamento', 'competência: quem lançou a nota não aprova a exceção dela');
+select pg_temp.como(:'contador');
+insert into erp.excecoes_competencia (titulo_id, justificativa, aprovado_por, competencia)
+values ('82000000-0000-0000-0000-000000000015', 'serviço de julho', :'diretor', '2026-05-01');
+select pg_temp.ok((select aprovado_por = :'contador' and competencia = '2026-07-01' from erp.excecoes_competencia
+                   where titulo_id = '82000000-0000-0000-0000-000000000015'),
+  'competência: quem aprovou e a competência aprovada vêm do servidor');
+-- S-061: adiantamento passa pela alçada e conta uma vez no acumulado
+select pg_temp.como(:'diretor');
+update erp.regra_alcada_pagamento set soma_fornecedor = true;
+select pg_temp.como(:'analista');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('81000000-0000-0000-0000-000000000010', :'spe', 'adiantamento', '10000000-0000-0000-0000-000000000007', '2026-09-01', '2026-09-01', 20000);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('81000000-0000-0000-0000-000000000010', 1, '2026-09-05', 20000);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('81000000-0000-0000-0000-000000000010', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 50),
+  ('81000000-0000-0000-0000-000000000010', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), 50);
+select pg_temp.erro_igual($$select erp.confirmar_titulo('81000000-0000-0000-0000-000000000010')$$,
+  'O pedido de adiantamento tem um núcleo e um centro de custo só', 'adiantamento: o pedido tem um carimbo só');
+delete from erp.titulo_rateios where titulo_id = '81000000-0000-0000-0000-000000000010' and centro_custo_id = :'cc_obra';
+update erp.titulo_rateios set percentual = 100 where titulo_id = '81000000-0000-0000-0000-000000000010';
+select erp.confirmar_titulo('81000000-0000-0000-0000-000000000010');
+-- setembro já tem a nota 651 (1.000) do mesmo fornecedor
+select pg_temp.ok((select acumulado = 21000 and etapas = '{AREA,AF}' and centro_custo_id = :'cc_mkt'
+                   from erp.titulo_alcadas where titulo_id = '81000000-0000-0000-0000-000000000010'),
+  'adiantamento: o pedido entra na alçada pelo acumulado do centro');
+select pg_temp.ok(not exists (select 1 from erp.lancamentos where titulo_id = '81000000-0000-0000-0000-000000000010'),
+  'adiantamento: o pedido não compromete o livro; quem lança é o pagamento');
+select pg_temp.erro_igual($$insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor, adiantamento_id) values
+  ('20000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000007',
+   '40000000-0000-0000-0000-000000000001', '45000000-0000-0000-0000-000000000002', '2026-09-05', 20000, '81000000-0000-0000-0000-000000000010')$$,
+  'O título ainda não foi aprovado: falta AREA', 'adiantamento: o dinheiro não sai antes da aprovação');
+-- a conferência roda no fim da transação; aqui, antecipada com SET CONSTRAINTS
+select pg_temp.erro_igual($$do $x$ begin
+  insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values
+  ('20000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000007',
+   '40000000-0000-0000-0000-000000000001', '45000000-0000-0000-0000-000000000002', '2026-09-05', 20000);
+  set constraints erp.t_adiantamento_pedido immediate; end $x$ $$,
+  'Adiantamento só sai ligado a um pedido de adiantamento aprovado na alçada', 'adiantamento: pagamento que sobra sem pedido não sai');
+set constraints erp.t_adiantamento_pedido deferred;
+select pg_temp.como(:'gestor');
+select erp.decidir_titulo('81000000-0000-0000-0000-000000000010', true);
+select pg_temp.como(:'contador');
+select pg_temp.ok(erp.decidir_titulo('81000000-0000-0000-0000-000000000010', true) = 'aprovado', 'adiantamento: gestor e AF aprovam o pedido');
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format($$insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor, adiantamento_id) values
+  (%L, %L, '10000000-0000-0000-0000-000000000007', %L, %L, '2026-09-05', 100, '81000000-0000-0000-0000-000000000010')$$, :'spe', :'conta_spe', :'ne_vm', :'cc_obra'),
+  'O pagamento sai com o núcleo e o centro de custo do pedido de adiantamento', 'adiantamento: o pagamento sai com o carimbo do pedido');
+select pg_temp.erro_igual(format($$insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor, adiantamento_id) values
+  (%L, %L, '10000000-0000-0000-0000-000000000008', %L, %L, '2026-09-05', 100, '81000000-0000-0000-0000-000000000010')$$, :'spe', :'conta_spe', :'ne_vm', :'cc_mkt'),
+  'O pagamento é de outra empresa ou outro favorecido que o pedido de adiantamento', 'adiantamento: o pagamento vai para o favorecido do pedido');
+select pg_temp.erro_igual(format($$insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor, adiantamento_id) values
+  (%L, %L, '10000000-0000-0000-0000-000000000007', %L, %L, '2026-09-05', 100, '82000000-0000-0000-0000-000000000012')$$, :'spe', :'conta_spe', :'ne_vm', :'cc_mkt'),
+  'O pagamento não está ligado a um pedido de adiantamento', 'adiantamento: o pagamento só se liga a pedido de adiantamento');
+insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor, adiantamento_id) values
+  ('83000000-0000-0000-0000-000000000010', :'spe', :'conta_spe', '10000000-0000-0000-0000-000000000007', :'ne_vm', :'cc_mkt', '2026-09-05', 15000, '81000000-0000-0000-0000-000000000010');
+select pg_temp.erro_igual($$insert into erp.quitacoes (pagamento_id, parcela_id, principal)
+  select '83000000-0000-0000-0000-000000000010', id, 1 from erp.parcelas where titulo_id = '81000000-0000-0000-0000-000000000010'$$,
+  'O pedido de adiantamento se paga pelo pagamento ligado a ele', 'adiantamento: a parcela do pedido não se quita');
+select pg_temp.erro_igual(format($$insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor, adiantamento_id) values
+  (%L, %L, '10000000-0000-0000-0000-000000000007', %L, %L, '2026-09-06', 6000, '81000000-0000-0000-0000-000000000010')$$, :'spe', :'conta_spe', :'ne_vm', :'cc_mkt'),
+  'O pagamento passa do valor do pedido de adiantamento (20000.00)', 'adiantamento: os pagamentos não passam do pedido');
+insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor, adiantamento_id) values
+  ('83000000-0000-0000-0000-000000000011', :'spe', :'conta_spe', '10000000-0000-0000-0000-000000000007', :'ne_vm', :'cc_mkt', '2026-09-06', 5000, '81000000-0000-0000-0000-000000000010');
+select pg_temp.ok((select situacao = 'quitado' from erp.titulos where id = '81000000-0000-0000-0000-000000000010'), 'adiantamento: pago por inteiro, o pedido fica quitado');
+select pg_temp.erro_igual(format($$insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor, adiantamento_id) values
+  (%L, %L, '10000000-0000-0000-0000-000000000007', %L, %L, '2026-09-07', 1, '81000000-0000-0000-0000-000000000010')$$, :'spe', :'conta_spe', :'ne_vm', :'cc_mkt'),
+  'O pedido de adiantamento não está aberto', 'adiantamento: pedido quitado não paga de novo');
+-- a nota do mesmo fornecedor soma só o que passa do adiantamento pago
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('82000000-0000-0000-0000-000000000020', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-09-10', '2026-09-01', 25000),
+  ('82000000-0000-0000-0000-000000000021', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-09-11', '2026-09-01', 10000);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values
+  ('82000000-0000-0000-0000-000000000020', 1, '2026-09-20', 25000), ('82000000-0000-0000-0000-000000000021', 1, '2026-09-20', 10000);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('82000000-0000-0000-0000-000000000020', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100),
+  ('82000000-0000-0000-0000-000000000021', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select erp.confirmar_titulo('82000000-0000-0000-0000-000000000020');
+select pg_temp.ok((select acumulado = 26000 and etapas = '{AREA,AF}' from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000020'),
+  'adiantamento: conta uma vez (1 mil da nota 651, 20 mil do pedido e só os 5 mil da nota que passam dele)');
+select erp.confirmar_titulo('82000000-0000-0000-0000-000000000021');
+select pg_temp.ok((select acumulado = 36000 from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000021'),
+  'adiantamento: já usado para cobrir uma nota, não cobre a seguinte');
+select pg_temp.como(:'gestor');
+select pg_temp.ok((select valor_no_centro = 5000 and valor_total = 25000 from erp.titulos_do_acumulado('82000000-0000-0000-0000-000000000021')
+                   where titulo_id = '82000000-0000-0000-0000-000000000020'),
+  'adiantamento: quem aprova vê a parte da nota coberta pelo adiantamento');
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual($$insert into erp.titulo_coberturas (rateio_id, adiantamento_id, valor)
+  select id, '81000000-0000-0000-0000-000000000010', 1 from erp.titulo_rateios where titulo_id = '82000000-0000-0000-0000-000000000021'$$,
+  'A alçada do título só se grava pela confirmação e pela aprovação', 'adiantamento: a cobertura só se grava pela confirmação');
+-- pedido aprovado e ainda não pago não cobre nada
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('81000000-0000-0000-0000-000000000011', :'spe', 'adiantamento', '10000000-0000-0000-0000-000000000008', '2026-10-01', '2026-10-01', 10000),
+  ('82000000-0000-0000-0000-000000000022', :'spe', 'avulso', '10000000-0000-0000-0000-000000000008', '2026-10-02', '2026-10-01', 10000);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values
+  ('81000000-0000-0000-0000-000000000011', 1, '2026-10-05', 10000), ('82000000-0000-0000-0000-000000000022', 1, '2026-10-20', 10000);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('81000000-0000-0000-0000-000000000011', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100),
+  ('82000000-0000-0000-0000-000000000022', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select erp.confirmar_titulo('81000000-0000-0000-0000-000000000011');
+select erp.confirmar_titulo('82000000-0000-0000-0000-000000000022');
+select pg_temp.ok((select acumulado = 20000 from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000022'),
+  'adiantamento: pedido ainda não pago não cobre a nota');
+select pg_temp.como(:'gestor');
+select erp.decidir_titulo('81000000-0000-0000-0000-000000000011', false, 'sem contrato');
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format($$insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor, adiantamento_id) values
+  (%L, %L, '10000000-0000-0000-0000-000000000008', %L, %L, '2026-10-05', 100, '81000000-0000-0000-0000-000000000011')$$, :'spe', :'conta_spe', :'ne_vm', :'cc_mkt'),
+  'O título foi recusado na alçada', 'adiantamento: pedido recusado não paga');
+-- a transferência entre contas próprias passa a conferência (o 'passou' só vem depois dela)
+select pg_temp.erro_igual(format($$do $x$ begin
+  insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, data, valor)
+  select %L, %L, pessoa_id, '2026-10-05', 1 from erp.empresas where id = %L;
+  set constraints erp.t_adiantamento_pedido immediate; raise exception 'passou'; end $x$ $$, :'spe', :'conta_spe', :'spe'),
+  'passou', 'adiantamento: transferência entre contas próprias não pede pedido');
+select pg_temp.erro_igual(format($$insert into erp.titulos (empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  (%L, 'fornecedor', '10000000-0000-0000-0000-000000000008', '2026-11-01', '2026-11-01', 10)$$, :'spe'),
+  'De fora das operações só se cria título avulso ou pedido de adiantamento, sem nota nem contrato', 'adiantamento: de fora, título de fornecedor sem nota não nasce');
+-- o pedido também respeita a janela da competência
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('81000000-0000-0000-0000-000000000013', :'spe', 'adiantamento', '10000000-0000-0000-0000-000000000008', '2026-11-01', '2027-01-01', 100);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('81000000-0000-0000-0000-000000000013', 1, '2026-11-05', 100);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('81000000-0000-0000-0000-000000000013', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select pg_temp.erro_igual($$select erp.confirmar_titulo('81000000-0000-0000-0000-000000000013')$$,
+  'A competência está fora da janela da emissão; peça a exceção a quem está em AF, AD', 'adiantamento: o pedido fora da janela da competência não se confirma');
+-- adiantamento pago na Obra não cobre a nota de Marketing do mesmo fornecedor
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('81000000-0000-0000-0000-000000000012', :'spe', 'adiantamento', '10000000-0000-0000-0000-000000000008', '2026-11-01', '2026-11-01', 5000);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('81000000-0000-0000-0000-000000000012', 1, '2026-11-05', 5000);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('81000000-0000-0000-0000-000000000012', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), 100);
+select erp.confirmar_titulo('81000000-0000-0000-0000-000000000012');
+select pg_temp.como(:'diretor2');
+select erp.decidir_titulo('81000000-0000-0000-0000-000000000012', true);
+select pg_temp.como(:'contador');
+select erp.decidir_titulo('81000000-0000-0000-0000-000000000012', true);
+select pg_temp.como(:'analista');
+insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor, adiantamento_id) values
+  (:'spe', :'conta_spe', '10000000-0000-0000-0000-000000000008', :'ne_vm', :'cc_obra', '2026-11-05', 5000, '81000000-0000-0000-0000-000000000012');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('82000000-0000-0000-0000-000000000023', :'spe', 'avulso', '10000000-0000-0000-0000-000000000008', '2026-11-02', '2026-11-01', 5000);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('82000000-0000-0000-0000-000000000023', 1, '2026-11-20', 5000);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('82000000-0000-0000-0000-000000000023', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select erp.confirmar_titulo('82000000-0000-0000-0000-000000000023');
+-- 5.000 da nota + 5.000 do pedido (mesmo fornecedor) + 200 da caução usada com ele em novembro
+select pg_temp.ok((select acumulado = 10200 from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000023'),
+  'adiantamento: só cobre nota do mesmo núcleo e centro do pedido');
 rollback;
 select pg_temp.ok(not exists (
   select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace

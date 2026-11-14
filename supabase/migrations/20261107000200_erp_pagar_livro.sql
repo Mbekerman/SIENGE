@@ -201,7 +201,8 @@ create table erp.titulos (
   id             uuid primary key default gen_random_uuid(),
   empresa_id     uuid not null references erp.empresas,
   sentido        text not null default 'pagar' check (sentido in ('pagar','receber')),
-  tipo           text not null check (tipo in ('fornecedor','imposto','caucao','societario','avulso')),
+  -- adiantamento: o pedido que passa pela alçada antes de o dinheiro sair (S-061)
+  tipo           text not null check (tipo in ('fornecedor','imposto','caucao','societario','avulso','adiantamento')),
   pessoa_id      uuid not null references erp.pessoas,
   documento_id   uuid references erp.documentos_fiscais,
   compromisso_id uuid references erp.compromissos,
@@ -266,6 +267,7 @@ create table erp.pagamentos (
   conta_id       uuid not null references erp.contas_bancarias,
   pessoa_id      uuid not null references erp.pessoas,       -- favorecido
   compromisso_id uuid references erp.compromissos,           -- adiantamento vinculado a contrato
+  adiantamento_id uuid references erp.titulos,               -- o pedido de adiantamento aprovado (S-061)
   -- carimbo do dinheiro desde a saída (decisão do Moises, 14/11/2026): núcleo e centro de custo,
   -- obrigatórios salvo na transferência entre contas próprias (favorecido = a própria empresa)
   nucleo_economico_id uuid references erp.nucleos_economicos,
@@ -677,10 +679,11 @@ begin
   if tg_op = 'INSERT' and new.situacao <> 'rascunho' then
     raise exception 'Título nasce em rascunho; é aberto pelo confirmar_titulo';
   end if;
-  -- de fora das operações (nota, caução, sócios) só nasce título avulso, sem nota nem contrato (S-057)
+  -- de fora das operações (nota, caução, sócios) só nasce título avulso ou pedido de adiantamento,
+  -- sem nota nem contrato (S-057, S-061)
   if tg_op = 'INSERT' and not erp.agindo_como('erp_situacao')
-     and (new.tipo <> 'avulso' or new.documento_id is not null or new.compromisso_id is not null) then
-    raise exception 'De fora das operações só se cria título avulso, sem nota nem contrato';
+     and (new.tipo not in ('avulso','adiantamento') or new.documento_id is not null or new.compromisso_id is not null) then
+    raise exception 'De fora das operações só se cria título avulso ou pedido de adiantamento, sem nota nem contrato';
   end if;
   if tg_op = 'UPDATE' and not erp.agindo_como('erp_situacao')
      and (new.tipo, new.documento_id, new.compromisso_id) is distinct from (old.tipo, old.documento_id, old.compromisso_id) then
@@ -750,11 +753,15 @@ begin
   select * into t from erp.titulos where id = p_titulo for update;
   if t.situacao <> 'rascunho' then raise exception 'O título já foi confirmado'; end if;
   if not erp.rateio_completo('titulo', t.id) then raise exception 'O rateio do título não soma 100%%'; end if;
-  if t.tipo = 'avulso' then perform erp.checar_competencia('titulo', t.id, t.emissao, t.competencia); end if;
+  if t.tipo in ('avulso','adiantamento') then perform erp.checar_competencia('titulo', t.id, t.emissao, t.competencia); end if;
   if coalesce((select sum(valor) from erp.parcelas where titulo_id = t.id), 0) <> t.valor then
     raise exception 'As parcelas não somam o valor do título';
   end if;
-  for p in select * from erp.parcelas where titulo_id = t.id order by numero loop
+  -- o pedido de adiantamento tem um carimbo só e não compromete o livro: quem lança é o pagamento
+  if t.tipo = 'adiantamento' and (select count(*) from erp.titulo_rateios where titulo_id = t.id) <> 1 then
+    raise exception 'O pedido de adiantamento tem um núcleo e um centro de custo só';
+  end if;
+  for p in select * from erp.parcelas where titulo_id = t.id and t.tipo <> 'adiantamento' order by numero loop
     for r in select * from erp.ratear('titulo', t.id, p.valor) loop
       insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, fase_id, centro_custo_id,
                                       competencia, data_caixa, valor, titulo_id, parcela_id)
@@ -922,6 +929,7 @@ begin
     raise exception 'O núcleo econômico não é da empresa do pagamento';
   end if;
   perform erp.checar_centro(new.nucleo_economico_id, new.centro_custo_id, new.empresa_id);
+  if new.adiantamento_id is not null then perform erp._pagar_pedido_adiantamento(new); end if;
   insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_caixa, valor, pagamento_id)
   values ('realizado', new.empresa_id, new.nucleo_economico_id, new.centro_custo_id, erp.natureza_sistema('adiantamentos'),
           erp.mes(new.data), new.data, -new.valor, new.id);
@@ -929,6 +937,21 @@ begin
 end $$;
 create trigger t_pagamento after insert or update or delete on erp.pagamentos
   for each row execute function erp.tg_pagamento();
+
+-- Adiantamento passa pela mesma alçada (S-061): o dinheiro que sobra do pagamento depois das
+-- quitações da transação é adiantamento, e só sai ligado a um pedido aprovado. Conferido no fim
+-- da transação, porque o pagamento nasce antes das quitações que o consomem.
+create function erp.tg_adiantamento_sem_pedido() returns trigger language plpgsql as $$
+begin
+  if new.adiantamento_id is null
+     and new.pessoa_id is distinct from (select pessoa_id from erp.empresas where id = new.empresa_id)
+     and erp.pagamento_saldo(new.id) > 0 then
+    raise exception 'Adiantamento só sai ligado a um pedido de adiantamento aprovado na alçada';
+  end if;
+  return null;
+end $$;
+create constraint trigger t_adiantamento_pedido after insert on erp.pagamentos
+  deferrable initially deferred for each row execute function erp.tg_adiantamento_sem_pedido();
 
 create function erp.parcela_saldo(p_id uuid) returns numeric language sql stable as $$
   select p.valor - coalesce((select sum(principal) from erp.quitacoes where parcela_id = p.id), 0)
@@ -1187,6 +1210,74 @@ begin
     array_to_string(g.excecao_competencia, ', ');
 end $$;
 
+-- Adiantamento conta uma vez no acumulado (decisão do Moises, 14/11/2026; S-061): o pedido soma
+-- como qualquer título; a linha do rateio do título do mesmo fornecedor, no mesmo núcleo e centro,
+-- fica coberta pelo que já foi pago dos pedidos e ainda não cobriu outro título (o mais antigo
+-- primeiro), e soma só o que passa dele.
+create table erp.titulo_coberturas (
+  rateio_id       uuid not null references erp.titulo_rateios,
+  adiantamento_id uuid not null references erp.titulos,
+  valor           numeric(15,2) not null check (valor > 0),
+  primary key (rateio_id, adiantamento_id)
+);
+create trigger t_alcada_titulo before insert or update or delete on erp.titulo_coberturas
+  for each row execute function erp.tg_alcada_titulo();
+
+create function erp.cobertura(p_rateio uuid) returns numeric language sql stable as $$
+  select coalesce(sum(valor), 0) from erp.titulo_coberturas where rateio_id = p_rateio $$;
+
+create function erp._cobrir_adiantamento(t erp.titulos) returns void language plpgsql as $$
+declare r record; a record; v_resto numeric; v_disp numeric; v_c numeric;
+begin
+  if t.tipo not in ('fornecedor','avulso') then return; end if;
+  for r in select tr.id, tr.nucleo_economico_id, tr.centro_custo_id, round(t.valor * tr.percentual / 100, 2) as parte
+             from erp.titulo_rateios tr where tr.titulo_id = t.id order by tr.id loop
+    v_resto := r.parte;
+    for a in select a0.id, a0.valor from erp.titulos a0 join erp.titulo_rateios ar on ar.titulo_id = a0.id
+              where a0.tipo = 'adiantamento' and a0.empresa_id = t.empresa_id and a0.pessoa_id = t.pessoa_id
+                and a0.situacao in ('aberto','quitado')   -- recusado nunca é pago, então não cobre
+                and ar.nucleo_economico_id is not distinct from r.nucleo_economico_id
+                and ar.centro_custo_id is not distinct from r.centro_custo_id
+              order by a0.emissao, a0.criado_em, a0.id for update of a0 loop
+      exit when v_resto <= 0;
+      -- só o que já saiu cobre: pedido aprovado e não pago não abate nada
+      v_disp := coalesce((select sum(valor) from erp.pagamentos where adiantamento_id = a.id), 0)
+              - coalesce((select sum(valor) from erp.titulo_coberturas where adiantamento_id = a.id), 0);
+      v_c := least(v_resto, v_disp);
+      if v_c > 0 then
+        insert into erp.titulo_coberturas (rateio_id, adiantamento_id, valor) values (r.id, a.id, v_c);
+        v_resto := v_resto - v_c;
+      end if;
+    end loop;
+  end loop;
+end $$;
+
+-- O pagamento ligado ao pedido de adiantamento (chamada pelo tg_pagamento, que é definer).
+create function erp._pagar_pedido_adiantamento(g erp.pagamentos) returns void language plpgsql as $$
+declare a erp.titulos; v_pago numeric;
+begin
+  select * into a from erp.titulos where id = g.adiantamento_id for update;
+  if a.tipo is distinct from 'adiantamento' then raise exception 'O pagamento não está ligado a um pedido de adiantamento'; end if;
+  if a.situacao <> 'aberto' then raise exception 'O pedido de adiantamento não está aberto'; end if;
+  if a.empresa_id <> g.empresa_id or a.pessoa_id <> g.pessoa_id then
+    raise exception 'O pagamento é de outra empresa ou outro favorecido que o pedido de adiantamento';
+  end if;
+  if not exists (select 1 from erp.titulo_rateios where titulo_id = a.id
+                  and nucleo_economico_id is not distinct from g.nucleo_economico_id
+                  and centro_custo_id is not distinct from g.centro_custo_id) then
+    raise exception 'O pagamento sai com o núcleo e o centro de custo do pedido de adiantamento';
+  end if;
+  if erp.alcada_recusada(a.id) then raise exception 'O título foi recusado na alçada'; end if;
+  if erp.alcada_pendente(a.id) is not null then
+    raise exception 'O título ainda não foi aprovado: falta %', erp.alcada_pendente(a.id);
+  end if;
+  v_pago := (select sum(valor) from erp.pagamentos where adiantamento_id = a.id);
+  if v_pago > a.valor then
+    raise exception 'O pagamento passa do valor do pedido de adiantamento (%)', a.valor;
+  end if;
+  if v_pago = a.valor then update erp.titulos set situacao = 'quitado' where id = a.id; end if;
+end $$;
+
 -- Fixa a alçada do título na confirmação (chamada pelo confirmar_titulo, que é definer).
 -- O título de imposto retido e o movimento entre sócios seguem a nota e o aporte; não entram.
 create function erp._definir_alcada(p_titulo uuid) returns void language plpgsql as $$
@@ -1201,12 +1292,13 @@ begin
   perform 1 from erp.centros_custo c
    where c.id in (select tr.centro_custo_id from erp.titulo_rateios tr where tr.titulo_id = t.id)
    order by c.id for update;
+  perform erp._cobrir_adiantamento(t);
   -- cada linha do rateio em centro com gestor aprovador; vale o maior acumulado
   for r in select tr.centro_custo_id, tr.nucleo_economico_id from erp.titulo_rateios tr
             where tr.titulo_id = t.id
               and exists (select 1 from erp.centro_aprovadores a where a.centro_custo_id = tr.centro_custo_id) loop
     -- a parte de cada título no centro; com soma_fornecedor, o mesmo fornecedor conta inteiro
-    select round(coalesce(sum(t2.valor * r2.percentual / 100), 0), 2), array_agg(distinct t2.id) into v_soma, v_ids
+    select round(coalesce(sum(t2.valor * r2.percentual / 100 - erp.cobertura(r2.id)), 0), 2), array_agg(distinct t2.id) into v_soma, v_ids
       from erp.titulos t2 join erp.titulo_rateios r2 on r2.titulo_id = t2.id
      where (r2.centro_custo_id = r.centro_custo_id or (v_forn and t2.pessoa_id = t.pessoa_id))
        and t2.sentido = 'pagar' and t2.tipo not in ('imposto','societario')
@@ -1253,7 +1345,7 @@ begin
   -- (com as políticas por perfil, filtrar pelo que quem pergunta vê: S-062)
   return query
     select t2.id, t2.empresa_id, p.nome, t2.competencia,
-           round(coalesce(sum(t2.valor * r2.percentual / 100) filter (where r2.centro_custo_id = a.centro_custo_id), 0), 2),
+           round(coalesce(sum(t2.valor * r2.percentual / 100 - erp.cobertura(r2.id)) filter (where r2.centro_custo_id = a.centro_custo_id), 0), 2),
            t2.valor, t2.situacao
       from erp.titulos t2 join erp.titulo_rateios r2 on r2.titulo_id = t2.id
       join erp.pessoas p on p.id = t2.pessoa_id
@@ -1354,6 +1446,7 @@ begin
   select * into pa from erp.parcelas where id = new.parcela_id for update;
   select * into t from erp.titulos where id = pa.titulo_id for update;
   if t.situacao <> 'aberto' then raise exception 'O título não está aberto'; end if;
+  if t.tipo = 'adiantamento' then raise exception 'O pedido de adiantamento se paga pelo pagamento ligado a ele'; end if;
   if t.sentido <> 'pagar' then raise exception 'Recebimentos ficam para o módulo de contas a receber'; end if;
   if g.empresa_id <> t.empresa_id then raise exception 'Pagamento e título são de empresas diferentes'; end if;
   if g.pessoa_id <> t.pessoa_id then raise exception 'O pagamento foi para outra pessoa'; end if;
