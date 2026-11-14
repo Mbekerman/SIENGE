@@ -96,4 +96,4 @@ Três pernas, porque o aviso sozinho não basta:
 
 ## 4.7 Envio ao Sienge [Desenhado]
 
-Fila no banco (pedido de envio com estado pendente, enviado, erro, e o id devolvido pelo Sienge), processada pelo adaptador no servidor, respeitando 200/min e com nova tentativa. Antes de criar título, procurar o mesmo credor + número no espelho e na fila. Credenciais lidas do Vault. Nenhum desses componentes existe ainda.
+Fila no banco (pedido de envio com estado pendente, enviado, erro, e o id devolvido pelo Sienge), processada pelo adaptador no servidor, respeitando 200/min e com nova tentativa. Antes de criar título, procurar o mesmo credor + número no espelho e na fila. Credenciais lidas do Secret Manager do Google Cloud (não do Vault do Supabase, regra de portabilidade de 14/nov/2026). Nenhum desses componentes existe ainda.
