@@ -399,7 +399,9 @@ Assim, o realizado do sistema sempre bate com o dinheiro que saiu do banco.
 - ✅ **O adiantamento é carimbado** com o núcleo econômico e o centro de custo, e **só se abate em título do mesmo centro de custo**. Abater num título de outro centro só com a aprovação de alguém da **AF, da AO ou da AD**. Essa regra é **configurável** pelo administrador, e toda mudança fica registrada (Moises, 14/nov/2026).
 - ✅ O título de um fornecedor que tem adiantamento aberto em outro centro **fica pendente** até alguém da AF, da AO ou da AD aprovar o abatimento cruzado, com justificativa, ou até a AD liberar o pagamento sem deduzir (Moises, 14/nov/2026).
 - ✅ **O que o administrador configura**, com registro de cada mudança: se a trava vale; quais camadas aprovam o abatimento em outro centro (padrão AF, AO ou AD); quem libera pagar sem deduzir (padrão AD); e quem está em cada camada (Moises, 14/nov/2026).
-- Quem lançou o pagamento não aprova o abatimento dele (regra geral: quem lança não aprova).
+- Quem lançou o pagamento não aprova o abatimento dele, e quem lançou o título não libera o pagamento dele sem abater o adiantamento (regra geral: quem lança não aprova).
+- 🟡 Regra do código, a confirmar com o Moises: a liberação para pagar sem deduzir vale só para os adiantamentos que já existiam quando ela foi aprovada. Se sair um adiantamento novo para o fornecedor, o título precisa de nova liberação.
+- Quem criou o título ou o pagamento, e quando, o sistema grava sozinho; ninguém altera.
 - 🟡 A conferir com o Moises: se "o mesmo lugar" é só o mesmo centro de custo (como ele disse) ou também o mesmo núcleo econômico (como está no código).
 - O adiantamento sem nota passa pela mesma aprovação do título, mais o gestor do contrato (ver [Aprovações](../transversais/aprovacoes.md#os-cinco-momentos-de-aprovação)).
 
