@@ -65,6 +65,13 @@ Regra do Moises (8/nov/2026): controles, segurança da informação e SLA são a
 
 | Id | Gravidade | Onde | Desde |
 | --- | --- | --- | --- |
+| S-066 | Baixa | Alçada de pagamento: arestas | 14/nov/2026 |
+| S-065 | Média | Cobertura de testes da alçada (PR #14) | 14/nov/2026 |
+| S-064 | Baixa | `titulos_do_acumulado` | 14/nov/2026 |
+| S-063 | Média (desenho) | Acumulado da alçada depende de dados que quem lança escolhe | 14/nov/2026 |
+| S-062 | Média (latente; primeiro grant) | `titulos_do_acumulado` lê por baixo do RLS | 14/nov/2026 |
+| S-061 | Média (desenho) | Adiantamento sai sem alçada | 14/nov/2026 |
+| S-060 | Média | Corrida na fixação da alçada | 14/nov/2026 |
 | S-050 | Baixa | Deploy do `bkm_dev` colado à mão | 14/nov/2026 |
 | S-049 | Baixa | CI e repositório | 14/nov/2026 |
 | S-048 | Média (desenho) | Portal PJ no mesmo Auth | 14/nov/2026 |
@@ -203,3 +210,4 @@ Ainda não há código para revisar nestes pontos; ficam como requisito para que
 | 14/nov/2026 | PR #10 (S-053, S-054, S-055; `7e0726d`): 261 testes, 31 funções definer. Sondagem no head, logado como analista: promover-se a diretor e administrador, apagar meses fechados, INSERT direto em `titulo_previsoes`, voltar orçamento a rascunho e mexer em conta bancária, todos recusados | 261 passando |
 | 14/nov/2026 | PR #12 (S-056, S-057, S-058; `3322313`): 288 testes, 32 definer. Sondagem: segundo título para nota lançada e cancelar reclassificação com login sem cadastro, recusados; mutação da empresa do núcleo em `checar_centro` cai. S-059 segue aberta: das mutações da lista, ainda passam sem teste retenções acima do valor da nota, quitação de título não aberto, conta de outra empresa no pagamento, pagamento e título de empresas diferentes e voto duplo | 288 passando |
 | 14/nov/2026 | PR #13 (S-059; `43956a5`), 310 testes: 22 mutações refeitas (as 19 da S-059 e as travas vizinhas); 21 pegas. Sobrevive só a troca de `raise exception` por `notice` na checagem de saldo do `liberar_caucao`, mutante equivalente: o gatilho da caução recusa o mesmo saque. PRs #9, #10, #12 e #13 juntados na `develop` (`ac35c85`); S-051 a S-059 passam a corrigidas e o detalhe sai do arquivo fora do repositório |
+| 14/nov/2026 | PR #14 (alçada de pagamento; `4b63973`, 338 testes, 37 definer), antes do merge: 29 mutações, 19 pegas, 6 lacunas reais e 4 equivalentes (S-065); revisão do desenho: S-060 a S-064 e S-066. Nenhuma alta ou crítica |
