@@ -2572,6 +2572,14 @@ select erp.pedir_mudanca_acesso('perfil_centros', 'alterar',
   jsonb_build_object('perfil_id', 'a0000000-0000-0000-0000-000000000001', 'centro_custo_id', :'cc_mkt', 'nivel', 'lancador'), 'Analista lança e vê') as m_mod \gset
 select pg_temp.ok((select :'analista'::uuid = any (beneficiarios) from erp.mudancas_acesso where id = :'m_mod'),
   'acesso: mudar o modelo beneficia quem está ligado a ele');
+select pg_temp.como(null);
+insert into erp.atribuicoes (user_id, perfil_id, escopo) values (:'diretor2', 'a0000000-0000-0000-0000-000000000001', 'todos');
+select pg_temp.como(:'diretor2');
+select pg_temp.erro_igual(format($$select erp.decidir_mudanca_acesso(%L, true)$$, :'m_mod'),
+  'Quem ganha acesso com a mudança não a aprova', 'acesso: quem se ligou ao modelo depois do pedido também não aprova');
+select pg_temp.como(null);
+delete from erp.atribuicoes where user_id = :'diretor2';
+select pg_temp.como(:'diretor');
 -- o próprio administrador pode pedir acesso para si: outro aprova
 select erp.pedir_mudanca_acesso('listas_financeiro', 'incluir', jsonb_build_object('lista', 'AO', 'user_id', :'diretor'), 'Moises no AO') as m_eu \gset
 select pg_temp.como(:'diretor2');
@@ -2613,6 +2621,9 @@ select pg_temp.ok((select situacao = 'cancelada' from erp.mudancas_acesso where 
 select erp.pedir_mudanca_acesso('naturezas', 'alterar', jsonb_build_object('id', pg_temp.nat('05.01.04'), 'restrita', false), 'Agência deixa de ser restrita') as m_res \gset
 select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('naturezas', 'alterar', jsonb_build_object('id', %L, 'nome', 'x'), 'x')$$, pg_temp.nat('05.01.04')),
   'O pedido de natureza só muda a marca restrita e o galho', 'acesso: o pedido de natureza não muda outras colunas');
+select pg_temp.como(:'leitor');
+select pg_temp.erro_igual(format($$select erp.decidir_mudanca_acesso(%L, true)$$, :'m_res'),
+  'Quem ganha acesso com a mudança não a aprova', 'acesso: quem tem acesso a algum centro não aprova tirar a marca restrita');
 select pg_temp.como(:'diretor2');
 select erp.decidir_mudanca_acesso(:'m_res', true);
 select pg_temp.ok(not (select restrita from erp.naturezas where codigo = '05.01.04'), 'acesso: a marca restrita muda pelo pedido aprovado');
@@ -2705,7 +2716,19 @@ select pg_temp.erro_igual(format($$select erp.vetar_sucessao_master(%L)$$, :'suc
   'Só o master veta a sucessão', 'master: só o master veta');
 -- veto de um clique pelo link do aviso (o servidor chama, sem login)
 select pg_temp.como(null);
-select token as tok from erp.avisos_sucessao where sucessao_id = :'suc1' and canal = 'whatsapp' \gset
+\set tok 'b1e3c0a5d9f84e27a6c4b8d2e0f1a3c5b7d9e1f3a5c7e9b1'
+select dia as av_dia, turno as av_turno from erp.avisos_sucessao where sucessao_id = :'suc1' and canal = 'whatsapp' \gset
+select pg_temp.erro_igual(format($$select erp.registrar_envio_aviso(%L, %L, %L, 'whatsapp', 'curto')$$, :'suc1', :'av_dia', :'av_turno'),
+  'O token do link precisa ter pelo menos 32 caracteres', 'master: o token do link é longo');
+select erp.registrar_envio_aviso(:'suc1', :'av_dia', :'av_turno', 'whatsapp', :'tok');
+select pg_temp.ok((select enviado_em is not null and token_hash = erp.hash_token(:'tok') and token_hash <> :'tok'
+                   from erp.avisos_sucessao where sucessao_id = :'suc1' and canal = 'whatsapp'),
+  'master: o envio fica registrado e o banco guarda só o hash do token');
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual(format($$select erp.vetar_sucessao_por_link(%L)$$, :'tok'), 'Só o servidor recebe o veto pelo link', 'master: o veto pelo link é só pelo servidor');
+select pg_temp.erro_igual(format($$select erp.registrar_envio_aviso(%L, %L, %L, 'email', %L)$$, :'suc1', :'av_dia', :'av_turno', :'tok'),
+  'Só o servidor registra o envio do aviso', 'master: só o servidor registra o envio');
+select pg_temp.como(null);
 select pg_temp.erro_igual($$select erp.vetar_sucessao_por_link('nao-e-um-token')$$, 'Link inválido ou sucessão já encerrada', 'master: link inválido não veta');
 select erp.vetar_sucessao_por_link(:'tok');
 select pg_temp.ok((select situacao = 'vetada' from erp.sucessoes_master where id = :'suc1'), 'master: o link do aviso veta a sucessão');

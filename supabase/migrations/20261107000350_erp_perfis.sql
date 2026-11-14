@@ -322,8 +322,9 @@ create table erp.avisos_sucessao (
   enviado_em  timestamptz,                                    -- o servidor marca ao enviar
   -- link de veto de um clique (Moises, 14/11/2026): o link abre uma página com o botão
   -- Interromper, porque antivírus de e-mail e prévia do WhatsApp abrem links sozinhos; o botão
-  -- chama erp.vetar_sucessao_por_link. Só o servidor (sistema) lê o token.
-  token       text not null unique default (replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '')),
+  -- chama erp.vetar_sucessao_por_link. O servidor gera o token ao enviar e o banco guarda só o
+  -- hash dele (S-084), em erp.registrar_envio_aviso.
+  token_hash  text unique,
   primary key (sucessao_id, dia, turno, canal)
 );
 create table erp.sucessao_votos (
@@ -492,6 +493,33 @@ begin
   end;
 end $$;
 
+-- Quem pode ganhar acesso com a mudança (não aprova). Calculado no pedido e de novo na decisão
+-- (S-082), porque quem está ligado ao modelo ou tem acesso ao centro muda com o tempo.
+--   - linha de uma pessoa: a pessoa (antes e depois); filhas da atribuição: a dona dela, inclusive
+--     a de uma atribuição ainda pedida;
+--   - modelo: quem está ligado a ele;
+--   - marca restrita e galho: quem tem acesso a algum centro (atribuição ou exceção de centro);
+--   - tipo de um núcleo: quem tem atribuição pelo tipo novo;
+--   - tipos de núcleo e regra da lista: ninguém além de quem pede.
+create function erp._beneficiarios_acesso(p_tabela text, d jsonb, a jsonb) returns uuid[] language plpgsql stable as $$
+begin
+  if p_tabela in ('atribuicoes','excecoes_centro','excecoes_natureza','centro_diretores','centro_aprovadores','listas_financeiro','aprovadores_acesso') then
+    return array_remove(array[(d->>'user_id')::uuid, (a->>'user_id')::uuid], null);
+  elsif p_tabela in ('atribuicao_tipos','atribuicao_nucleos') then
+    return array(select user_id from erp.atribuicoes where id = (d->>'atribuicao_id')::uuid
+                 union select (m.dados->>'user_id')::uuid from erp.mudancas_acesso m
+                        where m.tabela = 'atribuicoes' and m.dados->>'id' = d->>'atribuicao_id' and m.situacao = 'pendente');
+  elsif p_tabela in ('perfis_modelo','perfil_centros','perfil_naturezas') then
+    return array(select distinct user_id from erp.atribuicoes where perfil_id = coalesce(d->>'perfil_id', d->>'id')::uuid);
+  elsif p_tabela = 'naturezas' then
+    return array(select user_id from erp.atribuicoes union select user_id from erp.excecoes_centro where nivel <> 'nenhum');
+  elsif p_tabela = 'nucleos_economicos' then
+    return array(select a2.user_id from erp.atribuicoes a2 join erp.atribuicao_tipos t on t.atribuicao_id = a2.id
+                  where t.tipo_nucleo = d->>'tipo');
+  end if;
+  return '{}';
+end $$;
+
 -- Pede uma mudança de acesso. Só o administrador pede. Devolve o id do pedido.
 -- p_dados: a linha (incluir), os campos que mudam com a chave (alterar) ou a chave (excluir).
 -- Em naturezas, só restrita e mae_id; em nucleos_economicos, só tipo.
@@ -531,21 +559,7 @@ begin
   if p_operacao <> 'incluir' and v_antes is null then raise exception 'Não existe o registro a %', p_operacao; end if;
   if p_operacao = 'alterar' then v_dados := v_antes || v_dados; end if;
 
-  -- quem pode ganhar acesso: a pessoa da linha; nas filhas da atribuição, a dona dela; no modelo,
-  -- quem está ligado a ele; nos aprovadores, a pessoa (mudar o mínimo não beneficia ninguém)
-  if p_tabela in ('atribuicoes','excecoes_centro','excecoes_natureza','centro_diretores','centro_aprovadores','listas_financeiro','aprovadores_acesso') then
-    v_benef := array_remove(array[(v_dados->>'user_id')::uuid, (v_antes->>'user_id')::uuid], null);
-  elsif p_tabela in ('atribuicao_tipos','atribuicao_nucleos') then
-    v_benef := array(select user_id from erp.atribuicoes where id = (v_dados->>'atribuicao_id')::uuid);
-    if p_operacao = 'incluir' and v_benef = '{}' then
-      -- atribuição pedida e ainda não aplicada
-      v_benef := array(select (m.dados->>'user_id')::uuid from erp.mudancas_acesso m
-                        where m.tabela = 'atribuicoes' and m.dados->>'id' = v_dados->>'atribuicao_id' and m.situacao = 'pendente');
-    end if;
-  elsif p_tabela in ('perfis_modelo','perfil_centros','perfil_naturezas') then
-    v_benef := array(select distinct user_id from erp.atribuicoes
-                      where perfil_id = coalesce(v_dados->>'perfil_id', v_dados->>'id')::uuid);
-  end if;
+  v_benef := erp._beneficiarios_acesso(p_tabela, v_dados, v_antes);
 
   select count(*) into v_aprov from erp.aprovadores_acesso a join erp.usuarios u on u.id = a.user_id and u.ativo
    where a.user_id <> v_eu and a.user_id <> all (v_benef);
@@ -657,7 +671,9 @@ begin
     raise exception 'Só um aprovador de acesso decide o pedido';
   end if;
   if v_eu = m.pedida_por then raise exception 'Quem pediu a mudança de acesso não a aprova'; end if;
-  if v_eu = any (m.beneficiarios) then raise exception 'Quem ganha acesso com a mudança não a aprova'; end if;
+  if v_eu = any (m.beneficiarios) or v_eu = any (erp._beneficiarios_acesso(m.tabela, m.dados, m.antes)) then
+    raise exception 'Quem ganha acesso com a mudança não a aprova';
+  end if;
   if not p_aprova and length(trim(coalesce(p_justificativa, ''))) = 0 then
     raise exception 'Recusar o pedido de acesso precisa de justificativa';
   end if;
@@ -787,12 +803,27 @@ begin
   on conflict do nothing;
 end $$;
 
+create function erp.hash_token(p_token text) returns text language sql immutable as
+  $$ select encode(sha256(convert_to(p_token, 'UTF8')), 'hex') $$;
+
+-- O servidor registra o envio do aviso, com o token do link (o banco guarda só o hash).
+create function erp.registrar_envio_aviso(p_sucessao uuid, p_dia date, p_turno text, p_canal text, p_token text)
+returns void language plpgsql as $$
+begin
+  if not erp.sistema() then raise exception 'Só o servidor registra o envio do aviso'; end if;
+  if length(coalesce(p_token, '')) < 32 then raise exception 'O token do link precisa ter pelo menos 32 caracteres'; end if;
+  update erp.avisos_sucessao set enviado_em = clock_timestamp(), token_hash = erp.hash_token(p_token)
+   where sucessao_id = p_sucessao and dia = p_dia and turno = p_turno and canal = p_canal and enviado_em is null;
+  if not found then raise exception 'Aviso não encontrado ou já enviado'; end if;
+end $$;
+
 -- Veto pelo link do aviso, sem login (o servidor chama com o token do link).
 create function erp.vetar_sucessao_por_link(p_token text) returns void language plpgsql as $$
 declare v_id uuid;
 begin
+  if not erp.sistema() then raise exception 'Só o servidor recebe o veto pelo link'; end if;
   select a.sucessao_id into v_id from erp.avisos_sucessao a join erp.sucessoes_master s on s.id = a.sucessao_id
-   where a.token = p_token and s.situacao = 'pendente' and s.master_id = (select user_id from erp.master);
+   where a.token_hash = erp.hash_token(p_token) and s.situacao = 'pendente' and s.master_id = (select user_id from erp.master);
   if v_id is null then raise exception 'Link inválido ou sucessão já encerrada'; end if;
   update erp.sucessoes_master set situacao = 'vetada', encerrada_em = clock_timestamp() where id = v_id;
 end $$;
