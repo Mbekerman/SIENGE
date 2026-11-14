@@ -250,7 +250,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 
 ✅ Travas novas, autorizadas pelo Moises em 14/nov/2026 (S-053 a S-055), também no banco e sem tela que as desligue:
 
-- **Só o administrador** cadastra e altera os usuários e as contas bancárias da empresa, e tudo fica na auditoria.
+- **Só o administrador** cadastra e altera as contas bancárias da empresa, e tudo fica na auditoria. Usuários: ver [Mudanças de acesso](#mudanças-de-acesso-e-sucessão-do-master) (regra de 14/nov à noite).
 - **Ninguém muda o próprio papel, acesso ou login**, nem o administrador.
 - O mês só fecha e reabre pelas funções da diretoria (ver [Fechamento](../financeiro/reclassificacao-e-fechamento.md)).
 - Orçamento publicado não se edita (ver [Orçamento](../financeiro/orcamento-e-fluxo-de-caixa.md)).
@@ -281,13 +281,16 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 - **Toda mudança de acesso fica pendente até ser aprovada.** Vale para modelos, atribuições, exceções, gestor e diretor da área, AF, AO, AD, tipos de núcleo, marca de natureza restrita e mudança do tipo de um núcleo.
 - Aprovam os **aprovadores de acesso**, uma lista configurável com um mínimo de aprovações. Quem pediu e quem ganha o acesso não aprovam.
 - **O master** muda a lista de aprovadores sozinho; os outros só a mudam com a unanimidade da própria lista. Só o master cria e administra administradores, e só ele define o grupo de sucessão.
+- **Tudo o que o master faz vale na hora**, sem aprovação. Ele escolhe, tipo a tipo, quais mudanças de acesso pedidas pelo administrador precisam de aprovação; todas começam exigindo.
+- **O administrador é o TI e não aprova nada.** Ele não entra na AF, na AO, na AD, como gestor ou diretor da área, nos aprovadores de acesso nem no grupo de sucessão.
+- **Usuários:** o usuário novo nasce como leitura. Papel e contador mudam por pedido aprovado ou pelo master. Login, desativar, apagar e usuário de sucessão: só o master. Ninguém muda o próprio cadastro, nem o master.
 
 **Sucessão do master:**
 
 1. O grupo de sucessão pode ter usuários só para isso, inclusive familiares de fora da empresa, sem nenhum outro acesso.
 2. O pedido de sucessão já aponta quem será o novo master.
 3. A unanimidade do grupo não tem prazo.
-4. Depois da unanimidade, o master tem **7 dias para vetar**, e recebe 2 avisos por dia, por e-mail e WhatsApp. Cada aviso traz um link para uma página com o botão **Interromper** (um clique).
+4. Depois da unanimidade, o master tem **7 dias para vetar**, contados do **primeiro aviso enviado** a ele (sem aviso enviado, a sucessão não corre), e recebe 2 avisos por dia, por e-mail e WhatsApp. Cada aviso traz um link para uma página com o botão **Interromper** (um clique).
 5. Sem veto, o novo master assume.
 
 ## Remuneração variável (comissões, prêmios, sorteios)
