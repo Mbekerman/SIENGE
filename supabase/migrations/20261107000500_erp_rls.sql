@@ -91,6 +91,8 @@ begin
     ('erp.tg_previsao()', 'erp_situacao'), ('erp.tg_pagamento()', 'erp_situacao'),
     ('erp.liberar_caucao(uuid, numeric, date, uuid, text)', 'erp_situacao'),
     ('erp.publicar_orcamento(uuid)', 'erp_situacao'),
+    -- fechar e reabrir o mês (S-053)
+    ('erp.fechar_mes(uuid, date)', 'erp_situacao'), ('erp.reabrir_mes(uuid, date)', 'erp_situacao'),
     -- quem escreve na auditoria (S-052)
     ('erp.tg_auditoria()', 'erp_auditoria')) v(f, dono) loop
     execute format('alter function %s security definer set search_path = erp, pg_catalog, pg_temp', r.f);

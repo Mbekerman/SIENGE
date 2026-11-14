@@ -12,6 +12,15 @@ begin
   begin execute sqlcmd; exception when others then raise notice 'ok  % (%)', msg, sqlerrm; return; end;
   raise exception 'FALHOU: esperava erro em %', msg;
 end $$;
+-- erro com a mensagem exata (o falha aceita qualquer erro)
+create function pg_temp.erro_igual(sqlcmd text, esperado text, msg text) returns void language plpgsql as $f$
+begin
+  begin execute sqlcmd; exception when others then
+    if sqlerrm = esperado then raise notice 'ok  %', msg; return; end if;
+    raise exception 'FALHOU: % (erro foi: %)', msg, sqlerrm;
+  end;
+  raise exception 'FALHOU: % (passou)', msg;
+end $f$;
 create function pg_temp.nat(c text) returns uuid language sql as $$ select id from erp.naturezas where codigo = c $$;
 -- soma do livro por estágio, filtrando por título
 create function pg_temp.livro(p_estagio text, p_titulo uuid default null) returns numeric language sql as $$
@@ -159,11 +168,15 @@ update erp.naturezas set nome = 'Receitas' where codigo = '01';
 -- ---------------------------------------------------------------------
 \echo '# compromisso e previsão (assinatura no lugar do contrato fictício)'
 select pg_temp.como(:'analista');
+select pg_temp.erro_igual($$insert into erp.contas_bancarias (empresa_id, banco) values ('20000000-0000-0000-0000-000000000002', 'Itaú')$$,
+  'Só o administrador pode mudar a configuração', 'analista não cadastra conta bancária da empresa (S-055)');
+select pg_temp.como(:'diretor');
 insert into erp.contas_bancarias (id, empresa_id, banco, agencia, conta) values
   ('50000000-0000-0000-0000-000000000001', :'spe', 'Itaú', '0001', '12345-6'),
   ('50000000-0000-0000-0000-000000000002', :'incorp', 'Itaú', '0001', '99999-0');
 \set conta_spe '50000000-0000-0000-0000-000000000001'
 \set conta_inc '50000000-0000-0000-0000-000000000002'
+select pg_temp.como(:'analista');
 
 insert into erp.compromissos (id, empresa_id, tipo, pessoa_id, descricao, inicio, fim, periodicidade, valor_periodo, dia_vencimento)
 values ('60000000-0000-0000-0000-000000000001', :'incorp', 'assinatura', '10000000-0000-0000-0000-000000000007',
@@ -817,14 +830,6 @@ rollback;
 -- S-036: a situação da nota só muda pelo lançamento; título, nota e previsão nascem no estado inicial
 begin;
 select pg_temp.como(:'analista');
-create function pg_temp.erro_igual(sqlcmd text, esperado text, msg text) returns void language plpgsql as $f$
-begin
-  begin execute sqlcmd; exception when others then
-    if sqlerrm = esperado then raise notice 'ok  %', msg; return; end if;
-    raise exception 'FALHOU: % (erro foi: %)', msg, sqlerrm;
-  end;
-  raise exception 'FALHOU: % (passou)', msg;
-end $f$;
 select pg_temp.erro_igual($$update erp.documentos_fiscais set situacao = 'rascunho' where situacao = 'lancado'$$,
   'A situação do documento muda pelo lançamento', 'S-036: nota lançada não volta a rascunho');
 select pg_temp.erro_igual($$update erp.documentos_fiscais set situacao = 'cancelado' where situacao = 'lancado'$$,
@@ -1026,7 +1031,7 @@ select pg_temp.ok(not exists (
          or p.proowner not in ('erp_conferencia'::regrole, 'erp_situacao'::regrole, 'erp_reclassificacao'::regrole, 'erp_auditoria'::regrole))),
   'catálogo: todo security definer do `erp` tem search_path fixo e é de erp_conferencia, erp_situacao ou erp_reclassificacao');
 select pg_temp.ok((select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-                   where n.nspname = 'erp' and p.prosecdef) >= 29,
+                   where n.nspname = 'erp' and p.prosecdef) >= 31,
   'catálogo: as funções de conferência são security definer');
 select pg_temp.ok((select count(*) = 5 and bool_and(not rolcanlogin and not rolsuper and not rolbypassrls) from pg_roles
                    where rolname in ('erp_sistema', 'erp_conferencia', 'erp_situacao', 'erp_reclassificacao', 'erp_auditoria'))
@@ -1060,14 +1065,6 @@ select pg_temp.ok(not exists (
 -- S-051, S-052: caução, livro e auditoria só crescem, e só pelas operações do banco
 begin;
 select pg_temp.como(:'diretor');
-create function pg_temp.erro_igual(sqlcmd text, esperado text, msg text) returns void language plpgsql as $f$
-begin
-  begin execute sqlcmd; exception when others then
-    if sqlerrm = esperado then raise notice 'ok  %', msg; return; end if;
-    raise exception 'FALHOU: % (erro foi: %)', msg, sqlerrm;
-  end;
-  raise exception 'FALHOU: % (passou)', msg;
-end $f$;
 select pg_temp.ok(exists (select 1 from erp.caucao_movimentos), 'S-051: há extrato de caução para conferir');
 select pg_temp.erro_igual($$update erp.caucao_movimentos set valor = valor * 1000$$,
   'O extrato da caução não se altera', 'S-051: retenção de caução não se infla por UPDATE');
@@ -1108,6 +1105,97 @@ insert into erp.auditoria (tabela, registro, acao, por, em) values ('teste', 'S-
 reset role;
 select pg_temp.ok((select por = :'diretor' and em > now() - interval '1 minute' from erp.auditoria where tabela = 'teste'),
   'S-052: nem o dono da auditoria escolhe quem fez nem quando');
+rollback;
+-- S-053: o mês só fecha e reabre pela diretoria, pelas funções
+begin;
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual($$delete from erp.meses_fechados$$, 'O mês só fecha e reabre pela diretoria',
+  'S-053: analista não reabre o mês apagando a linha');
+select pg_temp.erro_igual(format($$select erp.reabrir_mes(%L, '2026-03-01')$$, :'incorp'), 'Só a diretoria pode fazer isso',
+  'S-053: analista não reabre o mês pela função');
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual(format($$insert into erp.meses_fechados (empresa_id, mes) values (%L, '2026-06-01')$$, :'incorp'),
+  'O mês só fecha e reabre pela diretoria', 'S-053: mês não se fecha por INSERT direto, nem pela diretoria');
+select pg_temp.erro_igual($$update erp.meses_fechados set fechado_por = null$$, 'Mês fechado não se altera',
+  'S-053: mês fechado não se altera');
+select erp.reabrir_mes(:'incorp', '2026-03-01');
+select pg_temp.ok(not exists (select 1 from erp.meses_fechados where empresa_id = :'incorp' and mes = '2026-03-01'),
+  'S-053: a diretoria reabre o mês pela função');
+select erp.reabrir_mes(:'incorp', '2026-02-01');
+select pg_temp.como(:'diretor2');
+select erp.fechar_mes(:'incorp', '2026-02-01');
+select pg_temp.ok((select fechado_por = :'diretor2' from erp.meses_fechados where empresa_id = :'incorp' and mes = '2026-02-01'),
+  'S-053: quem fechou o mês fica gravado');
+set local role erp_situacao;
+insert into erp.meses_fechados (empresa_id, mes, fechado_por, fechado_em)
+values ('20000000-0000-0000-0000-000000000002', '2026-03-01', '00000000-0000-0000-0000-00000000000b', '2000-01-01');
+reset role;
+select pg_temp.ok((select fechado_por = :'diretor2' and fechado_em > now() - interval '1 minute' from erp.meses_fechados
+                   where empresa_id = :'incorp' and mes = '2026-03-01'),
+  'S-053: quem fechou e quando, o banco grava (o valor mandado é ignorado)');
+rollback;
+-- S-054: a previsão só é consumida pelo lançamento da nota, e só a que casa com ela
+begin;
+select pg_temp.como(:'diretor');
+insert into erp.previsoes (id, empresa_id, origem, pessoa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor) values
+  ('68000000-0000-0000-0000-000000000541', :'spe', 'manual', '10000000-0000-0000-0000-000000000005', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), '2026-03-01', '2026-03-20', 100),
+  ('68000000-0000-0000-0000-000000000542', :'spe', 'manual', '10000000-0000-0000-0000-000000000005', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2026-03-01', '2026-03-20', 50);
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+values ('70000000-0000-0000-0000-000000000054', :'spe', '10000000-0000-0000-0000-000000000005', 'nfse', '154', '2026-03-05', '2026-03-01', 100);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('70000000-0000-0000-0000-000000000054', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), 100);
+select set_config('teste.t54', erp.lancar_documento('70000000-0000-0000-0000-000000000054', array['2026-03-20']::date[],
+                  array['68000000-0000-0000-0000-000000000541']::uuid[])::text, true);
+select pg_temp.erro_igual(format($$insert into erp.titulo_previsoes (titulo_id, previsao_id, valor) values (%L, '68000000-0000-0000-0000-000000000542', 10)$$,
+  current_setting('teste.t54')), 'A previsão só é consumida pelo lançamento da nota', 'S-054: previsão não se consome por INSERT direto');
+set local role erp_situacao;
+select pg_temp.erro_igual(format($$insert into erp.titulo_previsoes (titulo_id, previsao_id, valor) values (%L, '68000000-0000-0000-0000-000000000542', 10)$$,
+  current_setting('teste.t54')), 'A previsão não casa com a nota do título', 'S-054: nem por dentro a previsão de outro centro e natureza é consumida');
+reset role;
+select pg_temp.ok(erp.previsao_saldo('68000000-0000-0000-0000-000000000541') = 0 and erp.previsao_saldo('68000000-0000-0000-0000-000000000542') = 50,
+  'S-054: o lançamento consome só a previsão que casa');
+rollback;
+-- S-055: configuração e cadastros sensíveis só pelo administrador, com auditoria; orçamento publicado não volta
+begin;
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format($$update erp.usuarios set papel = 'diretor', administrador = true, contador = true where id = %L$$, :'analista'),
+  'Só o administrador pode mudar a configuração', 'S-055: analista não se faz diretor, administrador nem contador');
+select pg_temp.erro_igual($$update erp.naturezas_sistema set natureza_id = (select id from erp.naturezas where codigo = '04.01') where chave = 'adiantamentos'$$,
+  'Só o administrador pode mudar a configuração', 'S-055: analista não troca a natureza de Adiantamentos');
+select pg_temp.erro_igual($$update erp.niveis_aprovacao set peso = -peso$$,
+  'Só o administrador pode mudar a configuração', 'S-055: analista não inverte os pesos das alçadas');
+select pg_temp.erro_igual(format($$update erp.contas_bancarias set empresa_id = %L where id = %L$$, :'incorp', :'conta_spe'),
+  'Só o administrador pode mudar a configuração', 'S-055: analista não muda conta bancária de empresa');
+select pg_temp.erro_igual(format($$insert into erp.codigos_externos (sistema, tabela, registro_id, codigo) values ('sienge', 'pessoas', %L, '999')$$, :'analista'),
+  'Só o administrador pode mudar a configuração', 'S-055: analista não grava código externo');
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual(format($$update erp.usuarios set administrador = false where id = %L$$, :'diretor'),
+  'Ninguém muda o próprio papel, acesso ou login', 'S-055: nem o administrador muda o próprio acesso');
+select pg_temp.erro_igual(format($$update erp.usuarios set login_id = 'outro' where id = %L$$, :'diretor'),
+  'Ninguém muda o próprio papel, acesso ou login', 'S-055: nem o administrador muda o próprio login');
+select pg_temp.erro_igual(format($$delete from erp.usuarios where id = %L$$, :'diretor'),
+  'Ninguém muda o próprio papel, acesso ou login', 'S-055: o administrador não se apaga');
+update erp.usuarios set nome = 'Moises B.' where id = :'diretor';
+update erp.usuarios set papel = 'gestor' where id = :'analista';
+select pg_temp.ok((select papel = 'gestor' from erp.usuarios where id = :'analista')
+                  and exists (select 1 from erp.auditoria where tabela = 'usuarios' and registro = :'analista' and por = :'diretor'),
+  'S-055: o administrador muda o papel de outra pessoa, e fica na auditoria');
+select pg_temp.erro_igual($$update erp.orcamento_versoes set situacao = 'rascunho' where id = '90000000-0000-0000-0000-000000000001'$$,
+  'A situação do orçamento só muda pela publicação', 'S-055: orçamento vigente não volta a rascunho');
+select pg_temp.erro_igual($$update erp.orcamento_versoes set nome = 'outro' where id = '90000000-0000-0000-0000-000000000001'$$,
+  'Versão de orçamento vigente não muda; crie uma reprojeção', 'S-055: orçamento vigente não se edita');
+select pg_temp.erro_igual($$delete from erp.orcamento_versoes where id = '90000000-0000-0000-0000-000000000001'$$,
+  'Versão de orçamento vigente não se apaga', 'S-055: orçamento vigente não se apaga');
+select pg_temp.erro_igual(format($$insert into erp.orcamento_versoes (empresa_id, tipo, nome, data_base, situacao) values (%L, 'aprovado', 'x', '2026-01-01', 'vigente')$$, :'spe'),
+  'Versão de orçamento nasce em rascunho', 'S-055: orçamento não nasce vigente');
+insert into erp.orcamento_versoes (id, empresa_id, tipo, nome, data_base, criada_por, criada_em)
+values ('90000000-0000-0000-0000-000000000055', :'spe', 'aprovado', 'x', '2026-01-01', :'gestor', '2000-01-01');
+select pg_temp.ok((select criada_por = :'diretor' and criada_em > now() - interval '1 minute' from erp.orcamento_versoes
+                   where id = '90000000-0000-0000-0000-000000000055'),
+  'S-055: quem criou o orçamento e quando, o banco grava');
+update erp.orcamento_versoes set nome = 'Aprovado 2026' where id = '90000000-0000-0000-0000-000000000055';
+select pg_temp.ok((select nome from erp.orcamento_versoes where id = '90000000-0000-0000-0000-000000000055') = 'Aprovado 2026',
+  'S-055: rascunho continua editável');
 rollback;
 select pg_temp.ok(not exists (
   select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
