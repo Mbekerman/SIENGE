@@ -244,6 +244,10 @@ create table erp.pagamentos (
   conta_id       uuid not null references erp.contas_bancarias,
   pessoa_id      uuid not null references erp.pessoas,       -- favorecido
   compromisso_id uuid references erp.compromissos,           -- adiantamento vinculado a contrato
+  -- carimbo do dinheiro desde a saída (decisão do Moises, 14/11/2026): núcleo e centro de custo,
+  -- obrigatórios salvo na transferência entre contas próprias (favorecido = a própria empresa)
+  nucleo_economico_id uuid references erp.nucleos_economicos,
+  centro_custo_id     uuid references erp.centros_custo,
   lote_id        uuid references erp.lotes_bancarios,
   data           date not null,
   valor          numeric(15,2) not null check (valor > 0),
@@ -745,7 +749,7 @@ create trigger t_documento before update or delete on erp.documentos_fiscais
 
 -- ---------------------------------------------------------------------
 -- Pagamento e quitação → livro (estágio realizado)
--- O pagamento entra inteiro em "Adiantamentos" (movimentação, sem centro);
+-- O pagamento entra inteiro em "Adiantamentos" (movimentação), já carimbado com núcleo e centro;
 -- cada quitação tira dali e lança na natureza do título. Pagamento sem quitação
 -- é adiantamento, abatido depois por novas quitações, em vários títulos.
 -- ---------------------------------------------------------------------
@@ -755,8 +759,18 @@ begin
   if (select empresa_id from erp.contas_bancarias where id = new.conta_id) <> new.empresa_id then
     raise exception 'A conta não é da empresa do pagamento';
   end if;
-  insert into erp.lancamentos (estagio, empresa_id, natureza_id, competencia, data_caixa, valor, pagamento_id)
-  values ('realizado', new.empresa_id, erp.natureza_sistema('adiantamentos'), erp.mes(new.data), new.data, -new.valor, new.id);
+  if new.pessoa_id is distinct from (select pessoa_id from erp.empresas where id = new.empresa_id)
+     and (new.nucleo_economico_id is null or new.centro_custo_id is null) then
+    raise exception 'Pagamento e adiantamento saem carimbados com núcleo econômico e centro de custo (só a transferência entre contas próprias dispensa)';
+  end if;
+  if new.nucleo_economico_id is not null
+     and (select empresa_id from erp.nucleos_economicos where id = new.nucleo_economico_id) <> new.empresa_id then
+    raise exception 'O núcleo econômico não é da empresa do pagamento';
+  end if;
+  perform erp.checar_centro(new.nucleo_economico_id, new.centro_custo_id);
+  insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_caixa, valor, pagamento_id)
+  values ('realizado', new.empresa_id, new.nucleo_economico_id, new.centro_custo_id, erp.natureza_sistema('adiantamentos'),
+          erp.mes(new.data), new.data, -new.valor, new.id);
   return new;
 end $$;
 create trigger t_pagamento after insert or update or delete on erp.pagamentos
@@ -792,8 +806,10 @@ begin
   v_comp := erp.mes(g.data);
 
   -- sai de Adiantamentos
-  insert into erp.lancamentos (estagio, empresa_id, natureza_id, competencia, data_caixa, valor, pagamento_id, quitacao_id, titulo_id, parcela_id)
-  values ('realizado', t.empresa_id, erp.natureza_sistema('adiantamentos'), v_comp, g.data, v_total, g.id, new.id, t.id, pa.id);
+  insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_caixa, valor,
+                               pagamento_id, quitacao_id, titulo_id, parcela_id)
+  values ('realizado', t.empresa_id, g.nucleo_economico_id, g.centro_custo_id, erp.natureza_sistema('adiantamentos'), v_comp, g.data, v_total,
+          g.id, new.id, t.id, pa.id);
   -- principal: realizado na natureza do título e estorno do comprometido
   for r in select * from erp.ratear('titulo', t.id, new.principal) loop
     insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, fase_id, centro_custo_id,
@@ -835,13 +851,16 @@ create trigger t_imutavel before update or delete on erp.quitacoes
 create function erp.pagar_parcela(p_parcela uuid, p_conta uuid, p_data date,
   p_juros numeric default 0, p_multa numeric default 0, p_desconto numeric default 0, p_lote uuid default null)
 returns uuid language plpgsql as $$
-declare t erp.titulos; v_saldo numeric; v_pag uuid;
+declare t erp.titulos; v_saldo numeric; v_pag uuid; v_nucleo uuid; v_centro uuid;
 begin
   perform erp.exigir_editor();
   select t2.* into t from erp.titulos t2 join erp.parcelas p on p.titulo_id = t2.id where p.id = p_parcela;
   v_saldo := erp.parcela_saldo(p_parcela);
-  insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, lote_id, data, valor)
-  values (t.empresa_id, p_conta, t.pessoa_id, p_lote, p_data, v_saldo + p_juros + p_multa - p_desconto)
+  -- carimbo: o núcleo e o centro de maior peso no rateio do título
+  select nucleo_economico_id, centro_custo_id into v_nucleo, v_centro
+  from erp.titulo_rateios where titulo_id = t.id order by percentual desc, id limit 1;
+  insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, lote_id, data, valor)
+  values (t.empresa_id, p_conta, t.pessoa_id, v_nucleo, v_centro, p_lote, p_data, v_saldo + p_juros + p_multa - p_desconto)
   returning id into v_pag;
   insert into erp.quitacoes (pagamento_id, parcela_id, principal, juros, multa, desconto)
   values (v_pag, p_parcela, v_saldo, p_juros, p_multa, p_desconto);
