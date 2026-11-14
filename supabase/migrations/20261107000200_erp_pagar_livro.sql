@@ -645,6 +645,17 @@ end $$;
 -- Lançar a nota: título do fornecedor pelo líquido, um título por imposto retido
 -- e a retenção da caução no extrato do contrato. Consome as previsões.
 -- ---------------------------------------------------------------------
+create function erp._previsao_casa(pr erp.previsoes, d erp.documentos_fiscais) returns boolean
+language sql stable as $$
+  select pr.situacao = 'aberta' and pr.sentido = 'pagar' and pr.empresa_id = d.empresa_id
+     and (pr.pessoa_id is null or pr.pessoa_id = d.emitente_id)
+     and exists (select 1 from erp.documento_rateios r
+                 where r.documento_id = d.id
+                   and r.nucleo_economico_id is not distinct from pr.nucleo_economico_id
+                   and r.centro_custo_id is not distinct from pr.centro_custo_id
+                   and r.natureza_id = pr.natureza_id)
+$$;
+
 create function erp.lancar_documento(p_documento uuid, p_vencimentos date[], p_previsoes uuid[] default null)
 returns uuid language plpgsql as $$
 declare d erp.documentos_fiscais; v_ret numeric; v_liquido numeric; v_tit uuid; v_imp uuid; r record;
@@ -679,11 +690,19 @@ begin
     values (d.compromisso_id, 'retencao', d.caucao_valor, d.id);
   end if;
 
-  -- consumo das previsões (as dadas, ou as abertas do mesmo contrato, da mais antiga), até o bruto
+  -- consumo das previsões (as dadas, ou as abertas do mesmo contrato, da mais antiga), até o bruto.
+  -- Só casa previsão da mesma empresa, do mesmo fornecedor (ou sem fornecedor) e com o mesmo
+  -- núcleo, centro de custo e natureza de uma linha do rateio da nota (S-030). Previsão dada que
+  -- não casa é recusada, nunca ignorada.
+  if p_previsoes is not null and exists (
+       select 1 from unnest(p_previsoes) as x(id)
+       where not exists (select 1 from erp.previsoes pr where pr.id = x.id and erp._previsao_casa(pr, d))) then
+    raise exception 'Previsão que não é desta nota: precisa ser aberta, da mesma empresa e fornecedor, e com o mesmo núcleo, centro de custo e natureza do rateio';
+  end if;
   v_resta := d.valor_bruto;
   for p in
     select pr.id from erp.previsoes pr
-    where pr.situacao = 'aberta' and pr.sentido = 'pagar'
+    where erp._previsao_casa(pr, d)
       and (case when p_previsoes is not null then pr.id = any(p_previsoes)
                 else d.compromisso_id is not null and pr.compromisso_id = d.compromisso_id end)
     order by pr.data_prevista, pr.criada_em
