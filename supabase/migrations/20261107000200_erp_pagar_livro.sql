@@ -489,6 +489,7 @@ create function erp.tg_previsao() returns trigger language plpgsql as $$
 declare v_saldo numeric;
 begin
   if tg_op = 'INSERT' then
+    if new.situacao <> 'aberta' then raise exception 'Previsão nasce aberta'; end if;
     insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, fase_id, centro_custo_id,
                                     competencia, data_caixa, valor, previsao_id)
     values ('previsto', new.empresa_id, new.nucleo_economico_id, new.natureza_id, new.fase_id, new.centro_custo_id,
@@ -578,6 +579,9 @@ end $$;
 -- ---------------------------------------------------------------------
 create function erp.tg_titulo() returns trigger language plpgsql as $$
 begin
+  if tg_op = 'INSERT' and new.situacao <> 'rascunho' then
+    raise exception 'Título nasce em rascunho; é aberto pelo confirmar_titulo';
+  end if;
   -- a situação (inclusive rascunho → aberto) só muda pelas operações do banco: confirmar e quitar
   if tg_op = 'UPDATE' and new.situacao is distinct from old.situacao and not erp.agindo_como('erp_situacao') then
     raise exception 'A situação do título muda pelas quitações';
@@ -591,7 +595,7 @@ begin
   end if;
   return coalesce(new, old);
 end $$;
-create trigger t_titulo before update or delete on erp.titulos
+create trigger t_titulo before insert or update or delete on erp.titulos
   for each row execute function erp.tg_titulo();
 
 -- Parcelas e rateio só mudam com o título em rascunho (a natureza também pela reclassificação).
@@ -751,13 +755,20 @@ end $$;
 
 create function erp.tg_documento() returns trigger language plpgsql as $$
 begin
+  -- a situação só muda pelo lancar_documento (definer erp_situacao, S-036); lançado não volta a rascunho
+  if tg_op = 'INSERT' and new.situacao <> 'rascunho' then
+    raise exception 'Documento nasce em rascunho; é lançado pelo lancar_documento';
+  end if;
+  if tg_op = 'UPDATE' and new.situacao is distinct from old.situacao and not erp.agindo_como('erp_situacao') then
+    raise exception 'A situação do documento muda pelo lançamento';
+  end if;
   if tg_op = 'DELETE' and old.situacao <> 'rascunho' then raise exception 'Documento lançado não se apaga'; end if;
   if tg_op = 'UPDATE' and old.situacao <> 'rascunho' and (to_jsonb(new) - 'situacao') <> (to_jsonb(old) - 'situacao') then
     raise exception 'Documento lançado não se edita';
   end if;
   return coalesce(new, old);
 end $$;
-create trigger t_documento before update or delete on erp.documentos_fiscais
+create trigger t_documento before insert or update or delete on erp.documentos_fiscais
   for each row execute function erp.tg_documento();
 
 -- ---------------------------------------------------------------------

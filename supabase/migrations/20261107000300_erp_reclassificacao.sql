@@ -134,6 +134,41 @@ create table erp.reclassificacao_votos (
   check (aprovou or length(trim(coalesce(justificativa, ''))) > 0)
 );
 
+-- O pedido, suas linhas e os votos só mudam pelas funções da reclassificação (pedir, decidir,
+-- cancelar), definer de erp_reclassificacao (S-037, S-038). Fora delas, não se gravam, alteram
+-- nem apagam: voto forjado em nome de outra pessoa não entra.
+create function erp.tg_reclassificacao_protegida() returns trigger language plpgsql as $$
+begin
+  -- a única mudança de fora: a chave estrangeira apagando a natureza que já não existe
+  if tg_op = 'UPDATE' and tg_table_name = 'reclassificacoes'
+     and (to_jsonb(new) - 'natureza_origem_id' - 'natureza_destino_id') = (to_jsonb(old) - 'natureza_origem_id' - 'natureza_destino_id') then
+    if ((to_jsonb(new)->>'natureza_origem_id') is not distinct from (to_jsonb(old)->>'natureza_origem_id')
+        or ((to_jsonb(new)->>'natureza_origem_id') is null
+            and not exists (select 1 from erp.naturezas where id = (to_jsonb(old)->>'natureza_origem_id')::uuid)))
+       and ((to_jsonb(new)->>'natureza_destino_id') is not distinct from (to_jsonb(old)->>'natureza_destino_id')
+        or ((to_jsonb(new)->>'natureza_destino_id') is null
+            and not exists (select 1 from erp.naturezas where id = (to_jsonb(old)->>'natureza_destino_id')::uuid))) then
+      return new;
+    end if;
+  end if;
+  if not erp.agindo_como('erp_reclassificacao') then
+    raise exception 'O pedido de reclassificação só muda pelas funções dele (pedir, decidir, cancelar)';
+  end if;
+  return coalesce(new, old);
+end $$;
+create trigger t_protegida before insert or update or delete on erp.reclassificacoes
+  for each row execute function erp.tg_reclassificacao_protegida();
+create trigger t_protegida before insert or update or delete on erp.reclassificacao_itens
+  for each row execute function erp.tg_reclassificacao_protegida();
+create trigger t_protegida before insert or update or delete on erp.reclassificacao_votos
+  for each row execute function erp.tg_reclassificacao_protegida();
+create trigger t_sem_truncate before truncate on erp.reclassificacao_votos
+  for each statement execute function erp.tg_recusa_truncate();
+create trigger t_sem_truncate before truncate on erp.reclassificacoes
+  for each statement execute function erp.tg_recusa_truncate();
+create trigger t_sem_truncate before truncate on erp.reclassificacao_itens
+  for each statement execute function erp.tg_recusa_truncate();
+
 create function erp._peso(p_nivel text) returns int language sql stable as
   $$ select peso from erp.niveis_aprovacao where codigo = p_nivel $$;
 
