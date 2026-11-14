@@ -65,7 +65,10 @@ Regra do Moises (8/nov/2026): controles, segurança da informação e SLA são a
 
 | Id | Gravidade | Onde | Desde |
 | --- | --- | --- | --- |
-| S-076 | Baixa | Cobertura de testes do ajuste (PR #25) | 14/nov/2026 |
+| S-080 | Baixa | Cobertura de testes dos perfis de acesso (PR #28) | 14/nov/2026 |
+| S-079 | Média (latente; primeiro grant) | Funções de acesso `invoker` e com a pessoa como parâmetro | 14/nov/2026 |
+| S-078 | Média (desenho) | Autoconcessão indireta pela configuração | 14/nov/2026 |
+| S-077 | Média | "Ninguém muda o próprio acesso" no UPDATE | 14/nov/2026 |
 | S-073 | Média (latente; primeiro grant) | Ajuste da revisão sem escopo | 14/nov/2026 |
 | S-068 | Média (desenho) | Janela da competência ancorada na emissão digitada | 14/nov/2026 |
 | S-062 | Média (latente; primeiro grant) | `titulos_do_acumulado` lê por baixo do RLS | 14/nov/2026 |
@@ -125,6 +128,7 @@ Ainda não há código para revisar nestes pontos; ficam como requisito para que
 
 | Id | Gravidade | Falha | Correção | Conferido |
 | --- | --- | --- | --- | --- |
+| S-076 | Baixa | Cobertura de testes do ajuste (PR #25): 3 mutações sobreviviam (exclusão de quem lançou o primeiro título da cadeia, lista AF na etapa AF, reenvio só no próprio título). | Testes das duas primeiras (PR #27, `ab34588`); a terceira é equivalente: `tg_autor` grava quem reenvia como autor do título refeito, que está na cadeia, e a checagem de autor da cadeia já barra | 14/nov/2026, na `develop` (merge `c6edc93`), 463 testes; refeitas as 3 mutações, as 2 primeiras pegas |
 | S-075 | Baixa | Cadeia de substituição na revisão: `decidir_titulo` barrava quem lançou o título substituído e quem reenviou a revisão dele só um nível para trás (`substitui_id`); na segunda revisão da mesma nota, quem lançou a original voltava a poder aprovar. | `erp.cadeia_titulo` (CTE recursiva, definer `erp_conferencia`) sobe a cadeia inteira; `decidir_titulo` barra quem é autor em qualquer título dela e quem reenviou ou ajustou em qualquer revisão dela (PR #25, `a4d3438`) | 14/nov/2026, na `develop` (merge `9f93e50`), 462 testes; mutações pegas |
 | S-074 | Média | Cobertura de testes da revisão (PR #23): 8 lacunas (trava de `rodada`/`substitui_id`, `cancelamento` à mão, `lancado_em` no ajuste, autor do substituído aprova, reenviador da nota anterior aprova a relançada, recusa de nota com imposto pago, janela da competência no reenvio do avulso, cobertura de outra volta). | Um teste para cada uma (PR #25, `a4d3438`); a thread do banco rodou as 17 mutações correspondentes, todas pegas | 14/nov/2026, na `develop` (merge `9f93e50`), 462 testes |
 | S-072 | Baixa | Regra por campo contornável pelas linhas: com `*.linhas` permitido, apagar e incluir de novo uma linha do rateio, parcela ou retenção passava só como "linhas", sem conferir os campos da linha nova. | `conferir_ajuste` confere a linha nova campo a campo contra as regras, e campo cuja direção não é `ambos` não entra em linha nova (PR #25, `a4d3438`) | 14/nov/2026, na `develop` (merge `9f93e50`), 462 testes; mutações pegas |
@@ -227,3 +231,5 @@ Ainda não há código para revisar nestes pontos; ficam como requisito para que
 | 14/nov/2026 | PR #21 (S-069 e S-070; `6b76924`, 390 testes): cada título atendido pelo pedido consome o maior entre o que ele cobriu e o que foi abatido nele (as quitações somam juros e multa menos desconto, igual ao `pagamento_saldo`). 6 mutações próprias (inner e left no lugar do full join, abatido de qualquer pagamento, cobertura de qualquer pedido, núcleo, `least`), todas pegas |
 | 14/nov/2026 | PR #23 (recusa cancela com estorno; revisão com ajuste e volta nova; `regras_ajuste`; `fb65f03`, 442 testes, juntado em `4e0a2e4`): 47 mutações próprias, 32 pegas, 7 equivalentes, 8 lacunas (S-074). Revisão do desenho: S-071 (ajuste sem trilha; segregação só no reenviador), S-072 (regra por campo contornável pelas linhas), S-073 (sem escopo, para o primeiro grant), S-075 (cadeia de substituição). Nenhuma alta ou crítica |
 | 14/nov/2026 | PR #25 (S-071, S-072, S-074, S-075; quem ajusta aprova a própria etapa; `a4d3438`, 462 testes, juntado em `9f93e50`): 23 mutações próprias, 17 pegas, 3 equivalentes (update e delete em `titulo_ajustes` e `por` livre: só os definers escrevem, sem grant ao app, e já com `erp.eu()`), 3 lacunas (S-076). S-071, S-072, S-074 e S-075 passam a corrigidas; S-073 fica para o primeiro grant. Revisão do desenho: com a aprovação pelo ajuste, o gestor e o AF que ajustam aprovam as próprias etapas, e o título ajustado abaixo da faixa do AD sai sem ninguém de fora do ajuste (registrado no 06). Nenhuma alta ou crítica |
+| 14/nov/2026 | PR #27 (S-076; `ab34588`, 463 testes, juntado em `c6edc93`): S-076 corrigida |
+| 14/nov/2026 | PR #28 (perfis de acesso; `7a3af3f`, 502 testes), antes do merge: 26 mutações próprias, 21 pegas, 5 lacunas (S-080). 6 sondas com o administrador: 3 contornam "ninguém muda o próprio acesso" pelo UPDATE (S-077); mudar o modelo que ele mesmo usa e tirar a marca de restrita passam (S-078, desenho). As funções de acesso ainda não estão em política nenhuma (S-079, para o primeiro grant). Nenhuma alta ou crítica |
