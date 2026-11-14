@@ -2,7 +2,7 @@
 
 Versão 0, de 7/nov/2026. Ela traduz em tabelas o desenho da sabatina, que está no doc [Núcleo do ERP BKM: modelo v1](https://claude.ai/artifact/YXuHgVNLaMPRtpxJ8YWCPt). Todas as tabelas ficam no esquema `erp`, no mesmo Supabase do BKM Terrenos, acima do espelho do Sienge (`sienge_bruto` e `sienge`).
 
-O SQL está em `supabase/migrations/` e os testes em `supabase/tests/erp.sql` (463 testes). Para rodar: `bash supabase/tests/run.sh`.
+O SQL está em `supabase/migrations/` e os testes em `supabase/tests/erp.sql` (502 testes). Para rodar: `bash supabase/tests/run.sh`.
 
 Este documento cobre o contas a pagar, a raiz (empresas e sócios), a árvore de naturezas, o livro de lançamentos e a reclassificação. Contas a receber, bancos, aprovação geral e engenharia ficam para as próximas sessões.
 
@@ -24,10 +24,15 @@ Este documento cobre o contas a pagar, a raiz (empresas e sócios), a árvore de
 | `empreendimentos` | O empreendimento, ligado à sua SPE (1 para 1) | Só em empresa do tipo SPE, e uma SPE tem um empreendimento só. Guarda o código do terreno no BKM Terrenos |
 | `atributos`, `atributo_opcoes` | Lista extensível de atributos de BI (praça, regional, linha de produto, faixa MCMV...) | O administrador cria atributos novos. Atributo de lista só aceita as opções cadastradas |
 | `empreendimento_atributos` | O valor de cada atributo em cada empreendimento, com vigência | Não há dois valores do mesmo atributo no mesmo período. Os relatórios pegam o valor da data do lançamento |
-| `nucleos_economicos` | Onde a despesa mora: a SPE ou obra (empreendimento), o Corporativo, uma loja | O núcleo do empreendimento fica na SPE dele. Área não é núcleo |
+| `tipos_nucleo` | Tipos de núcleo (Empreendimento, Corporativo, Loja, Outro, e os que vierem) | Lista editável pelo administrador, com auditoria; não se apaga, desativa. O tipo que exige empreendimento liga o núcleo a um. Tipo com núcleos não muda essa exigência; tipo desativado não recebe núcleo novo |
+| `nucleos_economicos` | Onde a despesa mora: a SPE ou obra (empreendimento), o Corporativo, uma loja | O tipo vem de `tipos_nucleo`. O núcleo do empreendimento fica na SPE dele. Área não é núcleo. A data de criação não muda (é o que decide se um núcleo é "futuro" para uma atribuição) |
 | `centros_custo` | Área de apropriação (Novos negócios, Terreno, Incorporação, Projetos, Obra, Assistência técnica, Comercial, Marketing, Financeiro, Administrativo, Jurídico, Diretoria). Lista raiz única | Editável pelo administrador |
 | `nucleo_centros` | Quais centros de custo estão ligados em cada núcleo (o Corporativo não tem Obra; uma loja não tem Incorporação) | Só o administrador liga ou desliga, com auditoria; não se apaga. Sem linha = desligado. Lançamento só em centro ligado no núcleo |
 | `fases` | Momento do projeto, só para relatório | Editável |
+| `perfis_modelo`, `perfil_centros`, `perfil_naturezas` | Perfil de acesso salvo (Analista de Marketing, Coordenador de Marketing...): nível em cada centro de custo (Leitor, Lançador restrito, Lançador) e as naturezas restritas que ele libera. Sem núcleo | Só o administrador muda, com auditoria. Mudar o modelo muda todos que estão ligados a ele. Leitor vê tudo do centro; Lançador restrito lança e vê só o que lançou; Lançador lança e vê tudo. Comentar é ação de quem vê |
+| `atribuicoes`, `atribuicao_nucleos`, `atribuicao_tipos` | A pessoa ligada a um modelo, com o escopo de núcleos e a validade (início e fim). Uma pessoa tem várias | Escopos: lista (os núcleos marcados na hora e, se escolhidos, os núcleos criados depois nos tipos marcados); todos, inclusive os futuros; todos dos tipos marcados, inclusive os futuros. Em qualquer escopo, os núcleos excluídos ficam de fora. Atribuições que se sobrepõem valem pelo maior (Leitor + Lançador restrito = Lançador). Fora da validade ou com o modelo desativado, não vale |
+| `excecoes_centro`, `excecoes_natureza` | Exceção da pessoa: nível próprio num núcleo × centro (inclusive nenhum) e liberação ou bloqueio de uma natureza (num centro ou em todos) | Vence o modelo. O bloqueio vale para o galho inteiro e vence qualquer liberação. Com fim opcional |
+| `centro_diretores` | Diretor da área, por centro de custo | Papel nominal, fora dos modelos, como o gestor da área (`centro_aprovadores`) e AF, AO e AD (`listas_financeiro`). Ainda fora da alçada |
 | `codigos_externos` | O código de cada registro no Sienge, no CRM ou no BKM Terrenos | Para trocar de ERP, troca-se esta tabela e não o modelo |
 
 ## 2. Árvore de naturezas
@@ -35,7 +40,7 @@ Este documento cobre o contas a pagar, a raiz (empresas e sócios), a árvore de
 | Tabela | O que guarda | Regras principais |
 |---|---|---|
 | `linhas_dre` | As linhas da DRE (receita bruta, deduções, custo do terreno...) | Editáveis |
-| `naturezas` | A árvore, com quantos níveis forem precisos. Cada natureza aponta para a mãe e tem tipo (operacional, não operacional, movimentação), linha da DRE, linha do fluxo de caixa, "só no orçado" e "redutora" | Veja as regras abaixo |
+| `naturezas` | A árvore, com quantos níveis forem precisos. Cada natureza aponta para a mãe e tem tipo (operacional, não operacional, movimentação), linha da DRE, linha do fluxo de caixa, "só no orçado", "redutora" e "restrita" (pró-labore, folha PJ: fechada a todos, mesmo dentro do centro, até liberação do modelo ou da pessoa; marcada pelo administrador) | Veja as regras abaixo |
 | `naturezas_sistema` | As naturezas que o próprio sistema usa: adiantamentos, juros e multas pagos, descontos obtidos e movimentos entre sócios | O administrador pode trocar o galho, mas a chave continua existindo |
 | `v_naturezas` | Visão com o caminho legível ("Comerciais › Marketing › Online") e os níveis 1 a 4 | |
 
