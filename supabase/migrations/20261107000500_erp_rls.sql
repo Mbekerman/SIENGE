@@ -6,6 +6,8 @@
 --      Nenhum papel da API (anon, authenticated, authenticator, service_role) é membro dele.
 --    - erp_conferencia: dono das funções de conferência (security definer). Só lê, e só por
 --      dentro dessas funções.
+--    - erp_auditoria (S-052): dono só do erp.tg_auditoria; só insere na auditoria, que ninguém
+--      altera nem apaga.
 --    - erp_situacao e erp_reclassificacao (S-035): donos das operações que mudam o que o
 --      cliente não muda direto: a situação de título e previsão (confirmar, quitar, consumir) e
 --      a natureza já lançada (reclassificação aprovada). As travas conferem
@@ -30,7 +32,7 @@
 do $$
 declare p text;
 begin
-  foreach p in array array['erp_sistema', 'erp_conferencia', 'erp_situacao', 'erp_reclassificacao'] loop
+  foreach p in array array['erp_sistema', 'erp_conferencia', 'erp_situacao', 'erp_reclassificacao', 'erp_auditoria'] loop
     if not exists (select 1 from pg_roles where rolname = p) then
       execute format('create role %I nologin', p);
     end if;
@@ -42,6 +44,10 @@ grant select, insert, update, delete on all tables in schema erp to erp_sistema,
 grant execute on all functions in schema erp to erp_sistema, erp_situacao, erp_reclassificacao;
 grant select on all tables in schema erp to erp_conferencia;
 grant execute on all functions in schema erp to erp_conferencia;
+-- erp_auditoria (S-052): dono só do erp.tg_auditoria; só insere na auditoria.
+grant usage on schema erp to erp_auditoria;
+grant insert on erp.auditoria to erp_auditoria;
+grant execute on function erp.eu(), erp.agindo_como(text) to erp_auditoria;
 
 do $$
 declare t record;
@@ -53,8 +59,11 @@ begin
     execute format('create policy sistema on erp.%I using (erp.sistema()) with check (erp.sistema())', t.relname);
     execute format('create policy conferencia on erp.%I for select to erp_conferencia using (true)', t.relname);
     execute format('create policy operacao on erp.%I to erp_situacao, erp_reclassificacao using (true) with check (true)', t.relname);
+    -- nenhuma tabela se apaga por TRUNCATE (o TRUNCATE passa por cima dos gatilhos de linha)
+    execute format('create trigger t_nao_trunca before truncate on erp.%I for each statement execute function erp.tg_recusa_truncate()', t.relname);
   end loop;
 end $$;
+create policy auditoria_grava on erp.auditoria for insert to erp_auditoria with check (true);
 
 do $$
 declare r record;
@@ -77,8 +86,18 @@ begin
     ('erp.pedir_reclassificacao(uuid, uuid, text, jsonb, boolean)', 'erp_reclassificacao'),
     ('erp.cancelar_reclassificacao(uuid)', 'erp_reclassificacao'),
     -- lançar a nota muda a situação dela (S-036)
-    ('erp.lancar_documento(uuid, date[], uuid[])', 'erp_situacao')) v(f, dono) loop
+    ('erp.lancar_documento(uuid, date[], uuid[])', 'erp_situacao'),
+    -- quem escreve no livro e na caução (S-051, S-052)
+    ('erp.tg_previsao()', 'erp_situacao'), ('erp.tg_pagamento()', 'erp_situacao'),
+    ('erp.liberar_caucao(uuid, numeric, date, uuid, text)', 'erp_situacao'),
+    ('erp.publicar_orcamento(uuid)', 'erp_situacao'),
+    -- quem escreve na auditoria (S-052)
+    ('erp.tg_auditoria()', 'erp_auditoria')) v(f, dono) loop
     execute format('alter function %s security definer set search_path = erp, pg_catalog, pg_temp', r.f);
     execute format('alter function %s owner to %I', r.f, r.dono);
   end loop;
 end $$;
+
+-- Daqui em diante, só o erp.tg_auditoria (definer erp_auditoria) escreve na auditoria (S-052).
+create trigger t_auditoria_guarda before insert or update or delete on erp.auditoria
+  for each row execute function erp.tg_auditoria_guarda();

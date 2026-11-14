@@ -96,6 +96,17 @@ create table erp.auditoria (
   em       timestamptz not null default clock_timestamp()
 );
 
+-- A auditoria só cresce, e só pelo erp.tg_auditoria (definer erp_auditoria, migration
+-- _erp_rls); ninguém altera nem apaga, nem o sistema (S-052). Quem e quando, o banco põe.
+create function erp.tg_auditoria_guarda() returns trigger language plpgsql as $$
+begin
+  if tg_op <> 'INSERT' then raise exception 'A auditoria não se altera nem se apaga'; end if;
+  if not erp.agindo_como('erp_auditoria') then raise exception 'A auditoria só é escrita pelo sistema'; end if;
+  new.por := erp.eu();
+  new.em := clock_timestamp();
+  return new;
+end $$;
+
 create function erp.tg_auditoria() returns trigger language plpgsql as $$
 declare v_old jsonb; v_new jsonb;
 begin
@@ -105,6 +116,7 @@ begin
   values (tg_table_name, coalesce(v_new, v_old)->>(tg_argv[0]), lower(tg_op), v_old, v_new, erp.eu());
   return coalesce(new, old);
 end $$;
+-- o gatilho erp.tg_auditoria_guarda entra na migration _erp_rls, depois que o tg_auditoria vira definer
 
 -- Códigos de outros sistemas (Sienge, CRM, BKM Terrenos) para cada registro do ERP.
 -- Trocar de ERP é trocar as linhas desta tabela, não o modelo.

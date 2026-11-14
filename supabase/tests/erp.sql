@@ -764,6 +764,7 @@ select pg_temp.ok(not exists (
   select 1 from pg_policies where schemaname = 'erp'
   and not (policyname = 'conferencia' and cmd = 'SELECT' and roles = '{erp_conferencia}')
   and not (policyname = 'operacao' and roles::text[] @> '{erp_situacao,erp_reclassificacao}' and cardinality(roles) = 2)
+  and not (policyname = 'auditoria_grava' and tablename = 'auditoria' and cmd = 'INSERT' and roles = '{erp_auditoria}')
   and (coalesce(qual, '') ~* '^\(?\s*true\s*\)?$' or coalesce(with_check, '') ~* '^\(?\s*true\s*\)?$')),
   'catálogo: nenhuma política do `erp` é using(true) ou with check(true), fora a leitura do erp_conferencia');
 -- S-035: as variáveis de sessão antigas não abrem nada; só a operação do banco muda situação e natureza
@@ -1022,15 +1023,15 @@ select pg_temp.ok(not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'erp' and p.prosecdef
     and (not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) c where c like 'search\_path=%' and c like '%pg\_temp')
-         or p.proowner not in ('erp_conferencia'::regrole, 'erp_situacao'::regrole, 'erp_reclassificacao'::regrole))),
+         or p.proowner not in ('erp_conferencia'::regrole, 'erp_situacao'::regrole, 'erp_reclassificacao'::regrole, 'erp_auditoria'::regrole))),
   'catálogo: todo security definer do `erp` tem search_path fixo e é de erp_conferencia, erp_situacao ou erp_reclassificacao');
 select pg_temp.ok((select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-                   where n.nspname = 'erp' and p.prosecdef) >= 24,
+                   where n.nspname = 'erp' and p.prosecdef) >= 29,
   'catálogo: as funções de conferência são security definer');
-select pg_temp.ok((select count(*) = 4 and bool_and(not rolcanlogin and not rolsuper and not rolbypassrls) from pg_roles
-                   where rolname in ('erp_sistema', 'erp_conferencia', 'erp_situacao', 'erp_reclassificacao'))
+select pg_temp.ok((select count(*) = 5 and bool_and(not rolcanlogin and not rolsuper and not rolbypassrls) from pg_roles
+                   where rolname in ('erp_sistema', 'erp_conferencia', 'erp_situacao', 'erp_reclassificacao', 'erp_auditoria'))
                   and not exists (select 1 from pg_auth_members
-                                  where roleid in ('erp_conferencia'::regrole, 'erp_situacao'::regrole, 'erp_reclassificacao'::regrole)),
+                                  where roleid in ('erp_conferencia'::regrole, 'erp_situacao'::regrole, 'erp_reclassificacao'::regrole, 'erp_auditoria'::regrole)),
   'catálogo: os papéis erp_* não entram, não ignoram RLS, e conferência, situação e reclassificação não têm membros');
 select pg_temp.ok(not exists (
   select 1 from pg_auth_members m join pg_roles r on r.oid = m.roleid join pg_roles u on u.oid = m.member
@@ -1052,8 +1053,81 @@ select pg_temp.ok((select not prosecdef from pg_proc where oid = 'erp.agindo_com
 select pg_temp.ok(not exists (
   select 1 from pg_policies where schemaname = 'erp' and policyname <> 'sistema'
     and not (policyname = 'conferencia' and cmd = 'SELECT' and roles = '{erp_conferencia}')
-    and not (policyname = 'operacao' and cmd = 'ALL' and roles::text[] @> '{erp_situacao,erp_reclassificacao}' and cardinality(roles) = 2)),
+    and not (policyname = 'operacao' and cmd = 'ALL' and roles::text[] @> '{erp_situacao,erp_reclassificacao}' and cardinality(roles) = 2)
+    and not (policyname = 'auditoria_grava' and tablename = 'auditoria' and cmd = 'INSERT' and roles = '{erp_auditoria}')),
   'catálogo: no `erp` só há as políticas sistema, conferencia e operacao (as de perfil entram com o grant a authenticated)');
+
+-- S-051, S-052: caução, livro e auditoria só crescem, e só pelas operações do banco
+begin;
+select pg_temp.como(:'diretor');
+create function pg_temp.erro_igual(sqlcmd text, esperado text, msg text) returns void language plpgsql as $f$
+begin
+  begin execute sqlcmd; exception when others then
+    if sqlerrm = esperado then raise notice 'ok  %', msg; return; end if;
+    raise exception 'FALHOU: % (erro foi: %)', msg, sqlerrm;
+  end;
+  raise exception 'FALHOU: % (passou)', msg;
+end $f$;
+select pg_temp.ok(exists (select 1 from erp.caucao_movimentos), 'S-051: há extrato de caução para conferir');
+select pg_temp.erro_igual($$update erp.caucao_movimentos set valor = valor * 1000$$,
+  'O extrato da caução não se altera', 'S-051: retenção de caução não se infla por UPDATE');
+select pg_temp.erro_igual($$delete from erp.caucao_movimentos$$,
+  'O extrato da caução não se altera', 'S-051: extrato da caução não se apaga');
+select pg_temp.erro_igual(format($$insert into erp.caucao_movimentos (compromisso_id, tipo, valor, documento_id)
+  select compromisso_id, 'retencao', 900000, documento_id from erp.caucao_movimentos where tipo = 'retencao' limit 1$$),
+  'A caução só se movimenta pelo lançamento da nota e pela liberação', 'S-051: retenção não entra por INSERT direto');
+select pg_temp.erro_igual($$truncate erp.caucao_movimentos cascade$$, 'Esta tabela não se apaga', 'S-051: extrato da caução não se apaga por truncate');
+-- mesmo dentro de uma operação, quem movimentou e quando o banco põe
+set local role erp_situacao;
+insert into erp.caucao_movimentos (id, compromisso_id, tipo, valor, documento_id, por, em)
+select '7a000000-0000-0000-0000-000000000051', compromisso_id, 'retencao', 1, documento_id, '00000000-0000-0000-0000-00000000000e', '2000-01-01'
+from erp.caucao_movimentos where tipo = 'retencao' limit 1;
+reset role;
+select pg_temp.ok((select por = :'diretor' and em > now() - interval '1 day' from erp.caucao_movimentos where id = '7a000000-0000-0000-0000-000000000051'),
+  'S-051: quem movimentou a caução e quando, o banco grava (o valor mandado é ignorado)');
+select pg_temp.erro_igual($$insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_caixa, valor)
+  values ('realizado', '20000000-0000-0000-0000-000000000003', '40000000-0000-0000-0000-000000000001', '45000000-0000-0000-0000-000000000001',
+          (select id from erp.naturezas where codigo = '04.01'), '2026-03-01', '2026-03-01', 123456)$$,
+  'O livro só recebe linhas pelas operações do sistema', 'S-052: linha sem origem não entra no livro por INSERT direto');
+select pg_temp.erro_igual($$truncate erp.lancamentos cascade$$, 'Esta tabela não se apaga', 'S-052: o livro não se apaga por truncate');
+select pg_temp.erro_igual($$insert into erp.auditoria (tabela, registro, acao, por) values ('pagamentos', 'x', 'insert', '00000000-0000-0000-0000-00000000000a')$$,
+  'A auditoria só é escrita pelo sistema', 'S-052: auditoria não recebe linha por INSERT direto');
+select pg_temp.erro_igual($$update erp.auditoria set por = null$$, 'A auditoria não se altera nem se apaga', 'S-052: auditoria não se altera');
+select pg_temp.erro_igual($$delete from erp.auditoria$$, 'A auditoria não se altera nem se apaga', 'S-052: auditoria não se apaga');
+select pg_temp.erro_igual($$truncate erp.auditoria$$, 'Esta tabela não se apaga', 'S-052: auditoria não se apaga por truncate');
+select pg_temp.como(null);
+set local role erp_sistema;
+select pg_temp.erro_igual($$delete from erp.auditoria$$, 'A auditoria não se altera nem se apaga', 'S-052: nem o erp_sistema apaga a auditoria');
+reset role;
+select pg_temp.como(:'diretor');
+update erp.regra_adiantamento set trava = false;
+select pg_temp.ok((select por = :'diretor' and em > now() - interval '1 minute' from erp.auditoria order by id desc limit 1),
+  'S-052: a auditoria grava quem fez e quando, pelo banco');
+set local role erp_auditoria;
+insert into erp.auditoria (tabela, registro, acao, por, em) values ('teste', 'S-052', 'insert', '00000000-0000-0000-0000-00000000000e', '2000-01-01');
+reset role;
+select pg_temp.ok((select por = :'diretor' and em > now() - interval '1 minute' from erp.auditoria where tabela = 'teste'),
+  'S-052: nem o dono da auditoria escolhe quem fez nem quando');
+rollback;
+select pg_temp.ok(not exists (
+  select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'erp' and c.relkind in ('r', 'p')
+    and not exists (select 1 from pg_trigger t where t.tgrelid = c.oid and (t.tgtype & 32) = 32 and (t.tgtype & 2) = 2)),
+  'catálogo: toda tabela do `erp` recusa TRUNCATE');
+select pg_temp.ok(not exists (
+  select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'erp' and p.prosecdef
+    and p.proowner in ('erp_situacao'::regrole, 'erp_reclassificacao'::regrole, 'erp_auditoria'::regrole)
+    and p.prosrc ~* '\mexecute\M'),
+  'catálogo: nenhuma operação definer usa EXECUTE dinâmico');
+select pg_temp.ok((select count(*) = 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                   where n.nspname = 'erp' and p.proowner = 'erp_auditoria'::regrole)
+                  and has_table_privilege('erp_auditoria', 'erp.auditoria', 'INSERT')
+                  and not has_table_privilege('erp_auditoria', 'erp.auditoria', 'UPDATE')
+                  and not has_table_privilege('erp_auditoria', 'erp.auditoria', 'DELETE')
+                  and not exists (select 1 from information_schema.role_table_grants
+                                  where grantee = 'erp_auditoria' and table_schema = 'erp' and table_name <> 'auditoria'),
+  'catálogo: erp_auditoria só é dono do tg_auditoria e só insere na auditoria');
 
 \echo '# fim'
 do $$ begin raise notice 'TODOS OS TESTES PASSARAM'; end $$;
