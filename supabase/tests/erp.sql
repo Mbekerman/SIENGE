@@ -720,5 +720,37 @@ select pg_temp.ok(not exists (
                 where n.nspname = 'erp' and a.grantee = 0)),
   'catálogo: o esquema `erp` não dá nenhum privilégio a public, anon, authenticated ou service_role');
 
+-- S-003: RLS ligado e forçado em toda tabela, nenhuma política que libere tudo.
+select pg_temp.ok(not exists (
+  select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'erp' and c.relkind in ('r', 'p') and not (c.relrowsecurity and c.relforcerowsecurity)),
+  'catálogo: toda tabela do `erp` tem RLS ligado e forçado');
+select pg_temp.ok((select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
+                   where n.nspname = 'erp' and c.relkind in ('r', 'p')) >= 47,
+  'catálogo: a conferência do RLS achou as tabelas do esquema');
+select pg_temp.ok(not exists (
+  select 1 from pg_policies where schemaname = 'erp'
+  and (coalesce(qual, '') ~* '^\(?\s*true\s*\)?$' or coalesce(with_check, '') ~* '^\(?\s*true\s*\)?$')),
+  'catálogo: nenhuma política do `erp` é using(true) ou with check(true)');
+-- nega por padrão: papel comum com SELECT, como usuário, não vê nada; sem usuário (sistema) vê
+begin;
+create role erp_teste_rls nologin;
+grant usage on schema erp to erp_teste_rls;
+grant select on all tables in schema erp to erp_teste_rls;
+grant execute on all functions in schema erp to erp_teste_rls;
+grant usage on schema auth to erp_teste_rls;
+grant execute on function auth.uid() to erp_teste_rls;
+select pg_temp.como(:'diretor');
+set local role erp_teste_rls;
+select pg_temp.ok((select count(*) from erp.empresas) = 0 and (select count(*) from erp.titulos) = 0
+                  and (select count(*) from erp.pagamentos) = 0,
+  'RLS nega por padrão: até o diretor, fora do sistema, não lê nada sem política de perfil');
+reset role;
+select pg_temp.como(null);
+set local role erp_teste_rls;
+select pg_temp.ok((select count(*) from erp.empresas) > 0, 'a política do sistema deixa a rotina sem usuário ler');
+reset role;
+rollback;
+
 \echo '# fim'
 do $$ begin raise notice 'TODOS OS TESTES PASSARAM'; end $$;
