@@ -4,14 +4,14 @@ O banco é um Postgres do Supabase, num projeto próprio do ERP (decisão de 7/n
 
 | Esquema | Papel | Situação |
 | --- | --- | --- |
-| `erp` | Modelo da BKM, neutro em relação ao ERP | **[Construído em branch]** v0, 7/nov/2026, ainda não integrado na `develop` nem aplicado em nenhum banco |
+| `erp` | Modelo da BKM, neutro em relação ao ERP | **[Construído]** v0, 7/nov/2026, integrado na `develop` em 14/nov/2026 (PR #1), ainda não aplicado em nenhum banco |
 | `sienge` | Espelho do Sienge: uma tabela por entidade da API | **[Desenhado]**, aprovado pelo Moises em 7/nov/2026 |
 | `sienge_bruto` | Resposta inteira de cada chamada à API, nunca alterada | **[Desenhado]**, aprovado em 7/nov/2026 |
 | `crm`, `crm_bruto` | Mesma lógica para o CRM | **[Desenhado]**; CRM ainda não identificado |
 | esquema pessoal dos PJ (nome a definir) | Cadastro e remuneração dos PJ, fora do `erp` | **[Desenhado]**, aceito pelo Moises em 7/nov/2026; **adiado até o Sienge sair** (ver 3.3) |
 | `app`, `fluxo` | BKM Terrenos e tarefas | Em outro projeto Supabase (BKM_Desenvolvimento_Imobiliario); ver `docs/modelo.md` do BKM Terrenos |
 
-## 3.1 Esquema `erp` [Construído em branch, 7/nov/2026]
+## 3.1 Esquema `erp` [Construído, 7/nov/2026; na `develop` desde 14/nov/2026]
 
 Onde está: branch `claude/project-thread-dknc98` deste repositório (commits `649ae60` "Núcleo do ERP BKM v0", `5c71b57`, `89c1202`, `ae75175` e `f659cfe`, que fecham o esquema à API). Quando o PR desse branch entrar na `develop`, esta seção passa a valer para a `develop`.
 
