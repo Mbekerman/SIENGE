@@ -65,6 +65,15 @@ Regra do Moises (8/nov/2026): controles, segurança da informação e SLA são a
 
 | Id | Gravidade | Onde | Desde |
 | --- | --- | --- | --- |
+| S-059 | Média | Cobertura de testes das travas | 14/nov/2026 |
+| S-058 | Média (latente; primeiro EXECUTE a `authenticated`) | `cancelar_reclassificacao` | 14/nov/2026 |
+| S-057 | Média (latente; primeiro grant) | Título por fora do fluxo; filhos da nota e do contrato | 14/nov/2026 |
+| S-056 | Média (latente; primeiro grant) | Núcleo de outra empresa no rateio (`tg_classificacao`, `checar_centro`) | 14/nov/2026 |
+| S-055 | Alta (latente; primeiro grant) | `usuarios`, `naturezas_sistema`, `niveis_aprovacao`, `orcamento_versoes`, `contas_bancarias`, `codigos_externos` sem gatilho | 14/nov/2026 |
+| S-054 | Alta (latente; primeiro grant) | `erp.titulo_previsoes` (INSERT direto) | 14/nov/2026 |
+| S-053 | Alta (latente; primeiro grant) | `erp.meses_fechados` sem trava | 14/nov/2026 |
+| S-052 | Alta (latente; primeiro grant; apagar pelo `erp_sistema`: hoje) | Livro (`lancamentos`) e auditoria graváveis pelo usuário | 14/nov/2026 |
+| S-051 | Crítica (latente; primeiro grant) | `erp.caucao_movimentos` (gatilho só AFTER INSERT) | 14/nov/2026 |
 | S-050 | Baixa | Deploy do `bkm_dev` colado à mão | 14/nov/2026 |
 | S-049 | Baixa | CI e repositório | 14/nov/2026 |
 | S-048 | Média (desenho) | Portal PJ no mesmo Auth | 14/nov/2026 |
@@ -189,3 +198,4 @@ Ainda não há código para revisar nestes pontos; ficam como requisito para que
 | 14/nov/2026 | PR #8 juntado na `develop` (`dadf8db`); S-036, S-037 e S-038 passam a corrigidas | 217 passando |
 | 14/nov/2026 | Primeiro deploy: `erp` da `develop` aplicado no `bkm_dev` (desenvolvimento, sem dado real). Conferências de catálogo no remoto (RLS forçado nas 47 tabelas, nenhum grant à API, donos das definer); suíte só local. Aviso do Supabase sobre 49 invoker sem `search_path`: anotada S-039. `public.rls_auto_enable()` executável por `anon` e `authenticated` é do Supabase e devolve `event_trigger` (não se chama por RPC). Começa a revisão em duas frentes (ver "Como a revisão cresce") | não se aplica |
 | 14/nov/2026 | Revisão em duas frentes, frente GitHub, servidor e front (método completo, agente auxiliar; nada alterado): S-040 a S-050. Conferido e ok: workflow sem `pull_request_target`, `contents: read`, sem segredo nem expressão do evento em `run:`; 244 commits sem segredo; nenhum `.env` commitado; nenhum dado pessoal real. Repositório público mantido pelo Moises: falhas abertas passam a ficar só com id e gravidade aqui | não se aplica |
+| 14/nov/2026 | Revisão em duas frentes, frente banco (método completo, agente auxiliar; sondas descartáveis locais e só leitura no `bkm_dev`; nada alterado): S-051 a S-059; 19 de 28 mutações sem teste. Ponto de fundo: gatilhos invoker que escrevem no livro e na auditoria obrigariam o primeiro grant a dar INSERT nessas tabelas. Conferido e ok no `bkm_dev`: nenhum privilégio no `erp` para os papéis da API nem privilégio padrão; papéis `erp_*` sem login nem bypass, único membro `postgres` (ADMIN, sem SET nem INHERIT); preparo desfeito; 47 tabelas com RLS forçado; 24 definer com `search_path` fixo; só as políticas sistema, conferencia e operacao | 217 passando |
