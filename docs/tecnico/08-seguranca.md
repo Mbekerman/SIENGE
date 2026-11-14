@@ -65,6 +65,11 @@ Regra do Moises (8/nov/2026): controles, segurança da informação e SLA são a
 
 | Id | Gravidade | Onde | Desde |
 | --- | --- | --- | --- |
+| S-075 | Baixa | Cadeia de substituição na revisão | 14/nov/2026 |
+| S-074 | Média | Cobertura de testes da revisão (PR #23) | 14/nov/2026 |
+| S-073 | Média (latente; primeiro grant) | Ajuste da revisão sem escopo | 14/nov/2026 |
+| S-072 | Baixa | Regra por campo contornável pelas linhas | 14/nov/2026 |
+| S-071 | Média | Ajuste da revisão sem trilha e sem segregação completa | 14/nov/2026 |
 | S-068 | Média (desenho) | Janela da competência ancorada na emissão digitada | 14/nov/2026 |
 | S-062 | Média (latente; primeiro grant) | `titulos_do_acumulado` lê por baixo do RLS | 14/nov/2026 |
 | S-050 | Baixa | Deploy do `bkm_dev` colado à mão | 14/nov/2026 |
@@ -219,3 +224,4 @@ Ainda não há código para revisar nestes pontos; ficam como requisito para que
 | 14/nov/2026 | PR #17 (S-063; `f19cce5`, 360 testes, juntado em `dcf133e`): 13 mutações próprias, 9 pegas; as 4 que sobram viram a S-067. Revisão do desenho: a janela se ancora na emissão digitada (S-068). PR #16 juntado (`f9dfff1`): S-060, S-064, S-065 e S-066 passam a corrigidas; S-063 também |
 | 14/nov/2026 | PR #19 (S-061 e S-067; `29e4698`, 386 testes, juntado em `e4851bb`): 28 mutações próprias no adiantamento, 25 pegas, 1 equivalente, 2 lacunas (S-070); as 4 da S-067 pegas. Revisão do desenho: a cobertura não olha onde o adiantamento foi abatido (S-069). Consequência para o adaptador do Sienge e o front: pagamento e quitações na mesma transação, e adiantamento importado precisa de pedido |
 | 14/nov/2026 | PR #21 (S-069 e S-070; `6b76924`, 390 testes): cada título atendido pelo pedido consome o maior entre o que ele cobriu e o que foi abatido nele (as quitações somam juros e multa menos desconto, igual ao `pagamento_saldo`). 6 mutações próprias (inner e left no lugar do full join, abatido de qualquer pagamento, cobertura de qualquer pedido, núcleo, `least`), todas pegas |
+| 14/nov/2026 | PR #23 (recusa cancela com estorno; revisão com ajuste e volta nova; `regras_ajuste`; `fb65f03`, 442 testes, juntado em `4e0a2e4`): 47 mutações próprias, 32 pegas, 7 equivalentes, 8 lacunas (S-074). Revisão do desenho: S-071 (ajuste sem trilha; segregação só no reenviador), S-072 (regra por campo contornável pelas linhas), S-073 (sem escopo, para o primeiro grant), S-075 (cadeia de substituição). Nenhuma alta ou crítica |
