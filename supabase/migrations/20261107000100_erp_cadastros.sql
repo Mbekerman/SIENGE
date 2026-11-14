@@ -286,19 +286,59 @@ create trigger t_emp_atributo before insert or update on erp.empreendimento_atri
 
 -- Núcleo econômico (decisão do Moises, 14/11/2026): a SPE ou obra, o Corporativo, uma loja.
 -- É onde a despesa mora; os centros de custo (Marketing, Obra...) ficam dentro dele.
+-- Tipos de núcleo (Moises, 14/11/2026): lista editável pelo administrador, com auditoria.
+-- O tipo que exige empreendimento liga o núcleo a um empreendimento (a SPE ou obra).
+create table erp.tipos_nucleo (
+  codigo               text primary key check (codigo ~ '^[a-z][a-z0-9_]*$'),
+  nome                 text not null unique check (length(trim(nome)) > 0),
+  exige_empreendimento boolean not null default false,
+  ativo                boolean not null default true
+);
+insert into erp.tipos_nucleo (codigo, nome, exige_empreendimento) values
+  ('empreendimento', 'Empreendimento (SPE ou obra)', true),
+  ('corporativo', 'Corporativo', false),
+  ('loja', 'Loja', false),
+  ('outro', 'Outro', false);
+create function erp.tg_tipos_nucleo() returns trigger language plpgsql as $$
+begin
+  perform erp.exigir_admin();
+  if tg_op in ('DELETE', 'TRUNCATE') then raise exception 'Não se apaga o tipo de núcleo; desative'; end if;
+  if tg_op = 'UPDATE' and new.codigo <> old.codigo then raise exception 'O código do tipo de núcleo não muda'; end if;
+  if tg_op = 'UPDATE' and new.exige_empreendimento <> old.exige_empreendimento
+     and exists (select 1 from erp.nucleos_economicos where tipo = old.codigo) then
+    raise exception 'O tipo já tem núcleos; a exigência de empreendimento não muda';
+  end if;
+  return new;
+end $$;
+create trigger t_tipos_nucleo before insert or update or delete on erp.tipos_nucleo
+  for each row execute function erp.tg_tipos_nucleo();
+create trigger t_tipos_nucleo_truncate before truncate on erp.tipos_nucleo
+  for each statement execute function erp.tg_tipos_nucleo();
+create trigger t_aud_tipos_nucleo after insert or update or delete on erp.tipos_nucleo
+  for each row execute function erp.tg_auditoria('codigo');
+
 create table erp.nucleos_economicos (
   id                uuid primary key default gen_random_uuid(),
   empresa_id        uuid not null references erp.empresas,
-  tipo              text not null check (tipo in ('empreendimento','corporativo','outro')),
+  tipo              text not null references erp.tipos_nucleo,
   empreendimento_id uuid unique references erp.empreendimentos,
   nome              text not null,
   ativo             boolean not null default true,
-  unique (empresa_id, nome),
-  check ((tipo = 'empreendimento') = (empreendimento_id is not null))
+  criado_em         timestamptz not null default now(),   -- o escopo "futuros dos tipos" compara com ele
+  unique (empresa_id, nome)
 );
 
 create function erp.tg_nucleo_economico() returns trigger language plpgsql as $$
+declare t erp.tipos_nucleo;
 begin
+  select * into t from erp.tipos_nucleo where codigo = new.tipo;
+  if tg_op = 'INSERT' and not t.ativo then raise exception 'O tipo de núcleo está desativado'; end if;
+  if tg_op = 'UPDATE' and new.criado_em <> old.criado_em then raise exception 'A data de criação do núcleo não muda'; end if;
+  if t.exige_empreendimento and new.empreendimento_id is null then
+    raise exception 'O núcleo deste tipo precisa de um empreendimento';
+  elsif not t.exige_empreendimento and new.empreendimento_id is not null then
+    raise exception 'Só o núcleo de tipo com empreendimento aponta para um empreendimento';
+  end if;
   if new.empreendimento_id is not null
      and new.empresa_id <> (select spe_id from erp.empreendimentos where id = new.empreendimento_id) then
     raise exception 'O núcleo econômico do empreendimento fica na SPE dele';
@@ -376,6 +416,9 @@ create table erp.naturezas (
   linha_dfc  text not null check (linha_dfc in ('operacional','investimento','financiamento','nenhuma')),
   so_orcado  boolean not null,       -- custo de oportunidade: aparece no orçado, nunca vira pagamento
   redutora   boolean not null,
+  -- restrita (pró-labore, folha PJ...): fechada a todos, mesmo dentro do centro, até liberação
+  -- no perfil ou na exceção da pessoa; vale para o galho inteiro
+  restrita   boolean not null default false,
   ativa      boolean not null default true,
   ordem      int not null default 0,
   criada_em  timestamptz not null default now(),

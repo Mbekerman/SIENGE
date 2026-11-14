@@ -397,7 +397,8 @@ select pg_temp.falha($$insert into erp.pagamentos (empresa_id, conta_id, pessoa_
   returning case when criado_por = '00000000-0000-0000-0000-00000000000e' then 1/0 end$$,
   'quem grava não escolhe quem lançou o pagamento');
 select pg_temp.como(:'diretor');
-insert into erp.listas_financeiro (lista, user_id) values ('AF', :'gestor'), ('AF', :'analista'), ('AF', :'contador'), ('AD', :'diretor2'), ('AD', :'diretor');
+insert into erp.listas_financeiro (lista, user_id) values ('AF', :'gestor'), ('AF', :'analista'), ('AF', :'contador'), ('AD', :'diretor2');
+select pg_temp.como(null); insert into erp.listas_financeiro (lista, user_id) values ('AD', :'diretor') on conflict do nothing; select pg_temp.como(:'diretor');  -- o próprio acesso só pelo sistema
 update erp.usuarios set ativo = false where id = :'contador';
 insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
 values ('70000000-0000-0000-0000-000000000008', :'spe', '10000000-0000-0000-0000-000000000005', 'nfse', '108', '2026-03-05', '2026-03-01', 100);
@@ -456,7 +457,8 @@ select pg_temp.falha($$truncate erp.liberacoes_sem_abater$$, 'liberação não s
 rollback;
 begin;
 select pg_temp.como(:'diretor');
-insert into erp.listas_financeiro (lista, user_id) values ('AD', :'diretor2'), ('AD', :'diretor');
+insert into erp.listas_financeiro (lista, user_id) values ('AD', :'diretor2');
+select pg_temp.como(null); insert into erp.listas_financeiro (lista, user_id) values ('AD', :'diretor') on conflict do nothing; select pg_temp.como(:'diretor');  -- o próprio acesso só pelo sistema
 insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
 values ('70000000-0000-0000-0000-000000000008', :'spe', '10000000-0000-0000-0000-000000000005', 'nfse', '108', '2026-03-05', '2026-03-01', 100);
 insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
@@ -992,7 +994,7 @@ create policy teste_gravar on erp.pagamentos for insert to erp_teste_perfil with
 create policy teste_gravar on erp.quitacoes for insert to erp_teste_perfil with check (true);
 -- o que um usuário com tudo à vista enxerga (aqui, superusuário)
 select pg_temp.como(:'diretor');
-insert into erp.listas_financeiro (lista, user_id) values ('AD', :'diretor');
+select pg_temp.como(null); insert into erp.listas_financeiro (lista, user_id) values ('AD', :'diretor') on conflict do nothing; select pg_temp.como(:'diretor');  -- o próprio acesso só pelo sistema
 select (select parcela_id from erp.quitacoes order by parcela_id limit 1) as qpar \gset
 select (select previsao_id from erp.titulo_previsoes order by previsao_id limit 1) as qprev \gset
 select erp.parcela_saldo(:'qpar') as ps, erp.pagamento_saldo('80000000-0000-0000-0000-000000000003') as gs,
@@ -2099,7 +2101,8 @@ insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id,
 -- com a etapa do AD nesta faixa, para ver as três etapas
 select pg_temp.como(:'diretor');
 update erp.alcadas_pagamento set etapas = '{AREA,AF,AD}' where ate = 50000;
-insert into erp.listas_financeiro (lista, user_id) values ('AD', :'diretor2'), ('AD', :'diretor') on conflict do nothing;
+insert into erp.listas_financeiro (lista, user_id) values ('AD', :'diretor2') on conflict do nothing;
+select pg_temp.como(null); insert into erp.listas_financeiro (lista, user_id) values ('AD', :'diretor') on conflict do nothing; select pg_temp.como(:'diretor');  -- o próprio acesso só pelo sistema
 select pg_temp.como(:'analista');
 select erp.confirmar_titulo('82000000-0000-0000-0000-000000000042');
 select pg_temp.como(:'gestor');
@@ -2311,6 +2314,167 @@ select pg_temp.como(:'analista');
 insert into erp.documentos_fiscais (empresa_id, emitente_id, compromisso_id, tipo, numero, emissao, competencia, valor_bruto)
 values (:'spe', '10000000-0000-0000-0000-000000000005', '60000000-0000-0000-0000-000000000002', 'nfse', '660', '2027-01-05', '2027-01-01', 900);
 select pg_temp.ok(true, 'recusa: a nota recusada libera o número para lançar a versão certa');
+rollback;
+-- ---------------------------------------------------------------------
+\echo '# perfis de acesso: tipos de núcleo, modelos, atribuições, exceções'
+begin;
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual($$insert into erp.tipos_nucleo (codigo, nome) values ('stand', 'Stand de vendas')$$,
+  'Só o administrador pode mudar a configuração', 'tipos de núcleo: só o administrador cria tipo');
+select pg_temp.como(:'diretor');
+insert into erp.tipos_nucleo (codigo, nome) values ('stand', 'Stand de vendas');
+select pg_temp.ok(exists (select 1 from erp.auditoria where tabela = 'tipos_nucleo' and registro = 'stand'), 'tipos de núcleo: o administrador cria tipo novo, com auditoria');
+select pg_temp.erro_igual($$delete from erp.tipos_nucleo where codigo = 'stand'$$, 'Não se apaga o tipo de núcleo; desative', 'tipos de núcleo: não se apagam');
+select pg_temp.erro_igual($$update erp.tipos_nucleo set exige_empreendimento = false where codigo = 'empreendimento'$$,
+  'O tipo já tem núcleos; a exigência de empreendimento não muda', 'tipos de núcleo: tipo com núcleos não muda a exigência de empreendimento');
+select pg_temp.erro_igual(format($$insert into erp.nucleos_economicos (empresa_id, tipo, nome) values (%L, 'empreendimento', 'Sem obra')$$, :'spe'),
+  'O núcleo deste tipo precisa de um empreendimento', 'tipos de núcleo: o tipo que exige empreendimento recusa núcleo sem ele');
+select pg_temp.erro_igual(format($$insert into erp.nucleos_economicos (empresa_id, tipo, empreendimento_id, nome) values (%L, 'stand', '30000000-0000-0000-0000-000000000001', 'Stand VM')$$, :'spe'),
+  'Só o núcleo de tipo com empreendimento aponta para um empreendimento', 'tipos de núcleo: tipo sem empreendimento não aponta para um');
+update erp.tipos_nucleo set ativo = false where codigo = 'stand';
+select pg_temp.erro_igual(format($$insert into erp.nucleos_economicos (empresa_id, tipo, nome) values (%L, 'stand', 'Stand VM')$$, :'spe'),
+  'O tipo de núcleo está desativado', 'tipos de núcleo: tipo desativado não recebe núcleo novo');
+
+-- núcleos: uma loja de hoje
+insert into erp.nucleos_economicos (id, empresa_id, tipo, nome) values ('40000000-0000-0000-0000-000000000031', :'spe', 'loja', 'Loja hoje');
+\set ne_loja '40000000-0000-0000-0000-000000000031'
+
+-- modelos
+insert into erp.perfis_modelo (id, nome) values
+  ('a0000000-0000-0000-0000-000000000001', 'Analista de Marketing'),
+  ('a0000000-0000-0000-0000-000000000002', 'Leitor de Obra'),
+  ('a0000000-0000-0000-0000-000000000003', 'Leitor de Marketing'),
+  ('a0000000-0000-0000-0000-000000000004', 'Coordenador de Marketing');
+insert into erp.perfil_centros values
+  ('a0000000-0000-0000-0000-000000000001', :'cc_mkt', 'lancador_restrito'),
+  ('a0000000-0000-0000-0000-000000000002', :'cc_obra', 'leitor'),
+  ('a0000000-0000-0000-0000-000000000003', :'cc_mkt', 'leitor'),
+  ('a0000000-0000-0000-0000-000000000004', :'cc_mkt', 'lancador');
+insert into erp.perfil_naturezas values ('a0000000-0000-0000-0000-000000000004', pg_temp.nat('05.01'));
+update erp.naturezas set restrita = true where codigo = '05.01.04';
+
+-- ninguém muda o próprio acesso; quem não é administrador não dá acesso
+select pg_temp.erro_igual(format($$insert into erp.atribuicoes (user_id, perfil_id, escopo) values (%L, 'a0000000-0000-0000-0000-000000000004', 'todos')$$, :'diretor'),
+  'Ninguém muda o próprio acesso', 'perfis: o administrador não se dá acesso');
+select pg_temp.erro_igual(format($$insert into erp.listas_financeiro (lista, user_id) values ('AO', %L)$$, :'diretor'),
+  'Ninguém muda o próprio acesso', 'perfis: o administrador não se põe em AF, AO ou AD');
+select pg_temp.erro_igual(format($$insert into erp.centro_diretores values (%L, %L)$$, :'cc_mkt', :'diretor'),
+  'Ninguém muda o próprio acesso', 'perfis: o administrador não se faz diretor da área');
+select pg_temp.como(:'contador');
+select pg_temp.erro_igual(format($$insert into erp.atribuicoes (user_id, perfil_id, escopo) values (%L, 'a0000000-0000-0000-0000-000000000004', 'todos')$$, :'analista'),
+  'Só o administrador pode mudar a configuração', 'perfis: só o administrador atribui modelo');
+select pg_temp.erro_igual($$update erp.perfil_centros set nivel = 'lancador'$$,
+  'Só o administrador pode mudar a configuração', 'perfis: só o administrador muda o modelo');
+select pg_temp.como(:'diretor');
+
+-- analista: Analista de Marketing na lista (Vila Maria)
+insert into erp.atribuicoes (id, user_id, perfil_id, escopo) values ('a1000000-0000-0000-0000-000000000001', :'analista', 'a0000000-0000-0000-0000-000000000001', 'lista');
+insert into erp.atribuicao_nucleos values ('a1000000-0000-0000-0000-000000000001', :'ne_vm', true);
+select pg_temp.ok(exists (select 1 from erp.auditoria where tabela = 'atribuicoes' and registro = 'a1000000-0000-0000-0000-000000000001'),
+  'perfis: atribuição entra na auditoria');
+select pg_temp.ok((select not ve_tudo and lanca from erp.acesso(:'analista', :'ne_vm', :'cc_mkt')),
+  'perfis: lançador restrito lança e não vê tudo do centro');
+select pg_temp.ok(erp.ve_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.01'), :'analista')
+                  and not erp.ve_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.01'), :'gestor'),
+  'perfis: lançador restrito vê o que lançou e não vê o lançamento de outro');
+select pg_temp.ok((select not ve_tudo and not lanca from erp.acesso(:'analista', :'ne_corp', :'cc_mkt'))
+                  and (select not ve_tudo and not lanca from erp.acesso(:'analista', :'ne_vm', :'cc_obra')),
+  'perfis: fora da lista ou fora dos centros do modelo, nada');
+select pg_temp.ok(erp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.01'))
+                  and not erp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'))
+                  and not erp.ve_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), :'analista'),
+  'perfis: natureza restrita fica fechada mesmo dentro do centro, até liberação');
+select pg_temp.erro_igual($$insert into erp.atribuicao_tipos values ('a1000000-0000-0000-0000-000000000099', 'loja')$$,
+  'insert or update on table "atribuicao_tipos" violates foreign key constraint "atribuicao_tipos_atribuicao_id_fkey"', 'perfis: tipo só em atribuição que existe');
+
+-- analista: Leitor de Obra em todos, inclusive os futuros, exceto o Corporativo
+insert into erp.atribuicoes (id, user_id, perfil_id, escopo) values ('a1000000-0000-0000-0000-000000000002', :'analista', 'a0000000-0000-0000-0000-000000000002', 'todos');
+insert into erp.atribuicao_nucleos values ('a1000000-0000-0000-0000-000000000002', :'ne_corp', false);
+select pg_temp.erro_igual($$insert into erp.atribuicao_nucleos values ('a1000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000031', true)$$,
+  'Só o escopo lista inclui núcleos; nos outros, o núcleo marcado fica de fora', 'perfis: escopo todos só exclui núcleos');
+select pg_temp.erro_igual($$insert into erp.atribuicao_tipos values ('a1000000-0000-0000-0000-000000000002', 'loja')$$,
+  'O escopo todos não escolhe tipos', 'perfis: escopo todos não escolhe tipos');
+insert into erp.nucleos_economicos (id, empresa_id, tipo, nome, criado_em) values
+  ('40000000-0000-0000-0000-000000000032', :'spe', 'loja', 'Loja futura', now() + interval '1 day'),
+  ('40000000-0000-0000-0000-000000000033', :'incorp', 'outro', 'Outro futuro', now() + interval '1 day');
+\set ne_loja2 '40000000-0000-0000-0000-000000000032'
+\set ne_outro2 '40000000-0000-0000-0000-000000000033'
+select pg_temp.ok((select ve_tudo and not lanca from erp.acesso(:'analista', :'ne_vm', :'cc_obra'))
+                  and (select ve_tudo from erp.acesso(:'analista', :'ne_loja2', :'cc_obra'))
+                  and (select not ve_tudo from erp.acesso(:'analista', :'ne_corp', :'cc_obra')),
+  'perfis: todos, inclusive os futuros, exceto os marcados');
+
+-- sobreposição: Leitor de Marketing nos empreendimentos (tipo) soma com o lançador restrito
+insert into erp.atribuicoes (id, user_id, perfil_id, escopo) values ('a1000000-0000-0000-0000-000000000003', :'analista', 'a0000000-0000-0000-0000-000000000003', 'tipos');
+insert into erp.atribuicao_tipos values ('a1000000-0000-0000-0000-000000000003', 'empreendimento');
+select pg_temp.ok((select ve_tudo and lanca from erp.acesso(:'analista', :'ne_vm', :'cc_mkt'))
+                  and erp.ve_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.01'), :'gestor'),
+  'perfis: atribuições que se sobrepõem valem pelo maior (leitor + lançador restrito = lançador)');
+select pg_temp.ok((select not ve_tudo from erp.acesso(:'analista', :'ne_loja', :'cc_mkt')),
+  'perfis: escopo por tipo não pega núcleo de outro tipo');
+insert into erp.atribuicao_nucleos values ('a1000000-0000-0000-0000-000000000003', :'ne_vm', false);
+select pg_temp.ok((select not ve_tudo and lanca from erp.acesso(:'analista', :'ne_vm', :'cc_mkt')),
+  'perfis: escopo por tipo exceto os marcados');
+
+-- exceção da pessoa vence o modelo
+insert into erp.excecoes_centro values (:'analista', :'ne_vm', :'cc_mkt', 'nenhum', null);
+select pg_temp.ok((select not ve_tudo and not lanca from erp.acesso(:'analista', :'ne_vm', :'cc_mkt')),
+  'perfis: exceção nenhum tira o acesso que o modelo dá');
+update erp.excecoes_centro set nivel = 'leitor' where user_id = :'analista';
+select pg_temp.ok((select ve_tudo and not lanca from erp.acesso(:'analista', :'ne_vm', :'cc_mkt')),
+  'perfis: exceção troca o nível do modelo');
+update erp.excecoes_centro set fim = current_date - 1 where user_id = :'analista';
+select pg_temp.ok((select not ve_tudo and lanca from erp.acesso(:'analista', :'ne_vm', :'cc_mkt')),
+  'perfis: exceção vencida deixa de valer');
+
+-- naturezas: liberação e bloqueio da pessoa
+insert into erp.excecoes_natureza (user_id, natureza_id, centro_custo_id, efeito) values (:'analista', pg_temp.nat('05.01.04'), :'cc_mkt', 'liberar');
+select pg_temp.ok(erp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'))
+                  and not erp.ve_linha(:'analista', :'ne_vm', :'cc_obra', pg_temp.nat('05.01.04'), :'gestor'),
+  'perfis: natureza restrita liberada só no centro da liberação');
+insert into erp.excecoes_natureza (user_id, natureza_id, centro_custo_id, efeito) values (:'analista', pg_temp.nat('05.01'), null, 'bloquear');
+select pg_temp.ok(not erp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.01'))
+                  and not erp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04')),
+  'perfis: bloqueio do galho vence a liberação e vale nas naturezas de baixo');
+
+-- modelo que libera natureza restrita: só nos centros do modelo
+insert into erp.atribuicoes (id, user_id, perfil_id, escopo) values ('a1000000-0000-0000-0000-000000000004', :'leitor', 'a0000000-0000-0000-0000-000000000004', 'lista');
+insert into erp.atribuicao_nucleos values ('a1000000-0000-0000-0000-000000000004', :'ne_vm', true);
+select pg_temp.ok(erp.lanca_linha(:'leitor', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'))
+                  and not erp.natureza_liberada(:'leitor', :'ne_vm', :'cc_obra', pg_temp.nat('05.01.04')),
+  'perfis: o modelo libera a natureza restrita só nos centros dele');
+
+-- lista com os marcados agora + os futuros dos tipos escolhidos (foto na hora)
+insert into erp.atribuicoes (id, user_id, perfil_id, escopo) values ('a1000000-0000-0000-0000-000000000005', :'gestor', 'a0000000-0000-0000-0000-000000000003', 'lista');
+insert into erp.atribuicao_nucleos values ('a1000000-0000-0000-0000-000000000005', :'ne_corp', true);
+insert into erp.atribuicao_tipos values ('a1000000-0000-0000-0000-000000000005', 'loja');
+select pg_temp.ok((select ve_tudo from erp.acesso(:'gestor', :'ne_corp', :'cc_mkt'))
+                  and (select not ve_tudo from erp.acesso(:'gestor', :'ne_loja', :'cc_mkt'))
+                  and (select ve_tudo from erp.acesso(:'gestor', :'ne_loja2', :'cc_mkt'))
+                  and (select not ve_tudo from erp.acesso(:'gestor', :'ne_outro2', :'cc_mkt'))
+                  and (select not ve_tudo from erp.acesso(:'gestor', :'ne_vm', :'cc_mkt')),
+  'perfis: lista = os marcados na hora + os núcleos criados depois nos tipos escolhidos');
+insert into erp.atribuicao_nucleos values ('a1000000-0000-0000-0000-000000000005', :'ne_loja2', false);
+select pg_temp.ok((select not ve_tudo from erp.acesso(:'gestor', :'ne_loja2', :'cc_mkt')),
+  'perfis: o futuro do tipo também se exclui');
+select pg_temp.erro_igual($$update erp.atribuicoes set escopo = 'todos' where id = 'a1000000-0000-0000-0000-000000000005'$$,
+  'Tire os tipos e núcleos incluídos que não valem no escopo novo antes de trocar', 'perfis: troca de escopo não deixa marca que não vale');
+select pg_temp.erro_igual($$update erp.atribuicoes set criado_em = now() - interval '1 year' where id = 'a1000000-0000-0000-0000-000000000005'$$,
+  'A atribuição não muda de pessoa nem de data de criação', 'perfis: a foto da atribuição não volta no tempo');
+select pg_temp.erro_igual(format($$update erp.nucleos_economicos set criado_em = now() + interval '2 days' where id = %L$$, :'ne_loja'),
+  'A data de criação do núcleo não muda', 'perfis: núcleo existente não vira futuro');
+
+-- validade e modelo desativado
+update erp.atribuicoes set inicio = current_date - 10, fim = current_date - 1 where id = 'a1000000-0000-0000-0000-000000000005';
+select pg_temp.ok((select not ve_tudo from erp.acesso(:'gestor', :'ne_corp', :'cc_mkt')), 'perfis: atribuição vencida deixa de valer');
+update erp.atribuicoes set inicio = current_date + 1, fim = null where id = 'a1000000-0000-0000-0000-000000000005';
+select pg_temp.ok((select not ve_tudo from erp.acesso(:'gestor', :'ne_corp', :'cc_mkt')), 'perfis: atribuição que ainda não começou não vale');
+update erp.atribuicoes set inicio = current_date where id = 'a1000000-0000-0000-0000-000000000005';
+update erp.perfis_modelo set ativo = false where id = 'a0000000-0000-0000-0000-000000000003';
+select pg_temp.ok((select not ve_tudo from erp.acesso(:'gestor', :'ne_corp', :'cc_mkt')), 'perfis: modelo desativado não dá acesso');
+update erp.perfis_modelo set ativo = true where id = 'a0000000-0000-0000-0000-000000000003';
+update erp.perfil_centros set nivel = 'lancador' where perfil_id = 'a0000000-0000-0000-0000-000000000003';
+select pg_temp.ok((select lanca from erp.acesso(:'gestor', :'ne_corp', :'cc_mkt')), 'perfis: mudar o modelo muda quem está ligado a ele');
 rollback;
 select pg_temp.ok(not exists (
   select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
