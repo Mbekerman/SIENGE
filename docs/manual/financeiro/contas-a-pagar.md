@@ -76,7 +76,9 @@ Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depo
 - Se sumir do Sienge um título que **não estava na planilha**, a leitura diária avisa a **AF**.
 - **Linha incluída à mão na planilha** (defesa caso a permissão de leitura seja mudada): o mesmo cruzamento diário marca como **inválida** a linha que não existe no ERP BKM e avisa a **AF**. Assim ninguém leva o financeiro a apagar um título definitivo acrescentando uma linha (Moises, 14/nov/2026, 14h30).
 
-✅ **A previsão aprovada é o pedido** (Moises, 14/nov/2026, respondendo ao diretor financeiro). A previsão passa pelas mesmas regras de aprovação do pedido de pagamento e é a autorização para contratar o serviço ou fazer a compra, antes da nota. Não se chama "pedido de compra", porque não passa por suprimentos, mas faz o mesmo papel. A nota que chega sem previsão aprovada pede uma aprovação a mais (a AD, por padrão), salvo uma verba pequena livre por centro de custo (valor a definir; o diretor financeiro sugeriu R$ 5 mil por mês para o Marketing).
+✅ **A previsão aprovada é o pedido** (Moises, 14/nov/2026, respondendo ao diretor financeiro). A previsão passa pelas mesmas regras de aprovação do pedido de pagamento e é a autorização para contratar o serviço ou fazer a compra, antes da nota. Não se chama "pedido de compra", porque não passa por suprimentos, mas faz o mesmo papel. A nota que chega sem previsão aprovada pede uma aprovação a mais (a AD, por padrão), salvo a **verba livre** do centro de custo.
+
+✅ **Verba livre, sem previsão** (Moises, 14/nov/2026): cada centro de custo pode receber nota sem previsão aprovada até dois limites configuráveis: um **valor por nota** e um **acumulado no mês**. Acima de qualquer dos dois, a nota pede a aprovação a mais. (O diretor financeiro sugeriu R$ 5 mil por mês para o Marketing.) 🟡 Proposta ainda sem confirmação: o acumulado também por fornecedor, para que ninguém pique uma compra grande em várias notas pequenas.
 
 ✅ **Travas de data da nota** (Moises, 14/nov/2026):
 

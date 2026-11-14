@@ -6,6 +6,7 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
+| 14/nov/2026 | Verba livre sem previsão por centro de custo, com limite por nota e acumulado no mês, configuráveis | [Contas a pagar](financeiro/contas-a-pagar.md#previsões-de-despesa-na-transição) |
 | 14/nov/2026 | Todo pagamento e adiantamento sai do banco com núcleo econômico e centro de custo; só a transferência entre contas da própria empresa dispensa | [Contas a pagar](financeiro/contas-a-pagar.md#adiantamento-sem-nota-prazo-e-travas) |
 | 14/nov/2026 | A previsão aprovada é o pedido antes do serviço (não se chama pedido de compra); nota sem previsão aprovada pede a AD, salvo verba pequena por centro de custo. Travas de data: nota de serviço fora das datas permitidas (editáveis) e nota emitida antes da previsão aprovada; AF ou AD abrem exceção. Sem rateio gerencial entre empresas. "Distribuição" fica entre as operações entre empresas. "Quitação" passa a se chamar **baixa** | [Contas a pagar](financeiro/contas-a-pagar.md#previsões-de-despesa-na-transição) |
 | 14/nov/2026 | Termos do diretor financeiro aceitos: previsões PPC, PCT e PRV; comprometido = nota lançada, paga ou não; pagamento parcial deixa saldo a pagar. Editar previsão (volta para aprovação) ou cancelar e criar outra. Nota não se rateia entre empresas. Datas permitidas para lançar nota de serviço, configuráveis. Entre empresas: aporte, AFAC, mútuo, reembolso e rateio | [Glossário](glossario.md) |
