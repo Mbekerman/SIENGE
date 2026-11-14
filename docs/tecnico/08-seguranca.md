@@ -65,10 +65,12 @@ Regra do Moises (8/nov/2026): controles, segurança da informação e SLA são a
 
 | Id | Gravidade | Onde | Desde |
 | --- | --- | --- | --- |
-| S-080 | Baixa | Cobertura de testes dos perfis de acesso (PR #28) | 14/nov/2026 |
+| S-084 | Baixa | Token do veto da sucessão (PR #31) | 14/nov/2026 |
+| S-083 | Média (desenho) | Sucessão do master sem prova de aviso (PR #31) | 14/nov/2026 |
+| S-082 | Média (desenho) | Beneficiários do pedido de acesso (PR #31) | 14/nov/2026 |
+| S-081 | Alta (desenho; latente até o primeiro grant) | Cadastro de usuários fora do pedido de acesso (PR #31) | 14/nov/2026 |
 | S-079 | Média (latente; primeiro grant) | Funções de acesso `invoker` e com a pessoa como parâmetro | 14/nov/2026 |
-| S-078 | Média (desenho) | Autoconcessão indireta pela configuração | 14/nov/2026 |
-| S-077 | Média | "Ninguém muda o próprio acesso" no UPDATE | 14/nov/2026 |
+| S-078 | Média (desenho; em correção no PR #31) | Autoconcessão indireta pela configuração | 14/nov/2026 |
 | S-073 | Média (latente; primeiro grant) | Ajuste da revisão sem escopo | 14/nov/2026 |
 | S-068 | Média (desenho) | Janela da competência ancorada na emissão digitada | 14/nov/2026 |
 | S-062 | Média (latente; primeiro grant) | `titulos_do_acumulado` lê por baixo do RLS | 14/nov/2026 |
@@ -128,6 +130,8 @@ Ainda não há código para revisar nestes pontos; ficam como requisito para que
 
 | Id | Gravidade | Falha | Correção | Conferido |
 | --- | --- | --- | --- | --- |
+| S-080 | Baixa | Cobertura de testes dos perfis de acesso (PR #28): 5 mutações sobreviviam (exceção `lancador_restrito` vendo tudo, `fim` da exceção de natureza no bloqueio e na liberação, filhos da atribuição sem dono, `user_id` da atribuição mudando, código do tipo de núcleo mudando). | Um teste para cada (PR #30, `c94b9fb`) | 14/nov/2026, na `develop` (merge `ea859c9`), 518 testes; as 5 refeitas e pegas |
+| S-077 | Média | "Ninguém muda o próprio acesso" no UPDATE: o gatilho olhava só o `new`, e o administrador tirava a própria exceção `nenhum`, o próprio bloqueio de natureza ou a exclusão de núcleo da própria atribuição passando a linha para outra pessoa. | O dono do `old` e do `new` é conferido (nas filhas, as duas atribuições), também no `tg_aprovador_nao_si`; `criado_em` do núcleo e da atribuição é sempre `now()` na inclusão, salvo pelo sistema (parte da S-078) (PR #30, `c94b9fb`) | 14/nov/2026, na `develop` (merge `ea859c9`), 518 testes; as 3 sondas barradas; 5 mutações nas correções, pegas |
 | S-076 | Baixa | Cobertura de testes do ajuste (PR #25): 3 mutações sobreviviam (exclusão de quem lançou o primeiro título da cadeia, lista AF na etapa AF, reenvio só no próprio título). | Testes das duas primeiras (PR #27, `ab34588`); a terceira é equivalente: `tg_autor` grava quem reenvia como autor do título refeito, que está na cadeia, e a checagem de autor da cadeia já barra | 14/nov/2026, na `develop` (merge `c6edc93`), 463 testes; refeitas as 3 mutações, as 2 primeiras pegas |
 | S-075 | Baixa | Cadeia de substituição na revisão: `decidir_titulo` barrava quem lançou o título substituído e quem reenviou a revisão dele só um nível para trás (`substitui_id`); na segunda revisão da mesma nota, quem lançou a original voltava a poder aprovar. | `erp.cadeia_titulo` (CTE recursiva, definer `erp_conferencia`) sobe a cadeia inteira; `decidir_titulo` barra quem é autor em qualquer título dela e quem reenviou ou ajustou em qualquer revisão dela (PR #25, `a4d3438`) | 14/nov/2026, na `develop` (merge `9f93e50`), 462 testes; mutações pegas |
 | S-074 | Média | Cobertura de testes da revisão (PR #23): 8 lacunas (trava de `rodada`/`substitui_id`, `cancelamento` à mão, `lancado_em` no ajuste, autor do substituído aprova, reenviador da nota anterior aprova a relançada, recusa de nota com imposto pago, janela da competência no reenvio do avulso, cobertura de outra volta). | Um teste para cada uma (PR #25, `a4d3438`); a thread do banco rodou as 17 mutações correspondentes, todas pegas | 14/nov/2026, na `develop` (merge `9f93e50`), 462 testes |
@@ -233,3 +237,5 @@ Ainda não há código para revisar nestes pontos; ficam como requisito para que
 | 14/nov/2026 | PR #25 (S-071, S-072, S-074, S-075; quem ajusta aprova a própria etapa; `a4d3438`, 462 testes, juntado em `9f93e50`): 23 mutações próprias, 17 pegas, 3 equivalentes (update e delete em `titulo_ajustes` e `por` livre: só os definers escrevem, sem grant ao app, e já com `erp.eu()`), 3 lacunas (S-076). S-071, S-072, S-074 e S-075 passam a corrigidas; S-073 fica para o primeiro grant. Revisão do desenho: com a aprovação pelo ajuste, o gestor e o AF que ajustam aprovam as próprias etapas, e o título ajustado abaixo da faixa do AD sai sem ninguém de fora do ajuste (registrado no 06). Nenhuma alta ou crítica |
 | 14/nov/2026 | PR #27 (S-076; `ab34588`, 463 testes, juntado em `c6edc93`): S-076 corrigida |
 | 14/nov/2026 | PR #28 (perfis de acesso; `7a3af3f`, 502 testes), antes do merge: 26 mutações próprias, 21 pegas, 5 lacunas (S-080). 6 sondas com o administrador: 3 contornam "ninguém muda o próprio acesso" pelo UPDATE (S-077); mudar o modelo que ele mesmo usa e tirar a marca de restrita passam (S-078, desenho). As funções de acesso ainda não estão em política nenhuma (S-079, para o primeiro grant). Nenhuma alta ou crítica |
+| 14/nov/2026 | PR #30 (S-077, S-080 e o `criado_em` da S-078; `c94b9fb`, 518 testes, juntado em `ea859c9`): 6 sondas refeitas, as 4 do UPDATE barradas; 10 mutações (as 5 da S-080 e 5 nas correções), todas pegas. S-077 e S-080 passam a corrigidas |
+| 14/nov/2026 | PR #31 (acesso só por pedido aprovado, master e sucessão; `339553c`, 564 testes), antes do merge: o desenho fecha a maior parte da S-078; a revisão abre S-081 (alta, cadastro de usuários fora do pedido; confirmada por sonda; vai ao Moises antes de corrigir), S-082 (beneficiários), S-083 (sucessão sem prova de aviso) e S-084 (token do veto) |
