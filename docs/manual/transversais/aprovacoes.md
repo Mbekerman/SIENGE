@@ -200,6 +200,19 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 
 🟡 Pelo banco de dados de 7/nov/2026: diretor, gestor, analista e leitura; à parte, administrador (configuração) e contador (vota nas alçadas que pedem o contador). Segue o modelo do BKM Terrenos, com hierarquia analista → gestor → diretor.
 
+## Alçada de pagamento do piloto (Marketing)
+
+✅ Decidida pelo Moises em 14/nov/2026; no banco desde o PR #14.
+
+- **Onde vale:** no piloto, Marketing. A alçada vale para o título a pagar com rateio num centro de custo que tem **gestor da área** cadastrado pelo administrador. Centro sem gestor cadastrado fica fora.
+- **Acumulado:** o do **mês de competência**, por centro de custo, somando todos os núcleos e empresas, já contando o próprio título.
+- **Faixas:**
+  - até R$ 50 mil no acumulado: aprovam o gestor da área e depois a AF;
+  - acima de R$ 50 mil: aprovam o gestor da área, depois a AF e depois a AD. Vale para o título que passa dos 50 mil e para todos os seguintes do mês.
+- **Configuração:** as faixas e o modo de somar (grupo, empresa ou núcleo) são valores iniciais; o administrador muda, com registro.
+- **Regras do código** (a conferir com o Moises): a alçada é fixada na confirmação do título, e um título lançado depois não muda a de um anterior; as etapas correm em sequência; quem lançou não aprova e cada pessoa aprova uma etapa só; recusar exige justificativa e trava o título; sem a alçada completa, o título não é pago; quem aprova vê os títulos do mês que formaram o acumulado.
+- **Fora da alçada:** imposto retido e movimento entre sócios.
+
 ## Pagamento com multa ou juros
 
 ✅ **Decidido** (Moises, 7/nov/2026): pagar com multa ou juros é "falha grave, desperdício por desorganização". Por isso, **o título com multa ou juros precisa de uma aprovação específica**, somada às regras normais, de uma pessoa definida pelo administrador. Por padrão, essa pessoa é a AD.
