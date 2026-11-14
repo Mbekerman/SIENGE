@@ -1041,6 +1041,20 @@ create trigger t_so_admin before insert or update or delete on erp.centro_aprova
   for each row execute function erp.tg_so_admin();
 create trigger t_aud_centro_aprovadores after insert or update or delete on erp.centro_aprovadores
   for each row execute function erp.tg_auditoria('centro_custo_id');
+-- O último gestor do centro não sai enquanto houver título esperando por ele (S-066).
+create function erp.tg_centro_aprovador() returns trigger language plpgsql as $$
+begin
+  if not exists (select 1 from erp.centro_aprovadores
+                  where centro_custo_id = old.centro_custo_id and user_id <> old.user_id)
+     and exists (select 1 from erp.titulo_alcadas a join erp.titulos t on t.id = a.titulo_id
+                  where a.centro_custo_id = old.centro_custo_id and t.situacao = 'aberto'
+                    and erp.alcada_pendente(a.titulo_id) = 'AREA' and not erp.alcada_recusada(a.titulo_id)) then
+    raise exception 'O centro tem títulos esperando o gestor da área; cadastre outro gestor antes';
+  end if;
+  return coalesce(new, old);
+end $$;
+create trigger t_centro_aprovador before update or delete on erp.centro_aprovadores
+  for each row execute function erp.tg_centro_aprovador();
 
 create table erp.alcadas_pagamento (
   id     uuid primary key default gen_random_uuid(),
@@ -1061,8 +1075,14 @@ create table erp.regra_alcada_pagamento (
   acumulado text not null default 'centro' check (acumulado in ('centro','empresa_centro','nucleo_centro'))
 );
 insert into erp.regra_alcada_pagamento default values;
+create function erp.tg_regra_alcada() returns trigger language plpgsql as $$
+begin
+  perform erp.exigir_admin();
+  if tg_op <> 'UPDATE' then raise exception 'A regra da alçada de pagamento é uma só; altere os valores'; end if;
+  return new;
+end $$;
 create trigger t_regra_alcada before insert or update or delete on erp.regra_alcada_pagamento
-  for each row execute function erp.tg_regra_adiantamento();
+  for each row execute function erp.tg_regra_alcada();
 create trigger t_aud_regra_alcada after update on erp.regra_alcada_pagamento
   for each row execute function erp.tg_auditoria('id');
 
@@ -1072,6 +1092,7 @@ create table erp.titulo_alcadas (
   etapas          text[] not null,
   centro_custo_id uuid not null references erp.centros_custo,   -- o centro de maior acumulado
   acumulado       numeric(15,2) not null,
+  titulos         uuid[] not null,              -- os títulos que formaram o acumulado (S-064)
   definida_em     timestamptz not null default clock_timestamp()
 );
 create table erp.titulo_aprovacoes (
@@ -1107,15 +1128,20 @@ create trigger t_alcada_titulo before insert or update or delete on erp.titulo_a
 -- O título de imposto retido e o movimento entre sócios seguem a nota e o aporte; não entram.
 create function erp._definir_alcada(p_titulo uuid) returns void language plpgsql as $$
 declare t erp.titulos; v_modo text := (select acumulado from erp.regra_alcada_pagamento);
-        r record; v_soma numeric; v_centro uuid; v_acum numeric; v_etapas text[];
+        r record; v_soma numeric; v_ids uuid[]; v_centro uuid; v_acum numeric; v_titulos uuid[]; v_etapas text[];
 begin
   select * into t from erp.titulos where id = p_titulo;
   if t.sentido <> 'pagar' or t.tipo in ('imposto','societario') then return; end if;
+  -- dois títulos do mesmo centro confirmados ao mesmo tempo se enxergam (S-060): trava os
+  -- centros do rateio, sempre na mesma ordem, até o fim da transação
+  perform 1 from erp.centros_custo c
+   where c.id in (select tr.centro_custo_id from erp.titulo_rateios tr where tr.titulo_id = t.id)
+   order by c.id for update;
   -- cada linha do rateio em centro com gestor aprovador; vale o maior acumulado
   for r in select tr.centro_custo_id, tr.nucleo_economico_id from erp.titulo_rateios tr
             where tr.titulo_id = t.id
               and exists (select 1 from erp.centro_aprovadores a where a.centro_custo_id = tr.centro_custo_id) loop
-    select coalesce(sum(t2.valor * r2.percentual / 100), 0) into v_soma
+    select round(coalesce(sum(t2.valor * r2.percentual / 100), 0), 2), array_agg(distinct t2.id) into v_soma, v_ids
       from erp.titulos t2 join erp.titulo_rateios r2 on r2.titulo_id = t2.id
      where r2.centro_custo_id = r.centro_custo_id
        and t2.sentido = 'pagar' and t2.tipo not in ('imposto','societario')
@@ -1123,13 +1149,14 @@ begin
        and erp.mes(t2.competencia) = erp.mes(t.competencia)
        and (v_modo = 'centro' or t2.empresa_id = t.empresa_id)
        and (v_modo <> 'nucleo_centro' or r2.nucleo_economico_id is not distinct from r.nucleo_economico_id);
-    if v_acum is null or v_soma > v_acum then v_acum := v_soma; v_centro := r.centro_custo_id; end if;
+    if v_acum is null or v_soma > v_acum then v_acum := v_soma; v_centro := r.centro_custo_id; v_titulos := v_ids; end if;
   end loop;
   if v_centro is null then return; end if;
   select etapas into v_etapas from erp.alcadas_pagamento
    where ate is null or v_acum <= ate order by (ate is null), ate limit 1;
   if v_etapas is null then raise exception 'Não há alçada de pagamento configurada para %', v_acum; end if;
-  insert into erp.titulo_alcadas (titulo_id, etapas, centro_custo_id, acumulado) values (t.id, v_etapas, v_centro, v_acum);
+  insert into erp.titulo_alcadas (titulo_id, etapas, centro_custo_id, acumulado, titulos)
+  values (t.id, v_etapas, v_centro, v_acum, v_titulos);
 end $$;
 
 -- Etapa da vez: a primeira sem aprovação; nula quando aprovado por todas (ou sem alçada).
@@ -1147,7 +1174,7 @@ create function erp.alcada_recusada(p_titulo uuid) returns boolean language sql 
 create function erp.titulos_do_acumulado(p_titulo uuid)
 returns table (titulo_id uuid, empresa_id uuid, pessoa text, competencia date, valor_no_centro numeric, situacao text)
 language plpgsql stable as $$
-declare a erp.titulo_alcadas; t erp.titulos; v_modo text := (select acumulado from erp.regra_alcada_pagamento);
+declare a erp.titulo_alcadas;
 begin
   select * into a from erp.titulo_alcadas where titulo_alcadas.titulo_id = p_titulo;
   if a.titulo_id is null then raise exception 'Este título não tem alçada de pagamento'; end if;
@@ -1155,15 +1182,14 @@ begin
           or exists (select 1 from erp.centro_aprovadores c where c.centro_custo_id = a.centro_custo_id and c.user_id = erp.eu())) then
     raise exception 'Só quem aprova o título vê o acumulado';
   end if;
-  select * into t from erp.titulos where id = p_titulo;
+  -- exatamente os títulos que entraram na soma, com a parte deles no centro
+  -- (com as políticas por perfil, filtrar pelo que quem pergunta vê: S-062)
   return query
-    select t2.id, t2.empresa_id, p.nome, t2.competencia, round(sum(t2.valor * r2.percentual / 100), 2), t2.situacao
-      from erp.titulos t2 join erp.titulo_rateios r2 on r2.titulo_id = t2.id join erp.pessoas p on p.id = t2.pessoa_id
-     where r2.centro_custo_id = a.centro_custo_id
-       and t2.sentido = 'pagar' and t2.tipo not in ('imposto','societario')
-       and t2.situacao in ('aberto','quitado') and erp.mes(t2.competencia) = erp.mes(t.competencia)
-       and (v_modo = 'centro' or t2.empresa_id = t.empresa_id)
-       and t2.criado_em <= t.criado_em
+    select t2.id, t2.empresa_id, p.nome, t2.competencia,
+           round(sum(t2.valor * r2.percentual / 100), 2), t2.situacao
+      from erp.titulos t2 join erp.titulo_rateios r2 on r2.titulo_id = t2.id and r2.centro_custo_id = a.centro_custo_id
+      join erp.pessoas p on p.id = t2.pessoa_id
+     where t2.id = any(a.titulos)
      group by t2.id, t2.empresa_id, p.nome, t2.competencia, t2.situacao, t2.criado_em
      order by t2.criado_em;
 end $$;

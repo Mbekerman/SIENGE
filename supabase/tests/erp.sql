@@ -1500,6 +1500,76 @@ select pg_temp.ok((select acumulado = 20000 from erp.titulo_alcadas where titulo
   'alçada: o acumulado é do mês; maio não conta em junho');
 select pg_temp.ok((select acumulado = 50000 and etapas = '{AREA,AF}' from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000007'),
   'alçada: chegar a 50 mil exatos ainda fica com gestor e AF');
+-- S-065 e S-066
+select pg_temp.como(:'diretor');
+insert into erp.listas_financeiro (lista, user_id) values ('AF', :'leitor') on conflict do nothing;
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual($$update erp.regra_alcada_pagamento set acumulado = 'nucleo_centro'$$,
+  'Só o administrador pode mudar a configuração', 'alçada: analista não muda o modo do acumulado');
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual($$insert into erp.regra_alcada_pagamento (id) values (true)$$,
+  'A regra da alçada de pagamento é uma só; altere os valores', 'alçada: a regra é uma linha só');
+select pg_temp.erro_igual(format($$delete from erp.centro_aprovadores where centro_custo_id = %L$$, :'cc_mkt'),
+  'O centro tem títulos esperando o gestor da área; cadastre outro gestor antes', 'alçada: o último gestor não sai com título esperando por ele');
+-- o título 7 (junho) espera o gestor; o gestor aprova e o leitor, mesmo no AF, não aprova
+select pg_temp.como(:'gestor');
+select erp.decidir_titulo('82000000-0000-0000-0000-000000000007', true);
+select pg_temp.como(:'leitor');
+select pg_temp.erro_igual($$select erp.decidir_titulo('82000000-0000-0000-0000-000000000007', true)$$,
+  'Seu papel só permite consulta', 'alçada: papel de leitura não aprova, nem estando no AF');
+select pg_temp.como(:'diretor');
+update erp.usuarios set ativo = false where id = :'gestor';
+select pg_temp.como(:'gestor');
+select pg_temp.erro_igual($$select erp.decidir_titulo('82000000-0000-0000-0000-000000000006', true)$$,
+  'Seu papel só permite consulta', 'alçada: gestor inativo não aprova');
+select pg_temp.como(:'diretor');
+update erp.usuarios set ativo = true where id = :'gestor';
+select pg_temp.ok((select titulos = array['82000000-0000-0000-0000-000000000006', '82000000-0000-0000-0000-000000000007']::uuid[]
+                   from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000007'),
+  'alçada: guarda os títulos que formaram o acumulado (a lista de quem aprova é a mesma da soma)');
+-- rateio em dois centros com gestor: vale o maior acumulado
+insert into erp.centro_aprovadores values (:'cc_obra', :'diretor2');
+select pg_temp.como(:'analista');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('82000000-0000-0000-0000-000000000008', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-07-02', '2026-07-01', 60000),
+  ('82000000-0000-0000-0000-000000000009', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-07-03', '2026-07-01', 1000);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values
+  ('82000000-0000-0000-0000-000000000008', 1, '2026-07-20', 60000), ('82000000-0000-0000-0000-000000000009', 1, '2026-07-20', 1000);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('82000000-0000-0000-0000-000000000008', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), 100),
+  ('82000000-0000-0000-0000-000000000009', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), 50),
+  ('82000000-0000-0000-0000-000000000009', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 50);
+select erp.confirmar_titulo('82000000-0000-0000-0000-000000000008');
+select erp.confirmar_titulo('82000000-0000-0000-0000-000000000009');
+select pg_temp.ok((select centro_custo_id = :'cc_obra' and acumulado = 60500 and etapas = '{AREA,AF,AD}'
+                   from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000009'),
+  'alçada: rateio em dois centros com gestor usa o de maior acumulado');
+-- imposto retido não entra na alçada
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+values ('70000000-0000-0000-0000-000000000650', :'spe', '10000000-0000-0000-0000-000000000007', 'nfse', '650', '2026-07-05', '2026-07-01', 1000);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+values ('70000000-0000-0000-0000-000000000650', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+insert into erp.documento_retencoes (documento_id, imposto, valor, orgao_id, vencimento)
+values ('70000000-0000-0000-0000-000000000650', 'iss', 50, '10000000-0000-0000-0000-000000000006', '2026-08-10');
+select erp.lancar_documento('70000000-0000-0000-0000-000000000650', array['2026-07-20']::date[]) is not null as lancou \gset
+select pg_temp.ok((select count(*) filter (where t.tipo = 'fornecedor') = 1 and count(*) filter (where t.tipo = 'imposto') = 0
+                   from erp.titulo_alcadas a join erp.titulos t on t.id = a.titulo_id
+                   where t.documento_id = '70000000-0000-0000-0000-000000000650'),
+  'alçada: o título do fornecedor entra; o imposto retido não');
+-- sem faixa que cubra o acumulado, o título não se confirma
+select pg_temp.como(:'diretor');
+delete from erp.alcadas_pagamento where ate is null;
+select pg_temp.como(:'analista');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('82000000-0000-0000-0000-000000000010', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-08-02', '2026-08-01', 60000);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('82000000-0000-0000-0000-000000000010', 1, '2026-08-20', 60000);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('82000000-0000-0000-0000-000000000010', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select pg_temp.erro_igual($$select erp.confirmar_titulo('82000000-0000-0000-0000-000000000010')$$,
+  'Não há alçada de pagamento configurada para 60000.00', 'alçada: sem faixa para o acumulado, o título não se confirma');
+select pg_temp.como(:'diretor');
+insert into erp.alcadas_pagamento (ate, etapas) values (null, '{AREA,AF,AD}');
+select pg_temp.como(:'analista');
 -- modo do acumulado por empresa: a outra empresa não conta
 select pg_temp.como(:'diretor');
 update erp.regra_alcada_pagamento set acumulado = 'empresa_centro';
