@@ -323,6 +323,38 @@ select pg_temp.falha($$insert into erp.quitacoes (pagamento_id, parcela_id, prin
 -- só abate no mesmo núcleo e centro; fora dele, aprovado; regra configurável
 select pg_temp.ok((select criado_por from erp.pagamentos where id = '80000000-0000-0000-0000-000000000003') = :'analista',
   'quem lançou o pagamento vem do servidor');
+-- autor e hora vêm do servidor no INSERT e não mudam no UPDATE (erp.tg_autor)
+begin;
+select pg_temp.como(:'diretor');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor, criado_por, criado_em)
+values ('a1000000-0000-0000-0000-000000000001', :'spe', 'avulso', '10000000-0000-0000-0000-000000000005',
+        '2026-03-01', '2026-03-01', 10, '00000000-0000-0000-0000-00000000000e', '2000-01-01');
+select pg_temp.ok((select criado_por = :'diretor' and criado_em > now() - interval '1 day'
+                   from erp.titulos where id = 'a1000000-0000-0000-0000-000000000001'),
+  'título: criado_por e criado_em mandados por quem grava são ignorados');
+insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor, criado_por, criado_em)
+values ('80000000-0000-0000-0000-0000000000a1', :'spe', '50000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000005',
+        :'ne_vm', :'cc_obra', '2026-03-01', 1, '00000000-0000-0000-0000-00000000000e', '2000-01-01');
+select pg_temp.ok((select criado_por = :'diretor' and criado_em > now() - interval '1 day'
+                   from erp.pagamentos where id = '80000000-0000-0000-0000-0000000000a1'),
+  'pagamento: criado_em no passado é ignorado (a ordem dos adiantamentos não depende do cliente)');
+update erp.titulos set descricao = 'ok' where id = 'a1000000-0000-0000-0000-000000000001';
+select pg_temp.ok((select descricao = 'ok' from erp.titulos where id = 'a1000000-0000-0000-0000-000000000001'),
+  'título em rascunho continua editável');
+do $$ begin
+  update erp.titulos set criado_em = '2000-01-01' where id = 'a1000000-0000-0000-0000-000000000001';
+  raise exception 'passou';
+exception when others then
+  if sqlerrm <> 'Quem lançou e quando não mudam' then raise exception 'mudar criado_em: %', sqlerrm; end if;
+end $$;
+do $$ begin
+  update erp.titulos set criado_por = '00000000-0000-0000-0000-00000000000e' where id = 'a1000000-0000-0000-0000-000000000001';
+  raise exception 'passou';
+exception when others then
+  if sqlerrm <> 'Quem lançou e quando não mudam' then raise exception 'mudar criado_por: %', sqlerrm; end if;
+end $$;
+select pg_temp.ok(true, 'título: mudar criado_por ou criado_em é recusado pelo erp.tg_autor');
+rollback;
 begin;
 select pg_temp.como(:'analista');
 select pg_temp.falha($$insert into erp.listas_financeiro (lista, user_id) values ('AD', '00000000-0000-0000-0000-00000000000b')$$,
