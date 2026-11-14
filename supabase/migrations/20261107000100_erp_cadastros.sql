@@ -16,7 +16,11 @@ create table erp.usuarios (
   contador      boolean not null default false, -- vota nas alçadas que pedem o contador
   administrador boolean not null default false, -- mexe na configuração (árvore, alçadas, listas)
   ativo         boolean not null default true,
-  criado_em     timestamptz not null default now()
+  -- só para a sucessão do master (Moises, 14/11/2026: pode ser de fora da empresa, um familiar):
+  -- nenhum outro acesso no ERP
+  so_sucessao   boolean not null default false,
+  criado_em     timestamptz not null default now(),
+  check (not so_sucessao or (papel = 'leitura' and not administrador and not contador))
 );
 
 -- Portabilidade (regra do Moises, 14/11/2026): o ERP não chama auth.uid() nem aponta para
@@ -301,7 +305,7 @@ insert into erp.tipos_nucleo (codigo, nome, exige_empreendimento) values
   ('outro', 'Outro', false);
 create function erp.tg_tipos_nucleo() returns trigger language plpgsql as $$
 begin
-  perform erp.exigir_admin();
+  if not erp.agindo_como('erp_acesso') then perform erp.exigir_admin(); end if;  -- pedido de acesso aprovado
   if tg_op in ('DELETE', 'TRUNCATE') then raise exception 'Não se apaga o tipo de núcleo; desative'; end if;
   if tg_op = 'UPDATE' and new.codigo <> old.codigo then raise exception 'O código do tipo de núcleo não muda'; end if;
   if tg_op = 'UPDATE' and new.exige_empreendimento <> old.exige_empreendimento
@@ -446,7 +450,7 @@ create function erp.natureza_em_uso(p_id uuid) returns boolean language sql stab
 create function erp.tg_natureza() returns trigger language plpgsql as $$
 declare m erp.naturezas; v_ciclo boolean;
 begin
-  perform erp.exigir_admin();
+  if not erp.agindo_como('erp_acesso') then perform erp.exigir_admin(); end if;  -- pedido de acesso aprovado
   if tg_op = 'DELETE' then
     if erp.natureza_em_uso(old.id) then
       raise exception 'A natureza "%" tem lançamentos: use a reclassificação para esvaziá-la antes de apagar', old.nome;

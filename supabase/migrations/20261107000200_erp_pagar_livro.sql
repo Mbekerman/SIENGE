@@ -1056,7 +1056,13 @@ create table erp.listas_financeiro (            -- quem está em cada lista de a
   primary key (lista, user_id)
 );
 create function erp.tg_so_admin() returns trigger language plpgsql as $$
-begin perform erp.exigir_admin(); return coalesce(new, old); end $$;
+begin
+  -- papéis de aprovação: também pelo pedido de acesso aprovado (erp_acesso, migration _erp_perfis)
+  if not (erp.agindo_como('erp_acesso') and tg_table_name in ('listas_financeiro', 'centro_aprovadores')) then
+    perform erp.exigir_admin();
+  end if;
+  return coalesce(new, old);
+end $$;
 create trigger t_listas_financeiro before insert or update or delete on erp.listas_financeiro
   for each row execute function erp.tg_so_admin();
 create trigger t_aud_listas_financeiro after insert or update or delete on erp.listas_financeiro

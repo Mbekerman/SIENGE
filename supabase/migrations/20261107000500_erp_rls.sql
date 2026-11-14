@@ -8,6 +8,8 @@
 --      dentro dessas funções.
 --    - erp_auditoria (S-052): dono só do erp.tg_auditoria; só insere na auditoria, que ninguém
 --      altera nem apaga.
+--    - erp_acesso (S-078): dono das funções do pedido de mudança de acesso; só ele (e o sistema)
+--      grava nas tabelas de acesso.
 --    - erp_situacao e erp_reclassificacao (S-035): donos das operações que mudam o que o
 --      cliente não muda direto: a situação de título e previsão (confirmar, quitar, consumir) e
 --      a natureza já lançada (reclassificação aprovada). As travas conferem
@@ -32,16 +34,16 @@
 do $$
 declare p text;
 begin
-  foreach p in array array['erp_sistema', 'erp_conferencia', 'erp_situacao', 'erp_reclassificacao', 'erp_auditoria'] loop
+  foreach p in array array['erp_sistema', 'erp_conferencia', 'erp_situacao', 'erp_reclassificacao', 'erp_auditoria', 'erp_acesso'] loop
     if not exists (select 1 from pg_roles where rolname = p) then
       execute format('create role %I nologin', p);
     end if;
   end loop;
 end $$;
 
-grant usage on schema erp to erp_sistema, erp_conferencia, erp_situacao, erp_reclassificacao;
-grant select, insert, update, delete on all tables in schema erp to erp_sistema, erp_situacao, erp_reclassificacao;
-grant execute on all functions in schema erp to erp_sistema, erp_situacao, erp_reclassificacao;
+grant usage on schema erp to erp_sistema, erp_conferencia, erp_situacao, erp_reclassificacao, erp_acesso;
+grant select, insert, update, delete on all tables in schema erp to erp_sistema, erp_situacao, erp_reclassificacao, erp_acesso;
+grant execute on all functions in schema erp to erp_sistema, erp_situacao, erp_reclassificacao, erp_acesso;
 grant select on all tables in schema erp to erp_conferencia;
 grant execute on all functions in schema erp to erp_conferencia;
 -- erp_auditoria (S-052): dono só do erp.tg_auditoria; só insere na auditoria.
@@ -58,7 +60,7 @@ begin
     execute format('alter table erp.%I force row level security', t.relname);
     execute format('create policy sistema on erp.%I using (erp.sistema()) with check (erp.sistema())', t.relname);
     execute format('create policy conferencia on erp.%I for select to erp_conferencia using (true)', t.relname);
-    execute format('create policy operacao on erp.%I to erp_situacao, erp_reclassificacao using (true) with check (true)', t.relname);
+    execute format('create policy operacao on erp.%I to erp_situacao, erp_reclassificacao, erp_acesso using (true) with check (true)', t.relname);
     -- nenhuma tabela se apaga por TRUNCATE (o TRUNCATE passa por cima dos gatilhos de linha)
     execute format('create trigger t_nao_trunca before truncate on erp.%I for each statement execute function erp.tg_recusa_truncate()', t.relname);
   end loop;
@@ -107,6 +109,15 @@ begin
     ('erp.registrar_movimento_societario(text, uuid, uuid, numeric, date, text)', 'erp_situacao'),
     -- fechar e reabrir o mês (S-053)
     ('erp.fechar_mes(uuid, date)', 'erp_situacao'), ('erp.reabrir_mes(uuid, date)', 'erp_situacao'),
+    -- mudança de acesso com aprovação (S-078)
+    ('erp.pedir_mudanca_acesso(text, text, jsonb, text)', 'erp_acesso'),
+    ('erp.decidir_mudanca_acesso(uuid, boolean, text)', 'erp_acesso'),
+    ('erp.cancelar_mudanca_acesso(uuid)', 'erp_acesso'), ('erp._aplicar_mudanca_acesso(uuid)', 'erp_acesso'),
+    ('erp.passar_master(uuid, text)', 'erp_acesso'), ('erp.pedir_sucessao_master(uuid, text)', 'erp_acesso'),
+    ('erp.decidir_sucessao_master(uuid, boolean, text)', 'erp_acesso'), ('erp.vetar_sucessao_master(uuid)', 'erp_acesso'),
+    ('erp.efetivar_sucessao_master(uuid)', 'erp_acesso'), ('erp.sou_master()', 'erp_conferencia'),
+    ('erp.gerar_avisos_sucessao()', 'erp_acesso'), ('erp._sucessao_unanime(uuid)', 'erp_acesso'), ('erp.vetar_sucessao_por_link(text)', 'erp_acesso'),
+    ('erp.recusar_so_sucessao(uuid)', 'erp_conferencia'),
     -- quem escreve na auditoria (S-052)
     ('erp.tg_auditoria()', 'erp_auditoria')) v(f, dono) loop
     execute format('alter function %s security definer set search_path = erp, pg_catalog, pg_temp', r.f);
