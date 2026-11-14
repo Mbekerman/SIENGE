@@ -20,7 +20,9 @@ create table erp.usuarios (
   -- nenhum outro acesso no ERP
   so_sucessao   boolean not null default false,
   criado_em     timestamptz not null default now(),
-  check (not so_sucessao or (papel = 'leitura' and not administrador and not contador))
+  check (not so_sucessao or (papel = 'leitura' and not administrador and not contador)),
+  -- o administrador é o TI: não aprova nada, nem pelo papel (S-085)
+  constraint usuarios_admin_sem_voto check (not administrador or (papel in ('analista','leitura') and not contador))
 );
 
 -- Portabilidade (regra do Moises, 14/11/2026): o ERP não chama auth.uid() nem aponta para
@@ -34,7 +36,7 @@ create function erp.login_atual() returns text language sql stable as $$
 -- Quem está agindo: o usuário do ERP com esse login (security definer na migration _erp_rls,
 -- para ler erp.usuarios por baixo do RLS).
 create function erp.eu() returns uuid language sql stable as
-  $$ select id from erp.usuarios where login_id = erp.login_atual() $$;
+  $$ select id from erp.usuarios where login_id = erp.login_atual() and ativo $$;   -- inativo não age (S-086)
 
 -- Rotina do sistema (S-033): sem login e só em dois casos, (1) o papel nosso `erp_sistema`
 -- (o servidor e o adaptador do Sienge recebem esse papel; a chave de serviço do Supabase

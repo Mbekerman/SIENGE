@@ -2721,7 +2721,7 @@ select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('usuarios', '
   'O pedido de usuário só muda o papel e o contador (login, situação e marca de sucessor: só o master)', 'S-081: o pedido não troca o login');
 select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('usuarios', 'incluir', jsonb_build_object('id', %L, 'papel', 'diretor'), 'x')$$, :'gestor'),
   'Em usuarios o pedido só altera', 'S-081: o pedido não cria usuário');
-insert into erp.usuarios (id, login_id, nome, papel) values ('00000000-0000-0000-0000-000000000096', 'novo2', 'Novo 2', 'leitura');
+insert into erp.usuarios (id, login_id, nome, papel, ativo) values ('00000000-0000-0000-0000-000000000096', 'novo2', 'Novo 2', 'leitura', false);
 select erp.pedir_mudanca_acesso('usuarios', 'alterar', jsonb_build_object('id', '00000000-0000-0000-0000-000000000096', 'papel', 'analista', 'contador', true), 'Novo analista') as m_pap \gset
 select pg_temp.ok((select situacao = 'pendente' and beneficiarios = array['00000000-0000-0000-0000-000000000096'::uuid] from erp.mudancas_acesso where id = :'m_pap')
                   and (select papel = 'leitura' from erp.usuarios where id = '00000000-0000-0000-0000-000000000096'),
@@ -2742,8 +2742,33 @@ select pg_temp.erro_igual(format($$update erp.usuarios set nome = 'x' where id =
   'Só o master cria e administra os administradores', 'master: só o master mexe no cadastro de um administrador');
 select pg_temp.erro_igual($$insert into erp.usuarios (id, login_id, nome, papel) values ('00000000-0000-0000-0000-000000000098', 'novo', 'Novo', 'diretor')$$,
   'Usuário novo nasce como leitura; papel e contador só por pedido aprovado (erp.pedir_mudanca_acesso)', 'S-081: o administrador não cria usuário já diretor');
-insert into erp.usuarios (id, login_id, nome, papel) values ('00000000-0000-0000-0000-000000000098', 'novo', 'Novo', 'leitura');
-select pg_temp.ok((select papel = 'leitura' from erp.usuarios where id = '00000000-0000-0000-0000-000000000098'), 'S-081: o administrador cria usuário como leitura');
+select pg_temp.erro_igual($$insert into erp.usuarios (id, login_id, nome, papel) values ('00000000-0000-0000-0000-000000000098', 'novo', 'Novo', 'leitura')$$,
+  'Usuário novo nasce inativo; só o master ativa', 'S-086: o administrador não cria usuário já ativo');
+insert into erp.usuarios (id, login_id, nome, papel, ativo) values ('00000000-0000-0000-0000-000000000098', 'novo', 'Novo', 'leitura', false);
+select pg_temp.ok((select papel = 'leitura' and not ativo from erp.usuarios where id = '00000000-0000-0000-0000-000000000098'), 'S-081: o administrador cria usuário como leitura e inativo');
+select pg_temp.como('novo');
+select pg_temp.ok(erp.eu() is null, 'S-086: usuário inativo não age (o login dele não é ninguém)');
+select pg_temp.como(:'ti');
+select pg_temp.erro_igual($$update erp.usuarios set ativo = true where id = '00000000-0000-0000-0000-000000000098'$$,
+  'Só o master muda o login ou a situação de um usuário', 'S-086: o administrador não ativa o usuário que criou');
+select pg_temp.como(:'diretor');
+update erp.usuarios set ativo = true where id = '00000000-0000-0000-0000-000000000098';
+select pg_temp.como('novo');
+select pg_temp.ok(erp.eu() = '00000000-0000-0000-0000-000000000098', 'S-086: o master ativa e o login passa a valer');
+-- S-085: administrador não vota nem pelo papel
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual(format($$update erp.usuarios set papel = 'gestor' where id = %L$$, :'ti2'),
+  'new row for relation "usuarios" violates check constraint "usuarios_admin_sem_voto"', 'S-085: administrador não tem papel gestor ou diretor, nem pelo master');
+select pg_temp.erro_igual($$update erp.usuarios set administrador = true, papel = 'diretor' where id = '00000000-0000-0000-0000-000000000098'$$,
+  'new row for relation "usuarios" violates check constraint "usuarios_admin_sem_voto"', 'S-085: diretor não vira administrador');
+select pg_temp.erro_igual($$update erp.usuarios set administrador = true, contador = true where id = '00000000-0000-0000-0000-000000000098'$$,
+  'new row for relation "usuarios" violates check constraint "usuarios_admin_sem_voto"', 'S-085: administrador não é contador');
+select pg_temp.como(:'ti');
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('usuarios', 'alterar', jsonb_build_object('id', %L, 'papel', 'diretor'), 'x')$$, :'ti2'),
+  'Administrador não aprova nada no ERP: só papel analista ou leitura, sem contador', 'S-085: o pedido não dá papel de voto a um administrador');
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('usuarios', 'alterar', jsonb_build_object('id', %L, 'contador', true), 'x')$$, :'ti2'),
+  'Administrador não aprova nada no ERP: só papel analista ou leitura, sem contador', 'S-085: o pedido não faz contador um administrador');
+
 select pg_temp.erro_igual(format($$insert into erp.grupo_sucessao values (%L)$$, :'leitor'),
   'Só o master define o grupo de sucessão', 'master: só o master define o grupo de sucessão');
 select pg_temp.como(:'diretor');

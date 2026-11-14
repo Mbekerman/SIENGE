@@ -332,6 +332,7 @@ begin
   select * into u from erp.meu_usuario();
   if u.id is null then raise exception 'Usuário sem cadastro no ERP'; end if;
   if u.id = r.solicitante then raise exception 'Quem pediu a reclassificação não pode aprová-la'; end if;
+  if u.administrador then raise exception 'Administrador não aprova nada no ERP'; end if;   -- S-085
   if exists (select 1 from erp.reclassificacao_votos where reclassificacao_id = r.id and user_id = u.id) then
     raise exception 'Você já votou neste pedido';
   end if;

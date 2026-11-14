@@ -445,6 +445,10 @@ begin
       if tg_op = 'INSERT' and (new.papel <> 'leitura' or new.contador) then
         raise exception 'Usuário novo nasce como leitura; papel e contador só por pedido aprovado (erp.pedir_mudanca_acesso)';
       end if;
+      -- e inativo: o login novo só passa a valer quando o master ativa (S-086)
+      if tg_op = 'INSERT' and new.ativo then
+        raise exception 'Usuário novo nasce inativo; só o master ativa';
+      end if;
       if tg_op = 'UPDATE' and (new.papel <> old.papel or new.contador <> old.contador) and not erp.agindo_como('erp_acesso') then
         raise exception 'Papel e contador só mudam por pedido aprovado (erp.pedir_mudanca_acesso)';
       end if;
@@ -618,6 +622,10 @@ begin
   end if;
   if p_tabela = 'usuarios' and exists (select 1 from jsonb_object_keys(p_dados) k where k not in ('id','papel','contador')) then
     raise exception 'O pedido de usuário só muda o papel e o contador (login, situação e marca de sucessor: só o master)';
+  end if;
+  if p_tabela = 'usuarios' and exists (select 1 from erp.usuarios where id = (p_dados->>'id')::uuid and administrador)
+     and (coalesce(p_dados->>'papel', 'leitura') not in ('analista','leitura') or coalesce((p_dados->>'contador')::boolean, false)) then
+    raise exception 'Administrador não aprova nada no ERP: só papel analista ou leitura, sem contador';
   end if;
   if p_tabela = 'naturezas' and exists (select 1 from jsonb_object_keys(p_dados) k where k not in ('id','restrita','mae_id')) then
     raise exception 'O pedido de natureza só muda a marca restrita e o galho';
