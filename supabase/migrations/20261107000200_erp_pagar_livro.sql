@@ -1240,9 +1240,18 @@ begin
                 and ar.centro_custo_id is not distinct from r.centro_custo_id
               order by a0.emissao, a0.criado_em, a0.id for update of a0 loop
       exit when v_resto <= 0;
-      -- só o que já saiu cobre: pedido aprovado e não pago não abate nada
+      -- só o que já saiu cobre: pedido aprovado e não pago não abate nada. Cada título já atendido
+      -- pelo adiantamento consome o maior entre o que ele cobriu e o que foi abatido nele (S-069:
+      -- o abatido num título que não recebeu cobertura também já foi usado)
       v_disp := coalesce((select sum(valor) from erp.pagamentos where adiantamento_id = a.id), 0)
-              - coalesce((select sum(valor) from erp.titulo_coberturas where adiantamento_id = a.id), 0);
+              - coalesce((select sum(greatest(coalesce(cob.v, 0), coalesce(ab.v, 0)))
+                            from (select tr.titulo_id as t, sum(c.valor) as v
+                                    from erp.titulo_coberturas c join erp.titulo_rateios tr on tr.id = c.rateio_id
+                                   where c.adiantamento_id = a.id group by tr.titulo_id) cob
+                            full join (select pa.titulo_id as t, sum(q.principal + q.juros + q.multa - q.desconto) as v
+                                         from erp.quitacoes q join erp.pagamentos g on g.id = q.pagamento_id
+                                         join erp.parcelas pa on pa.id = q.parcela_id
+                                        where g.adiantamento_id = a.id group by pa.titulo_id) ab using (t)), 0);
       v_c := least(v_resto, v_disp);
       if v_c > 0 then
         insert into erp.titulo_coberturas (rateio_id, adiantamento_id, valor) values (r.id, a.id, v_c);
