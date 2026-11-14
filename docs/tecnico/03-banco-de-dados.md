@@ -22,12 +22,12 @@ Onde está: branch `claude/project-thread-dknc98` deste repositório (commits `6
 | `supabase/migrations/20261107000300_erp_reclassificacao.sql` | Fechamento de mês, níveis de aprovação, alçadas, pedidos de reclassificação, itens e votos (6 tabelas) |
 | `supabase/migrations/20261107000400_erp_carga.sql` | Carga inicial: árvore de naturezas v0 (11 grupos), linhas da DRE, naturezas do sistema, níveis e alçada padrão |
 | `supabase/migrations/20261107000500_erp_rls.sql` | RLS ligado e forçado em toda tabela do `erp`, com uma política só, a do sistema (S-003; as políticas por perfil entram com as telas) |
-| `supabase/tests/erp.sql` | 169 testes de regra (os de acesso incluem função `security definer` e catálogo de privilégios) |
+| `supabase/tests/erp.sql` | 188 testes de regra (os de acesso incluem função `security definer` e catálogo de privilégios) |
 | `supabase/tests/run.sh` | Sobe um Postgres 16 temporário, aplica `shim_supabase.sql` + migrations e roda os testes |
 | `supabase/tests/shim_supabase.sql` | Imita o mínimo do Supabase (`auth.uid()` lido de `request.jwt.claim.sub`) |
 | `docs/erp.md` | Dicionário das tabelas e regras, em português (fonte principal para o detalhe de cada tabela) |
 
-Conferido nesta documentação em 14/nov/2026 (commit `cf15ed8` do núcleo): `bash supabase/tests/run.sh` aplica as 5 migrations e passa os 169 testes. Até 14/nov o esquema se chamava `nucleo`; os commits antigos citados nesta pasta usam esse nome.
+Conferido nesta documentação em 14/nov/2026 (`develop` em `086c08a`): `bash supabase/tests/run.sh` aplica as 5 migrations e passa os 188 testes. Até 14/nov o esquema se chamava `nucleo`; os commits antigos citados nesta pasta usam esse nome.
 
 **Três dimensões (14/nov/2026):** `erp.nucleos_economicos` (antigo `centros_custo`: empreendimento, corporativo ou outro; nunca uma área), `erp.centros_custo` (antigo `departamentos`: lista raiz única, com Novos negócios, Terreno, Incorporação, Projetos, Obra, Assistência técnica, Comercial, Marketing, Financeiro, Administrativo, Jurídico e Diretoria) e a natureza. `erp.nucleo_centros` diz qual centro está ligado em cada núcleo: sem linha vale como desligado, só o administrador mexe, com auditoria, e nada se apaga. `erp.checar_centro` recusa centro desligado nos rateios, nas previsões, nas linhas de orçamento e no livro. Despesa exige núcleo **e** centro de custo; movimentação dispensa o centro.
 
@@ -53,7 +53,7 @@ Roda como root (usa `runuser -u postgres`) ou como usuário comum; porta padrão
 ### Identidade e permissões no `erp`
 
 - `erp.usuarios` (`user_id` = `auth.users.id`) guarda papel (`diretor`, `gestor`, `analista`, `leitura`), `contador` e `administrador`.
-- `erp.eu()` = `auth.uid()`. `erp.sistema()` é verdadeiro só quando não há usuário, o `session_user` não é `authenticator`, `anon` nem `authenticated`, e o papel da sessão não é `anon` nem `authenticated`: migration, pg_cron, conexão direta ao Postgres ou a chave de serviço (`service_role`, commit `f659cfe`). Chamadas como `anon` ou `authenticated` sem login nunca contam. As checagens `exigir_admin`, `exigir_editor` e `exigir_diretor` deixam passar só nesse caso.
+- **Login e sistema (desde 14/nov/2026, PR #4; S-033):** `erp.login_atual()` é o único ponto ligado ao provedor (lê o `sub` do login, hoje `auth.uid()`); `erp.eu()` devolve o `erp.usuarios.id`, que é nosso, buscando pelo `login_id text unique`. `erp.sistema()` só é verdadeiro sem login e com o papel `erp_sistema`, ou na sessão do dono das migrations sem SET ROLE; qualquer outro papel sem login, de qualquer provedor, não é sistema. As 15 funções de conferência (saldos, listas, regra do adiantamento, autor, `centro_ligado`, `eu` e os `exigir_*`) são `security definer` do papel `erp_conferencia`, com `search_path` fixo, para as travas enxergarem por baixo do RLS (S-034). As checagens `exigir_admin`, `exigir_editor` e `exigir_diretor` deixam passar só nesse caso.
 - Acesso fechado à API do Supabase (migration `..._erp_carga.sql`, fim): o esquema, as tabelas e o `execute` das funções são revogados de `public`, `anon` e `authenticated`, inclusive nos privilégios padrão. Hoje **só o servidor** usa o `erp`.
 
 Corrigido em 7/nov/2026: na v0 inicial, `eu()` nulo passava nas checagens, e uma chamada anônima pela API também tem `auth.uid()` nulo. Em seguida (S-002), a decisão deixou de usar `current_user`, que dentro de `security definer` é o dono. Os testes de acesso cobrem os dois casos e um teste de catálogo barra qualquer privilégio de `public`, `anon` ou `authenticated`.
