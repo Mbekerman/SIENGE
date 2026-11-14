@@ -46,7 +46,7 @@ Nota de serviço de R$ 10.000,00, com ISS de 5% retido e caução de 5% do contr
    - Se ele não encontrar, ou se houver mais de um contrato possível, escolha na lista. A lista mostra só os contratos ligados ao seu perfil.
 5. Confira o formulário: número, data, valor, impostos retidos, caução (vem a do contrato, e você pode mudar nesta nota) e vencimento.
 6. Confira a forma de pagamento. Vem a padrão do fornecedor (Pix ou conta). Se for boleto, suba o boleto ou digite o código de barras.
-7. Confira a classificação (centro de custo e natureza), que vem do contrato.
+7. Confira a classificação (núcleo econômico, centro de custo e natureza), que vem do contrato.
 8. Clique em **Confirmar**.
 
 **O que o sistema confere:**

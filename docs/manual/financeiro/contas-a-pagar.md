@@ -57,7 +57,7 @@ Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depo
 
 ✅ **Decidido** (Moises, 14/nov/2026, depois dos comentários do diretor financeiro). O módulo de Orçamentos fica para depois. Enquanto isso:
 
-- Cada área lança no ERP BKM as **previsões de despesa** (a projeção dos títulos que vão vir).
+- Cada centro de custo (Marketing, Comercial...) lança no ERP BKM as **previsões de despesa** (a projeção dos títulos que vão vir).
 - O ERP BKM cria cada previsão no Sienge como **título de previsão**, pela API, para abastecer o fluxo de caixa do Sienge. Assim não é preciso uma tela de fluxo de caixa no ERP BKM agora.
 - **Cada título de previsão do Sienge fica ligado à previsão do ERP BKM.**
 - Quando a nota chega, o pedido de pagamento cria no Sienge o título definitivo, e a previsão é dada como **substituída**. A previsão também pode ser **excluída** no ERP BKM.
@@ -78,9 +78,9 @@ Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depo
 
 🟡 Propostas ainda sem confirmação do Moises:
 
-- **A previsão é aprovada** pelas mesmas regras do pedido de pagamento. Assim ela faz o papel do pedido antes do serviço que o diretor financeiro pediu. A nota que chega sem previsão aprovada pede uma aprovação a mais (a AD, por padrão), salvo uma verba pequena sem previsão por área.
+- **A previsão é aprovada** pelas mesmas regras do pedido de pagamento. Assim ela faz o papel do pedido antes do serviço que o diretor financeiro pediu. A nota que chega sem previsão aprovada pede uma aprovação a mais (a AD, por padrão), salvo uma verba pequena sem previsão por centro de custo.
 - **Previsão vencida sem nota** há X dias aparece numa lista para quem lançou, que reprograma ou cancela com motivo.
-- A previsão nasce com os mesmos campos da futura linha de orçamento (Área, Centro, Natureza, mês e valor, com fornecedor opcional), para virar o histórico do módulo de Orçamentos sem retrabalho.
+- A previsão nasce com os mesmos campos da futura linha de orçamento (núcleo econômico, centro de custo, natureza, mês e valor, com fornecedor opcional), para virar o histórico do módulo de Orçamentos sem retrabalho.
 
 ⏳ Em discussão: tirar no Sienge a permissão de criar e alterar títulos e dados bancários dos departamentos que entrarem no ERP BKM, para fechar a brecha de pagar fora do fluxo. O custo é que um lançamento urgente passa a depender do ERP BKM.
 
@@ -104,7 +104,7 @@ O menu tem cinco itens: **Início**, **Pedidos**, **Aprovar**, **Conferir** e **
 | **Contas recorrentes** (aba de Pedidos) | Contadores Contas ativas, Falta a nota do mês, Cadastro em aprovação e Contrato vence em 60 dias; as contas agrupadas em Contratos de serviço e Contas de consumo; botão **Nova conta** |
 | **No Sienge** (aba de Pedidos) | Os títulos que você lançou e que estão no Sienge, por vencimento (Vencem esta semana, Próxima semana, Pagos), com a situação lida do Sienge e **Conferir** em cada um; contadores Para conferir, Com divergência, Vencem esta semana e Pagos no mês |
 | **Campanhas** (aba de Pedidos) | As campanhas de remuneração variável com orçado, usado e saldo. 🟡 Ainda a confirmar |
-| **Novo pedido** | Uma janela com duas opções no alto: **Com nota** e **Adiantamento sem nota**. Com nota, você sobe o XML e ela preenche fornecedor, valor, retenções (com o líquido), vencimento, pagamento, centro de custo, área e natureza, e mostra o rateio |
+| **Novo pedido** | Uma janela com duas opções no alto: **Com nota** e **Adiantamento sem nota**. Com nota, você sobe o XML e ela preenche fornecedor, valor, retenções (com o líquido), vencimento, pagamento, núcleo econômico, centro de custo e natureza, e mostra o rateio |
 | **Para aprovar** | Contadores Na minha vez, Vencem em 7 dias, Vencidos e Em outra camada; os pedidos agrupados por prazo |
 | **Conferência** | O que o sistema achou ao comparar com o Sienge: **Mudou no Sienge**, **Não chegou** e **Fora do fluxo**, cada um com **Resolver** |
 
@@ -116,7 +116,7 @@ Conta recorrente é a que se repete todo mês. Ela fica cadastrada uma vez e gan
 
 | Tipo | Exemplos | O que o cadastro guarda |
 | --- | --- | --- |
-| **Contrato de serviço** | software, contabilidade, vigilância, limpeza, mídia | fornecedor, empresa pagadora, valor mensal, vigência, reajuste, dia de vencimento, dados de pagamento (PIX, conta ou boleto), centro de custo, natureza, gestor e o PDF do contrato |
+| **Contrato de serviço** | software, contabilidade, vigilância, limpeza, mídia | fornecedor, empresa pagadora, valor mensal, vigência, reajuste, dia de vencimento, dados de pagamento (PIX, conta ou boleto), núcleo econômico, centro de custo, natureza, gestor e o PDF do contrato |
 | **Conta de consumo** | energia, água, telefone | faixa máxima por mês, teto no ano e o número da instalação ou do cliente (é ele que identifica a fatura quando a concessionária usa um CNPJ só para todas as contas) |
 
 **Aprovação do cadastro:** cada conta recorrente é aprovada pelo gestor e por alguém da AF ou da AO antes de valer. **Trocar PIX, conta, valor ou faixa exige nova aprovação.**
@@ -128,8 +128,8 @@ Conta recorrente é a que se repete todo mês. Ela fica cadastrada uma vez e gan
 1. Abra **Pedidos**, aba **Contas recorrentes**, e clique em **Nova conta**.
 2. Escolha o tipo: **Contrato de serviço** (valor fixo por mês) ou **Conta de consumo** (luz, água, telefone).
 3. Preencha:
-   - **Contrato de serviço:** fornecedor, valor mensal, vigência, reajuste (por exemplo, "IPCA, todo dezembro"), dia de vencimento, pagamento (vem do cadastro do fornecedor), centro de custo, área, natureza, gestor e o PDF do contrato;
-   - **Conta de consumo:** concessionária, número da instalação (como está na fatura; é por ele que o sistema acha a fatura), faixa por mês, teto no ano, vencimento, pagamento (por exemplo, boleto da fatura), centro de custo, área, natureza e gestor.
+   - **Contrato de serviço:** fornecedor, valor mensal, vigência, reajuste (por exemplo, "IPCA, todo dezembro"), dia de vencimento, pagamento (vem do cadastro do fornecedor), núcleo econômico, centro de custo, natureza, gestor e o PDF do contrato;
+   - **Conta de consumo:** concessionária, número da instalação (como está na fatura; é por ele que o sistema acha a fatura), faixa por mês, teto no ano, vencimento, pagamento (por exemplo, boleto da fatura), núcleo econômico, centro de custo, natureza e gestor.
 4. Clique em **Enviar para aprovação**. Aprovam o gestor e alguém da AF ou da AO. Enquanto isso, a conta aparece com a marca **Cadastro em aprovação**.
 
 **Se precisar mudar:** trocar PIX, conta, valor ou faixa manda a conta de novo para aprovação.
@@ -206,7 +206,7 @@ O que não bate vira **exceção**: o pedido só segue com justificativa. Na tel
    - **Fornecedor**, com a marca de que o CNPJ e a nota foram conferidos na prefeitura;
    - **Valor** e **Retenções**: os impostos retidos vêm da tabela de retenções, com o **líquido** a pagar (por exemplo, "ISS 2% · R$ 136,00 · líquido R$ 6.664,00");
    - **Vencimento** e **Pagamento** (PIX, conta ou boleto);
-   - **Centro de custo**, **Área** e **Natureza**, cada um num campo separado (ver [três classificações](classificacao.md#três-classificações-centro-de-custo-área-e-natureza)). Área e natureza vêm do cadastro do fornecedor;
+   - **Núcleo econômico**, **Centro de custo** e **Natureza**, cada um num campo separado (ver [as três dimensões](classificacao.md#três-dimensões-núcleo-econômico-centro-de-custo-e-natureza)). Centro de custo e natureza vêm do cadastro do fornecedor;
    - **Rateio**: "100% neste centro", ou **Ratear** para dividir.
 3. Confira cada campo e complete o que faltar, principalmente o **pagamento** (PIX, conta ou boleto). **Sem os dados de pagamento completos, o pedido não se conclui.**
 4. Clique em **Enviar**. O pedido aparece em **Meus pedidos**, no grupo Em aprovação.
@@ -215,7 +215,7 @@ Sem os dados de pagamento, o **Enviar** fica travado: o campo Pagamento fica em 
 
 **O que o sistema confere:** nota repetida (mesmo emitente, tipo, número e série) é recusada; o título só vai ao Sienge completo. Se o PIX do fornecedor veio importado do Sienge e o financeiro ainda não o conferiu, aparece o aviso "Importado do Sienge · o financeiro ainda não conferiu" e o **Enviar** fica travado.
 
-🟡 Proposta do protótipo, sem confirmação do Moises: para **trocar a área ou a natureza** que veio do fornecedor, é preciso escrever uma justificativa. Motivo: quem classifica escolhe, sem querer ou de propósito, quem aprova (achado de segurança S-028).
+🟡 Proposta do protótipo, sem confirmação do Moises: para **trocar o centro de custo ou a natureza** que veio do fornecedor, é preciso escrever uma justificativa. Motivo: quem classifica escolhe, sem querer ou de propósito, quem aprova (achado de segurança S-028).
 
 **E depois?** O pedido passa de Em aprovação para No Sienge e depois para Pagos. Você recebe a lista do que foi ao Sienge para conferir.
 
@@ -278,9 +278,9 @@ Na gaveta do pedido, o bloco **Por trás deste título** lista:
 | **Conversa** | As mensagens sobre o título (ver abaixo) |
 | **Fornecedor** | O histórico do fornecedor |
 
-Cada item abre um nível abaixo, e de lá se desce mais (por exemplo, Título › Contrato › Previsão do mês › Orçamento › o centro de custo no ano). A trilha no alto e a seta **←** voltam; o ícone de tela cheia amplia a gaveta.
+Cada item abre um nível abaixo, e de lá se desce mais (por exemplo, Título › Contrato › Previsão do mês › Orçamento › o núcleo e o centro de custo no ano). A trilha no alto e a seta **←** voltam; o ícone de tela cheia amplia a gaveta.
 
-**O que não dá:** ver o detalhe do que você não tem acesso. Outros centros de custo, outras empresas e a folha PJ aparecem só somados ou com a marca "sem acesso". Medições, compras e estoque aparecem em cinza até os módulos existirem.
+**O que não dá:** ver o detalhe do que você não tem acesso. Outros núcleos e centros de custo, outras empresas e a folha PJ aparecem só somados ou com a marca "sem acesso". Medições, compras e estoque aparecem em cinza até os módulos existirem.
 
 #### Conversar sobre o título
 
@@ -362,7 +362,7 @@ Assim, o realizado do sistema sempre bate com o dinheiro que saiu do banco.
 2. Escolha o tipo **Assinatura recorrente**.
 3. Escolha o fornecedor (ver [Pessoas](../cadastros/pessoas.md)) e a empresa que paga.
 4. Informe a periodicidade (mensal, por exemplo), o dia de vencimento e o valor estimado por período.
-5. Em **Classificação**, escolha o centro de custo e a natureza (por exemplo, Sede e Gerais › Administrativo › Internet). Se for dividido, use **Ratear**.
+5. Em **Classificação**, escolha o núcleo econômico, o centro de custo e a natureza (por exemplo, Corporativo, Administrativo e Gerais › Administrativo › Internet). Se for dividido, use **Ratear**.
 6. Informe até quando gerar as previsões.
 7. Salve. O sistema cria uma previsão para cada vencimento, sem duplicar.
 
@@ -383,7 +383,7 @@ Assim, o realizado do sistema sempre bate com o dinheiro que saiu do banco.
 - ✅ Há um **prazo para a nota chegar**, de **30 dias** por padrão, que o master ou um administrador pode mudar (Moises, 7/nov/2026).
 - ✅ Quando o prazo vence, o sistema avisa o financeiro e o gestor do contrato (Moises, 7/nov/2026).
 - ✅ Enquanto houver um adiantamento sem nota, o fornecedor **só recebe outro adiantamento com a aprovação da AD** (Moises, 7/nov/2026; antes era "nenhum").
-- ✅ **Nenhum título desse fornecedor é pago sem deduzir o adiantamento em aberto**, mesmo que o título seja de outro centro de custo, salvo com a aprovação da AD (Moises, 7/nov/2026).
+- ✅ **Nenhum título desse fornecedor é pago sem deduzir o adiantamento em aberto**, mesmo que o título seja de outro núcleo ou centro de custo, salvo com a aprovação da AD (Moises, 7/nov/2026).
 - O adiantamento sem nota passa pela mesma aprovação do título, mais o gestor do contrato (ver [Aprovações](../transversais/aprovacoes.md#os-cinco-momentos-de-aprovação)).
 
 ## Tarefa: pedir um adiantamento sem nota
@@ -393,7 +393,7 @@ Assim, o realizado do sistema sempre bate com o dinheiro que saiu do banco.
 1. Abra **Pedidos**, clique em **Novo pedido** e escolha **Adiantamento sem nota**.
 2. Preencha o fornecedor, o valor e o **motivo** ("Por que pagar antes da nota?"), que é obrigatório.
 3. O **prazo da nota** vem preenchido com 30 dias. A tela avisa: depois disso, o fornecedor fica bloqueado.
-4. Pagamento, centro de custo, área e natureza vêm do cadastro do fornecedor (o PIX já conferido pelo financeiro).
+4. Pagamento, núcleo econômico, centro de custo e natureza vêm do cadastro do fornecedor (o PIX já conferido pelo financeiro).
 5. Clique em **Enviar** (ou **Salvar rascunho**).
 
 ## Tarefa: registrar um adiantamento e abater aos poucos

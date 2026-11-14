@@ -36,7 +36,7 @@ Reclassificar é mudar a natureza de lançamentos já feitos: porque foram lanç
 
 O acumulado fecha a brecha de quebrar uma mudança grande em várias pequenas. Mover R$ 100 de A para B e depois voltar conta R$ 200, não zero. A mudança que faria a soma passar do limite já sobe para a alçada de cima.
 
-⏳ As faixas de valor e quem aprova em cada uma ficam para a sessão de aprovações. Esboço de 7/nov/2026, a ajustar: mês aberto, gestor da área; mês fechado com trimestre aberto, diretoria; trimestre fechado, diretoria e contador. O padrão hoje no banco de dados é a diretoria em qualquer valor, e diretoria e contador no trimestre fechado, até o administrador configurar as faixas.
+⏳ As faixas de valor e quem aprova em cada uma ficam para a sessão de aprovações. Esboço de 7/nov/2026, a ajustar: mês aberto, gestor do centro de custo; mês fechado com trimestre aberto, diretoria; trimestre fechado, diretoria e contador. O padrão hoje no banco de dados é a diretoria em qualquer valor, e diretoria e contador no trimestre fechado, até o administrador configurar as faixas.
 
 🟡 Proposta ainda sem resposta: corrigir a natureza de **um único lançamento num mês aberto** ser edição comum, sem a diretoria, para ela não virar gargalo das correções do dia a dia. O Moises respondeu com as alçadas, que podem cobrir esse caso com a faixa do mês aberto.
 

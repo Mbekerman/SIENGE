@@ -10,7 +10,7 @@ A BKM usa o Sienge em todas as áreas: engenharia, financeiro, comercial, contra
 | --- | --- | --- |
 | Contrato fictício para conta de telefone, internet, aluguel | O Sienge só controla gasto recorrente por contrato | **Assinatura recorrente**, um tipo próprio de compromisso |
 | Título de previsão (tipo PRV) para pôr conta de consumo no fluxo de caixa | O Sienge não tem previsão separada de dívida | **Previsão**, que não é dívida e some sozinha quando a nota chega |
-| Área administrativa cadastrada como obra | O Sienge só faz orçamento de obra | **Centro de custo do tipo área**, com orçamento em dinheiro |
+| Área administrativa cadastrada como obra | O Sienge só faz orçamento de obra | **Núcleo econômico Corporativo**, com os seus centros de custo e orçamento em dinheiro |
 
 ## A ideia: o Sienge vira o motor, o ERP BKM vira a casa
 

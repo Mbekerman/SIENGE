@@ -40,7 +40,7 @@ Hoje a BKM usa o Sienge para tudo. O ERP BKM é um conjunto de sistemas próprio
 - [Pessoas: fornecedores, clientes, sócios e corretores](cadastros/pessoas.md)
 
 **Financeiro**
-- [Como todo valor é classificado (naturezas e centros de custo)](financeiro/classificacao.md)
+- [Como todo valor é classificado (núcleos econômicos, centros de custo e naturezas)](financeiro/classificacao.md)
 - [Contas a pagar: do compromisso ao pagamento](financeiro/contas-a-pagar.md)
 - [Lançar uma nota fiscal para pagamento](financeiro/lancar-nota-fiscal.md)
 - [Caução de contratos](financeiro/caucao.md)

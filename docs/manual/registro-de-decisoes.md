@@ -6,6 +6,7 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
+| 14/nov/2026 | **Troca de nomes:** o antigo centro de custo (SPE ou obra, Corporativo, loja) passa a ser **núcleo econômico**; a antiga área (Marketing, Terreno, Incorporação, Obra, Assistência técnica, Administrativo) passa a ser **centro de custo**, numa lista única ligada ou desligada por núcleo. Travas, alçadas, aprovações e liberação para lançar podem ser dadas nas três dimensões (núcleo, centro de custo, natureza). Nas linhas anteriores a esta, "centro de custo" quer dizer o núcleo e "área" quer dizer o centro de custo | [Classificação](financeiro/classificacao.md#três-dimensões-núcleo-econômico-centro-de-custo-e-natureza) |
 | 14/nov/2026 | Verificação das previsões a apagar no Sienge a cada 30 min no horário comercial e conferência completa de madrugada (limite de 200 consultas por minuto dividido com o CRM) | [Contas a pagar](financeiro/contas-a-pagar.md#previsões-de-despesa-na-transição) |
 | 14/nov/2026 | Planilha de previsões a apagar só de leitura para as pessoas; o ERP BKM marca o título apagado na verificação diária | [Contas a pagar](financeiro/contas-a-pagar.md#previsões-de-despesa-na-transição) |
 | 14/nov/2026 | Linha da planilha de previsões a apagar que não existe no ERP BKM é marcada como inválida pelo cruzamento diário, com aviso à AF | [Contas a pagar](financeiro/contas-a-pagar.md#previsões-de-despesa-na-transição) |

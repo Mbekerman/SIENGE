@@ -18,7 +18,7 @@ No sistema isso fica assim:
 | **Participações** | Quem é sócio de qual empresa, com o percentual, de quando até quando | ✅ A soma dos percentuais vigentes de uma empresa é 100%. Mudar o percentual encerra a linha antiga e abre uma nova, para guardar o histórico. |
 | **Empreendimentos** | O produto: nome, SPE, praça, terreno de origem (BKM Terrenos), fase | ✅ Separado da SPE, mesmo sendo um para um. A SPE é o CNPJ; o empreendimento é o negócio. |
 | **Praças e regionais** | Lista fixa | 🟡 Campo com lista, não etiqueta livre (ver abaixo). |
-| **Centros de custo** | Um por empreendimento, mais as áreas (Sede etc.) | ✅ Nunca um centro de custo por tipo de gasto. Ver [Classificação](../financeiro/classificacao.md). |
+| **Núcleos econômicos** | Um por SPE ou empreendimento, mais o Corporativo (e uma loja, por exemplo) | ✅ Nunca um núcleo por tipo de gasto. Os centros de custo (Marketing, Obra...) ficam dentro do núcleo. Ver [Classificação](../financeiro/classificacao.md). |
 | **Etiquetas (tags)** | Agrupamentos livres, como "lançamento 2027" | Para o que não precisa de garantia. |
 
 ### Praça e regional: lista, não etiqueta
@@ -50,7 +50,7 @@ O Moises sugeriu que praça e regional pudessem ser etiquetas (7/nov/2026). 🟡
 5. Escolha a SPE que acabou de criar, dê o nome, escolha a praça e, se veio do BKM Terrenos, ligue o terreno de origem.
 6. Preencha os atributos (cidade, linha de produto, faixa MCMV...).
 7. Ligue a empresa e a obra correspondentes do Sienge (uma vez só).
-8. Salve. O centro de custo do empreendimento é criado junto.
+8. Salve. O núcleo econômico do empreendimento é criado junto, com os centros de custo que valem para ele já ligados.
 
 **O que o sistema confere:** CNPJ válido e não repetido; soma dos sócios igual a 100%; uma SPE com um empreendimento só.
 

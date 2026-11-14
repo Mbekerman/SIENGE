@@ -35,7 +35,7 @@ Compras (requisição, cotação, pedido e contrato) fica para depois, no mesmo 
 
 ✅ **Decidido** (Moises, 7/nov/2026):
 
-- As regras são **editáveis pela tela**, sem programador, e podem ser dadas por centro de custo, por natureza e por quem paga. Exemplo do Moises: uma regra para marketing, outra para obra, outra para comercial.
+- As regras são **editáveis pela tela**, sem programador, e podem ser dadas por núcleo econômico, por centro de custo, por natureza e por quem paga. Exemplo do Moises: uma regra para marketing, outra para obra, outra para comercial.
 - **Hierarquia de regras** (Moises, 7/nov/2026). Cada regra tem um nível:
   1. Regras do **mesmo nível** que se encaixam no lançamento **se somam**, e a mesma pessoa não aprova duas vezes.
   2. Uma regra de **nível superior se sobrepõe** às de nível inferior.
@@ -49,22 +49,22 @@ Compras (requisição, cotação, pedido e contrato) fica para depois, no mesmo 
 
 ✅ **Tudo configurável ponto a ponto, regra a regra, pela tela** (Moises, 7/nov/2026): quem aprova, as faixas de valor, a ordem das camadas e se basta um ou precisam todos. Os valores iniciais são definidos na [implantação](https://claude.ai/artifact/2U1u689a7Qi3WAvbZAT6n6). O formato de cada regra:
 
-- Além de centro de custo, natureza e empresa pagadora, a regra pode filtrar por fornecedor, tipo de compromisso e faixa de valor.
+- Além de núcleo econômico, centro de custo, natureza e empresa pagadora, a regra pode filtrar por fornecedor, tipo de compromisso e faixa de valor.
 - Cada regra tem **camadas de aprovadores em sequência**, e cada camada diz se basta um aprovador ou se precisam todos.
 - Exemplos (ilustrativos): "Marketing acima de R$ 10 mil: Fulana (marketing), depois Moises"; "Obra: engenheiro da obra, depois gestor de obras"; "qualquer pagamento acima de R$ 200 mil: mais o diretor financeiro".
 
 ### Regra inicial e papéis de exceção
 
-✅ **Ponto de partida de todas as regras** (Moises, 7/nov/2026): aprovam **juntos o gestor da área e o diretor financeiro ou o COO**; ou então **o CEO aprova sozinho**. Hoje o CEO é o Moises. Depois, cada regra pode ser mudada pela tela.
+✅ **Ponto de partida de todas as regras** (Moises, 7/nov/2026): aprovam **juntos o gestor do centro de custo (antes chamado de gestor da área) e o diretor financeiro ou o COO**; ou então **o CEO aprova sozinho**. Hoje o CEO é o Moises. Depois, cada regra pode ser mudada pela tela.
 
-✅ **Aprovadores da área** (Moises, 8/nov/2026): cada nó da árvore de áreas tem aprovadores escolhidos pelo nome e diz quantos deles precisam aprovar (ver [três classificações](../financeiro/classificacao.md#três-classificações-centro-de-custo-área-e-natureza)). 🟡 Proposta: isso se soma à AF, à AO e à AD, sem substituí-las.
+✅ **Aprovadores do centro de custo** (Moises, 8/nov/2026, decidido para as então chamadas áreas): cada centro de custo tem aprovadores escolhidos pelo nome e diz quantos deles precisam aprovar. ✅ Travas, alçadas e aprovações podem ser dadas em qualquer das três dimensões: núcleo econômico, centro de custo e natureza (Moises, 14/nov/2026). Ver [as três dimensões](../financeiro/classificacao.md#três-dimensões-núcleo-econômico-centro-de-custo-e-natureza). 🟡 Proposta: isso se soma à AF, à AO e à AD, sem substituí-las.
 
 ✅ **Diretor financeiro (CFO), COO e CEO são posições no sistema, não cargos** (Moises, 7/nov/2026). Cada posição é uma **lista nomeada**, porque quem ocupa a posição no sistema pode não ter o cargo na empresa:
 
 | Lista | Posição | Para que serve |
 | --- | --- | --- |
-| **AF** (Aprovação financeira) | a do diretor financeiro (CFO) | Aprova junto com o gestor da área; recebe exceções |
-| **AO** (Aprovação operacional) | a do COO | Aprova junto com o gestor da área; recebe exceções |
+| **AF** (Aprovação financeira) | a do diretor financeiro (CFO) | Aprova junto com o gestor do centro de custo; recebe exceções |
+| **AO** (Aprovação operacional) | a do COO | Aprova junto com o gestor do centro de custo; recebe exceções |
 | **AD** (Aprovação definitiva) | a do CEO, hoje o Moises; pode ter mais de uma pessoa | Aprova sozinho; última instância |
 
 Essas listas cuidam das **exceções**: férias sem substituto, demora na aprovação e casos parecidos.
@@ -79,7 +79,7 @@ Essas listas cuidam das **exceções**: férias sem substituto, demora na aprova
 
 ✅ **Camadas com quantos aprovadores quiser** (Moises, 7/nov/2026): uma camada pode ter 2 aprovadores ou mais, e a regra diz se eles precisam seguir uma ordem ou não. A AD pode entrar na sequência como última instância.
 
-✅ **Quando o gestor da área também está na AF** (Moises, 7/nov/2026): ao colocar a pessoa na AF, o sistema percebe o conflito e pergunta se ela aprova sozinha nesses casos ou se outra pessoa aprova junto, e quem.
+✅ **Quando o gestor do centro de custo também está na AF** (Moises, 7/nov/2026): ao colocar a pessoa na AF, o sistema percebe o conflito e pergunta se ela aprova sozinha nesses casos ou se outra pessoa aprova junto, e quem.
 
 ✅ **Pagamento que não se encaixa em nenhuma regra** (Moises, 7/nov/2026):
 
@@ -101,7 +101,7 @@ Essas listas cuidam das **exceções**: férias sem substituto, demora na aprova
 1. Abra **Configurações › Aprovação › Regras** e clique em **Nova regra**.
 2. Escolha o **momento**: título, adiantamento sem nota, lote, liberação de caução ou orçamento.
 3. Dê um nome (por exemplo, "Marketing acima de R$ 10 mil").
-4. Em **Condições**, escolha o que a regra pega. Todas são opcionais: empresa pagadora, centro de custo, galho da natureza (vale para tudo abaixo dele), fornecedor, tipo de compromisso e faixa de valor.
+4. Em **Condições**, escolha o que a regra pega. Todas são opcionais: empresa pagadora, núcleo econômico, centro de custo, galho da natureza (vale para tudo abaixo dele), fornecedor, tipo de compromisso e faixa de valor.
 5. Em **Camadas**, inclua a primeira camada: escolha a lista de aprovadores e se basta um ou precisam todos.
 6. Se houver mais camadas, inclua na ordem em que devem aprovar.
 7. Escolha o **nível**: comum (soma com as do mesmo nível), superior (se sobrepõe às de nível inferior) ou supertrunfo (substitui qualquer outra).
@@ -135,7 +135,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 
 ## Pagamento de funcionários PJ
 
-✅ **Já vale agora, com o Sienge** (Moises, 7/nov/2026): os títulos dos fornecedores PJ copiados do Sienge ficam numa **área restrita** do ERP BKM. Relatórios e BI mostram só a soma por centro de custo e mês, sem valor por pessoa. Os centros de custo pequenos **não** são juntados (Moises, 7/nov/2026). Consequência: num centro de custo com um PJ só, a soma do mês é o valor dele. No próprio Sienge, nome e valor continuam visíveis.
+✅ **Já vale agora, com o Sienge** (Moises, 7/nov/2026): os títulos dos fornecedores PJ copiados do Sienge ficam numa **área restrita** do ERP BKM. Relatórios e BI mostram só a soma por núcleo econômico e mês, sem valor por pessoa. Os centros de custo pequenos **não** são juntados (Moises, 7/nov/2026). Consequência: num centro de custo com um PJ só, a soma do mês é o valor dele. No próprio Sienge, nome e valor continuam visíveis.
 
 ✅ O pagamento dos PJ **não tem aprovação própria**: a aprovação são os dois "ok" do mês sobre as tabelas (Moises, 7/nov/2026).
 
@@ -149,12 +149,12 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 - Uma **tabela de remuneração**, à parte, guarda o valor de cada um "a 7 chaves".
 - O **financeiro** vê só um pseudônimo (por exemplo, "PJ-017") e o valor a pagar, nunca o nome.
 - O funcionário sobe a nota num **portal**; se tudo bate com as duas tabelas, ela segue direto para pagamento.
-- O RH pode **dividir o pagamento de um funcionário entre SPEs ou centros de custo**, em percentuais, no mês (Moises, 7/nov/2026). O PJ emite uma nota para cada SPE. Ao receber cada nota, o sistema confere o CNPJ da SPE, o percentual e o valor contra o cadastro do RH daquele mês, e **trava o pagamento** se algo divergir.
+- O RH pode **dividir o pagamento de um funcionário entre núcleos econômicos (SPEs) ou centros de custo**, em percentuais, no mês (Moises, 7/nov/2026). O PJ emite uma nota para cada SPE. Ao receber cada nota, o sistema confere o CNPJ da SPE, o percentual e o valor contra o cadastro do RH daquele mês, e **trava o pagamento** se algo divergir.
 - **Todo mês, as duas tabelas são conferidas.** Se um dos dois responsáveis não der o "ok" do mês, **ninguém recebe**.
 - Os dois responsáveis e os **substitutos temporários** de cada um são definidos na própria plataforma.
 - Existe **um único usuário master, o Moises** (com uma conta própria de master, separada da conta do dia a dia). Ele vê tudo, pode trocar o aprovador e pode aprovar tudo, inclusive os dois "ok" do mês.
 - **Qualquer mudança de remuneração** de um PJ passa por aprovadores definidos (Moises, 7/nov/2026).
-- A folha PJ entra no financeiro, nos relatórios e no BI **somada por centro de custo e por mês**, sem valor por pessoa. O detalhe fica só na área restrita.
+- A folha PJ entra no financeiro, nos relatórios e no BI **somada por núcleo econômico e por mês**, sem valor por pessoa. O detalhe fica só na área restrita.
 - As **notas dos PJ ficam guardadas na área restrita** ("a 7 chaves") e vão direto ao contador. O contador também tem um **portal** para baixá-las. ✅ O contador entra nesse portal com um login próprio, fora do Google (Moises, 7/nov/2026).
 
 🟡 **Propostas** ainda sem resposta (7/nov/2026):
@@ -209,14 +209,14 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 - Tolerância zero: um centavo de multa ou juros já pede essa aprovação.
 - Vale também para o título já vencido, mesmo quando a multa só aparece no banco; sem isso, o boleto vencido passaria pelo lote sem a aprovação extra.
 - O motivo do atraso é obrigatório.
-- Um relatório mensal mostra a multa e os juros pagos por área e por responsável.
+- Um relatório mensal mostra a multa e os juros pagos por centro de custo e por responsável.
 
 ## Travas fixas
 
 ✅ **Confirmadas pelo Moises** no [documento de desenho das aprovações](https://claude.ai/artifact/FvkBaLmYig68zstJzTKFwP) (7/nov/2026). Ficam no banco de dados, e **nenhuma tela as desliga**, nem a do master:
 
 1. Quem lança não aprova, salvo a pessoa da AD que o master autorizou.
-2. Nas camadas em conjunto, cada camada tem uma pessoa diferente, salvo a exceção "gestor da área também na AF ou na AO" escolhida na configuração.
+2. Nas camadas em conjunto, cada camada tem uma pessoa diferente, salvo a exceção "gestor do centro de custo também na AF ou na AO" escolhida na configuração.
 3. O administrador não se nomeia aprovador nem substituto.
 4. O substituto não é quem lançou.
 5. A aprovação vale só para o que foi aprovado, **inclusive a conta bancária e o PIX do fornecedor**. Se o título, os dados bancários ou o arquivo do lote mudarem depois, é preciso aprovar de novo.

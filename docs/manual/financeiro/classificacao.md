@@ -8,41 +8,46 @@
 
 | Pergunta | Campo | Exemplo |
 | --- | --- | --- |
-| De quem é o gasto? | Empresa e centro de custo | SPE Vila Maria / Empreendimento Vila Maria |
+| De quem é o gasto? | Empresa e núcleo econômico | SPE Vila Maria / núcleo Vila Maria |
+| Onde ele é apropriado? | Centro de custo | Marketing |
 | Que gasto é? | Natureza | Comerciais › Marketing › Marketing online |
 | Quando? | Competência e data de caixa | competência out/2027, pago em nov/2027 |
 | Em que momento do projeto? | Fase (calculada sozinha, só para relatório) | Obras |
-| Quem gasta? | Área | Comercial › Marketing |
+
+> ⚠️ **Nomes trocados em 14/nov/2026** (Moises). O que este manual chamava de **centro de custo** (a obra, o Corporativo) agora é **núcleo econômico**. O que chamava de **área** (Marketing, Comercial, Administrativo) agora é **centro de custo**. As regras não mudaram com a troca. No Sienge, "centro de custo" continua sendo a obra, ou seja, o nosso núcleo econômico. Cuidado na transição.
 
 ### O que muda em relação a hoje
 
-Hoje a BKM usa "centro de custo Marketing, natureza MKT Online, motivo verba Google". No ERP BKM:
+Hoje a BKM usa no Sienge "centro de custo Marketing, natureza MKT Online, motivo verba Google", com cerca de 9 centros de custo por SPE. No ERP BKM:
 
-| Hoje | No ERP BKM |
+| Hoje no Sienge | No ERP BKM |
 | --- | --- |
-| Centro de custo: Marketing | Natureza: Comerciais › **Marketing** |
+| Centro de custo: a obra, ou uma obra fingida para a área administrativa | Núcleo econômico: a SPE ou a obra, o Corporativo, uma loja |
+| Centro de custo: Marketing (um por SPE) | Centro de custo: Marketing, da lista única, ligado no núcleo |
 | Natureza: MKT Online | Natureza: Comerciais › Marketing › **Marketing online** |
 | Motivo: verba de mídia Google | Mais um nível da natureza (… › Mídia Google) **ou** só a descrição do lançamento |
-| (não existia) | Centro de custo: a obra, ou Corporativo se não for de obra |
-| (não existia) | Área: Comercial › Marketing |
 
 **Regra para decidir se o "motivo" vira nível da natureza:** se você quer orçar e comparar por ele ("quanto previ e quanto gastei de Google no ano"), ele é um nível. Se só explica aquele gasto ("campanha de março"), ele vai na descrição.
 
-**Por que não um centro de custo por tipo de gasto:** com 30 empreendimentos e 10 tipos seriam 300 centros de custo, e cada regra ou relatório teria de listar os que entram. Separando as perguntas, "marketing da empresa inteira", "marketing do Vila Maria" e "tudo o que a área de Marketing gastou" viram três filtros sobre os mesmos dados.
+**Por que os centros de custo são uma lista única:** com 30 empreendimentos e 10 centros cada, seriam 300 cadastros, e cada regra ou relatório teria de listar os que entram. Com uma lista única ligada nos núcleos, "marketing da empresa inteira", "marketing do Vila Maria" e "tudo o que o Marketing gastou" viram filtros sobre os mesmos dados.
 
-## Três classificações: centro de custo, área e natureza
+## Três dimensões: núcleo econômico, centro de custo e natureza
 
-✅ **Decidido** (Moises, 8/nov/2026, 21h21; substitui a versão de 21h11 com áreas em até 3 níveis e acesso também pela fase). Cada lançamento leva três classificações separadas:
+✅ **Decidido** (Moises, 14/nov/2026, renomeando e ajustando o que foi decidido em 8/nov/2026). Cada lançamento leva três classificações separadas:
 
-- **Centro de custo:** de quem é o gasto. É **a obra**, ou **Corporativo** para o que não é obra (escritório central, holding, novos negócios antes de virar SPE). Os centros ficam numa árvore **estado › cidade › região › obra**, e **cada obra está num lugar só** da árvore (senão os relatórios somariam em dobro). O tipo de produto é um filtro do relatório, não um nível da árvore.
-- **Área:** quem gasta (Marketing, Financeiro...). A árvore de áreas pode ter **quantos níveis forem precisos**. Cada nó tem **aprovadores escolhidos pelo nome** e diz **quantos deles precisam aprovar**.
-- **Natureza:** só o tipo de gasto (Marketing online, Vigilância, Energia...).
+- **Núcleo econômico:** de quem é o gasto. É **a SPE ou a obra**, o **Corporativo** (escritório central, holding, novos negócios antes de virar SPE) ou outro negócio, como uma **loja**. Os núcleos ficam numa árvore **estado › cidade › região › núcleo**, e **cada núcleo está num lugar só** da árvore (senão os relatórios somariam em dobro). O tipo de produto é um filtro do relatório, não um nível da árvore.
+- **Centro de custo:** onde a despesa é apropriada dentro do núcleo, por exemplo **Marketing, Terreno, Incorporação, Obra, Assistência técnica, Administrativo**. Todos os centros de custo ficam numa **lista única (raiz)** da empresa, e cada um é **ligado ou desligado em cada núcleo**: o Corporativo não tem Obra nem Pós-obra; uma loja não tem Incorporação. Cada centro de custo tem **aprovadores escolhidos pelo nome** e diz **quantos deles precisam aprovar**.
+- **Natureza:** o plano de contas, só o tipo de gasto (Marketing online, Vigilância, Energia...).
 
-A **fase** (o momento da vida da obra) **é calculada sozinha**, a partir do centro e da data, e serve só para os relatórios. Ninguém a escolhe no lançamento, e ela não entra no acesso nem na aprovação.
+**Travas, alçadas e aprovações** podem ser dadas em qualquer das três dimensões. Também se pode **liberar ou bloquear cada pessoa para lançar** em cada uma delas.
 
-**Mover uma obra ou uma área de lugar na árvore exige aprovação** e fica registrado, porque muda quem vê e quem aprova.
+A **fase** (o momento da vida da obra) **é calculada sozinha**, a partir do núcleo e da data, e serve só para os relatórios. Ninguém a escolhe no lançamento, e ela não entra no acesso nem na aprovação.
 
-Hoje o Sienge tem 97 centros de custo, que misturam obra, tipo de gasto e momento. Eles viram cerca de 25 obras na árvore, mais a árvore de áreas. ⏳ O de-para dos centros e das contas do Sienge está em rascunho; enquanto os títulos forem criados no Sienge, cada combinação centro × área × natureza tem de apontar para exatamente uma conta e um centro do Sienge, senão o título não sobe.
+**Mover um núcleo de lugar na árvore, ou ligar e desligar um centro de custo num núcleo, exige aprovação** e fica registrado, porque muda quem vê e quem aprova. (A aprovação de ligar e desligar é 🟡 proposta, por extensão da regra de 8/nov.)
+
+🟡 Em aberto: Terreno, Incorporação, Obra e Assistência técnica, como centros de custo, lembram a fase (que é calculada sozinha) e a natureza. É preciso combinar a regra: o centro de custo diz quem responde pelo gasto, a natureza diz o que foi comprado e a fase diz quando.
+
+Hoje o Sienge tem 97 centros de custo, que misturam obra, tipo de gasto e momento. Eles viram cerca de 25 núcleos econômicos na árvore, mais a lista de centros de custo. ⏳ O de-para com o Sienge está em rascunho. Enquanto os títulos forem criados lá, cada combinação núcleo × centro de custo × natureza tem de apontar para exatamente uma conta e um centro de custo (obra) do Sienge, senão o título não sobe.
 
 ## A árvore de naturezas
 
@@ -91,7 +96,7 @@ Hoje o Sienge tem 97 centros de custo, que misturam obra, tipo de gasto e moment
 
 ## Rateio
 
-✅ **Decidido** (7/nov/2026): um gasto que serve a vários empreendimentos ou naturezas (campanha institucional, aluguel da sede) é dividido em percentuais. Cada parte conta para o seu centro de custo.
+✅ **Decidido** (7/nov/2026): um gasto que serve a vários núcleos, centros de custo ou naturezas (campanha institucional, aluguel da sede) é dividido em percentuais. Cada parte conta para o seu núcleo e o seu centro de custo.
 
 ## Tarefa: criar uma natureza nova
 
@@ -106,6 +111,6 @@ Hoje o Sienge tem 97 centros de custo, que misturam obra, tipo de gasto e moment
 ## Tarefa: lançar um gasto com rateio
 
 1. No lançamento (nota, previsão ou orçamento), em **Classificação**, clique em **Ratear**.
-2. Inclua uma linha por parte: centro de custo, natureza e percentual.
+2. Inclua uma linha por parte: núcleo econômico, centro de custo, natureza e percentual.
 3. Confira que a soma dá 100%.
-4. Salve. Cada parte aparece no relatório do seu centro de custo.
+4. Salve. Cada parte aparece no relatório do seu núcleo e do seu centro de custo.
