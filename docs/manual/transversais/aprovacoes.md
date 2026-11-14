@@ -274,6 +274,22 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 
 ✅ Também confirmados no documento de desenho (7/nov/2026): as duas opções de cada pessoa da AD só o master muda, e todo lançamento aprovado por quem o lançou fica marcado e entra na revisão do master; um relatório mostra os pagamentos que caíram em "sem regra"; no lote, a conferência grava a "impressão digital" do arquivo, para saber se ele mudou.
 
+## Mudanças de acesso e sucessão do master
+
+✅ Decidido pelo Moises em 14/nov/2026:
+
+- **Toda mudança de acesso fica pendente até ser aprovada.** Vale para modelos, atribuições, exceções, gestor e diretor da área, AF, AO, AD, tipos de núcleo, marca de natureza restrita e mudança do tipo de um núcleo.
+- Aprovam os **aprovadores de acesso**, uma lista configurável com um mínimo de aprovações. Quem pediu e quem ganha o acesso não aprovam.
+- **O master** muda a lista de aprovadores sozinho; os outros só a mudam com a unanimidade da própria lista. Só o master cria e administra administradores, e só ele define o grupo de sucessão.
+
+**Sucessão do master:**
+
+1. O grupo de sucessão pode ter usuários só para isso, inclusive familiares de fora da empresa, sem nenhum outro acesso.
+2. O pedido de sucessão já aponta quem será o novo master.
+3. A unanimidade do grupo não tem prazo.
+4. Depois da unanimidade, o master tem **7 dias para vetar**, e recebe 2 avisos por dia, por e-mail e WhatsApp. Cada aviso traz um link para uma página com o botão **Interromper** (um clique).
+5. Sem veto, o novo master assume.
+
 ## Remuneração variável (comissões, prêmios, sorteios)
 
 ✅ **Decidido** (Moises, 7/nov/2026, no documento de desenho). O caminho do pagamento depende de **quem recebe**:
