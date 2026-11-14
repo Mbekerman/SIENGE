@@ -333,6 +333,7 @@ declare t erp.tipos_nucleo;
 begin
   select * into t from erp.tipos_nucleo where codigo = new.tipo;
   if tg_op = 'INSERT' and not t.ativo then raise exception 'O tipo de núcleo está desativado'; end if;
+  if tg_op = 'INSERT' and not erp.sistema() then new.criado_em := now(); end if;   -- ninguém escolhe a data de criação
   if tg_op = 'UPDATE' and new.criado_em <> old.criado_em then raise exception 'A data de criação do núcleo não muda'; end if;
   if t.exige_empreendimento and new.empreendimento_id is null then
     raise exception 'O núcleo deste tipo precisa de um empreendimento';

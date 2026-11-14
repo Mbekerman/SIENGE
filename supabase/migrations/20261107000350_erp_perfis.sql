@@ -67,6 +67,7 @@ create function erp.tg_atribuicao_escopo() returns trigger language plpgsql as $
 declare v_escopo text;
 begin
   if tg_table_name = 'atribuicoes' then
+    if tg_op = 'INSERT' and not erp.sistema() then new.criado_em := now(); end if;   -- a foto é sempre de agora
     if tg_op = 'UPDATE' and (new.criado_em <> old.criado_em or new.user_id <> old.user_id) then
       raise exception 'A atribuição não muda de pessoa nem de data de criação';
     end if;
@@ -121,16 +122,18 @@ create table erp.centro_diretores (
 
 -- só o administrador, e nunca para si mesmo
 create function erp.tg_acesso_admin() returns trigger language plpgsql as $$
-declare v_user uuid;
+declare v_eu uuid := erp.eu(); v_old jsonb; v_new jsonb;
 begin
   perform erp.exigir_admin();
-  if tg_table_name in ('atribuicoes','excecoes_centro','excecoes_natureza','centro_diretores') then
-    v_user := case when tg_op = 'DELETE' then old.user_id else new.user_id end;
-  elsif tg_table_name in ('atribuicao_nucleos','atribuicao_tipos') then
-    select user_id into v_user from erp.atribuicoes
-     where id = case when tg_op = 'DELETE' then old.atribuicao_id else new.atribuicao_id end;
-  end if;
-  if v_user is not null and v_user = erp.eu() then
+  if tg_op <> 'INSERT' then v_old := to_jsonb(old); end if;
+  if tg_op <> 'DELETE' then v_new := to_jsonb(new); end if;
+  -- confere o dono de antes e o de depois: trocar a pessoa ou a atribuição da linha também é mudar acesso
+  if v_eu is not null and (
+       (tg_table_name in ('atribuicoes','excecoes_centro','excecoes_natureza','centro_diretores')
+        and v_eu::text in (v_old->>'user_id', v_new->>'user_id'))
+    or (tg_table_name in ('atribuicao_nucleos','atribuicao_tipos')
+        and exists (select 1 from erp.atribuicoes a
+                     where a.id::text in (v_old->>'atribuicao_id', v_new->>'atribuicao_id') and a.user_id = v_eu))) then
     raise exception 'Ninguém muda o próprio acesso';
   end if;
   return coalesce(new, old);
@@ -152,7 +155,9 @@ end $$;
 create function erp.tg_aprovador_nao_si() returns trigger language plpgsql as $$
 begin
   perform erp.exigir_admin();
-  if coalesce(new.user_id, old.user_id) = erp.eu() then raise exception 'Ninguém muda o próprio acesso'; end if;
+  if erp.eu() is not null and erp.eu() in (case when tg_op <> 'INSERT' then old.user_id end, case when tg_op <> 'DELETE' then new.user_id end) then
+    raise exception 'Ninguém muda o próprio acesso';
+  end if;
   return coalesce(new, old);
 end $$;
 create trigger t_aprovador_nao_si before insert or update or delete on erp.centro_aprovadores
