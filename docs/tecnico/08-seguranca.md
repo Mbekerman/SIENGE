@@ -148,3 +148,4 @@ Ainda não há código para revisar nestes pontos; ficam como requisito para que
 | 8/nov/2026 | Escolha do aprovador pela classificação e pares centro × natureza: anotada a S-028 | não se aplica |
 | 14/nov/2026 | Previsões como títulos no Sienge e planilha de exclusão: anotada a S-029 (transição) | não se aplica |
 | 14/nov/2026 | Renomeação (commits `61467f6`, `402ec3c`): esquema `nucleo` vira `erp`, núcleo econômico × centro de custo, `erp.nucleo_centros` e `erp.checar_centro`; revoke e teste de catálogo conferidos no esquema novo | 121 passando (rodado no branch da doc) |
+| 14/nov/2026 | `erp.nucleo_centros` (commit `392155a`): UPDATE recusa mudar a chave, TRUNCATE recusado; mutação (tirar o trigger de TRUNCATE) faz o teste falhar | 123 passando |
