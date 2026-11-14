@@ -211,8 +211,16 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
   - acima de R$ 50 mil: aprovam o gestor da área, depois a AF e depois a AD. Vale para o título que passa dos 50 mil e para todos os seguintes do mês.
 - ✅ O acumulado soma também o que **o mesmo fornecedor** tem no mês em outros centros de custo, para não escapar da alçada repartindo o gasto. O administrador pode desligar (Moises, 14/nov/2026).
 - **Configuração:** as faixas e o modo de somar (grupo, empresa ou núcleo) são valores iniciais; o administrador muda, com registro.
-- **Regras do código** (a conferir com o Moises): a alçada é fixada na confirmação do título, e um título lançado depois não muda a de um anterior; as etapas correm em sequência; quem lançou não aprova e cada pessoa aprova uma etapa só; recusar exige justificativa e trava o título; sem a alçada completa, o título não é pago; quem aprova vê os títulos do mês que formaram o acumulado.
+- **Regras do código** (a conferir com o Moises): a alçada é fixada na confirmação do título, e um título lançado depois não muda a de um anterior; as etapas correm em sequência; quem lançou não aprova e cada pessoa aprova uma etapa só; sem a alçada completa, o título não é pago; quem aprova vê os títulos do mês que formaram o acumulado.
 - **Fora da alçada:** imposto retido e movimento entre sócios.
+
+**Aprovar, recusar ou pedir revisão** (Moises, 14/nov/2026). Cada etapa da alçada tem as três saídas:
+
+- ✅ **Recusar** exige justificativa e **cancela o título**. Se o título é de uma nota, cancela a nota inteira, com os impostos retidos; a previsão e a caução voltam, e o número da nota fica livre para ser lançado de novo.
+- ✅ **Pedir revisão** exige o motivo. O título fica aberto, mas ninguém aprova nem paga até ele ser reenviado. Podem ajustar quem lançou, o gestor da área e a AF. No título avulso, muda-se o título, as parcelas e o rateio; no título de nota, muda-se a nota.
+- ✅ **Reenvio:** a aprovação recomeça do zero.
+- 🟡 A confirmar com o Moises: quem reenviou não aprova essa volta.
+- ✅ **O que se pode ajustar:** o administrador define, por campo e por papel, se o campo pode mudar e, nos números e datas, se só para mais, só para menos ou para os dois lados. Começa tudo liberado.
 
 ## Pagamento com multa ou juros
 
