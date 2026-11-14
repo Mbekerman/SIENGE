@@ -9,6 +9,7 @@ As palavras abaixo têm um sentido preciso no ERP BKM. Quando houver diferença 
 | **Adiantamento** | Dinheiro pago a um fornecedor antes de existir a dívida. Fica como crédito com ele e é abatido aos poucos, em uma ou mais parcelas futuras. |
 | **Alçada** | O limite de quem pode aprovar o quê (por valor, por idade do lançamento, por natureza, por empreendimento). |
 | **Assinatura recorrente** | Compromisso que se repete (telefone, internet, aluguel, vigilância, ferramenta online), com periodicidade e valor estimado. Substitui o contrato fictício. |
+| **Baixa** | A ligação entre um pagamento e uma parcela: quanto daquele pagamento baixou aquela parcela, com juros, multa e desconto. Pagar só parte deixa saldo a pagar. (Antes de 14/11/2026 o manual chamava isso de quitação.) |
 | **Caução** | Parte do valor da nota que a BKM retém do fornecedor como garantia. Fica num extrato por contrato até ser liberada. |
 | **Centro de custo** | Onde a despesa é apropriada dentro do núcleo econômico: Marketing, Terreno, Incorporação, Obra, Assistência técnica, Administrativo... Uma lista única da empresa, ligada ou desligada em cada núcleo. ⚠️ Antes de 14/11/2026 o manual chamava isso de **área**. No Sienge, "centro de custo" é a obra, ou seja, o nosso **núcleo econômico**. |
 | **Compromisso** | O acordo que vai gerar gasto: contrato, pedido de compra, assinatura recorrente, despesa avulsa, guia de imposto ou folha. |
@@ -31,8 +32,8 @@ As palavras abaixo têm um sentido preciso no ERP BKM. Quando houver diferença 
 | **Pessoa** | Qualquer um com quem a BKM se relaciona. Uma pessoa pode ser fornecedor, cliente, sócio, corretor e funcionário ao mesmo tempo. |
 | **PPC, PCT, PRV** | Os tipos de previsão, nos nomes que o financeiro já usa: PPC é a previsão de pedido de compra, PCT a de contratos e medições, e PRV a lançada direto no financeiro (como o título de previsão que vai ao Sienge na transição). |
 | **Previsão** | Gasto esperado que ainda não é dívida. Na transição, vai ao Sienge como título de previsão, sem forma de pagamento, e é apagado à mão quando a nota chega. |
-| **Quitação** | A ligação entre um pagamento e uma parcela: quanto daquele pagamento quitou aquela parcela, com juros, multa e desconto. |
 | **Rateio** | Divisão de um gasto entre vários núcleos econômicos, centros de custo ou naturezas, em percentuais. |
+| **Quitação** | No sentido do financeiro: o documento do credor que prova que não há mais dívida. Não é a baixa. |
 | **Reclassificação** | Mudar a natureza (ou outra classificação) de lançamentos já feitos. |
 | **Retenção** | Imposto que a BKM desconta do fornecedor e paga direto ao governo (ISS, INSS, IR, PIS, COFINS, CSLL). |
 | **SPE** | Sociedade de propósito específico: a empresa (CNPJ) criada para um empreendimento. |

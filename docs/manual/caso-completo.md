@@ -29,7 +29,7 @@ Ana confere e confirma.
 
 ## 3. O que nasceu
 
-- Título da Alfa: R$ 9.000 (líquido de ISS e caução), dos quais R$ 1.000 já quitados pelo adiantamento. Saldo a pagar: R$ 8.000.
+- Título da Alfa: R$ 9.000 (líquido de ISS e caução), dos quais R$ 1.000 já baixados com o adiantamento. Saldo a pagar: R$ 8.000.
 - Título do ISS para a prefeitura: R$ 500.
 - Extrato de caução do contrato: + R$ 500.
 - A previsão de março foi consumida. Fluxo de caixa: **previsto R$ 0, comprometido R$ 8.500** (mais R$ 500 de caução, que fica comprometida sem data até ser liberada).
