@@ -1279,7 +1279,8 @@ select pg_temp.ok(not exists (
     and not (policyname = 'notificacoes' and roles = '{erp_notificacoes}' and coalesce(qual, with_check) ~ 'agindo_como\(''erp_notificacoes''::text\)'
              and ((cmd = 'ALL' and tablename in ('notificacoes','envios_notificacao'))
                   or (cmd = 'SELECT' and tablename in ('usuarios','master','tipos_evento','regras_notificacao','preferencias_notificacao',
-                                                       'listas_financeiro','centro_aprovadores','centro_diretores','aprovadores_config','nucleo_centros'))))
+                                                       'listas_financeiro','centro_aprovadores','centro_diretores','aprovadores_config','nucleo_centros',
+                                                       'divisoes'))))
     and not (policyname in ('perfil_le', 'perfil_inclui', 'perfil_altera', 'perfil_apaga') and roles = '{authenticated}')),
   'catálogo: no `erp` só há as políticas sistema, conferencia, operacao e as de perfil, estas só para authenticated');
 
@@ -4829,6 +4830,38 @@ select pg_temp.ok(pg_temp.recebeu(:'gestor', 'vm-obra') and not pg_temp.recebeu(
   'S-099: o gestor do centro recebe só os eventos do centro dele');
 select pg_temp.ok(pg_temp.recebeu(:'contador', 'geral') and not pg_temp.recebeu(:'contador', 'vm-mkt'),
   'S-099: o aprovador da configuração recebe só os eventos da tabela dele');
+-- a divisão do evento: quem só tem o PDV recebe o do PDV, não o do Online nem o do Marketing inteiro
+\set dvn_pdv 'd1000000-0000-0000-0000-0000000000a1'
+\set dvn_onl 'd1000000-0000-0000-0000-0000000000a2'
+\set dvn_obr 'd1000000-0000-0000-0000-0000000000a3'
+\set u_pdv   '00000000-0000-0000-0000-000000000025'
+insert into erp.divisoes (id, centro_custo_id, nome) values (:'dvn_pdv', :'cc_mkt', 'PDV n'), (:'dvn_onl', :'cc_mkt', 'Online n'), (:'dvn_obr', :'cc_obra', 'Obra n');
+insert into erp.usuarios (id, login_id, nome, papel) values (:'u_pdv', :'u_pdv', 'Só o PDV', 'analista');
+insert into erp.perfis_modelo (id, nome) values ('a2000000-0000-0000-0000-000000000098', 'Só o PDV (notificações)');
+insert into erp.perfil_centros (perfil_id, centro_custo_id, nivel, divisoes) values ('a2000000-0000-0000-0000-000000000098', :'cc_mkt', 'leitor', 'lista');
+insert into erp.perfil_centro_divisoes (perfil_id, centro_custo_id, divisao_id, incluir) values ('a2000000-0000-0000-0000-000000000098', :'cc_mkt', :'dvn_pdv', true);
+insert into erp.atribuicoes (user_id, perfil_id, escopo) values (:'u_pdv', 'a2000000-0000-0000-0000-000000000098', 'todos');
+insert into erp.regras_notificacao (tipo, destino, user_id) values ('natureza_sistema_alterada', 'pessoa', :'u_pdv');
+select erp.registrar_evento('natureza_sistema_alterada', 'teste', 'div-pdv', null, :'cc_mkt', jsonb_build_object('divisao_id', :'dvn_pdv'));
+select erp.registrar_evento('natureza_sistema_alterada', 'teste', 'div-onl', null, :'cc_mkt', jsonb_build_object('divisao_id', :'dvn_onl'));
+select erp.registrar_evento('natureza_sistema_alterada', 'teste', 'div-centro', null, :'cc_mkt', '{}');
+select erp.registrar_evento('natureza_sistema_alterada', 'teste', 'div-depois', null, :'cc_mkt',
+  jsonb_build_object('antes', jsonb_build_object('divisao_id', :'dvn_onl'), 'depois', jsonb_build_object('divisao_id', :'dvn_pdv')));
+select erp.registrar_evento('natureza_sistema_alterada', 'teste', 'div-antes', null, :'cc_mkt',
+  jsonb_build_object('antes', jsonb_build_object('divisao_id', :'dvn_pdv'), 'depois', jsonb_build_object('divisao_id', null)));
+-- a exceção que tira a divisão da Obra não pode valer num evento do Marketing
+insert into erp.excecoes_divisao (user_id, nucleo_economico_id, divisao_id, nivel) values (:'u_vm', :'ne_vm', :'dvn_obr', 'nenhum');
+select erp.registrar_evento('natureza_sistema_alterada', 'teste', 'div-fora', null, :'cc_mkt', jsonb_build_object('divisao_id', :'dvn_obr'));
+select erp.registrar_evento('natureza_sistema_alterada', 'teste', 'div-lixo', null, :'cc_mkt', jsonb_build_object('divisao_id', 'x'));
+select pg_temp.ok(pg_temp.recebeu(:'u_pdv', 'div-pdv') and not pg_temp.recebeu(:'u_pdv', 'div-onl') and not pg_temp.recebeu(:'u_pdv', 'div-centro'),
+  'aviso por divisão: quem só tem o PDV recebe o do PDV, não o do Online nem o do centro sem divisão');
+select pg_temp.ok(pg_temp.recebeu(:'u_pdv', 'div-depois') and pg_temp.recebeu(:'u_pdv', 'div-antes'),
+  'aviso por divisão: a faixa que entra ou sai do PDV avisa quem cuida do PDV');
+select pg_temp.ok(not pg_temp.recebeu(:'u_pdv', 'div-fora') and not pg_temp.recebeu(:'u_pdv', 'div-lixo')
+                  and pg_temp.recebeu(:'u_vm', 'div-fora') and pg_temp.recebeu(:'u_vm', 'div-lixo'),
+  'aviso por divisão: divisão de outro centro ou inválida vale como sem divisão');
+select pg_temp.ok(pg_temp.recebeu(:'u_vm', 'div-centro') and pg_temp.recebeu(:'u_vm', 'div-pdv') and pg_temp.recebeu(:'u_vm', 'div-onl'),
+  'aviso por divisão: quem tem o Marketing inteiro recebe o de todas as divisões');
 -- crítico com a regra sem e-mail: o e-mail vai mesmo assim
 insert into erp.regras_notificacao (tipo, destino, user_id, email) values ('conta_bancaria_alterada', 'pessoa', :'analista2', false);
 select erp.registrar_evento('conta_bancaria_alterada', 'teste', 'critico-sem-email', null, null, '{}');
