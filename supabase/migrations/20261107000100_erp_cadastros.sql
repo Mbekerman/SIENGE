@@ -462,6 +462,15 @@ create table erp.nucleo_etapas (
 create function erp.etapa_do_nucleo(p_nucleo uuid, p_data date) returns uuid language sql stable as $$
   select etapa_id from erp.nucleo_etapas where nucleo_economico_id = p_nucleo and inicio <= p_data
    order by inicio desc limit 1 $$;
+create function erp.tg_nucleo_etapa() returns trigger language plpgsql as $$
+begin
+  if not exists (select 1 from erp.etapas where id = new.etapa_id and ativa) then
+    raise exception 'Esta etapa está desativada; escolha uma etapa ativa';
+  end if;
+  return new;
+end $$;
+create trigger t_nucleo_etapa before insert or update on erp.nucleo_etapas
+  for each row execute function erp.tg_nucleo_etapa();
 
 -- ---------------------------------------------------------------------
 -- Árvore de naturezas (dinâmica: o administrador cria, renomeia, move e desativa)

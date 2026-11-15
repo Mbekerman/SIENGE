@@ -4922,7 +4922,29 @@ insert into erp.nucleo_etapas (nucleo_economico_id, inicio, etapa_id) values
   (:'ne_vm', '2000-01-01', (select id from erp.etapas where nome = 'Incorporação')),
   (:'ne_vm', '2026-04-01', (select id from erp.etapas where nome = 'Obra'));
 select pg_temp.como(null);
-select pg_temp.ok(exists (select 1 from erp.auditoria where tabela = 'nucleo_etapas'), 'etapa: a etapa do núcleo fica na auditoria');
+select pg_temp.ok((select count(*) from erp.auditoria where tabela = 'nucleo_etapas' and acao = 'insert'
+                     and registro = :'ne_vm' and depois->>'inicio' in ('2000-01-01', '2026-04-01')) = 2,
+  'etapa: cada marcação fica na auditoria pelo núcleo, com a data de início');
+select pg_temp.como(:'analista');
+select pg_temp.ok((select count(*) from erp.nucleo_etapas where nucleo_economico_id = :'ne_vm') = 2,
+  'etapa: quem não é administrador lê a etapa do núcleo');
+select pg_temp.falha(format($$update erp.nucleo_etapas set inicio = '2026-05-01' where nucleo_economico_id = %L and inicio = '2026-04-01'$$, :'ne_vm'),
+  'etapa: analista não troca a etapa do núcleo');
+select pg_temp.falha(format($$delete from erp.nucleo_etapas where nucleo_economico_id = %L$$, :'ne_vm'),
+  'etapa: analista não apaga a etapa do núcleo');
+select pg_temp.como(null);
+alter table erp.nucleo_etapas disable trigger t_so_admin;
+select pg_temp.como(:'analista');
+select pg_temp.falha(format($$insert into erp.nucleo_etapas (nucleo_economico_id, inicio, etapa_id)
+  values (%L, '2026-06-01', (select id from erp.etapas where nome = 'Obra'))$$, :'ne_vm'),
+  'etapa: a regra de acesso da tabela, sozinha, já recusa quem não é administrador');
+select pg_temp.como(null);
+alter table erp.nucleo_etapas enable trigger t_so_admin;
+update erp.etapas set ativa = false where nome = 'Lançamento';
+select pg_temp.como(:'ti');
+select pg_temp.falha(format($$insert into erp.nucleo_etapas (nucleo_economico_id, inicio, etapa_id)
+  values (%L, '2026-07-01', (select id from erp.etapas where nome = 'Lançamento'))$$, :'ne_vm'),
+  'etapa: etapa desativada não se marca no núcleo');
 select pg_temp.como(:'diretor');
 select pg_temp.ok(erp.etapa_do_nucleo(:'ne_vm', '2026-03-31') = (select id from erp.etapas where nome = 'Incorporação')
                   and erp.etapa_do_nucleo(:'ne_vm', '2026-04-01') = (select id from erp.etapas where nome = 'Obra')
