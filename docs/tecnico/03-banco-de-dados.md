@@ -22,7 +22,8 @@ Onde está: branch `claude/project-thread-dknc98` deste repositório (commits `6
 | `supabase/migrations/20261107000300_erp_reclassificacao.sql` | Fechamento de mês, níveis de aprovação, alçadas, pedidos de reclassificação, itens e votos (6 tabelas) |
 | `supabase/migrations/20261107000400_erp_carga.sql` | Carga inicial: árvore de naturezas v0 (11 grupos), linhas da DRE, naturezas do sistema, níveis e alçada padrão |
 | `supabase/migrations/20261107000500_erp_rls.sql` | RLS ligado e forçado em toda tabela do `erp`, com uma política só, a do sistema (S-003; as políticas por perfil entram com as telas) |
-| `supabase/tests/erp.sql` | 656 testes de regra (os de acesso incluem função `security definer` e catálogo de privilégios) |
+| `supabase/migrations/20261107000600_erp_api.sql` | Primeiro grant (15/nov/2026): `authenticated` com RLS por perfil (núcleo × centro × natureza, natureza restrita isolada), políticas por classe de tabela e lista fechada de funções que a API executa; anon e service_role sem acesso (ver `docs/erp.md`, "Acesso pela API") |
+| `supabase/tests/erp.sql` | 710 testes de regra, rodando como o usuário logado sob RLS (os de acesso incluem função `security definer` e catálogo de privilégios) |
 | `supabase/tests/run.sh` | Sobe um Postgres 16 temporário, aplica `shim_supabase.sql` + migrations e roda os testes |
 | `supabase/tests/shim_supabase.sql` | Imita o mínimo do Supabase (`auth.uid()` lido de `request.jwt.claim.sub`) |
 | `docs/erp.md` | Dicionário das tabelas e regras, em português (fonte principal para o detalhe de cada tabela) |
@@ -54,13 +55,13 @@ Roda como root (usa `runuser -u postgres`) ou como usuário comum; porta padrão
 
 - `erp.usuarios` (`user_id` = `auth.users.id`) guarda papel (`diretor`, `gestor`, `analista`, `leitura`), `contador` e `administrador`.
 - **Login e sistema (desde 14/nov/2026, PR #4; S-033):** `erp.login_atual()` é o único ponto ligado ao provedor (lê o `sub` do login, hoje `auth.uid()`); `erp.eu()` devolve o `erp.usuarios.id`, que é nosso, buscando pelo `login_id text unique`. `erp.sistema()` só é verdadeiro sem login e com o papel `erp_sistema`, ou na sessão do dono das migrations sem SET ROLE; qualquer outro papel sem login, de qualquer provedor, não é sistema. As 15 funções de conferência (saldos, listas, regra do adiantamento, autor, `centro_ligado`, `eu` e os `exigir_*`) são `security definer` do papel `erp_conferencia`, com `search_path` fixo, para as travas enxergarem por baixo do RLS (S-034). As checagens `exigir_admin`, `exigir_editor` e `exigir_diretor` deixam passar só nesse caso.
-- Acesso fechado à API do Supabase (migration `..._erp_carga.sql`, fim): o esquema, as tabelas e o `execute` das funções são revogados de `public`, `anon` e `authenticated`, inclusive nos privilégios padrão. Hoje **só o servidor** usa o `erp`.
+- Acesso pela API (migration `..._erp_api.sql`, desde 15/nov/2026): `public`, `anon` e `service_role` continuam sem privilégio nenhum; `authenticated` tem uso do esquema, as tabelas sob as políticas por perfil e o `execute` só das funções da lista. Os testes rodam como `authenticated` sob RLS.
 
 Corrigido em 7/nov/2026: na v0 inicial, `eu()` nulo passava nas checagens, e uma chamada anônima pela API também tem `auth.uid()` nulo. Em seguida (S-002), a decisão deixou de usar `current_user`, que dentro de `security definer` é o dono. Os testes de acesso cobrem os dois casos e um teste de catálogo barra qualquer privilégio de `public`, `anon` ou `authenticated`.
 
 O que falta antes de abrir o `erp` às telas (ver [07-pendencias.md](07-pendencias.md)):
 
-1. Dar `grant` a `authenticated` só no que as telas usam (funções e visões) e criar a RLS. Hoje não há RLS: com o esquema fechado não é necessária, mas passa a ser no primeiro `grant`.
+1. ~~Dar `grant` a `authenticated` e criar a RLS~~: feito na migration `_erp_api` (15/nov/2026).
 2. O `erp` não tem `empresa_id` de isolamento como o BKM Terrenos (`app.minhas_empresas()`): as empresas do grupo são dados, não inquilinos. Quem vê o quê por empresa ou empreendimento fica para o módulo de aprovação e permissões.
 3. `erp.usuarios` é um cadastro de papéis separado de `app.membros` do BKM Terrenos, no mesmo login. Falta decidir se os dois se unem.
 

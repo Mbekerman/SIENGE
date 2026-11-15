@@ -3269,6 +3269,7 @@ delete from erp.atribuicao_nucleos; delete from erp.atribuicao_tipos; delete fro
 \set u7 'b0000000-0000-0000-0000-000000000007'
 \set u8 'b0000000-0000-0000-0000-000000000008'
 \set u9 'b0000000-0000-0000-0000-000000000009'
+\set u10 'b0000000-0000-0000-0000-000000000010'
 insert into erp.usuarios (id, login_id, nome, papel, ativo, so_sucessao) values
   (:'u1', :'u1', 'Leitor Mkt', 'analista', true, false),
   (:'u2', :'u2', 'Restrito Mkt', 'analista', true, false),
@@ -3278,8 +3279,9 @@ insert into erp.usuarios (id, login_id, nome, papel, ativo, so_sucessao) values
   (:'u6', :'u6', 'Inativo', 'analista', false, false),
   (:'u7', :'u7', 'AD sem perfil', 'analista', true, false),
   (:'u8', :'u8', 'Só sucessão', 'leitura', true, true),
-  (:'u9', :'u9', 'Mkt sem PJ', 'analista', true, false);
-update erp.usuarios set ativo = true where id in (:'u1', :'u2', :'u3', :'u4', :'u5', :'u7', :'u8', :'u9');
+  (:'u9', :'u9', 'Mkt sem PJ', 'analista', true, false),
+  (:'u10', :'u10', 'Leitura com perfil', 'leitura', true, false);
+update erp.usuarios set ativo = true where id in (:'u1', :'u2', :'u3', :'u4', :'u5', :'u7', :'u8', :'u9', :'u10');
 update erp.usuarios set ativo = false where id = :'u6';
 insert into erp.naturezas (codigo, mae_id, nome, restrita) values ('06.07', pg_temp.nat('06'), 'Folha PJ (teste)', true);
 insert into erp.perfis_modelo (id, nome) values
@@ -3296,7 +3298,8 @@ insert into erp.atribuicoes (id, user_id, perfil_id, escopo) values
   ('a2000000-0000-0000-0000-000000000002', :'u2', 'a1000000-0000-0000-0000-000000000002', 'todos'),
   ('a2000000-0000-0000-0000-000000000003', :'u3', 'a1000000-0000-0000-0000-000000000003', 'lista'),
   ('a2000000-0000-0000-0000-000000000004', :'u4', 'a1000000-0000-0000-0000-000000000004', 'todos'),
-  ('a2000000-0000-0000-0000-000000000009', :'u9', 'a1000000-0000-0000-0000-000000000009', 'todos');
+  ('a2000000-0000-0000-0000-000000000009', :'u9', 'a1000000-0000-0000-0000-000000000009', 'todos'),
+  ('a2000000-0000-0000-0000-000000000010', :'u10', 'a1000000-0000-0000-0000-000000000009', 'todos');
 insert into erp.atribuicao_nucleos values ('a2000000-0000-0000-0000-000000000003', :'ne_vm', true);
 insert into erp.listas_financeiro (lista, user_id) values ('AD', :'u7');
 insert into erp.centro_aprovadores values (:'cc_mkt', :'gestor') on conflict do nothing;
@@ -3356,6 +3359,15 @@ select pg_temp.falha(format($$update erp.titulo_rateios set centro_custo_id = %L
   'acesso: não leva a linha para um centro onde não lança');
 select pg_temp.falha(format($$update erp.titulo_rateios set percentual = 100 where titulo_id = %L$$, :'ta'), 'acesso: não mexe no rateio de título que não vê');
 select pg_temp.falha(format($$select erp.confirmar_titulo(%L)$$, :'ta'), 'acesso: não confirma título que não vê');
+select pg_temp.como(:'u2');
+select pg_temp.falha(format($$update erp.titulo_rateios set percentual = 100 where titulo_id = %L$$, :'tb'),
+  'acesso: o lançador restrito não mexe no rateio que outra pessoa lançou, mesmo no centro dele');
+select pg_temp.erro_igual(format($$select erp.confirmar_titulo(%L)$$, :'tb'), 'Você não lança em todas as linhas deste título',
+  'acesso: o lançador restrito não confirma o título que outra pessoa lançou');
+select pg_temp.como(:'u10');
+select pg_temp.falha($$insert into erp.titulos (empresa_id, tipo, pessoa_id, emissao, competencia, valor)
+  values ('20000000-0000-0000-0000-000000000002', 'avulso', '10000000-0000-0000-0000-0000000000c1', '2027-09-05', '2027-09-01', 10)$$,
+  'acesso: papel leitura não grava, mesmo com perfil de lançador');
 select pg_temp.como(:'u9');
 select pg_temp.erro_igual(format($$select erp.confirmar_titulo(%L)$$, :'te'), 'Você não lança em todas as linhas deste título',
   'acesso: não confirma título com linha onde não lança (mesmo vendo pelo definer)');
@@ -3390,6 +3402,37 @@ select pg_temp.erro_igual(format($$select erp.pedir_reclassificacao(%L, %L, 'x')
   'acesso: a reclassificação não leva lançamento fora do acesso de quem pede');
 select pg_temp.erro_igual(format($$select erp._registrar_ajuste(%L, 'titulo_rateios', null, null)$$, :'tc'), 'O ajuste só se registra pela mudança na tabela',
   'acesso: o rastro do ajuste não se forja chamando a função direto');
+-- S-073: o gestor da área pede revisão do B, mas não lança no Marketing: não ajusta
+select pg_temp.como(:'gestor');
+select pg_temp.ok(erp.decidir_titulo(:'tb', false, 'conferir a natureza', true) = 'revisao', 'S-073: o gestor da área pede a revisão');
+select pg_temp.ok(not erp.pode_ajustar(:'tb'), 'S-073: o gestor da área que não lança nas linhas do título não ajusta');
+select pg_temp.erro_igual(format($$update erp.titulos set descricao = 'x' where id = %L$$, :'tb'), 'Título confirmado não se edita',
+  'S-073: nem pela tabela');
+select pg_temp.como(:'u9');
+select pg_temp.ok(erp.pode_ajustar(:'tb'), 'S-073: quem lançou e lança nas linhas ajusta');
+-- sucessão: quem está fora do grupo não vê nem efetiva
+select pg_temp.sis();
+insert into erp.grupo_sucessao (user_id) values (:'u5');
+select pg_temp.como(:'u5');
+select erp.pedir_sucessao_master(:'diretor2', 'teste de acesso') as suc_v \gset
+select pg_temp.como(:'u1');
+select pg_temp.ok(not exists (select 1 from erp.grupo_sucessao) and not exists (select 1 from erp.sucessoes_master),
+  'acesso: quem está fora do grupo de sucessão não vê o grupo nem os pedidos');
+select pg_temp.erro_igual(format($$select erp.efetivar_sucessao_master(%L)$$, :'suc_v'),
+  'Só o grupo de sucessão ou o indicado efetivam a sucessão', 'acesso: quem está fora do grupo não efetiva a sucessão');
+-- pagamento carimbado no Marketing que quita o título PJ: some para quem não vê o PJ
+select pg_temp.como(:'gestor'); select erp.decidir_titulo(:'td', true);
+select pg_temp.sis(); insert into erp.listas_financeiro (lista, user_id) values ('AF', :'contador') on conflict do nothing; select pg_temp.volta();
+select pg_temp.como(:'contador'); select erp.decidir_titulo(:'td', true);
+select pg_temp.como(:'u4');
+insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values
+  ('c2000000-0000-0000-0000-0000000000d1', :'incorp', :'conta_inc', '10000000-0000-0000-0000-0000000000c1', :'ne_corp', :'cc_mkt', '2027-10-10', 20000);
+insert into erp.quitacoes (pagamento_id, parcela_id, principal) values ('c2000000-0000-0000-0000-0000000000d1', :'td', 20000);
+select pg_temp.ok(exists (select 1 from erp.pagamentos where id = 'c2000000-0000-0000-0000-0000000000d1'), 'acesso: quem tem o PJ vê o pagamento do PJ');
+select pg_temp.como(:'u9');
+select pg_temp.ok(not exists (select 1 from erp.pagamentos where id = 'c2000000-0000-0000-0000-0000000000d1')
+                  and not exists (select 1 from erp.quitacoes where pagamento_id = 'c2000000-0000-0000-0000-0000000000d1'),
+  'acesso: o pagamento que quita título PJ some para quem vê o centro mas não o PJ');
 select pg_temp.como(null);
 rollback;
 
