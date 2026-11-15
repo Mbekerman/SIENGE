@@ -1437,6 +1437,9 @@ select set_config('teste.rc59b', erp.pedir_reclassificacao(pg_temp.nat('04.03'),
 select pg_temp.como(:'diretor');
 select pg_temp.ok(erp.decidir_reclassificacao(current_setting('teste.rc59b')::uuid, true) = 'aprovada',
   'master: sozinho, o master aprova a reclassificação de diretoria e contador');
+select set_config('teste.rc59c', erp.pedir_reclassificacao(pg_temp.nat('04.02'), pg_temp.nat('04.03'), 'S-059 do master')::text, true);
+select pg_temp.ok(erp.decidir_reclassificacao(current_setting('teste.rc59c')::uuid, true) = 'aprovada',
+  'master: o master aprova a reclassificação que ele mesmo pediu');
 rollback;
 -- ---------------------------------------------------------------------
 \echo '# alçada de pagamento (piloto Marketing)'

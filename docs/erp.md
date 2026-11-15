@@ -2,7 +2,7 @@
 
 Versão 0, de 7/nov/2026. Ela traduz em tabelas o desenho da sabatina, que está no doc [Núcleo do ERP BKM: modelo v1](https://claude.ai/artifact/YXuHgVNLaMPRtpxJ8YWCPt). Todas as tabelas ficam no esquema `erp`, no mesmo Supabase do BKM Terrenos, acima do espelho do Sienge (`sienge_bruto` e `sienge`).
 
-O SQL está em `supabase/migrations/` e os testes em `supabase/tests/erp.sql` (654 testes). Para rodar: `bash supabase/tests/run.sh`.
+O SQL está em `supabase/migrations/` e os testes em `supabase/tests/erp.sql` (655 testes). Para rodar: `bash supabase/tests/run.sh`.
 
 Este documento cobre o contas a pagar, a raiz (empresas e sócios), a árvore de naturezas, o livro de lançamentos e a reclassificação. Contas a receber, bancos, aprovação geral e engenharia ficam para as próximas sessões.
 
@@ -149,7 +149,7 @@ O livro é escrito sozinho, a cada passo:
 | `alcadas_reclassificacao` | A alçada pela idade do lançamento (mês aberto, mês fechado com o trimestre aberto, trimestre fechado), pelo valor e pelo acumulado da pessoa no mês. Só o administrador mexe |
 | `reclassificacoes` | O pedido: origem, destino, filtro, motivo, valor, acumulado, faixa, nível exigido e situação |
 | `reclassificacao_itens` | Cada linha do livro movida, com a natureza de antes e a de depois |
-| `reclassificacao_votos` | Os votos, com quem votou, em que papel e a justificativa | O voto do master basta, em qualquer nível; quem pediu não aprova, nem o master |
+| `reclassificacao_votos` | Os votos, com quem votou, em que papel e a justificativa | O voto do master basta, em qualquer nível, inclusive no pedido dele; fora o master, quem pediu não aprova |
 
 Regras decididas em 7/nov/2026 (o Moises disse que mesmo a reclassificação simples precisa do aval da diretoria; a exceção que propus, para corrigir um lançamento só num mês aberto, ficou sem resposta e não foi implementada):
 
