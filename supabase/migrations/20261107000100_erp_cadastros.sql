@@ -19,6 +19,7 @@ create table erp.usuarios (
   -- só para a sucessão do master (Moises, 14/11/2026: pode ser de fora da empresa, um familiar):
   -- nenhum outro acesso no ERP
   so_sucessao   boolean not null default false,
+  ativado_em    timestamptz,                    -- primeira ativação (o usuário novo nasce inativo; S-086)
   criado_em     timestamptz not null default now(),
   check (not so_sucessao or (papel = 'leitura' and not administrador and not contador)),
   -- o administrador é o TI: não aprova nada, nem pelo papel (S-085)

@@ -1676,7 +1676,7 @@ end $$;
 create function erp.decidir_titulo(p_titulo uuid, p_aprovar boolean, p_justificativa text default null,
                                    p_revisao boolean default false)
 returns text language plpgsql as $$
-declare a erp.titulo_alcadas; v_etapa int; v_lista text; v_eu uuid := erp.eu();
+declare a erp.titulo_alcadas; v_etapa int; v_lista text; v_eu uuid := erp.eu(); v_master boolean := erp.sou_master();
 begin
   perform erp.exigir_editor();
   if v_eu is null then raise exception 'Usuário sem cadastro no ERP'; end if;
@@ -1699,10 +1699,14 @@ begin
      or exists (select 1 from erp.titulo_ajustes j where j.titulo_id in (select erp.cadeia_titulo(p_titulo)) and j.por = v_eu) then
     raise exception 'Quem ajustou não aprova o ajuste';
   end if;
-  if exists (select 1 from erp.titulo_aprovacoes where titulo_id = p_titulo and rodada = a.rodada and por = v_eu) then
+  if not v_master and exists (select 1 from erp.titulo_aprovacoes where titulo_id = p_titulo and rodada = a.rodada and por = v_eu) then
     raise exception 'Você já aprovou uma etapa deste título';
   end if;
-  if v_lista = 'AREA' then
+  -- o master decide qualquer etapa; aprovando, a decisão dele vale por todas as que faltam
+  -- (Moises, 14/11/2026). Quem lançou ou ajustou continua não aprovando, nem o master.
+  if v_master then
+    null;
+  elsif v_lista = 'AREA' then
     if not exists (select 1 from erp.centro_aprovadores c join erp.usuarios u on u.id = c.user_id
                     where c.centro_custo_id = a.centro_custo_id and c.user_id = v_eu and u.ativo) then
       raise exception 'Esta etapa é do gestor da área';
@@ -1717,6 +1721,14 @@ begin
   end if;
   if not p_aprovar and length(trim(coalesce(p_justificativa, ''))) = 0 then
     raise exception 'Recusar exige justificativa';
+  end if;
+  if v_master and p_aprovar then
+    insert into erp.titulo_aprovacoes (titulo_id, rodada, etapa, lista, aprovado, justificativa, por)
+    select p_titulo, a.rodada, i, a.etapas[i], true, p_justificativa, v_eu
+      from generate_subscripts(a.etapas, 1) i
+     where i >= v_etapa
+       and not exists (select 1 from erp.titulo_aprovacoes v where v.titulo_id = p_titulo and v.rodada = a.rodada and v.etapa = i);
+    return 'aprovado';
   end if;
   insert into erp.titulo_aprovacoes (titulo_id, rodada, etapa, lista, aprovado, justificativa, por)
   values (p_titulo, a.rodada, v_etapa, v_lista, p_aprovar, p_justificativa, v_eu);

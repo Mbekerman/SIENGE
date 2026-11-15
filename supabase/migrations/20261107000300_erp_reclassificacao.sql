@@ -145,7 +145,7 @@ create index on erp.reclassificacao_itens (lancamento_id);
 create table erp.reclassificacao_votos (
   reclassificacao_id uuid not null references erp.reclassificacoes on delete cascade,
   user_id            uuid not null,
-  como               text not null check (como in ('gestor','diretor','contador')),
+  como               text not null check (como in ('gestor','diretor','contador','master')),
   aprovou            boolean not null,
   justificativa      text,
   em                 timestamptz not null default now(),
@@ -338,6 +338,7 @@ begin
   end if;
 
   v_como := case
+    when erp.sou_master() then 'master'          -- o voto do master basta, em qualquer nível (Moises, 14/11/2026)
     when r.nivel = 'gestor' and u.papel in ('gestor','diretor') then u.papel
     when r.nivel = 'diretor' and u.papel = 'diretor' then 'diretor'
     when r.nivel = 'diretor_e_contador' and u.papel = 'diretor'
@@ -356,11 +357,11 @@ begin
     update erp.reclassificacoes set situacao = 'recusada' where id = r.id;
     return 'recusada';
   end if;
-  v_ok := case r.nivel
+  v_ok := case when v_como = 'master' then true else case r.nivel
     when 'diretor_e_contador' then
       exists (select 1 from erp.reclassificacao_votos where reclassificacao_id = r.id and como = 'diretor' and aprovou)
       and exists (select 1 from erp.reclassificacao_votos where reclassificacao_id = r.id and como = 'contador' and aprovou)
-    else true end;
+    else true end end;
   if not v_ok then return 'pendente'; end if;
   perform erp._aplicar_reclassificacao(r.id);
   return 'aprovada';

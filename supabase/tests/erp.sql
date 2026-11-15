@@ -683,10 +683,9 @@ select pg_temp.como(:'analista');
 select erp.pedir_reclassificacao(pg_temp.nat('05.01.05'), pg_temp.nat('05.01.04'), 'Volta', jsonb_build_object('de', '2026-01-01', 'ate', '2026-01-01')) as r5 \gset
 select pg_temp.ok((select nivel = 'diretor_e_contador' and faixa = 'trimestre_fechado' from erp.reclassificacoes where id = :'r5'),
   'trimestre fechado pede diretoria e contador, mesmo com valor pequeno');
-select pg_temp.como(:'diretor');
-select pg_temp.ok(erp.decidir_reclassificacao(:'r5', true) = 'pendente', 'só a diretoria não basta');
 select pg_temp.como(:'diretor2');
-select pg_temp.falha(format($$select erp.decidir_reclassificacao(%L, true)$$, :'r5'), 'segundo diretor não substitui o contador');
+select pg_temp.ok(erp.decidir_reclassificacao(:'r5', true) = 'pendente', 'só a diretoria não basta');
+select pg_temp.falha(format($$select erp.decidir_reclassificacao(%L, true)$$, :'r5'), 'o diretor não vota de novo no lugar do contador');
 select pg_temp.como(:'contador');
 select pg_temp.ok(erp.decidir_reclassificacao(:'r5', true) = 'aprovada', 'com o contador, aplica');
 
@@ -1425,11 +1424,19 @@ select pg_temp.como(:'analista');
 select set_config('teste.rc59', erp.pedir_reclassificacao(pg_temp.nat('04.02'), pg_temp.nat('04.03'), 'S-059')::text, true);
 select pg_temp.erro_igual(format($$select erp.decidir_reclassificacao(%L, true)$$, current_setting('teste.rc59')),
   'Quem pediu a reclassificação não pode aprová-la', 'S-059: quem pediu não aprova');
-select pg_temp.como(:'diretor');
+select pg_temp.como(:'diretor2');
 select pg_temp.ok(erp.decidir_reclassificacao(current_setting('teste.rc59')::uuid, true) = 'pendente',
   'S-059: diretoria e contador: o voto da diretoria sozinho deixa pendente');
 select pg_temp.erro_igual(format($$select erp.decidir_reclassificacao(%L, true)$$, current_setting('teste.rc59')),
   'Você já votou neste pedido', 'S-059: ninguém vota duas vezes');
+select pg_temp.como(:'diretor');
+select pg_temp.ok(erp.decidir_reclassificacao(current_setting('teste.rc59')::uuid, true) = 'aprovada',
+  'master: o voto do master basta na reclassificação, no lugar do contador');
+select pg_temp.como(:'analista');
+select set_config('teste.rc59b', erp.pedir_reclassificacao(pg_temp.nat('04.03'), pg_temp.nat('04.02'), 'S-059 volta')::text, true);
+select pg_temp.como(:'diretor');
+select pg_temp.ok(erp.decidir_reclassificacao(current_setting('teste.rc59b')::uuid, true) = 'aprovada',
+  'master: sozinho, o master aprova a reclassificação de diretoria e contador');
 rollback;
 -- ---------------------------------------------------------------------
 \echo '# alçada de pagamento (piloto Marketing)'
@@ -1480,9 +1487,17 @@ select pg_temp.erro_igual($$insert into erp.quitacoes (pagamento_id, parcela_id,
   'O título ainda não foi aprovado: falta AREA', 'alçada: não se paga antes da aprovação');
 select pg_temp.erro_igual($$select erp.decidir_titulo('82000000-0000-0000-0000-000000000001', true)$$,
   'Quem lançou não aprova o próprio lançamento', 'alçada: quem lançou não aprova');
-select pg_temp.como(:'diretor');
+select pg_temp.como(:'diretor2');
 select pg_temp.erro_igual($$select erp.decidir_titulo('82000000-0000-0000-0000-000000000001', true)$$,
   'Esta etapa é do gestor da área', 'alçada: a primeira etapa é do gestor da área, nem a diretoria pula');
+savepoint so_master;
+select pg_temp.como(:'diretor');
+select erp.decidir_titulo('82000000-0000-0000-0000-000000000001', true) as r_m \gset
+select pg_temp.ok(:'r_m' = 'aprovado' and erp.alcada_pendente('82000000-0000-0000-0000-000000000001') is null
+                  and (select count(*) > 1 and bool_and(por = :'diretor'::uuid) from erp.titulo_aprovacoes where titulo_id = '82000000-0000-0000-0000-000000000001'),
+  'master: um voto do master aprova todas as etapas que faltam (gestor, AF, AD...)');
+rollback to savepoint so_master;
+select pg_temp.como(:'diretor2');
 select pg_temp.como(:'gestor');
 select pg_temp.ok(erp.decidir_titulo('82000000-0000-0000-0000-000000000001', true) = 'pendente', 'alçada: o gestor da área aprova a etapa dele');
 select pg_temp.erro_igual($$select erp.decidir_titulo('82000000-0000-0000-0000-000000000001', true)$$,
@@ -2570,7 +2585,7 @@ select pg_temp.ok(exists (select 1 from erp.auditoria where tabela = 'atribuicoe
 select pg_temp.como(null);
 insert into erp.aprovadores_acesso values (:'diretor');
 select pg_temp.como(:'ti');
-select erp.pedir_mudanca_acesso('listas_financeiro', 'incluir', jsonb_build_object('lista', 'AO', 'user_id', :'leitor'), 'Leitor no AO') as m_ao \gset
+select erp.pedir_mudanca_acesso('centro_aprovadores', 'incluir', jsonb_build_object('centro_custo_id', :'cc_obra', 'user_id', :'leitor'), 'Leitor gestor da Obra') as m_ao \gset
 select pg_temp.erro_igual(format($$select erp.decidir_mudanca_acesso(%L, true)$$, :'m_ao'),
   'Só um aprovador de acesso decide o pedido', 'acesso: quem pediu (o administrador) não está na lista e não aprova');
 select pg_temp.como(:'leitor');
@@ -2581,7 +2596,7 @@ select pg_temp.erro_igual(format($$select erp.decidir_mudanca_acesso(%L, false)$
   'Recusar o pedido de acesso precisa de justificativa', 'acesso: recusa sem justificativa não passa');
 select erp.decidir_mudanca_acesso(:'m_ao', false, 'Leitor não aprova pagamento') as r_ao \gset
 select pg_temp.ok(:'r_ao' = 'recusada'
-                  and not exists (select 1 from erp.listas_financeiro where lista = 'AO' and user_id = :'leitor'),
+                  and not exists (select 1 from erp.centro_aprovadores where centro_custo_id = :'cc_obra' and user_id = :'leitor'),
   'acesso: recusado, o pedido não vale');
 -- o modelo: quem está ligado a ele não aprova a mudança
 select pg_temp.como(:'ti');
@@ -2597,12 +2612,24 @@ select pg_temp.erro_igual(format($$select erp.decidir_mudanca_acesso(%L, true)$$
 select pg_temp.como(null);
 delete from erp.atribuicoes where user_id = :'diretor2';
 select pg_temp.como(:'ti');
--- o administrador pede acesso para outro: a lista aprova
-select erp.pedir_mudanca_acesso('listas_financeiro', 'incluir', jsonb_build_object('lista', 'AO', 'user_id', :'diretor'), 'Moises no AO') as m_eu \gset
-select pg_temp.como(:'diretor2');
-select erp.decidir_mudanca_acesso(:'m_eu', true);
-select pg_temp.ok(exists (select 1 from erp.listas_financeiro where lista = 'AO' and user_id = :'diretor'),
-  'acesso: o pedido do administrador vale com a aprovação da lista');
+-- AF, AO e AD: só com a aprovação do master (Moises, 14/11/2026)
+select erp.pedir_mudanca_acesso('listas_financeiro', 'incluir', jsonb_build_object('lista', 'AO', 'user_id', :'diretor2'), 'Sócia no AO') as m_eu \gset
+select pg_temp.ok((select situacao = 'pendente' and minimo = 1 from erp.mudancas_acesso where id = :'m_eu'), 'AF/AO/AD: o pedido do administrador fica pendente');
+select pg_temp.como(:'leitor');
+select pg_temp.erro_igual(format($$select erp.decidir_mudanca_acesso(%L, true)$$, :'m_eu'),
+  'Só o master decide este pedido', 'AF/AO/AD: aprovador de acesso que não é o master não decide');
+select pg_temp.como(:'diretor');
+select erp.decidir_mudanca_acesso(:'m_eu', true) as r_eu \gset
+select pg_temp.ok(:'r_eu' = 'aplicada'
+                  and exists (select 1 from erp.listas_financeiro where lista = 'AO' and user_id = :'diretor2'),
+  'AF/AO/AD: a aprovação do master basta e aplica');
+select pg_temp.como(:'ti');
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('listas_financeiro', 'incluir', jsonb_build_object('lista', 'AO', 'user_id', %L), 'x')$$, :'diretor'),
+  'O master ganha acesso com a mudança: ele mesmo a faz', 'AF/AO/AD: o master não aprova o próprio acesso');
+select pg_temp.como(:'diretor');
+select erp.pedir_mudanca_acesso('listas_financeiro', 'incluir', jsonb_build_object('lista', 'AO', 'user_id', :'diretor'), 'Moises no AO') as m_eu2 \gset
+select pg_temp.ok(exists (select 1 from erp.listas_financeiro where lista = 'AO' and user_id = :'diretor'), 'AF/AO/AD: o master põe a si mesmo, na hora');
+select pg_temp.como(:'ti');
 
 -- mínimo de aprovações e pedido que fica velho
 select pg_temp.como(null);
@@ -2615,7 +2642,7 @@ select pg_temp.ok(erp.decidir_mudanca_acesso(:'m_dois', true) = 'pendente', 'ace
 select pg_temp.como(:'leitor');
 select pg_temp.ok(erp.decidir_mudanca_acesso(:'m_dois', true) = 'aplicada', 'acesso: com mínimo 2, a segunda aprovação aplica');
 select pg_temp.como(null); update erp.regra_acesso set minimo = 3; select pg_temp.como(:'ti');
-select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('listas_financeiro', 'incluir', jsonb_build_object('lista', 'AF', 'user_id', %L), 'x')$$, :'leitor'),
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('excecoes_centro', 'incluir', jsonb_build_object('user_id', %L, 'nucleo_economico_id', %L, 'centro_custo_id', %L, 'nivel', 'leitor'), 'x')$$, :'leitor', :'ne_corp', :'cc_obra'),
   'Não há aprovadores de acesso suficientes para esta mudança (precisa de 3, há 2)', 'acesso: sem aprovadores suficientes, o pedido nem abre');
 select pg_temp.como(null); update erp.regra_acesso set minimo = 1; select pg_temp.como(:'ti');
 select erp.pedir_mudanca_acesso('excecoes_centro', 'alterar',
@@ -2701,7 +2728,7 @@ select pg_temp.erro_igual($$update erp.regras_mudanca_acesso set rotulo = 'x' wh
   'As regras são fixas; mude só a exigência', 'S-081: o master muda só a exigência');
 select pg_temp.erro_igual($$delete from erp.regras_mudanca_acesso where tabela = 'excecoes_centro'$$,
   'As regras são fixas; mude só a exigência', 'S-081: as regras não se apagam');
-update erp.regras_mudanca_acesso set exige_aprovacao = false where tabela in ('excecoes_centro', 'aprovadores_acesso');
+update erp.regras_mudanca_acesso set exige_aprovacao = false where tabela in ('excecoes_centro', 'aprovadores_acesso', 'listas_financeiro');
 select pg_temp.como(:'ti');
 select erp.pedir_mudanca_acesso('excecoes_centro', 'incluir',
   jsonb_build_object('user_id', :'leitor', 'nucleo_economico_id', :'ne_vm', 'centro_custo_id', :'cc_obra', 'nivel', 'leitor'), 'Leitor vê obra') as m_disp \gset
@@ -2712,13 +2739,17 @@ select erp.pedir_mudanca_acesso('aprovadores_acesso', 'excluir', jsonb_build_obj
 select pg_temp.ok((select situacao = 'pendente' from erp.mudancas_acesso where id = :'m_ld'),
   'S-081: a lista de aprovadores nunca se dispensa da unanimidade fora do master');
 select erp.cancelar_mudanca_acesso(:'m_ld');
+select erp.pedir_mudanca_acesso('listas_financeiro', 'incluir', jsonb_build_object('lista', 'AF', 'user_id', :'leitor'), 'x') as m_lfd \gset
+select pg_temp.ok((select situacao = 'pendente' from erp.mudancas_acesso where id = :'m_lfd'),
+  'AF/AO/AD: a aprovação do master nunca se dispensa');
+select erp.cancelar_mudanca_acesso(:'m_lfd');
 select erp.pedir_mudanca_acesso('excecoes_natureza', 'incluir',
   jsonb_build_object('user_id', :'leitor', 'natureza_id', pg_temp.nat('05.01.04'), 'centro_custo_id', :'cc_mkt', 'efeito', 'liberar'), 'x') as m_nd \gset
 select pg_temp.ok((select situacao = 'pendente' from erp.mudancas_acesso where id = :'m_nd'), 'S-081: tipo não dispensado continua pedindo aprovação');
 select erp.cancelar_mudanca_acesso(:'m_nd');
 -- papel e contador: pedido aprovado (login, situação e sucessor, só o master)
 select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('usuarios', 'alterar', jsonb_build_object('id', %L, 'login_id', 'outro'), 'x')$$, :'gestor'),
-  'O pedido de usuário só muda o papel e o contador (login, situação e marca de sucessor: só o master)', 'S-081: o pedido não troca o login');
+  'O pedido de usuário só muda o papel e o contador e ativa o usuário novo (login, desativar e marca de sucessor: só o master)', 'S-081: o pedido não troca o login');
 select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('usuarios', 'incluir', jsonb_build_object('id', %L, 'papel', 'diretor'), 'x')$$, :'gestor'),
   'Em usuarios o pedido só altera', 'S-081: o pedido não cria usuário');
 insert into erp.usuarios (id, login_id, nome, papel, ativo) values ('00000000-0000-0000-0000-000000000096', 'novo2', 'Novo 2', 'leitura', false);
@@ -2728,6 +2759,9 @@ select pg_temp.ok((select situacao = 'pendente' and beneficiarios = array['00000
   'S-081: o pedido de papel só vale depois da aprovação, e o usuário é quem ganha');
 select pg_temp.como(:'diretor2'); select erp.decidir_mudanca_acesso(:'m_pap', true);
 select pg_temp.como(:'leitor'); select erp.decidir_mudanca_acesso(:'m_pap', true);
+select pg_temp.como(:'analista');
+select pg_temp.ok(erp.decidir_mudanca_acesso(:'m_pap', true) = 'pendente', 'níveis: lista é todos os aprovadores (E); faltando um, não vale');
+select pg_temp.como(:'diretor'); select erp.decidir_mudanca_acesso(:'m_pap', true);
 select pg_temp.ok((select papel = 'analista' and contador from erp.usuarios where id = '00000000-0000-0000-0000-000000000096'),
   'S-081: papel e contador mudam pelo pedido aprovado');
 select pg_temp.como(:'diretor');
@@ -2755,6 +2789,93 @@ select pg_temp.como(:'diretor');
 update erp.usuarios set ativo = true where id = '00000000-0000-0000-0000-000000000098';
 select pg_temp.como('novo');
 select pg_temp.ok(erp.eu() = '00000000-0000-0000-0000-000000000098', 'S-086: o master ativa e o login passa a valer');
+-- níveis: quem aprova cada nível de usuário e de papel de aprovação; delegados (Moises, 14/11/2026)
+select pg_temp.como(:'ti');
+select pg_temp.erro_igual(format($$insert into erp.delegados_acesso values (%L)$$, :'diretor2'),
+  'Só o master define os delegados', 'níveis: só o master define os delegados');
+select pg_temp.erro_igual($$update erp.regras_nivel_acesso set aprovacao = 'nenhuma' where nivel = 'leitura'$$,
+  'Só o master decide quem aprova cada nível', 'níveis: só o master decide quem aprova cada nível');
+insert into erp.usuarios (id, login_id, nome, papel, ativo) values ('00000000-0000-0000-0000-000000000094', 'novo3', 'Novo 3', 'leitura', false);
+select erp.pedir_mudanca_acesso('usuarios', 'alterar', jsonb_build_object('id', '00000000-0000-0000-0000-000000000094', 'ativo', true), 'Novo leitor') as m_at \gset
+select pg_temp.ok((select situacao = 'pendente' and aprovacao = 'delegado' from erp.mudancas_acesso where id = :'m_at'),
+  'níveis: ativar usuário leitura pede um delegado (padrão)');
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual(format($$insert into erp.delegados_acesso values (%L)$$, :'ti'),
+  'Administrador não aprova nada no ERP', 'níveis: administrador não é delegado');
+insert into erp.usuarios (id, login_id, nome, papel, so_sucessao) values ('00000000-0000-0000-0000-000000000092', 'f92', 'Familiar 92', 'leitura', true);
+select pg_temp.erro_igual($$insert into erp.delegados_acesso values ('00000000-0000-0000-0000-000000000092')$$,
+  'Usuário só de sucessão não recebe acesso no ERP', 'níveis: usuário só de sucessão não é delegado');
+insert into erp.delegados_acesso values (:'diretor2');
+select pg_temp.erro_igual($$update erp.regras_nivel_acesso set rotulo = 'x' where nivel = 'leitura'$$,
+  'Os níveis são fixos; mude só quem aprova', 'níveis: o master muda só quem aprova');
+select pg_temp.como(:'leitor');
+select pg_temp.erro_igual(format($$select erp.decidir_mudanca_acesso(%L, true)$$, :'m_at'),
+  'Só um delegado do master decide este pedido', 'níveis: quem não é delegado não decide o pedido delegado');
+select pg_temp.como(:'diretor2');
+select pg_temp.erro_igual($$update erp.usuarios set ativo = true where id = '00000000-0000-0000-0000-000000000094'$$,
+  'Só o administrador pode mudar a configuração', 'níveis: o delegado não ativa direto na tabela');
+select erp.decidir_mudanca_acesso(:'m_at', true) as r_at \gset
+select pg_temp.ok(:'r_at' = 'aplicada' and (select ativo and ativado_em is not null from erp.usuarios where id = '00000000-0000-0000-0000-000000000094'),
+  'níveis: o delegado aprova e o usuário novo é ativado');
+select pg_temp.como(:'diretor');
+update erp.usuarios set ativo = false where id = '00000000-0000-0000-0000-000000000094';
+select pg_temp.erro_igual($$update erp.usuarios set ativado_em = null where id = '00000000-0000-0000-0000-000000000094'$$,
+  'A data de ativação do usuário não muda', 'níveis: a data da primeira ativação não muda, nem pelo master');
+select pg_temp.como(:'ti');
+select pg_temp.erro_igual($$select erp.pedir_mudanca_acesso('usuarios', 'alterar', jsonb_build_object('id', '00000000-0000-0000-0000-000000000094', 'ativo', true), 'x')$$,
+  'Pelo pedido, só se ativa o usuário novo (nunca ativado); desativar e reativar: só o master', 'níveis: reativar quem foi desativado é só do master');
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('usuarios', 'alterar', jsonb_build_object('id', %L, 'ativo', false), 'x')$$, :'gestor'),
+  'Pelo pedido, só se ativa o usuário novo (nunca ativado); desativar e reativar: só o master', 'níveis: o pedido não desativa ninguém');
+-- papel: vale o nível mais exigente entre o de antes e o novo
+select erp.pedir_mudanca_acesso('usuarios', 'alterar', jsonb_build_object('id', '00000000-0000-0000-0000-000000000094', 'papel', 'gestor'), 'x') as m_g \gset
+select pg_temp.ok((select aprovacao = 'unanime' from erp.mudancas_acesso where id = :'m_g'), 'níveis: leitura para gestor vale pelo nível gestor (lista: todos aprovam)');
+select erp.cancelar_mudanca_acesso(:'m_g');
+select erp.pedir_mudanca_acesso('usuarios', 'alterar', jsonb_build_object('id', '00000000-0000-0000-0000-000000000096', 'papel', 'diretor'), 'x') as m_d \gset
+select pg_temp.ok((select aprovacao = 'master' from erp.mudancas_acesso where id = :'m_d'), 'níveis: virar diretor pede o master (padrão)');
+select pg_temp.como(:'diretor2');
+select pg_temp.erro_igual(format($$select erp.decidir_mudanca_acesso(%L, true)$$, :'m_d'),
+  'Só o master decide este pedido', 'níveis: o nível master só o master decide');
+select pg_temp.como(:'ti');
+select erp.cancelar_mudanca_acesso(:'m_d');
+select erp.pedir_mudanca_acesso('usuarios', 'alterar', jsonb_build_object('id', :'diretor2', 'papel', 'leitura'), 'x') as m_d2 \gset
+select pg_temp.ok((select aprovacao = 'master' from erp.mudancas_acesso where id = :'m_d2'), 'níveis: tirar alguém de diretor também pede o nível diretor');
+select erp.cancelar_mudanca_acesso(:'m_d2');
+select pg_temp.erro_igual($$select erp.pedir_mudanca_acesso('usuarios', 'alterar', jsonb_build_object('id', '00000000-0000-0000-0000-000000000096', 'ativo', false), 'x')$$,
+  'Pelo pedido, só se ativa o usuário novo (nunca ativado); desativar e reativar: só o master', 'níveis: o pedido só ativa (ativo = true)');
+select erp.pedir_mudanca_acesso('centro_diretores', 'incluir', jsonb_build_object('centro_custo_id', :'cc_obra', 'user_id', :'leitor'), 'x') as m_da \gset
+select pg_temp.ok((select aprovacao = 'unanime' from erp.mudancas_acesso where id = :'m_da'), 'níveis: diretor da área segue o nível dele (lista: todos)');
+select erp.cancelar_mudanca_acesso(:'m_da');
+-- o master dispensa a aprovação de um nível
+select pg_temp.como(:'diretor');
+update erp.regras_nivel_acesso set aprovacao = 'nenhuma' where nivel = 'leitura';
+select pg_temp.como(:'ti');
+insert into erp.usuarios (id, login_id, nome, papel, ativo, ativado_em) values ('00000000-0000-0000-0000-000000000093', 'novo4', 'Novo 4', 'leitura', false, now() - interval '1 year');
+select pg_temp.ok((select ativado_em is null from erp.usuarios where id = '00000000-0000-0000-0000-000000000093'), 'níveis: quem cria não inventa a data de ativação');
+select erp.pedir_mudanca_acesso('usuarios', 'alterar', jsonb_build_object('id', '00000000-0000-0000-0000-000000000093', 'ativo', true), 'Novo leitor') as m_at2 \gset
+select pg_temp.ok((select situacao = 'aplicada' from erp.mudancas_acesso where id = :'m_at2')
+                  and (select ativo from erp.usuarios where id = '00000000-0000-0000-0000-000000000093'),
+  'níveis: leitura sem aprovação, o administrador ativa na hora');
+-- gestor da área pelo nível; o master decide qualquer pedido
+select pg_temp.como(:'diretor');
+update erp.regras_nivel_acesso set aprovacao = 'delegado' where nivel = 'gestor_area';
+select pg_temp.como(:'ti');
+select erp.pedir_mudanca_acesso('centro_aprovadores', 'incluir', jsonb_build_object('centro_custo_id', :'cc_mkt', 'user_id', :'leitor'), 'x') as m_ga \gset
+select pg_temp.ok((select aprovacao = 'delegado' from erp.mudancas_acesso where id = :'m_ga'), 'níveis: gestor da área segue o nível dele');
+select pg_temp.como(:'diretor2'); select erp.decidir_mudanca_acesso(:'m_ga', true);
+select pg_temp.ok(exists (select 1 from erp.centro_aprovadores where centro_custo_id = :'cc_mkt' and user_id = :'leitor'), 'níveis: o delegado aprova o gestor da área');
+select pg_temp.como(:'ti');
+select erp.pedir_mudanca_acesso('excecoes_natureza', 'incluir',
+  jsonb_build_object('user_id', :'leitor', 'natureza_id', pg_temp.nat('05.01.01'), 'centro_custo_id', :'cc_mkt', 'efeito', 'bloquear'), 'x') as m_lm \gset
+select pg_temp.como(:'diretor');
+select erp.decidir_mudanca_acesso(:'m_lm', true) as r_lm \gset
+select pg_temp.ok(:'r_lm' = 'aplicada', 'níveis: o voto do master basta em qualquer pedido');
+delete from erp.delegados_acesso where user_id = :'diretor2';
+select pg_temp.como(:'ti');
+select erp.pedir_mudanca_acesso('centro_aprovadores', 'incluir', jsonb_build_object('centro_custo_id', :'cc_obra', 'user_id', :'analista'), 'x') as m_ga2 \gset
+select pg_temp.como(:'diretor2');
+select pg_temp.erro_igual(format($$select erp.decidir_mudanca_acesso(%L, true)$$, :'m_ga2'),
+  'Só um delegado do master decide este pedido', 'níveis: o master tira o delegado');
+select pg_temp.como(:'ti');
 -- S-085: administrador não vota nem pelo papel
 select pg_temp.como(:'diretor');
 select pg_temp.erro_igual(format($$update erp.usuarios set papel = 'gestor' where id = %L$$, :'ti2'),
