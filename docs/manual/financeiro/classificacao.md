@@ -12,7 +12,6 @@
 | Onde ele é apropriado? | Centro de custo | Marketing |
 | Que gasto é? | Natureza | Comerciais › Marketing › Marketing online |
 | Quando? | Competência e data de caixa | competência out/2027, pago em nov/2027 |
-| Em que momento do projeto? | Etapa, antes chamada fase (calculada sozinha, só para relatório) | Obras |
 
 > ⚠️ **Nomes trocados em 14/nov/2026** (Moises). O que este manual chamava de **centro de custo** (a obra, o Corporativo) agora é **núcleo econômico**. O que chamava de **área** (Marketing, Comercial, Administrativo) agora é **centro de custo**. As regras não mudaram com a troca. No Sienge, "centro de custo" continua sendo a obra, ou seja, o nosso núcleo econômico. Cuidado na transição.
 
@@ -43,9 +42,7 @@ Hoje a BKM usa no Sienge "centro de custo Marketing, natureza MKT Online, motivo
 
 **Travas, alçadas e aprovações** podem ser dadas em qualquer das três dimensões. Também se pode **liberar ou bloquear cada pessoa para lançar** em cada uma delas.
 
-A **etapa** (até 15/nov/2026 chamada "fase") é o momento do empreendimento: Terreno, Aprovação de projetos, Incorporação, Lançamento, Obra, Pós-obra e Corporativo. **É calculada sozinha**, a partir do núcleo e da data, e serve só para os relatórios. Ninguém a escolhe no lançamento, e ela não entra no acesso nem na aprovação (Moises, 15/nov/2026).
-
-🟡 Como o sistema sabe a etapa (em revisão, ainda não está na versão de desenvolvimento): o administrador marca, em cada núcleo, a etapa e a data em que ela começa. Por exemplo, Incorporação até março e Obra a partir de 1º de abril. Nos relatórios, cada lançamento aparece com a etapa que o núcleo tinha no mês de competência dele, mesmo que a etapa mude depois. Toda mudança de etapa fica registrada, com quem mudou e quando.
+✅ **Não há etapa do empreendimento** (Moises, 15/nov/2026). A etapa (Terreno, Incorporação, Obra...) saiu do sistema porque se confundia com o centro de custo. O momento do gasto é dito só pelo **centro de custo** e pela **divisão**.
 
 ✅ **Divisão** é a subdivisão de um centro de custo, por exemplo Marketing › PDV, Online, Offline e Eventos. Decisões do Moises de 15/nov/2026 (no código a partir do PR #41):
 
@@ -55,11 +52,10 @@ A **etapa** (até 15/nov/2026 chamada "fase") é o momento do empreendimento: Te
 - **Alçada:** a divisão pode ter faixas próprias, com o acumulado só da divisão. Cada faixa diz se aprova só na divisão ou se passa também pelo centro, cujo acumulado soma o centro inteiro. Divisão sem faixas segue o centro. Na alçada da divisão, o gestor da área é o gestor do centro, e o responsável da divisão entra como vaga nominal. Quem tem vaga na alçada da divisão e na do centro **aprova uma vez só**, e a aprovação vale pelas duas; em sequência, ela entra no centro quando chegar a vez dele lá. Entre duas divisões, uma aprovação não vale pela outra (Moises, 15/nov/2026).
 - 🟡 **Naturezas da divisão** (em revisão, ainda não está na versão de desenvolvimento): ao criar a divisão, escolhem-se as naturezas em que se pode lançar nela. Dá para marcar todas, desmarcar todas ou escolher uma a uma. Depois, o master, o administrador e o AF, o AO e o AD ligam e desligam cada natureza na hora, sem aprovação, e toda mudança fica registrada. No centro sem divisão vale a lista do próprio centro. No centro com divisões vale a lista de cada divisão. Natureza nova nasce desligada em todas as divisões. Desligar não mexe no que já foi lançado: só impede lançar nela ou trocar para ela. Quem desliga vê os títulos em aberto que ficaram nela. O administrador (TI) também muda na hora, como exceção à regra de que as mudanças dele passam por aprovação (confirmado pelo Moises, 15/nov/2026). **Modelos de naturezas:** são listas prontas, por exemplo "Marketing online". Ao criar uma divisão, ou ao ajustar uma que já existe, aplica-se um modelo e as naturezas dele ficam marcadas de uma vez; depois dá para ajustar uma a uma. Quem cria e muda modelos são os mesmos que ligam as naturezas: master, administrador, AF, AO e AD. Tudo fica registrado.
 
-✅ Para não confundir: cada passo de uma aprovação (gestor, AF, AD) se chama **fase de aprovação** (Moises, 15/nov/2026). "Etapa" fica só para o momento do empreendimento.
+✅ Para não confundir: cada passo de uma aprovação (gestor, AF, AD) se chama **fase de aprovação** (Moises, 15/nov/2026).
 
 **Mover um núcleo de lugar na árvore, ou ligar e desligar um centro de custo num núcleo, exige aprovação** e fica registrado, porque muda quem vê e quem aprova. (A aprovação de ligar e desligar é 🟡 proposta, por extensão da regra de 8/nov.)
 
-🟡 Em aberto: Terreno, Incorporação, Obra e Assistência técnica, como centros de custo, lembram a etapa do empreendimento (que é calculada sozinha) e a natureza. É preciso combinar a regra: o centro de custo diz quem responde pelo gasto, a natureza diz o que foi comprado e a etapa diz quando.
 
 Hoje o Sienge tem 97 centros de custo, que misturam obra, tipo de gasto e momento. Eles viram cerca de 25 núcleos econômicos na árvore, mais a lista de centros de custo. ⏳ O de-para com o Sienge está em rascunho. Enquanto os títulos forem criados lá, cada combinação núcleo × centro de custo × natureza tem de apontar para exatamente uma conta e um centro de custo (obra) do Sienge, senão o título não sobe.
 

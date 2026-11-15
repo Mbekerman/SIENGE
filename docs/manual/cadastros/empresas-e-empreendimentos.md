@@ -16,7 +16,7 @@ No sistema isso fica assim:
 | --- | --- | --- |
 | **Empresas** | Holding, BKM Incorporadora e cada SPE, cada uma com seu CNPJ | ✅ Uma lista só para todas. Não existe cadastro separado de "holding": a holding é a empresa que não tem dono dentro do grupo. |
 | **Participações** | Quem é sócio de qual empresa, com o percentual, de quando até quando | ✅ A soma dos percentuais vigentes de uma empresa é 100%. Mudar o percentual encerra a linha antiga e abre uma nova, para guardar o histórico. |
-| **Empreendimentos** | O produto: nome, SPE, praça, terreno de origem (BKM Terrenos), etapa | ✅ Separado da SPE, mesmo sendo um para um. A SPE é o CNPJ; o empreendimento é o negócio. |
+| **Empreendimentos** | O produto: nome, SPE, praça, terreno de origem (BKM Terrenos) | ✅ Separado da SPE, mesmo sendo um para um. A SPE é o CNPJ; o empreendimento é o negócio. |
 | **Praças e regionais** | Lista fixa | 🟡 Campo com lista, não etiqueta livre (ver abaixo). |
 | **Núcleos econômicos** | Um por SPE ou empreendimento, mais o Corporativo (e uma loja, por exemplo) | ✅ Nunca um núcleo por tipo de gasto. Os centros de custo (Marketing, Obra...) ficam dentro do núcleo. Ver [Classificação](../financeiro/classificacao.md). |
 | **Etiquetas (tags)** | Agrupamentos livres, como "lançamento 2027" | Para o que não precisa de garantia. |
