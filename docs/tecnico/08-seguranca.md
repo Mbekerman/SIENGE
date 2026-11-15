@@ -123,6 +123,7 @@ Ainda não há código para revisar nestes pontos; ficam como requisito para que
 
 | Id | Gravidade | Falha | Correção | Conferido |
 | --- | --- | --- | --- | --- |
+| S-113 | Média (testes) | Camada `bi`: 4 de 21 mutações passavam sem teste falhar (filtro de título com linha restrita em `f_pagamentos` e `f_titulo_etiquetas`, filtro de linha em `f_parcelas`, rascunho). | Testes novos; `estender_calendario` sem EXECUTE para authenticated. | 21 de 21 mortas; PR #54, `f53e51e`. |
 | S-112 | Baixa (desenho) | Quem lançava criava, renomeava e desativava qualquer etiqueta, inclusive as dos outros. | Por decisão do Moises, só AF, AD e o master; política e gatilho. | 8 de 8 mutações mortas; PR #53, `5d6d7d2`. |
 | S-111 | Média (testes) | Níveis da divisão e etiquetas: 21 de 48 mutações passavam sem teste falhar, inclusive subnível desativado, troca só do subnível e a leitura das etiquetas do título. | Testes novos. | 18 de 19 mortas na reconferência (a viva só adianta um erro que o `_aplicar` repete); PR #48, `e25982e`. |
 | S-110 | Baixa (testes) | Natureza presa e reclassificação da natureza inteira sem testes que segurassem. | Testes novos. | 13 de 13 mutações mortas; PR #46, `8cdd08f`. |
@@ -274,3 +275,4 @@ Ainda não há código para revisar nestes pontos; ficam como requisito para que
 | 15/nov/2026 | PR #46, naturezas liberadas por divisão, modelos e retirada da etapa (`7b9e3e3` a `8cdd08f`; 1057 testes; juntado em `6c01723`): sondas e cerca de 60 mutações em seis rodadas; achadas S-105 a S-107 (etapa do núcleo; extintas com a retirada da etapa), S-108 e S-110 (testes) e S-109 (desenho, decidida pelo Moises), todas corrigidas. `natureza_presa` entra na S-092. |
 | 15/nov/2026 | PR #48, níveis da divisão e etiquetas (`b87e87a` a `e25982e`; 1110 testes; juntado em `dcefd5f`): 48 mutações, 21 vivas na primeira rodada (S-111), corrigidas; achada a S-112 (quem renomeia etiqueta; com o Moises). |
 | 15/nov/2026 | PR #53, etiquetas só por AF, AD e master (`6523d4d` e `5d6d7d2`; 1118 testes; juntado em `3c8295c`): 8 mutações, 1 viva na primeira rodada (AD sem teste), morta depois; S-112 corrigida. |
+| 15/nov/2026 | PR #54, camada `bi` (`2dd323d` a `f53e51e`; 1162 testes; juntado em `f8b8071`): 21 mutações (invoker, restrita, filtro de linha, calendário, grants, sinal da DRE, feriados), 4 vivas na primeira rodada (S-113), todas mortas depois. |
