@@ -3255,5 +3255,143 @@ select pg_temp.ok((select count(*) = 1 from pg_proc p join pg_namespace n on n.o
                                   where grantee = 'erp_auditoria' and table_schema = 'erp' and table_name <> 'auditoria'),
   'catálogo: erp_auditoria só é dono do tg_auditoria e só insere na auditoria');
 
+-- ---------------------------------------------------------------------
+\echo '# quem vê e quem não vê: perfis por núcleo × centro × natureza, PJ isolado'
+begin;
+select pg_temp.sis();
+delete from erp.atribuicao_nucleos; delete from erp.atribuicao_tipos; delete from erp.atribuicoes;   -- só o acesso montado aqui
+\set u1 'b0000000-0000-0000-0000-000000000001'
+\set u2 'b0000000-0000-0000-0000-000000000002'
+\set u3 'b0000000-0000-0000-0000-000000000003'
+\set u4 'b0000000-0000-0000-0000-000000000004'
+\set u5 'b0000000-0000-0000-0000-000000000005'
+\set u6 'b0000000-0000-0000-0000-000000000006'
+\set u7 'b0000000-0000-0000-0000-000000000007'
+\set u8 'b0000000-0000-0000-0000-000000000008'
+\set u9 'b0000000-0000-0000-0000-000000000009'
+insert into erp.usuarios (id, login_id, nome, papel, ativo, so_sucessao) values
+  (:'u1', :'u1', 'Leitor Mkt', 'analista', true, false),
+  (:'u2', :'u2', 'Restrito Mkt', 'analista', true, false),
+  (:'u3', :'u3', 'Obra VM', 'analista', true, false),
+  (:'u4', :'u4', 'Mkt com PJ', 'analista', true, false),
+  (:'u5', :'u5', 'Sem perfil', 'analista', true, false),
+  (:'u6', :'u6', 'Inativo', 'analista', false, false),
+  (:'u7', :'u7', 'AD sem perfil', 'analista', true, false),
+  (:'u8', :'u8', 'Só sucessão', 'leitura', true, true),
+  (:'u9', :'u9', 'Mkt sem PJ', 'analista', true, false);
+update erp.usuarios set ativo = true where id in (:'u1', :'u2', :'u3', :'u4', :'u5', :'u7', :'u8', :'u9');
+update erp.usuarios set ativo = false where id = :'u6';
+insert into erp.naturezas (codigo, mae_id, nome, restrita) values ('06.07', pg_temp.nat('06'), 'Folha PJ (teste)', true);
+insert into erp.perfis_modelo (id, nome) values
+  ('a1000000-0000-0000-0000-000000000001', 'V leitor Mkt'), ('a1000000-0000-0000-0000-000000000002', 'V restrito Mkt'),
+  ('a1000000-0000-0000-0000-000000000003', 'V obra'), ('a1000000-0000-0000-0000-000000000004', 'V Mkt com PJ'),
+  ('a1000000-0000-0000-0000-000000000009', 'V Mkt');
+insert into erp.perfil_centros values
+  ('a1000000-0000-0000-0000-000000000001', :'cc_mkt', 'leitor'), ('a1000000-0000-0000-0000-000000000002', :'cc_mkt', 'lancador_restrito'),
+  ('a1000000-0000-0000-0000-000000000003', :'cc_obra', 'lancador'), ('a1000000-0000-0000-0000-000000000004', :'cc_mkt', 'lancador'),
+  ('a1000000-0000-0000-0000-000000000009', :'cc_mkt', 'lancador');
+insert into erp.perfil_naturezas values ('a1000000-0000-0000-0000-000000000004', pg_temp.nat('06.07'));
+insert into erp.atribuicoes (id, user_id, perfil_id, escopo) values
+  ('a2000000-0000-0000-0000-000000000001', :'u1', 'a1000000-0000-0000-0000-000000000001', 'todos'),
+  ('a2000000-0000-0000-0000-000000000002', :'u2', 'a1000000-0000-0000-0000-000000000002', 'todos'),
+  ('a2000000-0000-0000-0000-000000000003', :'u3', 'a1000000-0000-0000-0000-000000000003', 'lista'),
+  ('a2000000-0000-0000-0000-000000000004', :'u4', 'a1000000-0000-0000-0000-000000000004', 'todos'),
+  ('a2000000-0000-0000-0000-000000000009', :'u9', 'a1000000-0000-0000-0000-000000000009', 'todos');
+insert into erp.atribuicao_nucleos values ('a2000000-0000-0000-0000-000000000003', :'ne_vm', true);
+insert into erp.listas_financeiro (lista, user_id) values ('AD', :'u7');
+insert into erp.centro_aprovadores values (:'cc_mkt', :'gestor') on conflict do nothing;
+insert into erp.pessoas (id, tipo, nome, documento) values ('10000000-0000-0000-0000-0000000000c1', 'juridica', 'Fornecedor V', '12121212000112');
+select pg_temp.volta();
+
+-- títulos, cada um lançado por quem tem o acesso
+\set ta 'c1000000-0000-0000-0000-0000000000a1'
+\set tb 'c1000000-0000-0000-0000-0000000000b1'
+\set tc 'c1000000-0000-0000-0000-0000000000c1'
+\set td 'c1000000-0000-0000-0000-0000000000d1'
+\set te 'c1000000-0000-0000-0000-0000000000e1'
+create function pg_temp.tit(u uuid, t uuid, emp uuid, val numeric, linhas jsonb) returns void language plpgsql as $f$
+declare l jsonb;
+begin
+  perform pg_temp.como(u::text);
+  insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor)
+  values (t, emp, 'avulso', '10000000-0000-0000-0000-0000000000c1', '2027-09-05', '2027-09-01', val);
+  insert into erp.parcelas (id, titulo_id, numero, vencimento, valor) values (t, t, 1, '2027-10-10', val);
+  for l in select * from jsonb_array_elements(linhas) loop
+    insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+    values (t, (l->>'n')::uuid, (l->>'c')::uuid, pg_temp.nat(l->>'nat'), (l->>'p')::numeric);
+  end loop;
+end $f$;
+select pg_temp.tit(:'u2', :'ta', :'incorp', 1000, jsonb_build_array(jsonb_build_object('n', :'ne_corp', 'c', :'cc_mkt', 'nat', '05.01.04', 'p', 100)));
+select pg_temp.tit(:'u9', :'tb', :'incorp', 40000, jsonb_build_array(jsonb_build_object('n', :'ne_corp', 'c', :'cc_mkt', 'nat', '05.01.04', 'p', 100)));
+select pg_temp.tit(:'u3', :'tc', :'spe', 3000, jsonb_build_array(jsonb_build_object('n', :'ne_vm', 'c', :'cc_obra', 'nat', '04.01', 'p', 100)));
+select pg_temp.tit(:'u4', :'td', :'incorp', 20000, jsonb_build_array(jsonb_build_object('n', :'ne_corp', 'c', :'cc_mkt', 'nat', '06.07', 'p', 100)));
+select pg_temp.tit(:'u4', :'te', :'incorp', 2000, jsonb_build_array(
+  jsonb_build_object('n', :'ne_corp', 'c', :'cc_mkt', 'nat', '05.01.04', 'p', 50), jsonb_build_object('n', :'ne_corp', 'c', :'cc_mkt', 'nat', '06.07', 'p', 50)));
+select pg_temp.ok(true, 'acesso: cada um lança o título nas linhas em que lança');
+
+create function pg_temp.vejo_tits() returns text language sql as $$
+  select coalesce(string_agg(upper(substr(id::text, 35, 1)), '' order by id::text), '')
+    from erp.titulos where id::text like 'c1000000-%' $$;
+select pg_temp.como(:'u1'); select pg_temp.ok(pg_temp.vejo_tits() = 'AB', 'acesso: o leitor do Marketing vê os títulos do Marketing, sem o que tem linha PJ (vê ' || pg_temp.vejo_tits() || ')');
+select pg_temp.como(:'u2'); select pg_temp.ok(pg_temp.vejo_tits() = 'A', 'acesso: o lançador restrito vê só o que ele lançou (vê ' || pg_temp.vejo_tits() || ')');
+select pg_temp.como(:'u3'); select pg_temp.ok(pg_temp.vejo_tits() = 'C', 'acesso: quem tem a Obra da Vila Maria não vê o Marketing (vê ' || pg_temp.vejo_tits() || ')');
+select pg_temp.como(:'u4'); select pg_temp.ok(pg_temp.vejo_tits() = 'ABDE', 'acesso: com a natureza PJ liberada, vê o PJ do centro (vê ' || pg_temp.vejo_tits() || ')');
+select pg_temp.como(:'u9'); select pg_temp.ok(pg_temp.vejo_tits() = 'AB', 'acesso: lançador do Marketing sem PJ não vê o título PJ nem o que mistura PJ (vê ' || pg_temp.vejo_tits() || ')');
+select pg_temp.como(:'u5'); select pg_temp.ok(pg_temp.vejo_tits() = '' and not exists (select 1 from erp.lancamentos) and not exists (select 1 from erp.parcelas),
+  'acesso: sem perfil, não vê título, parcela nem livro');
+select pg_temp.como(:'u1');
+select pg_temp.ok(not exists (select 1 from erp.parcelas where titulo_id = :'tc') and not exists (select 1 from erp.titulo_rateios where titulo_id in (:'tc', :'td', :'te')),
+  'acesso: as parcelas e o rateio seguem o título');
+select pg_temp.ok(erp.parcela_saldo(:'tc') is null, 'acesso: o saldo da parcela que não vê volta vazio');
+select pg_temp.falha(format($$select * from erp.acesso(%L, %L, %L)$$, :'u3', :'ne_vm', :'cc_obra'), 'acesso: o usuário não consulta o acesso de outra pessoa');
+select pg_temp.ok(not exists (select 1 from erp.auditoria), 'acesso: a auditoria é só do administrador');
+select pg_temp.ok((select count(*) = 1 from erp.atribuicoes) and (select user_id = :'u1'::uuid from erp.atribuicoes),
+  'acesso: cada um vê só a própria atribuição');
+
+-- gravar: só onde lança
+select pg_temp.falha(format($$insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values (%L, %L, %L, %L, 10)$$,
+  :'ta', :'ne_corp', :'cc_mkt', pg_temp.nat('05.01.04')), 'acesso: o leitor não lança no rateio');
+select pg_temp.como(:'u3');
+select pg_temp.falha(format($$update erp.titulo_rateios set centro_custo_id = %L, natureza_id = %L where titulo_id = %L$$, :'cc_mkt', pg_temp.nat('05.01.04'), :'tc'),
+  'acesso: não leva a linha para um centro onde não lança');
+select pg_temp.falha(format($$update erp.titulo_rateios set percentual = 100 where titulo_id = %L$$, :'ta'), 'acesso: não mexe no rateio de título que não vê');
+select pg_temp.falha(format($$select erp.confirmar_titulo(%L)$$, :'ta'), 'acesso: não confirma título que não vê');
+select pg_temp.como(:'u9');
+select pg_temp.erro_igual(format($$select erp.confirmar_titulo(%L)$$, :'te'), 'Você não lança em todas as linhas deste título',
+  'acesso: não confirma título com linha onde não lança (mesmo vendo pelo definer)');
+select pg_temp.como(:'u6');
+select pg_temp.ok(pg_temp.vejo_tits() = '' and not exists (select 1 from erp.pessoas), 'S-087: usuário inativo não lê nada');
+select pg_temp.erro_igual($$insert into erp.titulos (empresa_id, tipo, pessoa_id, emissao, competencia, valor)
+  values ('20000000-0000-0000-0000-000000000002', 'avulso', '10000000-0000-0000-0000-0000000000c1', '2027-09-05', '2027-09-01', 10)$$,
+  'Só quem tem cadastro ativo no ERP grava', 'S-087: usuário inativo não grava');
+select pg_temp.como(:'u8');
+select pg_temp.ok((select count(*) = 1 from erp.usuarios) and not exists (select 1 from erp.pessoas) and pg_temp.vejo_tits() = '',
+  'acesso: quem está só para a sucessão vê o próprio cadastro e nada mais');
+
+-- confirma na ordem: o acumulado do Marketing no mês passa dos 50 mil no título B
+select pg_temp.como(:'u2'); select erp.confirmar_titulo(:'ta');
+select pg_temp.como(:'u4'); select erp.confirmar_titulo(:'td');
+select pg_temp.como(:'u9'); select erp.confirmar_titulo(:'tb');
+select pg_temp.como(:'u3'); select erp.confirmar_titulo(:'tc');
+select pg_temp.como(:'u1');
+select pg_temp.ok(exists (select 1 from erp.lancamentos where titulo_id = :'ta') and not exists (select 1 from erp.lancamentos where titulo_id in (:'tc', :'td')),
+  'acesso: no livro, o leitor vê o Marketing e não vê a Obra nem o PJ');
+select pg_temp.como(:'u4');
+select pg_temp.ok(exists (select 1 from erp.lancamentos where titulo_id = :'td'), 'acesso: com o PJ liberado, vê o PJ no livro');
+select pg_temp.como(:'u7');
+select pg_temp.ok(pg_temp.vejo_tits() = 'B', 'acesso: quem aprova na AD vê o título da alçada dele, e só ele (vê ' || pg_temp.vejo_tits() || ')');
+select pg_temp.ok((select count(*) = 2 and count(*) filter (where titulo_id = :'tb') = 1
+                     and bool_or(titulo_id is null and pessoa = 'Outros 2 títulos (sem acesso)' and valor_no_centro = 21000 and empresa_id is null)
+                   from erp.titulos_do_acumulado(:'tb')),
+  'S-062: no acumulado, quem aprova vê em detalhe o que vê e o resto numa linha só, com a soma');
+select pg_temp.como(:'u3');
+select pg_temp.erro_igual(format($$select erp.pedir_reclassificacao(%L, %L, 'x')$$, pg_temp.nat('05.01.04'), pg_temp.nat('05.01.02')),
+  'O pedido leva lançamentos fora do seu acesso (núcleo, centro ou natureza); filtre pelo que você lança',
+  'acesso: a reclassificação não leva lançamento fora do acesso de quem pede');
+select pg_temp.erro_igual(format($$select erp._registrar_ajuste(%L, 'titulo_rateios', null, null)$$, :'tc'), 'O ajuste só se registra pela mudança na tabela',
+  'acesso: o rastro do ajuste não se forja chamando a função direto');
+select pg_temp.como(null);
+rollback;
+
 \echo '# fim'
 do $$ begin raise notice 'TODOS OS TESTES PASSARAM'; end $$;
