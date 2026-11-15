@@ -3997,6 +3997,10 @@ select pg_temp.ok(exists (select 1 from erp.eventos e join erp.tipos_evento te o
   'alçada por centro: a falta de aprovadores vira evento crítico, com o motivo');
 select pg_temp.ok(not exists (select 1 from erp.eventos where tipo = 'alcada_falta_aprovadores' and dados->>'titulo_id' = '84000000-0000-0000-0000-000000000011'),
   'alçada por centro: com gente para as vagas, não há evento');
+select pg_temp.ok((select n.detalhe from erp.notificacoes n join erp.eventos e on e.id = n.evento_id
+                    where e.tipo = 'alcada_falta_aprovadores' and e.dados->>'titulo_id' = '84000000-0000-0000-0000-000000000012'
+                      and n.user_id = '00000000-0000-0000-0000-00000000000a') = 'Veio para você por falta de aprovadores mínimos qualificados',
+  'notificações: o master recebe o título que veio por falta de aprovadores mínimos qualificados, com esse texto');
 select pg_temp.volta();
 select pg_temp.como(:'diretor');
 select pg_temp.ok(erp.decidir_titulo('84000000-0000-0000-0000-000000000012', true) = 'aprovado', 'alçada por centro: o master aprova o título que veio por falta de aprovadores');
