@@ -31,6 +31,8 @@ O Moises sugeriu que praça e regional pudessem ser etiquetas (7/nov/2026). 🟡
 
 ---
 
+✅ **A Muchmore fica fora do ERP** (Moises, 15/nov/2026). Ela é a empresa 1 do Sienge, com os centros SSG, SSB e FCA. Não vira núcleo econômico e o histórico dela não é trazido do Sienge.
+
 ## Tarefa: cadastrar uma nova SPE e seu empreendimento
 
 > ⏳ As telas ainda não existem. O roteiro abaixo segue as regras decididas.
