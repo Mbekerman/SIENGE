@@ -220,7 +220,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 - ✅ Cada faixa tem dois limites: o **valor do título** e o **acumulado do mês no centro**. Vale a faixa mais exigente das duas contas.
 - ✅ O número de aprovadores é o número de **vagas** da faixa. Uma vaga é um papel (gestor da área, diretor da área, AF, AO, AD) ou uma pessoa pelo nome, sem precisar de cargo. As vagas andam em sequência ou em paralelo.
 - ✅ A mesma pessoa não ocupa duas vagas; o administrador não aprova; quem lançou não aprova (salvo a pessoa da AD com a marca de aprovar o próprio).
-- ✅ No rateio em vários centros, vale o centro com mais vagas; no empate, o de maior acumulado.
+- ~~No rateio em vários centros, vale o centro com mais vagas~~ (substituído em 15/nov/2026, 13h20). ✅ No rateio em vários centros, **cada centro tem uma aprovação separada**, com o valor que cabe a ele e o rito daquele centro (o limite do título também olha a parte do título no centro). Quem tem vaga em mais de um centro aprova em cada um. O título só fica aprovado quando todos os centros aprovaram, e quem lançou e quem aprova veem que centros e que vagas ainda faltam. O voto do master aprova todos os centros de uma vez.
 - ✅ Se faltam aprovadores qualificados, o título vai ao Moises, com o aviso de que veio por falta de aprovadores mínimos qualificados. Quem passar a ocupar a vaga depois também pode aprovar.
 - ✅ A AF e a AD podem mexer no limite do título no modo livre, como no limite do acumulado. Mudar as vagas ou o paralelo sempre pede aprovação.
 
