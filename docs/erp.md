@@ -144,6 +144,18 @@ O livro é escrito sozinho, a cada passo:
 - **`v_lancamentos_bi`:** o livro com os nomes, os níveis da árvore, as características da natureza e os atributos do empreendimento vigentes na competência de cada linha. É a visão para BI e para os agentes.
 - **`v_parcelas`, `v_adiantamentos`, `v_caucao`, `v_previsoes`:** saldos e previsto × realizado.
 
+### Camada de leitura para relatórios (esquema `bi`)
+
+Base de qualquer relatório ou painel feito no próprio sistema (decisões do Moises de 8 e 15/nov/2026; sem Power BI). Só leitura, em esquema estrela, na migration `20261107000900_erp_bi.sql`.
+
+- **Acesso:** toda visão lê o `erp` com o RLS de quem consulta (`security_invoker` e `security_barrier`). Os totais somam só o que a pessoa vê, pelo mesmo perfil do ERP; quem não tem cadastro lê zero linhas. Nenhuma função definer.
+- **Natureza restrita (folha PJ, pró-labore):** só quem tem a natureza liberada vê (decisão do Moises, 15/nov/2026). No livro ela aparece somada por empresa, núcleo, centro, natureza e mês, sem lançamento, título, dia nem divisão. O título que tem linha restrita fica fora das parcelas, dos pagamentos e das etapas.
+- **Calendário único `d_calendario`** (2015 a 2040): toda data dos fatos é um dia dele, com ano, trimestre, mês, semana ISO, dia da semana, feriado nacional bancário (inclui Carnaval e Corpus Christi; Consciência Negra desde 2024) e dia útil. `bi.dias_uteis(de, até)` conta os úteis do intervalo. Instante vem com a data em São Paulo (`bi.data_sp`).
+- **Sinal:** `valor` com o sinal do livro (saída negativa) e `valor_dre`, que inverte as linhas de custo e despesa (`linhas_dre.subtrai`), sem valor absoluto: o estorno continua com o sinal contrário.
+- **Dimensões:** `d_empresa`, `d_nucleo` (com o empreendimento e os atributos de hoje), `d_nucleo_atributos` (a foto de cada atributo em cada mês), `d_centro_custo`, `d_divisao`, `d_natureza` (níveis achatados, linha da DRE, restrita), `d_linha_dre`, `d_pessoa` (CPF mascarado, ***.456.789-**), `d_usuario`.
+- **Fatos:** `f_livro` (cada lançamento), `f_parcelas` (parcela × linha do rateio, com pago e saldo na proporção), `f_pagamentos` (cada quitação, com `dias_atraso`, `dias_antes_vencimento` e `prazo_pagamento` desde a emissão), `f_adiantamentos` (com saldo e abatido) e `f_titulo_etapas` (um evento por linha: nota postada, nota lançada, título lançado, alçada definida, voto, revisão pedida e reenviada, pagamento; instante e pessoa gravados pelo servidor). Passo novo do processo grava o próprio instante e a pessoa pelo servidor e entra em `f_titulo_etapas`.
+- **API:** para o front ler, o esquema `bi` precisa entrar nos esquemas expostos do Supabase (hoje nada do ERP está exposto).
+
 ## 5. Fechamento e reclassificação
 
 | Tabela | O que guarda |
