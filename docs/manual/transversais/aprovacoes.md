@@ -294,7 +294,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 
 > 🧪 Protótipo, versão de 15/nov/2026, ainda sem código e ainda não aprovado pelo Moises.
 
-O item **Admin** do menu tem seis seções. A seção Etapa dos núcleos, que aparece na imagem, sai, porque a etapa do empreendimento saiu do sistema (Moises, 15/nov/2026).
+O item **Admin** do menu tem sete seções. A seção Etapa dos núcleos, que aparece na imagem, sai, porque a etapa do empreendimento saiu do sistema (Moises, 15/nov/2026).
 
 | Seção | O que faz | Quem muda e como |
 | --- | --- | --- |
