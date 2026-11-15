@@ -6,6 +6,7 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
+| 15/nov/2026 | Adiantamento só abate sem aprovação título inteiro no mesmo núcleo, centro e divisão; uma linha fora pede aprovação do título todo. Vaga na divisão e no centro: aprova uma vez, vale pelas duas | [Contas a pagar](financeiro/contas-a-pagar.md#adiantamento-sem-nota-prazo-e-travas) |
 | 15/nov/2026 | Divisão: o administrador só pede criar, renomear ou desativar; aprovam os aprovadores de acesso (master vale na hora). Pagamento e adiantamento carimbados com a divisão; adiantamento só abate na mesma divisão, outra pede AF, AO ou AD | [Classificação](financeiro/classificacao.md) |
 | 15/nov/2026 | Divisão do centro de custo: só o administrador cria e desativa; obrigatória nas linhas quando ativa; acesso e alçada podem descer até ela, com faixas e acumulado próprios, passando ou não pelo centro | [Classificação](financeiro/classificacao.md) |
 | 15/nov/2026 | Painel de notificações: destino por pessoa, papel, lista, gestor ou diretores do centro, quem pediu, quem aprova, administradores ou master; por núcleo ou centro; sino sempre. Avisos críticos (alçada, conta, código do Sienge, listas AF/AO/AD, aprovadores, administradores, o painel) vão sempre ao master e só se desligam no WhatsApp. Administrador pede, master aprova | [Notificações](transversais/notificacoes.md) |
