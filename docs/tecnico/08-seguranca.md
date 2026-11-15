@@ -65,6 +65,7 @@ Regra do Moises (8/nov/2026): controles, segurança da informação e SLA são a
 
 | Id | Gravidade | Onde | Desde |
 | --- | --- | --- | --- |
+| S-100 | Baixa (desenho) | Evento de mudança da faixa de alçada (`alcada_alterada`) sem o centro da faixa | 15/nov/2026 |
 | S-092 | Baixa (API) | Funções `security definer` com EXECUTE que respondem sobre qualquer id | 15/nov/2026 |
 | S-068 | Média (desenho) | Janela da competência ancorada na emissão digitada | 14/nov/2026 |
 | S-050 | Baixa | Deploy do `bkm_dev` colado à mão | 14/nov/2026 |
@@ -123,6 +124,7 @@ Ainda não há código para revisar nestes pontos; ficam como requisito para que
 
 | Id | Gravidade | Falha | Correção | Conferido |
 | --- | --- | --- | --- | --- |
+| S-099 | Média (testes) | Notificações (PR #40): 20 de 33 mutações passavam sem teste falhar, inclusive o filtro de visão do evento, as políticas das preferências, a guarda do sino e o registro do envio. O código segurava nas sondas. | Testes novos. | As 33 mutações morrem; PR #40, `4740d24`. |
 | S-098 | Média (desenho) | O limite por título olhava só a parte do título em cada centro: dividir no rateio entre centros do mesmo gestor fugia da faixa mais exigente. | Por decisão do Moises, o limite do título usa o valor inteiro do título em cada centro; o acumulado continua por centro. | Sonda: 1.000 em 50/50 com limite de 600 pede gestor e AF nos dois centros; PR #37, `7ca3d30`. |
 | S-097 | Baixa (testes) | Mutações da alçada por centro que passavam sem teste falhar (vagas de outro centro, administrador ou só da sucessão numa vaga, modo livre levando o limite a nulo, código por centro), e tirar o último diretor da área com vaga dele pendente não era barrado. | Testes novos e trava em `centro_diretores`. | 29 mutações, todas pegas menos uma equivalente (2ª chave de ordenação); PR #37, `7ca3d30`. |
 | S-096 | Média (desenho) | Rateio em vários centros: valia a faixa de um centro só; com 1% num centro de faixa mais longa, a aprovação saía dele e o gestor do centro que pagava 99% nem via o título. | Por decisão do Moises, cada centro do rateio tem a própria alçada e o título só aprova com todos. | Sonda: 99/1 gera duas alçadas, recusa num centro cancela, quem está nos dois aprova nos dois; PR #37, `6c0bc79`. |
@@ -257,3 +259,4 @@ Ainda não há código para revisar nestes pontos; ficam como requisito para que
 | 15/nov/2026 | PR #34, primeiro grant a `authenticated` (`2f795d1` a `87ec475`; 754 testes; juntado em `6d38390`): políticas por classe de tabela, lista de definer com EXECUTE e o caminho do INSERT … RETURNING conferidos por sonda e pelo catálogo (RLS forçado em todas, nada para anon, PUBLIC ou service_role, views invoker, autor não se forja); 37 mutações próprias sobre as políticas e 13 sobre as correções, todas pegas no fim, salvo 1 equivalente. Abre e corrige S-089, S-090, S-091 e S-093; fecha S-062, S-073, S-079 e S-087; abre S-092 (baixa, para o PR seguinte) | 754 |
 | 15/nov/2026 | PR #36, pedido de mudança da configuração de dinheiro e `erp.eventos` (`27cb1ad` a `9bf77a9`; 824 testes; juntado em `d5f0817`): SQL dinâmico (tabela da lista fixa, colunas conferidas no catálogo, `%I` e `using`), referência pela auditoria, contexto do evento pela transação e catálogo (só as três RPCs para a API, eventos sem leitura, papéis novos sem membros) conferidos; 24 mutações próprias, 22 pegas, 1 equivalente e 1 lacuna baixa. Abre e corrige S-094 e S-095 | 824 |
 | 15/nov/2026 | PR #37, alçada de pagamento por centro de custo (`2f46357` a `7ca3d30`; 878 testes; juntado em `7ac6fd7`): sondas do rateio (S-096) e do fracionamento (S-098), ambas corrigidas por decisão do Moises; 29 mutações no código novo, todas pegas menos uma equivalente (S-097). |
+| 15/nov/2026 | PR #40, notificações (`37383cc` a `4740d24`; 917 testes; juntado em `fb848b2`): sondas do sino, da fila, das preferências, do painel e da lista de críticos sem falha; 33 mutações, 20 vivas na primeira rodada (S-099), todas mortas depois; achada a S-100 (evento da faixa de alçada sem centro, corrigida no PR #41). |
