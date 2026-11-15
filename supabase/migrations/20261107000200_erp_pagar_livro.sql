@@ -2253,6 +2253,15 @@ create function erp.autor_lancamento(p_tipo text, p_id uuid) returns uuid langua
                      when 'documento' then (select criado_por from erp.documentos_fiscais where id = p_id) end $$;
 create function erp.abatimento_aprovado(p_pagamento uuid, p_titulo uuid) returns boolean language sql stable as $$
   select exists (select 1 from erp.abatimentos_cruzados where pagamento_id = p_pagamento and titulo_id = p_titulo) $$;
+-- O pagamento e o título são do mesmo núcleo e centro, só de divisões diferentes, e quem aprova é
+-- gestor do centro (Moises, 15/11/2026: o gestor geral do centro aprova abater em outra divisão dele).
+create function erp.gestor_abate_divisao(p_pagamento uuid, p_titulo uuid) returns boolean language sql stable as $$
+  select exists (select 1 from erp.pagamentos g
+                   join erp.titulo_rateios tr on tr.titulo_id = p_titulo
+                    and tr.nucleo_economico_id = g.nucleo_economico_id and tr.centro_custo_id = g.centro_custo_id
+                    and tr.divisao_id is distinct from g.divisao_id
+                   join erp.centro_aprovadores c on c.centro_custo_id = g.centro_custo_id and c.user_id = erp.eu()
+                  where g.id = p_pagamento) $$;
 -- Há adiantamento mais antigo do mesmo fornecedor, na mesma empresa, com saldo, sem liberação do
 -- título feita depois dele?
 create function erp.adiantamento_anterior_em_aberto(p_pagamento uuid, p_titulo uuid) returns boolean language sql stable as $$
@@ -2263,17 +2272,19 @@ create function erp.adiantamento_anterior_em_aberto(p_pagamento uuid, p_titulo u
                                    where l.titulo_id = p_titulo and l.aprovado_em >= g2.criado_em)) $$;
 
 create function erp.tg_aprovacao_adiantamento() returns trigger language plpgsql as $$
-declare v_listas text[]; v_lancou uuid;
+declare v_listas text[]; v_lancou uuid; v_gestor boolean := false;
 begin
   if tg_op <> 'INSERT' then raise exception 'Aprovação não se altera nem se apaga'; end if;
   if tg_table_name = 'abatimentos_cruzados' then
     v_listas := (erp.regra_adiantamento_atual()).aprova_cruzado;
     v_lancou := erp.autor_lancamento('pagamento', new.pagamento_id);
+    v_gestor := erp.gestor_abate_divisao(new.pagamento_id, new.titulo_id);
   else
     v_listas := (erp.regra_adiantamento_atual()).libera_sem_abater;
     v_lancou := erp.autor_lancamento('titulo', new.titulo_id);
   end if;
-  if not erp.estou_nas_listas(v_listas) and not erp.sou_master() then      -- o master sempre aprova
+  if not erp.estou_nas_listas(v_listas) and not erp.sou_master()           -- o master sempre aprova
+     and not v_gestor then
     raise exception 'Só quem está em % aprova isto', array_to_string(v_listas, ', ');
   end if;
   if v_lancou is not null and v_lancou = erp.eu() and not erp.aprova_proprio(v_listas) then
@@ -2320,7 +2331,12 @@ begin
                        and tr.nucleo_economico_id = g.nucleo_economico_id and tr.centro_custo_id is not distinct from g.centro_custo_id
                        and tr.divisao_id is not distinct from g.divisao_id)
        and not erp.abatimento_aprovado(g.id, t.id) then
-      raise exception 'Este pagamento é de outro núcleo, centro de custo ou divisão; abater aqui precisa de aprovação de %',
+      if exists (select 1 from erp.titulo_rateios tr where tr.titulo_id = t.id
+                  and tr.nucleo_economico_id = g.nucleo_economico_id and tr.centro_custo_id = g.centro_custo_id) then
+        raise exception 'Este pagamento é de outra divisão do mesmo centro; abater aqui precisa de aprovação do gestor do centro ou de %',
+          array_to_string((erp.regra_adiantamento_atual()).aprova_cruzado, ', ');
+      end if;
+      raise exception 'Este pagamento é de outro núcleo ou centro de custo; abater aqui precisa de aprovação de %',
         array_to_string((erp.regra_adiantamento_atual()).aprova_cruzado, ', ');
     end if;
     -- o título não é pago com dinheiro novo enquanto o fornecedor tiver adiantamento em aberto

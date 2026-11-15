@@ -429,7 +429,7 @@ grant execute on function
   -- saldos só do que a pessoa vê
   erp.previsao_saldo(uuid), erp.parcela_saldo(uuid), erp.pagamento_saldo(uuid),
   -- conferências das travas (chamadas pelos gatilhos invoker)
-  erp.regra_adiantamento_atual(), erp.autor_lancamento(text, uuid), erp.abatimento_aprovado(uuid, uuid),
+  erp.regra_adiantamento_atual(), erp.autor_lancamento(text, uuid), erp.abatimento_aprovado(uuid, uuid), erp.gestor_abate_divisao(uuid, uuid),
   erp.adiantamento_anterior_em_aberto(uuid, uuid), erp.centro_ligado(uuid, uuid),
   erp.checar_natureza(uuid, uuid, uuid, boolean), erp.checar_centro(uuid, uuid, uuid),
   erp.em_revisao(uuid), erp.pode_ajustar(uuid), erp._ajustavel(uuid), erp._nota_ajustavel(uuid),

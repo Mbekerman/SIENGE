@@ -74,7 +74,7 @@ begin
     ('erp.eu()', 'erp_conferencia'), ('erp.meu_usuario()', 'erp_conferencia'), ('erp.meu_papel()', 'erp_conferencia'),
     ('erp.exigir_editor()', 'erp_conferencia'), ('erp.exigir_diretor()', 'erp_conferencia'),
     ('erp.estou_nas_listas(text[])', 'erp_conferencia'), ('erp.regra_adiantamento_atual()', 'erp_conferencia'),
-    ('erp.autor_lancamento(text, uuid)', 'erp_conferencia'), ('erp.abatimento_aprovado(uuid, uuid)', 'erp_conferencia'),
+    ('erp.autor_lancamento(text, uuid)', 'erp_conferencia'), ('erp.abatimento_aprovado(uuid, uuid)', 'erp_conferencia'), ('erp.gestor_abate_divisao(uuid, uuid)', 'erp_conferencia'),
     ('erp.adiantamento_anterior_em_aberto(uuid, uuid)', 'erp_conferencia'),
     ('erp._previsao_saldo(uuid)', 'erp_conferencia'), ('erp._parcela_saldo(uuid)', 'erp_conferencia'),
     ('erp._pagamento_saldo(uuid)', 'erp_conferencia'), ('erp.centro_ligado(uuid, uuid)', 'erp_conferencia'),

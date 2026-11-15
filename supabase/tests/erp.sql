@@ -918,7 +918,7 @@ select pg_temp.ok(not exists (
        '_vejo_titulo','_lanco_titulo','_vejo_documento','_lanco_documento','_vejo_compromisso','_lanco_compromisso',
        '_vejo_pagamento','_lanco_pagamento',
        'previsao_saldo','parcela_saldo','pagamento_saldo',
-       'regra_adiantamento_atual','autor_lancamento','abatimento_aprovado','adiantamento_anterior_em_aberto','centro_ligado',
+       'regra_adiantamento_atual','autor_lancamento','abatimento_aprovado','gestor_abate_divisao','adiantamento_anterior_em_aberto','centro_ligado',
        'checar_natureza','checar_centro','em_revisao','pode_ajustar','_ajustavel','_nota_ajustavel','_titulo_em_revisao_da_nota',
        'cadeia_titulo','conferir_ajuste','alcada_fase','alcada_pendente','alcada_recusada','titulos_do_acumulado',
        'checar_competencia','_registrar_ajuste','recusar_so_sucessao','recusar_admin_aprovador','_beneficiarios_acesso',
@@ -4327,15 +4327,42 @@ select pg_temp.ok((select divisao_id = :'dv_pdv' from erp.v_adiantamentos where 
 select pg_temp.tit_div('8a000000-0000-0000-0000-0000000000a2', 50, :'dv_onl');
 select pg_temp.erro_igual($$insert into erp.quitacoes (pagamento_id, parcela_id, principal)
   select '8a000000-0000-0000-0000-0000000000b1', id, 50 from erp.parcelas where titulo_id = '8a000000-0000-0000-0000-0000000000a2'$$,
-  'Este pagamento é de outro núcleo, centro de custo ou divisão; abater aqui precisa de aprovação de AF, AO, AD',
+  'Este pagamento é de outra divisão do mesmo centro; abater aqui precisa de aprovação do gestor do centro ou de AF, AO, AD',
   'divisão: o adiantamento não abate título de outra divisão sem aprovação');
+-- em outra divisão do mesmo centro, o gestor do centro também aprova (Moises, 15/11/2026)
+select b as gst from unnest(erp._beneficiarios_acesso('divisoes', jsonb_build_object('centro_custo_id', :'cc_mkt'), null)) b
+  join erp.usuarios u on u.id = b and u.ativo and not u.administrador and not u.so_sucessao
+ where b <> (select user_id from erp.master) and not exists (select 1 from erp.listas_financeiro l where l.user_id = b)
+ order by b limit 1 \gset
+select pg_temp.sis(); insert into erp.centro_aprovadores values (:'cc_mkt', :'gst'); select pg_temp.volta();
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('8a000000-0000-0000-0000-0000000000a5', '20000000-0000-0000-0000-000000000003', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-09-02', '2026-09-01', 40);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('8a000000-0000-0000-0000-0000000000a5', 1, '2026-09-20', 40);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, percentual)
+values ('8a000000-0000-0000-0000-0000000000a5', :'ne1', :'cc_obra', :'dv_obra', pg_temp.nat('04.01'), 100);
+select pg_temp.como(:'apv');
+select pg_temp.ok(pg_temp.erro_como_dono($$insert into erp.abatimentos_cruzados (pagamento_id, titulo_id, justificativa)
+  values ('8a000000-0000-0000-0000-0000000000b1', '8a000000-0000-0000-0000-0000000000a2', 'x')$$) = 'Só quem está em AF, AO, AD aprova isto',
+  'divisão: quem não é gestor do centro nem do financeiro não aprova abater em outra divisão');
+select pg_temp.como(:'gst');
+select pg_temp.ok(pg_temp.erro_como_dono($$insert into erp.abatimentos_cruzados (pagamento_id, titulo_id, justificativa)
+  values ('8a000000-0000-0000-0000-0000000000b1', '8a000000-0000-0000-0000-0000000000a5', 'x')$$) = 'Só quem está em AF, AO, AD aprova isto',
+  'divisão: o gestor do centro não aprova abater em outro centro');
+insert into erp.abatimentos_cruzados (pagamento_id, titulo_id, justificativa)
+values ('8a000000-0000-0000-0000-0000000000b1', '8a000000-0000-0000-0000-0000000000a2', 'Online usa o adiantamento do PDV');
+select pg_temp.como(:'analista');
+insert into erp.quitacoes (pagamento_id, parcela_id, principal)
+  select '8a000000-0000-0000-0000-0000000000b1', id, 50 from erp.parcelas where titulo_id = '8a000000-0000-0000-0000-0000000000a2';
+select pg_temp.ok(erp.parcela_saldo((select id from erp.parcelas where titulo_id = '8a000000-0000-0000-0000-0000000000a2')) = 0,
+  'divisão: com a aprovação do gestor do centro, o adiantamento abate o título da outra divisão');
+select pg_temp.sis(); delete from erp.centro_aprovadores where centro_custo_id = :'cc_mkt' and user_id = :'gst'; select pg_temp.volta();
 select pg_temp.tit_div('8a000000-0000-0000-0000-0000000000a3', 80, :'dv_pdv');
 select pg_temp.ok((select coalesce(sum(valor), 0) = 80 from erp.titulo_coberturas where titulo_id = '8a000000-0000-0000-0000-0000000000a3')
                   and not exists (select 1 from erp.titulo_coberturas where titulo_id = '8a000000-0000-0000-0000-0000000000a2'),
   'divisão: o adiantamento cobre só o título da mesma divisão');
 insert into erp.quitacoes (pagamento_id, parcela_id, principal)
   select '8a000000-0000-0000-0000-0000000000b1', id, 80 from erp.parcelas where titulo_id = '8a000000-0000-0000-0000-0000000000a3';
-select pg_temp.ok((select divisao_id = :'dv_pdv' from erp.lancamentos
+select pg_temp.ok((select bool_and(divisao_id = :'dv_pdv') and count(*) = 2 from erp.lancamentos
                     where pagamento_id = '8a000000-0000-0000-0000-0000000000b1' and quitacao_id is not null
                       and natureza_id = erp.natureza_sistema('adiantamentos')),
   'divisão: o abatimento sai de Adiantamentos com a divisão');
