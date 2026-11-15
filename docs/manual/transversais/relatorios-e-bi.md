@@ -24,6 +24,20 @@
 - ✅ **Natureza restrita** é uma marca que o administrador põe na natureza; ela só abre com liberação própria. No início, pró-labore e folha PJ.
 - ✅ Ninguém muda o próprio acesso.
 
+### Quem vê e quem grava cada registro
+
+🟡 Regras do código (PR #34), à espera da revisão de segurança e do ok do Moises:
+
+1. Usuário inativo não vê nada. O usuário só da sucessão vê apenas o próprio cadastro e a sucessão. Sem cadastro ativo, ninguém grava.
+2. Título, nota e contrato: vê quem vê alguma linha do rateio pelo perfil (núcleo × centro × natureza). Se alguma linha é de natureza restrita (PJ) que a pessoa não vê, o registro some inteiro, e o pagamento que o baixa também.
+3. O lançador restrito vê e mexe só no que ele lançou.
+4. Quem aprova o título na rodada (lista da etapa, diretoria, gestor da área) vê o título, inclusive o de PJ.
+5. Linha sem núcleo e sem centro: só a diretoria e o financeiro veem. Transferência entre contas: só o financeiro e o master gravam. Movimento entre sócios: só a diretoria e o financeiro registram.
+6. Configuração: todos leem; só o administrador ou o master gravam.
+7. O papel leitura não grava, mesmo com perfil de lançador.
+8. Para confirmar título, lançar nota, liberar caução ou publicar orçamento, é preciso poder lançar em **todas** as linhas. Quem ajusta título em revisão também.
+9. No acumulado da alçada, quem aprova vê em detalhe só os títulos a que tem acesso; o resto aparece numa linha só, "Outros N títulos (sem acesso)", com a soma.
+
 🟡 Proposta ainda não decidida: a natureza PJ fica fora de qualquer combinação, com acesso próprio (a "natureza restrita" acima já cobre parte disso).
 
 ## Controle de prazos do pagamento (SLA)
