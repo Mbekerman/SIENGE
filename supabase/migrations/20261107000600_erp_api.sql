@@ -75,8 +75,7 @@ create function erp.aprovo_titulo(p_titulo uuid) returns boolean language sql st
     exists (select 1 from erp.titulo_alcadas a join erp.titulos t on t.id = a.titulo_id and t.rodada = a.rodada
              where a.titulo_id = p_titulo
                and (erp.estou_nas_listas(a.etapas) or coalesce(erp.meu_papel(), '') = 'diretor'
-                    or ('AREA' = any(a.etapas) and exists (select 1 from erp.centro_aprovadores c
-                                                            where c.centro_custo_id = a.centro_custo_id and c.user_id = erp.eu()))))
+                    or exists (select 1 from unnest(a.etapas) e where erp._ocupa_vaga(e, a.centro_custo_id, erp.eu()))))
     or exists (select 1 from erp.titulo_aprovacoes x where x.titulo_id = p_titulo and x.por = erp.eu())) $$;
 
 -- Título: vê quem vê alguma linha do rateio e nenhuma linha restrita fica escondida dele; sem
@@ -380,7 +379,7 @@ end $$;
 -- Toda tabela do esquema tem a sua linha acima (teste de catálogo confere): nenhuma fica aberta
 -- por esquecimento, nem fechada sem querer.
 grant usage on schema erp to authenticated;
-grant select on erp.v_naturezas, erp.v_parcelas, erp.v_adiantamentos, erp.v_caucao, erp.v_previsoes,
+grant select on erp.v_naturezas, erp.v_parcelas, erp.v_titulo_alcadas, erp.v_adiantamentos, erp.v_caucao, erp.v_previsoes,
                 erp.v_fluxo_caixa, erp.v_lancamentos_bi to authenticated;
 
 -- ---------------------------------------------------------------------------------------------
@@ -437,7 +436,7 @@ grant execute on function
   -- operações
   erp.confirmar_titulo(uuid), erp.lancar_documento(uuid, date[], uuid[]),
   erp.liberar_caucao(uuid, numeric, date, uuid, text), erp.publicar_orcamento(uuid),
-  erp.decidir_titulo(uuid, boolean, text, boolean), erp.reenviar_titulo(uuid, text, date[], uuid[]),
+  erp.decidir_titulo(uuid, boolean, text, boolean, uuid), erp.reenviar_titulo(uuid, text, date[], uuid[]),
   erp.registrar_movimento_societario(text, uuid, uuid, numeric, date, text),
   erp.fechar_mes(uuid, date), erp.reabrir_mes(uuid, date),
   erp.pedir_reclassificacao(uuid, uuid, text, jsonb, boolean), erp.decidir_reclassificacao(uuid, boolean, text),

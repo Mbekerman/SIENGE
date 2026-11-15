@@ -119,6 +119,9 @@ create table erp.centro_diretores (
   user_id         uuid not null references erp.usuarios,
   primary key (centro_custo_id, user_id)
 );
+-- o último diretor da área não sai com título esperando por ele (S-097; função na _erp_pagar_livro)
+create trigger t_centro_aprovador before update or delete on erp.centro_diretores
+  for each row execute function erp.tg_centro_aprovador();
 
 -- só o administrador, e nunca para si mesmo
 create function erp.tg_acesso_admin() returns trigger language plpgsql as $$
