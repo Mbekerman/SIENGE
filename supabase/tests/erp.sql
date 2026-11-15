@@ -466,7 +466,7 @@ rollback;
 begin;
 select pg_temp.como(:'diretor');
 select pg_temp.sis(); insert into erp.listas_financeiro (lista, user_id) values ('AD', :'diretor2'); select pg_temp.volta();
-select pg_temp.como(null); insert into erp.listas_financeiro (lista, user_id) values ('AD', :'diretor') on conflict do nothing; select pg_temp.como(:'diretor');  -- o próprio acesso só pelo sistema
+select pg_temp.como(null); insert into erp.listas_financeiro (lista, user_id) values ('AD', :'diretor') on conflict do nothing; select pg_temp.como(:'diretor2');  -- o próprio acesso só pelo sistema
 insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
 values ('70000000-0000-0000-0000-000000000008', :'spe', '10000000-0000-0000-0000-000000000005', 'nfse', '108', '2026-03-05', '2026-03-01', 100);
 insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
@@ -475,7 +475,7 @@ select erp.lancar_documento('70000000-0000-0000-0000-000000000008', array['2026-
 select id as p8 from erp.parcelas where titulo_id = :'tit8' \gset
 select pg_temp.falha(format($$insert into erp.liberacoes_sem_abater (titulo_id, justificativa) values (%L, 'x')$$, :'tit8'),
   'quem lançou o título não libera pagá-lo sem abater');
-select pg_temp.como(:'diretor2');
+select pg_temp.como(:'diretor');
 insert into erp.liberacoes_sem_abater (titulo_id, justificativa) values (:'tit8', 'Adiantamento será usado na próxima medição');
 select pg_temp.como(:'diretor');
 select erp.pagar_parcela(:'p8', :'conta_spe', '2026-03-20') is not null as pagou \gset
@@ -1475,6 +1475,54 @@ select pg_temp.ok((select etapas = '{AREA,AF,AD}' and acumulado = 55000 from erp
   'alçada: o título que passa dos 50 mil (somando o centro em todos os núcleos e empresas) vai ao AD');
 select pg_temp.ok((select etapas = '{AREA,AF,AD}' from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000003'),
   'alçada: os títulos seguintes do mês também vão ao AD');
+-- o próprio lançamento: o master aprova o dele; na AD, pessoa a pessoa (Moises, 7/nov e 14/11/2026)
+savepoint proprio;
+select pg_temp.como(:'diretor2');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('82000000-0000-0000-0000-000000000091', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-05-05', '2026-05-01', 700);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('82000000-0000-0000-0000-000000000091', 1, '2026-05-20', 700);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values ('82000000-0000-0000-0000-000000000091', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select erp.confirmar_titulo('82000000-0000-0000-0000-000000000091');
+select pg_temp.como(:'gestor'); select erp.decidir_titulo('82000000-0000-0000-0000-000000000091', true);
+select pg_temp.como(:'contador'); select erp.decidir_titulo('82000000-0000-0000-0000-000000000091', true);
+select pg_temp.como(:'diretor2');
+select pg_temp.erro_igual($$select erp.decidir_titulo('82000000-0000-0000-0000-000000000091', true)$$,
+  'Quem lançou não aprova o próprio lançamento', 'próprio: na AD sem a marca, quem lançou não aprova');
+select pg_temp.sis(); update erp.listas_financeiro set aprova_proprio = true where lista = 'AD' and user_id = :'diretor2'; select pg_temp.volta();
+select erp.decidir_titulo('82000000-0000-0000-0000-000000000091', true) as r_p \gset
+select pg_temp.ok(:'r_p' = 'aprovado' and (select proprio from erp.titulo_aprovacoes where titulo_id = '82000000-0000-0000-0000-000000000091' and lista = 'AD'),
+  'próprio: a AD com a marca aprova o próprio lançamento, marcado para o aviso');
+select pg_temp.sis();
+select pg_temp.erro_igual(format($$update erp.listas_financeiro set aprova_proprio = true where lista = 'AF' and user_id = %L$$, :'gestor'),
+  'new row for relation "listas_financeiro" violates check constraint "listas_financeiro_check"', 'próprio: só a AD tem a marca');
+select pg_temp.volta();
+select pg_temp.como(:'diretor');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('82000000-0000-0000-0000-000000000092', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-05-05', '2026-05-01', 800);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('82000000-0000-0000-0000-000000000092', 1, '2026-05-20', 800);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values ('82000000-0000-0000-0000-000000000092', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select erp.confirmar_titulo('82000000-0000-0000-0000-000000000092');
+select erp.decidir_titulo('82000000-0000-0000-0000-000000000092', true) as r_p2 \gset
+select pg_temp.ok(:'r_p2' = 'aprovado' and (select bool_and(proprio) from erp.titulo_aprovacoes where titulo_id = '82000000-0000-0000-0000-000000000092'),
+  'próprio: o master aprova o próprio lançamento, e todas as etapas de uma vez');
+insert into erp.liberacoes_sem_abater (titulo_id, justificativa) values ('82000000-0000-0000-0000-000000000092', 'x');
+insert into erp.excecoes_competencia (titulo_id, justificativa) values ('82000000-0000-0000-0000-000000000092', 'x');
+select pg_temp.ok(true, 'próprio: o master libera e aprova exceção do próprio lançamento');
+select pg_temp.como(:'diretor2');
+insert into erp.liberacoes_sem_abater (titulo_id, justificativa) values ('82000000-0000-0000-0000-000000000091', 'x');
+select pg_temp.ok(true, 'próprio: a AD com a marca libera o próprio título sem abater');
+-- a marca vale só na etapa da AD: na do AF, quem lançou continua não aprovando
+select pg_temp.sis(); insert into erp.listas_financeiro (lista, user_id) values ('AF', :'diretor2'); select pg_temp.volta();
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('82000000-0000-0000-0000-000000000093', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-05-05', '2026-05-01', 900);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('82000000-0000-0000-0000-000000000093', 1, '2026-05-20', 900);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values ('82000000-0000-0000-0000-000000000093', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select erp.confirmar_titulo('82000000-0000-0000-0000-000000000093');
+select pg_temp.como(:'gestor'); select erp.decidir_titulo('82000000-0000-0000-0000-000000000093', true);
+select pg_temp.como(:'diretor2');
+select pg_temp.erro_igual($$select erp.decidir_titulo('82000000-0000-0000-0000-000000000093', true)$$,
+  'Quem lançou não aprova o próprio lançamento', 'próprio: a marca da AD não vale na etapa do AF');
+rollback to savepoint proprio;
 select pg_temp.ok(not exists (select 1 from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000004'),
   'alçada: centro sem gestor aprovador (fora do piloto) não tem alçada');
 select pg_temp.erro_igual($$insert into erp.titulo_aprovacoes (titulo_id, etapa, lista, aprovado, por) values ('82000000-0000-0000-0000-000000000001', 1, 'AREA', true, '00000000-0000-0000-0000-00000000000e')$$,

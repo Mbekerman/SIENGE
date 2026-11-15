@@ -833,9 +833,13 @@ begin
     elsif m.operacao = 'excluir' then delete from erp.centro_aprovadores where centro_custo_id = (d->>'centro_custo_id')::uuid and user_id = (d->>'user_id')::uuid;
     else raise exception 'Gestor da área não se altera: exclua e inclua'; end if;
   when 'listas_financeiro' then
-    if m.operacao = 'incluir' then insert into erp.listas_financeiro select * from jsonb_populate_record(null::erp.listas_financeiro, d);
+    if m.operacao = 'incluir' then
+      insert into erp.listas_financeiro (lista, user_id, aprova_proprio, avisa_proprio)
+      select r.lista, r.user_id, coalesce(r.aprova_proprio, false), coalesce(r.avisa_proprio, true)
+        from jsonb_populate_record(null::erp.listas_financeiro, d) r;
     elsif m.operacao = 'excluir' then delete from erp.listas_financeiro where lista = d->>'lista' and user_id = (d->>'user_id')::uuid;
-    else raise exception 'Lista do financeiro não se altera: exclua e inclua'; end if;
+    else update erp.listas_financeiro t set aprova_proprio = r.aprova_proprio, avisa_proprio = r.avisa_proprio
+           from jsonb_populate_record(null::erp.listas_financeiro, d) r where t.lista = r.lista and t.user_id = r.user_id; end if;
   when 'tipos_nucleo' then
     if m.operacao = 'incluir' then
       insert into erp.tipos_nucleo (codigo, nome, exige_empreendimento, ativo)
