@@ -2300,15 +2300,17 @@ create function erp.autor_lancamento(p_tipo text, p_id uuid) returns uuid langua
                      when 'documento' then (select criado_por from erp.documentos_fiscais where id = p_id) end $$;
 create function erp.abatimento_aprovado(p_pagamento uuid, p_titulo uuid) returns boolean language sql stable as $$
   select exists (select 1 from erp.abatimentos_cruzados where pagamento_id = p_pagamento and titulo_id = p_titulo) $$;
--- O pagamento e o título são do mesmo núcleo e centro, só de divisões diferentes, e quem aprova é
--- gestor do centro (Moises, 15/11/2026: o gestor geral do centro aprova abater em outra divisão dele).
+-- O título está todo no núcleo e no centro do pagamento (com alguma linha em outra divisão) e quem
+-- aprova é gestor do centro (Moises, 15/11/2026: o gestor geral do centro aprova abater em outra
+-- divisão dele; S-103: com linha em outro centro, só o financeiro).
 create function erp.gestor_abate_divisao(p_pagamento uuid, p_titulo uuid) returns boolean language sql stable as $$
   select exists (select 1 from erp.pagamentos g
-                   join erp.titulo_rateios tr on tr.titulo_id = p_titulo
-                    and tr.nucleo_economico_id = g.nucleo_economico_id and tr.centro_custo_id = g.centro_custo_id
-                    and tr.divisao_id is distinct from g.divisao_id
                    join erp.centro_aprovadores c on c.centro_custo_id = g.centro_custo_id and c.user_id = erp.eu()
-                  where g.id = p_pagamento) $$;
+                  where g.id = p_pagamento and g.centro_custo_id is not null
+                    and exists (select 1 from erp.titulo_rateios tr where tr.titulo_id = p_titulo)
+                    and not exists (select 1 from erp.titulo_rateios tr where tr.titulo_id = p_titulo
+                                     and not (tr.nucleo_economico_id is not distinct from g.nucleo_economico_id
+                                              and tr.centro_custo_id = g.centro_custo_id))) $$;
 -- Há adiantamento mais antigo do mesmo fornecedor, na mesma empresa, com saldo, sem liberação do
 -- título feita depois dele?
 create function erp.adiantamento_anterior_em_aberto(p_pagamento uuid, p_titulo uuid) returns boolean language sql stable as $$
@@ -2373,13 +2375,17 @@ begin
   end if;
   if (erp.regra_adiantamento_atual()).trava then
     -- adiantamento só abate título do mesmo núcleo e centro do carimbo; em outro, só aprovado
+    -- S-103 (Moises, 15/11/2026): sem aprovação, só abate o título que está inteiro no carimbo;
+    -- com uma linha fora dele, o título todo pede a aprovação
     if g.nucleo_economico_id is not null
-       and not exists (select 1 from erp.titulo_rateios tr where tr.titulo_id = t.id
-                       and tr.nucleo_economico_id = g.nucleo_economico_id and tr.centro_custo_id is not distinct from g.centro_custo_id
-                       and tr.divisao_id is not distinct from g.divisao_id)
+       and exists (select 1 from erp.titulo_rateios tr where tr.titulo_id = t.id
+                    and not (tr.nucleo_economico_id is not distinct from g.nucleo_economico_id
+                             and tr.centro_custo_id is not distinct from g.centro_custo_id
+                             and tr.divisao_id is not distinct from g.divisao_id))
        and not erp.abatimento_aprovado(g.id, t.id) then
-      if exists (select 1 from erp.titulo_rateios tr where tr.titulo_id = t.id
-                  and tr.nucleo_economico_id = g.nucleo_economico_id and tr.centro_custo_id = g.centro_custo_id) then
+      if not exists (select 1 from erp.titulo_rateios tr where tr.titulo_id = t.id
+                      and not (tr.nucleo_economico_id is not distinct from g.nucleo_economico_id
+                               and tr.centro_custo_id is not distinct from g.centro_custo_id)) then
         raise exception 'Este pagamento é de outra divisão do mesmo centro; abater aqui precisa de aprovação do gestor do centro ou de %',
           array_to_string((erp.regra_adiantamento_atual()).aprova_cruzado, ', ');
       end if;
