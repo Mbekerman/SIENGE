@@ -55,9 +55,10 @@ Hoje a BKM usa no Sienge "centro de custo Marketing, natureza MKT Online, motivo
 - ✅ **Naturezas de cada nível** (Moises, 15/nov/2026; ainda sem código): os níveis se chamam **Divisão Nível 1, 2, 3 e 4**. Só o último nível de cada galho tem lista própria de naturezas. O centro e todo nível que tem níveis abaixo **não têm naturezas próprias**: mostram, só para leitura, a soma das naturezas de todos os níveis abaixo deles, para dar o relatório por natureza no centro e em cada divisão. Ao criar um nível, a escolha das naturezas é obrigatória, de uma destas formas:
   - à mão, uma a uma, com Marcar todas e Desmarcar todas;
   - por um **modelo salvo** (a escolha feita também pode ser salva como modelo);
-  - **copiando de um nível irmão**.
+  - **copiando de um nível irmão**;
+  - no primeiro nível abaixo de outro, copiando a lista do nível de cima.
 
-  Master, administrador, AF, AO e AD mudam as naturezas na hora. A antiga forma "vinculada ao nível de cima" não existe mais (Moises, 15/nov/2026). 🟡 Quando uma divisão sem níveis abaixo ganha o primeiro, a lista dela passa para o novo nível (leitura do protótipo, a confirmar no código).
+  Master, administrador, AF, AO e AD mudam as naturezas na hora. A antiga forma "vinculada ao nível de cima" não existe mais (Moises, 15/nov/2026). O primeiro nível criado abaixo de outro pode copiar a lista desse nível de cima; daí em diante, o de cima deixa de ter lista própria. Não se cria esse primeiro nível se ele não cobrir as naturezas dos contratos ativos que ficaram no nível de cima. Desligar uma natureza continua barrado enquanto houver contrato ativo nela, inclusive contrato antigo que ficou num nível acima.
 
   ![Divisão em quatro níveis: o centro e os níveis com filhos mostram a soma; os últimos níveis têm naturezas próprias](../imagens/financeiro/divisao-niveis.png)
 
