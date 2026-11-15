@@ -4563,6 +4563,43 @@ select erp.decidir_titulo('88000000-0000-0000-0000-000000000005', true) as dbg5 
 select pg_temp.ok(:'dbg5' = 'aprovado'
                   and (select count(*) = 2 from erp.v_titulo_alcadas where titulo_id = '88000000-0000-0000-0000-000000000005' and situacao = 'aprovado'),
   'divisão: o master aprova a divisão e o centro de uma vez');
+-- quem tem vaga na divisão e no centro aprova uma vez só, e vale pelas duas (Moises, 15/11/2026)
+savepoint div_duas;
+select pg_temp.sis(); update erp.alcadas_pagamento set fases = '{AREA}' where id = '86000000-0000-0000-0000-0000000000d2'; select pg_temp.volta();
+select pg_temp.como(:'analista');
+select pg_temp.tit_div('8a000000-0000-0000-0000-0000000000e1', 3000, :'dv_pdv');
+select pg_temp.como(:'gestor');
+select erp.decidir_titulo('8a000000-0000-0000-0000-0000000000e1', true) as e1 \gset
+select pg_temp.ok(:'e1' = 'pendente'
+                  and (select count(*) = 2 and bool_and(lista = 'AREA' and por = :'gestor'::uuid) and count(*) filter (where origem = 'outra_alcada') = 1
+                         from erp.titulo_aprovacoes where titulo_id = '8a000000-0000-0000-0000-0000000000e1'),
+  'divisão: a aprovação do gestor na divisão vale também na vaga dele no centro');
+-- mesmo pelo papel das operações do banco, a aprovação de outra alçada tem de ser da mesma pessoa
+select set_config('role', 'erp_situacao', false);
+select pg_temp.erro_igual(format($$insert into erp.titulo_aprovacoes (alcada_id, fase, lista, aprovado, por, origem, vale_de)
+  select a.id, 2, 'AF', true, %L, 'outra_alcada', d.id from erp.titulo_alcadas a join erp.titulo_alcadas d on d.titulo_id = a.titulo_id and d.divisao_id is not null
+   where a.titulo_id = '8a000000-0000-0000-0000-0000000000e1' and a.divisao_id is null$$, :'contador'),
+  'A aprovação na outra alçada precisa ser da mesma pessoa, no mesmo centro do título',
+  'divisão: só vale na outra alçada a aprovação que a mesma pessoa deu');
+select pg_temp.como(:'contador');
+select pg_temp.ok(erp.decidir_titulo('8a000000-0000-0000-0000-0000000000e1', true) = 'aprovado', 'divisão: falta só o AF, e o título fica aprovado');
+-- em sequência, a vaga do gestor no centro chega depois do AF: a aprovação dele na divisão vale quando ela chega
+select pg_temp.sis(); update erp.alcadas_pagamento set fases = '{AF,AREA}' where id = '86000000-0000-0000-0000-0000000000d3'; select pg_temp.volta();
+select pg_temp.como(:'analista');
+select pg_temp.tit_div('8a000000-0000-0000-0000-0000000000e2', 3000, :'dv_pdv');
+select pg_temp.como(:'gestor');
+select erp.decidir_titulo('8a000000-0000-0000-0000-0000000000e2', true) as e2 \gset
+select pg_temp.ok(:'e2' = 'pendente'
+                  and (select count(*) = 1 from erp.titulo_aprovacoes where titulo_id = '8a000000-0000-0000-0000-0000000000e2'),
+  'divisão: em sequência, a aprovação não pula a vez do AF no centro');
+select pg_temp.erro_igual($$select erp.decidir_titulo('8a000000-0000-0000-0000-0000000000e2', true)$$,
+  'Esta fase de aprovação é de quem está em AF', 'divisão: o gestor não aprova de novo nem fura a vez do AF');
+select pg_temp.como(:'contador');
+select erp.decidir_titulo('8a000000-0000-0000-0000-0000000000e2', true) as e2b \gset
+select pg_temp.ok(:'e2b' = 'aprovado'
+                  and (select origem = 'outra_alcada' from erp.titulo_aprovacoes where titulo_id = '8a000000-0000-0000-0000-0000000000e2' and lista = 'AREA' and divisao_id is null),
+  'divisão: depois do AF, a aprovação do gestor na divisão vale no centro');
+rollback to savepoint div_duas;
 -- a aprovação sempre aponta a alçada dela, com o centro e a divisão copiados dela
 select pg_temp.ok((select bool_and(v.centro_custo_id = a.centro_custo_id and v.divisao_id is not distinct from a.divisao_id and v.titulo_id = a.titulo_id)
                      from erp.titulo_aprovacoes v join erp.titulo_alcadas a on a.id = v.alcada_id),

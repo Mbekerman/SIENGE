@@ -1423,11 +1423,15 @@ create table erp.titulo_aprovacoes (
   por           uuid not null,
   em            timestamptz not null default clock_timestamp(),
   primary key (alcada_id, fase),
-  -- decisao: quem decidiu é quem gravou; ajuste: quem ajustou na revisão (_aprovar_pelo_ajuste)
-  origem        text not null default 'decisao' check (origem in ('decisao','ajuste')),
+  -- decisao: quem decidiu é quem gravou; ajuste: quem ajustou na revisão (_aprovar_pelo_ajuste);
+  -- outra_alcada: a aprovação da mesma pessoa na divisão vale no centro, e vice-versa (vale_de)
+  origem        text not null default 'decisao' check (origem in ('decisao','ajuste','outra_alcada')),
+  vale_de       uuid references erp.titulo_alcadas,
+  check ((origem = 'outra_alcada') = (vale_de is not null)),
   proprio       boolean not null default false,  -- quem aprovou lançou o título (master ou AD autorizada): sai o aviso
   check (aprovado or length(trim(coalesce(justificativa, ''))) > 0),
-  check (origem = 'decisao' or (aprovado and lista in ('AREA','AF')))
+  check (origem <> 'ajuste' or (aprovado and lista in ('AREA','AF'))),
+  check (origem <> 'outra_alcada' or aprovado)
 );
 -- só pelas operações do banco (confirmar_titulo e decidir_titulo), e não mudam
 create function erp.tg_alcada_titulo() returns trigger language plpgsql as $$
@@ -1438,6 +1442,14 @@ begin
   end if;
   if tg_table_name = 'titulo_aprovacoes' then
     if new.origem = 'decisao' then new.por := erp.autor(); end if;
+    if new.origem = 'outra_alcada' and not exists (
+         select 1 from erp.titulo_aprovacoes v join erp.titulo_alcadas a1 on a1.id = v.alcada_id
+           join erp.titulo_alcadas a2 on a2.id = new.alcada_id
+          where v.alcada_id = new.vale_de and v.por = new.por and v.aprovado and v.origem = 'decisao'
+            and a1.titulo_id = a2.titulo_id and a1.rodada = a2.rodada and a1.centro_custo_id = a2.centro_custo_id
+            and a1.id <> a2.id and (a1.divisao_id is null or a2.divisao_id is null)) then
+      raise exception 'A aprovação na outra alçada precisa ser da mesma pessoa, no mesmo centro do título';
+    end if;
     new.em := clock_timestamp();
     select a.titulo_id, a.rodada, a.centro_custo_id, a.divisao_id into new.titulo_id, new.rodada, new.centro_custo_id, new.divisao_id
       from erp.titulo_alcadas a where a.id = new.alcada_id;
@@ -2003,6 +2015,40 @@ begin
   if not v_algum then raise exception 'Só quem aprova o título vê o acumulado'; end if;
 end $$;
 
+-- Uma aprovação vale pela divisão e pelo centro (Moises, 15/11/2026): quem aprovou na alçada da
+-- divisão e ocupa uma vaga pendente na alçada do centro (ou o contrário) fica aprovado lá também,
+-- na vaga que ocupa, quando ela é a da vez (em paralelo, qualquer uma). Roda depois de cada
+-- aprovação, porque em sequência a vaga pode só chegar depois. Não vale entre duas divisões, nem a
+-- aprovação de quem lançou (master ou AD autorizada), nem a que veio pelo ajuste da revisão.
+create function erp._aprovacao_vale_nas_duas(p_titulo uuid) returns void language plpgsql as $$
+declare r record; v_n int;
+begin
+  loop
+    v_n := 0;
+    for r in select a2.id as alcada, i as fase, a2.fases[i] as vaga, v.por, v.alcada_id as de
+               from erp.titulos t
+               join erp.titulo_alcadas a2 on a2.titulo_id = t.id and a2.rodada = t.rodada
+               join erp.titulo_alcadas a1 on a1.titulo_id = t.id and a1.rodada = t.rodada and a1.id <> a2.id
+                                         and a1.centro_custo_id = a2.centro_custo_id and (a1.divisao_id is null or a2.divisao_id is null)
+               join erp.titulo_aprovacoes v on v.alcada_id = a1.id and v.aprovado and v.origem = 'decisao' and not v.proprio
+               cross join lateral generate_subscripts(a2.fases, 1) i
+              where t.id = p_titulo
+                and (a2.paralelo or i = erp._fase_da_alcada(a2))
+                and erp._ocupa_vaga(a2.fases[i], a2.centro_custo_id, v.por)
+              order by a2.centro_custo_id, a2.divisao_id nulls first, i loop
+      continue when exists (select 1 from erp.titulo_aprovacoes x where x.alcada_id = r.alcada and (x.fase = r.fase or x.por = r.por));
+      continue when not exists (select 1 from erp.titulo_alcadas a where a.id = r.alcada
+                                  and (a.paralelo or r.fase = erp._fase_da_alcada(a)));
+      insert into erp.titulo_aprovacoes (alcada_id, titulo_id, rodada, centro_custo_id, fase, lista, aprovado, justificativa, por, origem, vale_de)
+      select r.alcada, a.titulo_id, a.rodada, a.centro_custo_id, r.fase, r.vaga, true, 'Vale a aprovação na outra alçada do centro', r.por,
+             'outra_alcada', r.de
+        from erp.titulo_alcadas a where a.id = r.alcada;
+      v_n := v_n + 1;
+    end loop;
+    exit when v_n = 0;
+  end loop;
+end $$;
+
 -- Aprovar ou recusar a fase da vez. Recusar exige justificativa e trava o título.
 -- p_revisao: em vez de decidir, pede o ajuste (p_aprovar é ignorado; o motivo vai em p_justificativa).
 -- Recusar cancela o título (e a nota dele) com estorno no livro.
@@ -2071,8 +2117,8 @@ begin
      or exists (select 1 from erp.titulo_ajustes j where j.titulo_id in (select erp.cadeia_titulo(p_titulo)) and j.por = v_eu)) then
     raise exception 'Quem ajustou não aprova o ajuste';
   end if;
-  -- uma fase por pessoa em cada alçada; quem tem vaga em duas (dois centros, ou a divisão e o
-  -- centro) aprova nas duas
+  -- uma fase por pessoa em cada alçada; quem tem vaga em dois centros aprova nos dois; na divisão
+  -- e no centro, a aprovação vale pelas duas (_aprovacao_vale_nas_duas)
   if not v_master and exists (select 1 from erp.titulo_aprovacoes where alcada_id = a.id and por = v_eu) then
     raise exception 'Você já aprovou uma fase de aprovação deste título';
   end if;
@@ -2115,6 +2161,7 @@ begin
     perform erp._cancelar_recusado(p_titulo);
     return 'recusado';
   end if;
+  perform erp._aprovacao_vale_nas_duas(p_titulo);
   return case when erp.alcada_pendente(p_titulo) is null then 'aprovado' else 'pendente' end;
 end $$;
 
