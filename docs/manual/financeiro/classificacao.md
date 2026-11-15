@@ -45,7 +45,12 @@ Hoje a BKM usa no Sienge "centro de custo Marketing, natureza MKT Online, motivo
 
 A **etapa** (até 15/nov/2026 chamada "fase") é o momento do empreendimento: Terreno, Aprovação de projetos, Incorporação, Lançamento, Obra, Pós-obra e Corporativo. **É calculada sozinha**, a partir do núcleo e da data, e serve só para os relatórios. Ninguém a escolhe no lançamento, e ela não entra no acesso nem na aprovação (Moises, 15/nov/2026).
 
-✅ **Divisão** é a subdivisão de um centro de custo, por exemplo Marketing › PDV, Online, Offline e Eventos. A divisão terá permissão e alçada próprias (Moises, 15/nov/2026; ainda não no código).
+✅ **Divisão** é a subdivisão de um centro de custo, por exemplo Marketing › PDV, Online, Offline e Eventos. Decisões do Moises de 15/nov/2026 (no código a partir do PR #41):
+
+- Só o administrador cria e desativa uma divisão; ela não se apaga.
+- Com divisão ativa no centro, **toda linha de rateio, previsão e orçamento precisa dizer a divisão**.
+- **Acesso:** pode descer até a divisão. O modelo dá todas as divisões (inclusive as futuras, menos as excluídas) ou uma lista (com as futuras, se marcado). Cada divisão incluída pode ter nível próprio. A exceção da pessoa na divisão vence a do centro. Quem tem só algumas divisões não vê a linha do centro sem divisão.
+- **Alçada:** a divisão pode ter faixas próprias, com o acumulado só da divisão. Cada faixa diz se aprova só na divisão ou se passa também pelo centro, cujo acumulado soma o centro inteiro. Divisão sem faixas segue o centro. Na alçada da divisão, o gestor da área é o gestor do centro, e o responsável da divisão entra como vaga nominal. Quem tem vaga na divisão e no centro aprova nas duas.
 
 ✅ Para não confundir: cada passo de uma aprovação (gestor, AF, AD) se chama **fase de aprovação** (Moises, 15/nov/2026). "Etapa" fica só para o momento do empreendimento.
 
