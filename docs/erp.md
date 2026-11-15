@@ -2,7 +2,7 @@
 
 Versão 0, de 7/nov/2026. Ela traduz em tabelas o desenho da sabatina, que está no doc [Núcleo do ERP BKM: modelo v1](https://claude.ai/artifact/YXuHgVNLaMPRtpxJ8YWCPt). Todas as tabelas ficam no esquema `erp`, no mesmo Supabase do BKM Terrenos, acima do espelho do Sienge (`sienge_bruto` e `sienge`).
 
-O SQL está em `supabase/migrations/` e os testes em `supabase/tests/erp.sql` (710 testes). Para rodar: `bash supabase/tests/run.sh`.
+O SQL está em `supabase/migrations/` e os testes em `supabase/tests/erp.sql` (731 testes). Para rodar: `bash supabase/tests/run.sh`.
 
 Este documento cobre o contas a pagar, a raiz (empresas e sócios), a árvore de naturezas, o livro de lançamentos e a reclassificação. Contas a receber, bancos, aprovação geral e engenharia ficam para as próximas sessões.
 
@@ -176,6 +176,7 @@ Exemplo de alçada configurada pelo administrador: "gestor aprova até R$ 11 mil
   - **Configuração e catálogo:** lê quem é membro; grava só o administrador ou o master, e os gatilhos de cada tabela decidem o resto. Pessoas: lê quem é membro, grava quem edita. Acesso (atribuições, exceções, pedidos de mudança): a própria linha e quem administra ou aprova acesso. Auditoria: o administrador e o master. Avisos da sucessão: só o sistema.
   - **Funções:** o usuário executa as invoker (rodam com o RLS dele) e uma lista fechada de definer (as operações e as conferências que olham só quem está logado). As que recebem a pessoa como parâmetro (`acesso`, `ve_linha`, `lanca_linha`, `natureza_liberada`, `atribuicoes_no_nucleo`) ficam sem EXECUTE para a API (S-079), assim como as internas (`_aplicar_*`, os saldos com `_`, as do servidor da sucessão).
   - **Operações conferem quem chama:** confirmar título, lançar nota, liberar caução e publicar orçamento exigem lançar em todas as linhas; o movimento entre sócios só pela diretoria ou pelo financeiro; a reclassificação só leva lançamentos que quem pede vê na origem e lança no destino; efetivar a sucessão só o grupo de sucessão ou o indicado; os saldos de previsão, parcela e pagamento voltam vazios para quem não vê o registro; o rastro do ajuste só se grava pela mudança na tabela, por quem pode ajustar, e quem pode ajustar precisa lançar em todas as linhas do título (S-073).
+  - **Cadastro de pessoas (S-089):** pessoas e papéis ficam na auditoria. O cadastro de empresa do grupo (dados e papéis) só o master muda. De pessoa já usada em título, nota, contrato, previsão ou pagamento, documento, nome e tipo só o financeiro ou o master mudam, e só eles tiram o papel de fornecedor; o contato (e-mail, telefone) qualquer editor muda.
   - **Acumulado da alçada (S-062):** quem aprova vê em detalhe os títulos do acumulado que ele vê; os outros vêm numa linha só, "Outros N títulos (sem acesso)", com a soma no centro, sem fornecedor, empresa nem natureza.
 - **Contas a receber.** Por isso a quitação só aceita título a pagar. O título a receber já existe para o dinheiro entre sócios.
 - **Módulo de aprovação geral.** Ficam para ele as alçadas de pagamento, a liberação de caução e as avaliações do gestor do contrato.

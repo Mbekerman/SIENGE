@@ -3491,6 +3491,27 @@ select pg_temp.sis(); insert into erp.listas_financeiro (lista, user_id) values 
 select pg_temp.como(:'u10');
 select pg_temp.falha(format($$insert into erp.liberacoes_sem_abater (titulo_id, justificativa) values (%L, 'x')$$, :'tb'),
   'acesso: papel leitura não libera título sem abater, nem estando na AD');
+-- S-089: cadastro de pessoas protegido e auditado
+select pg_temp.como(:'u9');
+insert into erp.pessoa_papeis values ('10000000-0000-0000-0000-0000000000c1', 'fornecedor');
+insert into erp.pessoa_papeis values ('10000000-0000-0000-0000-000000000002', 'cliente');
+select pg_temp.erro_igual($$update erp.pessoas set nome = 'Outra' where id = '10000000-0000-0000-0000-000000000001'$$,
+  'O cadastro de empresa do grupo só o master muda', 'S-089: o analista não muda o cadastro de empresa do grupo');
+select pg_temp.erro_igual($$delete from erp.pessoa_papeis where pessoa_id = '10000000-0000-0000-0000-000000000002'$$,
+  'O cadastro de empresa do grupo só o master muda', 'S-089: nem os papéis dela');
+select pg_temp.erro_igual($$update erp.pessoas set documento = '98989898000198' where id = '10000000-0000-0000-0000-0000000000c1'$$,
+  'Documento, nome e tipo de pessoa já usada só o financeiro muda', 'S-089: o analista não troca o CNPJ de fornecedor já usado');
+select pg_temp.erro_igual($$delete from erp.pessoa_papeis where pessoa_id = '10000000-0000-0000-0000-0000000000c1' and papel = 'fornecedor'$$,
+  'Só o financeiro tira o papel de fornecedor de pessoa já usada', 'S-089: nem tira o papel de fornecedor');
+update erp.pessoas set email = 'contato@fornecedor.test' where id = '10000000-0000-0000-0000-0000000000c1';
+select pg_temp.ok(true, 'S-089: o analista muda o contato do fornecedor');
+select pg_temp.como(:'u7');
+update erp.pessoas set documento = '98989898000198' where id = '10000000-0000-0000-0000-0000000000c1';
+select pg_temp.sis();
+select pg_temp.ok((select count(*) = 2 from erp.auditoria where tabela = 'pessoas' and registro = '10000000-0000-0000-0000-0000000000c1' and acao = 'update')
+                  and exists (select 1 from erp.auditoria where tabela = 'pessoa_papeis' and registro = '10000000-0000-0000-0000-0000000000c1'),
+  'S-089: o financeiro troca o CNPJ, e pessoas e papéis ficam na auditoria');
+select pg_temp.volta();
 -- quem lançou o pagamento continua vendo, mesmo sem o perfil
 select pg_temp.sis(); delete from erp.atribuicoes where user_id = :'u9'; select pg_temp.volta();
 select pg_temp.como(:'u9');
