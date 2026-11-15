@@ -1225,20 +1225,26 @@ create trigger t_so_admin before insert or update or delete on erp.centro_aprova
   for each row execute function erp.tg_so_admin();
 create trigger t_aud_centro_aprovadores after insert or update or delete on erp.centro_aprovadores
   for each row execute function erp.tg_auditoria('centro_custo_id');
--- O último gestor do centro não sai enquanto houver título esperando por ele (S-066).
+-- O último gestor do centro não sai enquanto houver título esperando por ele (S-066); o mesmo
+-- vale para o último diretor da área (centro_diretores, migration _erp_perfis), com a vaga
+-- DIRETOR_AREA pendente.
 create function erp.tg_centro_aprovador() returns trigger language plpgsql as $$
+declare v_vaga text := case tg_table_name when 'centro_diretores' then 'DIRETOR_AREA' else 'AREA' end;
 begin
-  if not exists (select 1 from erp.centro_aprovadores
-                  where centro_custo_id = old.centro_custo_id and user_id <> old.user_id)
+  if not (case v_vaga when 'AREA' then exists (select 1 from erp.centro_aprovadores
+                                                where centro_custo_id = old.centro_custo_id and user_id <> old.user_id)
+                      else exists (select 1 from erp.centro_diretores
+                                    where centro_custo_id = old.centro_custo_id and user_id <> old.user_id) end)
      and exists (select 1 from erp.titulo_alcadas a join erp.titulos t on t.id = a.titulo_id
                   where a.centro_custo_id = old.centro_custo_id and t.situacao = 'aberto' and t.rodada = a.rodada
                     and not erp.alcada_recusada(a.titulo_id)
                     and exists (select 1 from generate_subscripts(a.etapas, 1) i
-                                 where a.etapas[i] = 'AREA'
+                                 where a.etapas[i] = v_vaga
                                    and not exists (select 1 from erp.titulo_aprovacoes v where v.titulo_id = a.titulo_id
                                                     and v.rodada = a.rodada and v.centro_custo_id = a.centro_custo_id
                                                     and v.etapa = i and v.aprovado))) then
-    raise exception 'O centro tem títulos esperando o gestor da área; cadastre outro gestor antes';
+    if v_vaga = 'AREA' then raise exception 'O centro tem títulos esperando o gestor da área; cadastre outro gestor antes'; end if;
+    raise exception 'O centro tem títulos esperando o diretor da área; cadastre outro diretor antes';
   end if;
   return coalesce(new, old);
 end $$;
@@ -1325,7 +1331,7 @@ create table erp.titulo_alcadas (
   centro_custo_id uuid not null references erp.centros_custo,
   etapas          text[] not null,
   paralelo        boolean not null default false,
-  valor_no_centro numeric(15,2) not null,       -- a parte do título no centro (o que vale para o limite do título)
+  valor_no_centro numeric(15,2) not null,       -- a parte do título no centro (o limite do título olha o título inteiro)
   acumulado       numeric(15,2) not null,
   titulos         uuid[] not null,              -- os títulos que formaram o acumulado (S-064)
   alcada_id       uuid,                         -- a faixa que decidiu
@@ -1764,7 +1770,9 @@ begin
     end loop;
     select round(coalesce(sum(t.valor * tr.percentual / 100 - erp.cobertura(tr.id)), 0), 2) into v_valor
       from erp.titulo_rateios tr where tr.titulo_id = t.id and tr.centro_custo_id = cc.centro_custo_id;
-    f := erp._faixa_alcada(cc.centro_custo_id, v_acum, v_valor);
+    -- o limite do título olha o título inteiro em cada centro: dividir no rateio não baixa a faixa
+    -- (S-098, Moises, 15/11/2026); o acumulado do mês é o do centro
+    f := erp._faixa_alcada(cc.centro_custo_id, v_acum, t.valor);
     if f.id is null then raise exception 'Não há alçada de pagamento configurada para %', v_acum; end if;
     v_falta := erp._vagas_sem_gente(f.etapas, cc.centro_custo_id, t.criado_por);
     insert into erp.titulo_alcadas (titulo_id, rodada, centro_custo_id, etapas, paralelo, valor_no_centro, acumulado, titulos,
@@ -1921,6 +1929,9 @@ begin
                                and erp._ocupa_vaga(a0.etapas[i], a0.centro_custo_id, v_eu)
                                and not exists (select 1 from erp.titulo_aprovacoes v where v.titulo_id = a0.titulo_id and v.rodada = a0.rodada
                                                 and v.centro_custo_id = a0.centro_custo_id and v.etapa = i and v.aprovado))) desc,
+              -- sem a vez em nenhum: o centro em que a pessoa já aprovou (a recusa diz isso), depois o primeiro
+              exists (select 1 from erp.titulo_aprovacoes v where v.titulo_id = a0.titulo_id and v.rodada = a0.rodada
+                       and v.centro_custo_id = a0.centro_custo_id and v.por = v_eu) desc,
               a0.centro_custo_id
      limit 1;
   end if;

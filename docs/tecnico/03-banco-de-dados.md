@@ -24,7 +24,7 @@ Onde está: branch `claude/project-thread-dknc98` deste repositório (commits `6
 | `supabase/migrations/20261107000500_erp_rls.sql` | RLS ligado e forçado em toda tabela do `erp`, com uma política só, a do sistema (S-003; as políticas por perfil entram com as telas) |
 | `supabase/migrations/20261107000600_erp_api.sql` | Primeiro grant (15/nov/2026): `authenticated` com RLS por perfil (núcleo × centro × natureza, natureza restrita isolada), políticas por classe de tabela e lista fechada de funções que a API executa; anon e service_role sem acesso (ver `docs/erp.md`, "Acesso pela API") |
 | `supabase/migrations/20261107000700_erp_config.sql` | Mudança da configuração de dinheiro por pedido (15/nov/2026): AF, AD e administrador pedem, a lista de cada tabela aprova (o master define), modo livre até X% em N meses nas faixas de alçada; eventos (`erp.tipos_evento`, `erp.eventos`, `erp.registrar_evento`) de toda mudança nessas tabelas; papéis `erp_config` e `erp_eventos` (ver `docs/erp.md`, "Mudança da configuração de dinheiro") |
-| `supabase/tests/erp.sql` | 868 testes de regra, rodando como o usuário logado sob RLS (os de acesso incluem função `security definer` e catálogo de privilégios) |
+| `supabase/tests/erp.sql` | 878 testes de regra, rodando como o usuário logado sob RLS (os de acesso incluem função `security definer` e catálogo de privilégios) |
 | `supabase/tests/run.sh` | Sobe um Postgres 16 temporário, aplica `shim_supabase.sql` + migrations e roda os testes |
 | `supabase/tests/shim_supabase.sql` | Imita o mínimo do Supabase (`auth.uid()` lido de `request.jwt.claim.sub`) |
 | `docs/erp.md` | Dicionário das tabelas e regras, em português (fonte principal para o detalhe de cada tabela) |
