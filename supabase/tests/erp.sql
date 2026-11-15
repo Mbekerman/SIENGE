@@ -5488,5 +5488,215 @@ select pg_temp.erro_igual(format($$insert into erp.titulo_etiquetas (titulo_id, 
 select pg_temp.como(null);
 rollback;
 
+\echo '# camada de leitura bi (relatórios e painéis)'
+begin;
+select pg_temp.como(null);
+-- calendário único
+select pg_temp.ok((select min(data) = '2015-01-01' and max(data) = make_date(extract(year from bi.hoje())::int + 15, 12, 31)
+                     and count(*) = max(data) - min(data) + 1 from bi.d_calendario),
+  'bi: calendário de 2015 até 31/12 do 15º ano à frente, um dia por linha');
+select pg_temp.ok(bi.estender_calendario() = 0, 'bi: rodar a rotina de novo não cria nada');
+select bi.estender_calendario(16) as bi_novos \gset
+select pg_temp.ok(:bi_novos = (make_date(extract(year from bi.hoje())::int + 16, 12, 31) - make_date(extract(year from bi.hoje())::int + 16, 1, 1) + 1)
+                  and (select feriado from bi.d_calendario where data = make_date(extract(year from bi.hoje())::int + 16, 12, 25)) = 'Natal'
+                  and not exists (select 1 from (select uteis_ate, (count(*) filter (where util) over (order by data))::int as u from bi.d_calendario) x where x.uteis_ate <> x.u),
+  'bi: a rotina cria o ano novo inteiro, com feriados, e refaz a contagem de dias úteis');
+select pg_temp.ok((select feriado from bi.d_calendario where data = '2026-04-03') = 'Sexta-feira Santa'
+                  and (select feriado from bi.d_calendario where data = '2026-02-17') = 'Carnaval'
+                  and (select feriado from bi.d_calendario where data = '2026-06-04') = 'Corpus Christi',
+  'bi: feriados móveis pela Páscoa (Sexta-feira Santa, Carnaval, Corpus Christi de 2026)');
+select pg_temp.ok((select feriado is not null from bi.d_calendario where data = '2026-11-20')
+                  and (select feriado is null from bi.d_calendario where data = '2023-11-20'),
+  'bi: Consciência Negra é feriado nacional a partir de 2024');
+select pg_temp.ok((select not util and fim_de_semana and dia_semana = 6 from bi.d_calendario where data = '2026-11-14')
+                  and (select util and dia_semana = 1 and semana_inicio = '2026-11-16' from bi.d_calendario where data = '2026-11-16'),
+  'bi: sábado não é útil; segunda é dia 1 da semana ISO');
+select pg_temp.ok((select ano_mes = '2026-11' and mes_nome = 'novembro' and trimestre_nome = '2026-T4' and mes_inicio = '2026-11-01'
+                     and mes_fim = '2026-11-30' from bi.d_calendario where data = '2026-11-15'),
+  'bi: o dia leva mês, trimestre, início e fim do mês');
+select pg_temp.ok(bi.dias_uteis('2026-11-13', '2026-11-23') = 5,
+  'bi: dias úteis entre duas datas descontam fim de semana e feriado (13 a 23/11/2026: 5)');
+select pg_temp.ok(bi.data_sp('2026-11-15 01:30:00+00') = '2026-11-14' and bi.data_sp('2026-11-15 03:30:00+00') = '2026-11-15',
+  'bi: a data de um instante é a de São Paulo');
+
+-- sinal da DRE
+select pg_temp.ok((select subtrai from erp.linhas_dre where codigo = 'custo_obra') and not (select subtrai from erp.linhas_dre where codigo = 'receita_bruta'),
+  'bi: custo e despesa marcados para inverter na DRE; receita não');
+select pg_temp.ok((select count(*) from bi.f_livro where valor_dre <> case when (select subtrai from erp.linhas_dre ld join erp.naturezas n on n.linha_dre = ld.codigo where n.id = natureza_id) then -valor else valor end) = 0,
+  'bi: valor_dre inverte o sinal só nas linhas de custo e despesa (sem valor absoluto)');
+
+-- nada se perde: o livro do bi soma o mesmo que o livro do ERP, com o mesmo número de linhas fora da natureza restrita
+select pg_temp.ok((select sum(valor) from bi.f_livro) = (select sum(valor) from erp.lancamentos)
+                  and (select count(*) from bi.f_livro) = (select count(*) from erp.lancamentos),
+  'bi: o livro do bi bate com o livro do ERP');
+select pg_temp.ok((select sum(valor) from bi.f_parcelas) = (select sum(p.valor) from erp.parcelas p join erp.titulos t on t.id = p.titulo_id where t.situacao <> 'rascunho'),
+  'bi: o rateio das parcelas soma o valor de cada parcela, sem centavo perdido');
+select pg_temp.ok((select count(*) from bi.f_pagamentos) = (select count(*) from erp.quitacoes),
+  'bi: uma linha de pagamento por quitação');
+select pg_temp.ok((select count(*) from bi.f_titulo_eventos where evento in ('aprovacao','recusa')) = (select count(*) from erp.titulo_aprovacoes)
+                  and (select count(*) from bi.f_titulo_eventos where evento = 'titulo_lancado') = (select count(*) from erp.titulos),
+  'bi: os eventos do título trazem cada lançamento e cada voto da alçada');
+select pg_temp.ok(not exists (select 1 from bi.f_titulo_eventos where em is null or data is null or data <> bi.data_sp(em)),
+  'bi: todo evento tem o instante e a data em São Paulo');
+
+-- toda data dos fatos é um dia do calendário
+select pg_temp.ok(not exists (
+  select d from (select competencia d from bi.f_livro union select data_caixa from bi.f_livro union select lancado_data from bi.f_livro
+                 union select emissao from bi.f_parcelas union select vencimento from bi.f_parcelas union select competencia from bi.f_parcelas
+                 union select data_pagamento from bi.f_pagamentos union select vencimento from bi.f_pagamentos
+                 union select data from bi.f_adiantamentos union select data from bi.f_titulo_eventos) x
+  where d is not null and not exists (select 1 from bi.d_calendario c where c.data = x.d)),
+  'bi: toda data dos fatos está no calendário');
+
+-- atributos: o atual e a foto do mês
+select pg_temp.ok((select valor from bi.d_nucleo_atributos where nucleo_economico_id = :'ne_vm' and atributo = 'faixa_mcmv' and mes = '2026-03-01') = 'Faixa 2'
+                  and (select valor from bi.d_nucleo_atributos where nucleo_economico_id = :'ne_vm' and atributo = 'faixa_mcmv' and mes = '2026-08-01') = 'Faixa 3'
+                  and (select atributos->>'faixa_mcmv' from bi.d_nucleo where nucleo_economico_id = :'ne_vm') = 'Faixa 3',
+  'bi: o atributo do empreendimento tem a foto de cada mês e o valor atual');
+-- CPF mascarado
+insert into erp.pessoas (id, tipo, nome, documento) values ('10000000-0000-0000-0000-0000000000f1', 'fisica', 'Pessoa BI', '12345678901');
+select pg_temp.ok((select documento from bi.d_pessoa where pessoa_id = '10000000-0000-0000-0000-0000000000f1') = '***.456.789-**',
+  'bi: o CPF aparece só com os dígitos do meio (S-022)');
+-- divisão em níveis e etiquetas
+select pg_temp.ok(not exists (select 1 from bi.d_divisao where nivel1 is null or array_length(string_to_array(caminho, ' > '), 1) <> nivel)
+                  and not exists (select 1 from bi.d_divisao d where d.nivel > 1 and d.nivel2 is null),
+  'bi: cada divisão traz o nome de cada nível acima e o caminho');
+select pg_temp.ok((select count(*) from bi.d_etiqueta) = (select count(*) from erp.etiquetas)
+                  and (select count(*) from bi.f_titulo_etiquetas) = (select count(*) from erp.titulo_etiquetas),
+  'bi: etiquetas como dimensão e a ponte com o título');
+select pg_temp.ok((select count(*) from bi.f_livro where subdivisao_id is not null) = (select count(*) from erp.lancamentos where subdivisao_id is not null),
+  'bi: o livro leva o subnível da divisão');
+select pg_temp.ok(exists (select 1 from erp.auditoria where tabela = 'linhas_dre') is not null, 'bi: (linhas_dre tem gatilho de auditoria)');
+
+-- quem vê o quê: o acesso do ERP; natureza restrita só com liberação e somada por mês
+delete from erp.atribuicao_nucleos; delete from erp.atribuicao_tipos; delete from erp.atribuicoes;
+\set bi1 'b1000000-0000-0000-0000-000000000001'
+\set bi2 'b1000000-0000-0000-0000-000000000002'
+\set bi3 'b1000000-0000-0000-0000-000000000003'
+\set bi4 'b1000000-0000-0000-0000-000000000004'
+insert into erp.usuarios (id, login_id, nome, papel) values
+  (:'bi1', :'bi1', 'BI Mkt', 'leitura'), (:'bi2', :'bi2', 'BI Mkt com PJ', 'leitura'), (:'bi3', :'bi3', 'BI Obra', 'leitura'), (:'bi4', :'bi4', 'BI sem perfil', 'leitura');
+insert into erp.naturezas (codigo, mae_id, nome, restrita) values ('06.77', pg_temp.nat('06'), 'Folha PJ (bi)', true);
+insert into erp.perfis_modelo (id, nome) values
+  ('a3000000-0000-0000-0000-000000000001', 'BI Mkt'), ('a3000000-0000-0000-0000-000000000002', 'BI Mkt PJ'), ('a3000000-0000-0000-0000-000000000003', 'BI Obra');
+insert into erp.perfil_centros values
+  ('a3000000-0000-0000-0000-000000000001', :'cc_mkt', 'leitor'), ('a3000000-0000-0000-0000-000000000002', :'cc_mkt', 'leitor'),
+  ('a3000000-0000-0000-0000-000000000003', :'cc_obra', 'leitor');
+insert into erp.perfil_naturezas values ('a3000000-0000-0000-0000-000000000002', pg_temp.nat('06.77'));
+insert into erp.atribuicoes (user_id, perfil_id, escopo) values
+  (:'bi1', 'a3000000-0000-0000-0000-000000000001', 'todos'), (:'bi2', 'a3000000-0000-0000-0000-000000000002', 'todos'),
+  (:'bi3', 'a3000000-0000-0000-0000-000000000003', 'todos');
+-- o livro só recebe linhas das operações (S-052): aqui, como o papel delas
+set role erp_situacao;
+insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_caixa, valor) values
+  ('realizado', :'incorp', :'ne_corp', :'cc_mkt', pg_temp.nat('05.01.04'), '2031-01-01', '2031-01-10', -1000),
+  ('realizado', :'incorp', :'ne_corp', :'cc_mkt', pg_temp.nat('06.77'), '2031-01-01', '2031-01-05', -5000),
+  ('realizado', :'incorp', :'ne_corp', :'cc_mkt', pg_temp.nat('06.77'), '2031-01-01', '2031-01-20', -3000),
+  ('realizado', :'spe', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), '2031-01-01', '2031-01-15', -2000);
+select pg_temp.como(null);
+create function pg_temp.bi_soma() returns numeric language sql as $$ select coalesce(sum(valor), 0) from bi.f_livro where competencia = '2031-01-01' $$;
+select pg_temp.ok((select count(*) from bi.f_livro where restrita and competencia = '2031-01-01') = 1
+                  and (select valor = -8000 and valor_dre = 8000 and data_caixa = '2031-01-01' and lancamento_id is null and titulo_id is null and divisao_id is null
+                         from bi.f_livro where restrita and competencia = '2031-01-01'),
+  'bi: a natureza restrita entra no livro somada por centro e mês, sem lançamento, título, dia nem divisão');
+select pg_temp.como(:'bi1');
+select pg_temp.ok(pg_temp.bi_soma() = -1000 and not exists (select 1 from bi.f_livro where restrita),
+  'bi: quem vê o Marketing sem a natureza PJ soma só o Marketing, sem o PJ (soma ' || pg_temp.bi_soma() || ')');
+select pg_temp.como(:'bi2');
+select pg_temp.ok(pg_temp.bi_soma() = -9000 and (select count(*) from bi.f_livro where restrita and competencia = '2031-01-01') = 1,
+  'bi: com a natureza PJ liberada, vê o PJ do centro somado no mês (soma ' || pg_temp.bi_soma() || ')');
+select pg_temp.como(:'bi3');
+select pg_temp.ok(pg_temp.bi_soma() = -2000, 'bi: quem vê a Obra não soma o Marketing (soma ' || pg_temp.bi_soma() || ')');
+select pg_temp.como(:'bi4');
+select pg_temp.ok(pg_temp.bi_soma() = 0 and not exists (select 1 from bi.f_parcelas) and not exists (select 1 from bi.f_pagamentos)
+                  and not exists (select 1 from bi.f_titulo_eventos),
+  'bi: sem perfil, nenhum fato aparece');
+select pg_temp.como('ffffffff-0000-0000-0000-00000000dead');
+select pg_temp.ok(not exists (select 1 from bi.d_calendario) and not exists (select 1 from bi.d_nucleo) and not exists (select 1 from bi.f_livro),
+  'bi: login sem cadastro no ERP não lê nem o calendário');
+select pg_temp.como(:'bi1');
+select pg_temp.falha($$insert into bi.d_calendario (data) values ('2041-01-01')$$, 'bi: ninguém grava no calendário');
+select pg_temp.falha($$update bi.d_calendario set util = false where data = '2031-01-02'$$, 'bi: ninguém muda o calendário');
+select pg_temp.falha($$select bi.estender_calendario(20)$$, 'bi: só o sistema estende o calendário');
+select pg_temp.como(null);
+
+-- título com linha restrita sai das parcelas, dos pagamentos e das etapas (o livro guarda a soma)
+select count(*) as bi_parc_obra from bi.f_parcelas where natureza_id = pg_temp.nat('04.01') \gset
+select pg_temp.ok(:bi_parc_obra > 0, 'bi: (há parcelas de obra para o teste: ' || :bi_parc_obra || ')');
+-- rascunho não entra nas parcelas
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor)
+values ('c2000000-0000-0000-0000-0000000000b1', :'incorp', 'avulso', '10000000-0000-0000-0000-000000000007', '2031-01-05', '2031-01-01', 700);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('c2000000-0000-0000-0000-0000000000b1', 1, '2031-02-10', 700);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+values ('c2000000-0000-0000-0000-0000000000b1', :'ne_corp', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select pg_temp.ok(exists (select 1 from erp.parcelas where titulo_id = 'c2000000-0000-0000-0000-0000000000b1')
+                  and not exists (select 1 from bi.f_parcelas where titulo_id = 'c2000000-0000-0000-0000-0000000000b1'),
+  'bi: título em rascunho não entra nas parcelas');
+-- quem vê o título só por ter votado na alçada (sem perfil) não vê, nas parcelas, as linhas que não vê
+select t.id as bi_tit_alc, t.rodada as bi_rod, (select r.centro_custo_id from erp.titulo_rateios r where r.titulo_id = t.id limit 1) as bi_cc_alc
+  from erp.titulos t where t.situacao <> 'rascunho' and exists (select 1 from erp.parcelas p where p.titulo_id = t.id)
+   and exists (select 1 from erp.titulo_rateios r where r.titulo_id = t.id and r.centro_custo_id is not null)
+ order by t.criado_em limit 1 \gset
+set role erp_situacao;
+insert into erp.titulo_alcadas (id, titulo_id, rodada, centro_custo_id, fases, valor_no_centro, acumulado, titulos)
+values ('c3000000-0000-0000-0000-0000000000a1', :'bi_tit_alc', :bi_rod, :'bi_cc_alc', array['AF'], 1, 1, array[:'bi_tit_alc'::uuid]);
+reset role;
+select set_config('request.jwt.claim.sub', :'bi4', false);
+set role erp_situacao;
+insert into erp.titulo_aprovacoes (alcada_id, fase, lista, aprovado) values ('c3000000-0000-0000-0000-0000000000a1', 1, 'AF', true);
+select pg_temp.como(:'bi4');
+select pg_temp.ok(exists (select 1 from erp.parcelas where titulo_id = :'bi_tit_alc')
+                  and not exists (select 1 from bi.f_parcelas where titulo_id = :'bi_tit_alc'),
+  'bi: quem vê o título por ter votado não soma nas parcelas a linha de centro que não vê');
+select pg_temp.como(null);
+-- uma etiqueta num título pago, de natureza comum (o título pago tem linha que vai virar restrita)
+insert into erp.etiquetas (id, nome) values ('c4000000-0000-0000-0000-0000000000e1', 'Campanha BI');
+insert into erp.titulo_etiquetas (titulo_id, etiqueta_id)
+select p.titulo_id, 'c4000000-0000-0000-0000-0000000000e1' from erp.quitacoes q join erp.parcelas p on p.id = q.parcela_id limit 1;
+-- natureza restrita: torna restritas a obra e as naturezas de um título pago e de um com etiqueta
+select (select r.natureza_id from erp.titulo_rateios r join erp.parcelas p on p.titulo_id = r.titulo_id
+          join erp.quitacoes q on q.parcela_id = p.id limit 1) as bi_nat_pag,
+       (select r.natureza_id from erp.titulo_rateios r join erp.titulo_etiquetas te on te.titulo_id = r.titulo_id limit 1) as bi_nat_et \gset
+select pg_temp.ok(exists (select 1 from bi.f_pagamentos g where exists (select 1 from erp.titulo_rateios r where r.titulo_id = g.titulo_id and r.natureza_id = :'bi_nat_pag'))
+                  and exists (select 1 from bi.f_titulo_etiquetas g where exists (select 1 from erp.titulo_rateios r where r.titulo_id = g.titulo_id and r.natureza_id = :'bi_nat_et')),
+  'bi: (há título pago e título com etiqueta para o teste da natureza restrita)');
+update erp.naturezas set restrita = true where codigo = '04.01' or id in (:'bi_nat_pag', :'bi_nat_et');
+select pg_temp.ok(not exists (select 1 from bi.f_pagamentos g where exists (select 1 from erp.titulo_rateios r where r.titulo_id = g.titulo_id and erp.natureza_restrita(r.natureza_id)))
+                  and not exists (select 1 from bi.f_titulo_etiquetas g where exists (select 1 from erp.titulo_rateios r where r.titulo_id = g.titulo_id and erp.natureza_restrita(r.natureza_id)))
+                  and not exists (select 1 from bi.f_parcelas g where exists (select 1 from erp.titulo_rateios r where r.titulo_id = g.titulo_id and erp.natureza_restrita(r.natureza_id)))
+                  and not exists (select 1 from bi.f_titulo_eventos g where exists (select 1 from erp.titulo_rateios r where r.titulo_id = g.titulo_id and erp.natureza_restrita(r.natureza_id))),
+  'bi: título com qualquer linha restrita, mesmo misturada com linha comum, sai de parcelas, pagamentos, eventos e etiquetas (S-113)');
+select pg_temp.ok(not exists (select 1 from bi.f_parcelas where natureza_id = pg_temp.nat('04.01'))
+                  and not exists (select 1 from bi.f_titulo_eventos e where exists (select 1 from erp.titulo_rateios r where r.titulo_id = e.titulo_id and r.natureza_id = pg_temp.nat('04.01')))
+                  and not exists (select 1 from bi.f_pagamentos g where exists (select 1 from erp.titulo_rateios r where r.titulo_id = g.titulo_id and r.natureza_id = pg_temp.nat('04.01')))
+                  and not exists (select 1 from bi.f_titulo_etiquetas g where exists (select 1 from erp.titulo_rateios r where r.titulo_id = g.titulo_id and r.natureza_id = pg_temp.nat('04.01'))),
+  'bi: título com linha de natureza restrita não aparece em parcelas, pagamentos, eventos nem etiquetas');
+select pg_temp.ok((select sum(valor) from bi.f_livro) = (select sum(valor) from erp.lancamentos),
+  'bi: somada, a natureza restrita não muda o total do livro');
+
+-- catálogo: só leitura, só para o usuário logado, sempre com o RLS de quem consulta
+select pg_temp.ok(not exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+                               where n.nspname = 'bi' and c.relkind = 'v'
+                                 and not (coalesce(c.reloptions, '{}') @> array['security_invoker=true', 'security_barrier=true'])),
+  'bi: toda visão é security_invoker e security_barrier');
+select pg_temp.ok(not exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+                               where n.nspname = 'bi' and c.relkind = 'r' and not (c.relrowsecurity and c.relforcerowsecurity)),
+  'bi: toda tabela tem RLS forçado');
+select pg_temp.ok(not exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+                               cross join (values ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE')) p(priv)
+                               where n.nspname = 'bi' and c.relkind in ('r','v') and has_table_privilege('authenticated', c.oid, p.priv)),
+  'bi: o usuário logado não grava em nada do bi');
+select pg_temp.ok(not exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+                               cross join (values ('anon'), ('service_role')) r(papel)
+                               where n.nspname = 'bi' and c.relkind in ('r','v') and exists (select 1 from pg_roles where rolname = r.papel)
+                                 and has_table_privilege(r.papel, c.oid, 'SELECT'))
+                  and not exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace, aclexplode(c.relacl) a
+                                   where n.nspname = 'bi' and a.grantee = 0)
+                  and not has_schema_privilege('public', 'bi', 'USAGE'),
+  'bi: nada para anon, service_role nem public');
+select pg_temp.ok(not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'bi' and p.prosecdef),
+  'bi: nenhuma função definer (o acesso é só o RLS de quem consulta)');
+rollback;
+
 \echo '# fim'
 do $$ begin raise notice 'TODOS OS TESTES PASSARAM'; end $$;
