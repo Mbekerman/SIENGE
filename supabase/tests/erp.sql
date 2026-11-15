@@ -4998,6 +4998,10 @@ alter table erp.divisoes disable trigger t_teste_libera;
 alter table erp.naturezas disable trigger t_teste_libera;
 \set dv_inf '87000000-0000-0000-0000-0000000000c1'
 \set tit_nl '88000000-0000-0000-0000-0000000000c2'
+\set dv_inf2 '87000000-0000-0000-0000-0000000000c3'
+\set doc_nl '70000000-0000-0000-0000-0000000000c4'
+\set cmp_nl '60000000-0000-0000-0000-0000000000c5'
+\set tit_sd '88000000-0000-0000-0000-0000000000c6'
 select pg_temp.como(:'diretor');
 select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('centro_custo_id', %L, 'nome', 'Sem naturezas'), 'x')$$, :'cc_mkt'),
   'Diga as naturezas liberadas para lançamento na divisão nova', 'naturezas: a divisão nova nasce dizendo as naturezas liberadas');
@@ -5023,6 +5027,22 @@ insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id,
 values (:'tit_nl', :'ne_vm', :'cc_mkt', :'dv_inf', pg_temp.nat('05.01.04'), 100);
 select pg_temp.falha(format($$update erp.titulo_rateios set natureza_id = %L where titulo_id = %L$$, pg_temp.nat('04.01'), :'tit_nl'),
   'naturezas: não troca a linha para natureza não liberada');
+-- a trava vale também no contrato e na nota
+insert into erp.compromissos (id, empresa_id, tipo, pessoa_id, numero, descricao, inicio, valor_total)
+values (:'cmp_nl', :'spe', 'contrato', '10000000-0000-0000-0000-000000000005', 'CT-NL', 'Influência', '2026-10-01', 1000);
+select pg_temp.erro_igual(format($$insert into erp.compromisso_rateios (compromisso_id, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, percentual)
+  values (%L, %L, %L, %L, %L, 100)$$, :'cmp_nl', :'ne_vm', :'cc_mkt', :'dv_inf', pg_temp.nat('04.02')),
+  format('A natureza "%s" não está liberada para lançamento em "Marketing > Influencer"', (select nome from erp.naturezas where id = pg_temp.nat('04.02'))),
+  'naturezas: o rateio do contrato só usa natureza liberada');
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+values (:'doc_nl', :'spe', '10000000-0000-0000-0000-000000000005', 'nfse', 'NL-1', '2026-10-02', '2026-10-01', 30);
+select pg_temp.erro_igual(format($$insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, percentual)
+  values (%L, %L, %L, %L, %L, 100)$$, :'doc_nl', :'ne_vm', :'cc_mkt', :'dv_inf', pg_temp.nat('04.02')),
+  format('A natureza "%s" não está liberada para lançamento em "Marketing > Influencer"', (select nome from erp.naturezas where id = pg_temp.nat('04.02'))),
+  'naturezas: o rateio da nota só usa natureza liberada');
+-- a nota em rascunho, na natureza ainda liberada (o lançar copia depois que ela for desligada)
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, percentual)
+values (:'doc_nl', :'ne_vm', :'cc_mkt', :'dv_inf', pg_temp.nat('05.01.04'), 100);
 -- quem liga e desliga: master, administrador, AF, AO e AD, na hora
 select pg_temp.como(:'analista2');
 select pg_temp.falha(format($$insert into erp.naturezas_liberadas (centro_custo_id, divisao_id, natureza_id) values (%L, %L, %L)$$,
@@ -5061,6 +5081,37 @@ select pg_temp.ok(not exists (select 1 from erp.naturezas_liberadas where divisa
 select pg_temp.ok(array(select erp.titulos_abertos_na_natureza(:'cc_mkt', :'dv_inf', pg_temp.nat('05.01.04'))) = array[:'tit_nl'::uuid]
                   and not exists (select erp.titulos_abertos_na_natureza(:'cc_mkt', :'dv_inf', pg_temp.nat('04.01'))),
   'naturezas: quem desliga vê os títulos em aberto que ficaram na natureza');
+-- o título que o sistema cria da nota segue a nota, mesmo com a natureza já desligada
+select erp.lancar_documento(:'doc_nl', array['2026-10-20']::date[]) as tit_doc_nl \gset
+select pg_temp.ok((select natureza_id from erp.titulo_rateios where titulo_id = :'tit_doc_nl') = pg_temp.nat('05.01.04'),
+  'naturezas: a cópia do sistema (nota para título) segue a origem com a natureza desligada');
+select pg_temp.ok((select array_agg(x order by x) from erp.titulos_abertos_na_natureza(:'cc_mkt', :'dv_inf', pg_temp.nat('05.01.04')) x)
+                    = (select array_agg(x order by x) from unnest(array[:'tit_nl'::uuid, :'tit_doc_nl'::uuid]) x)
+                  and not exists (select erp.titulos_abertos_na_natureza(:'cc_mkt', null, pg_temp.nat('05.01.04'))),
+  'naturezas: a lista dos em aberto filtra pela divisão');
+select pg_temp.sis(); select set_config('role', 'erp_situacao', true);
+update erp.titulos set situacao = 'cancelado', cancelamento = 'recusa' where id = :'tit_doc_nl';
+select set_config('role', 'none', true); select pg_temp.volta();
+select pg_temp.ok(array(select erp.titulos_abertos_na_natureza(:'cc_mkt', :'dv_inf', pg_temp.nat('05.01.04'))) = array[:'tit_nl'::uuid],
+  'naturezas: título cancelado sai da lista dos em aberto');
+-- divisão criada com várias naturezas: entram todas; mudar a linha de divisão confere a lista da nova
+select pg_temp.como(:'diretor');
+select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('id', :'dv_inf2', 'centro_custo_id', :'cc_mkt', 'nome', 'Influencer 2',
+  'naturezas', jsonb_build_array(pg_temp.nat('04.01'), pg_temp.nat('04.02'), pg_temp.nat('04.01'))), 'Influencer 2');
+select pg_temp.ok((select array_agg(natureza_id order by natureza_id) from erp.naturezas_liberadas where divisao_id = :'dv_inf2')
+                    = (select array_agg(x order by x) from unnest(array[pg_temp.nat('04.01'), pg_temp.nat('04.02')]) x),
+  'naturezas: a divisão criada com várias naturezas recebe todas, sem repetir');
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format($$update erp.titulo_rateios set divisao_id = %L where titulo_id = %L$$, :'dv_inf2', :'tit_nl'),
+  format('A natureza "%s" não está liberada para lançamento em "Marketing > Influencer 2"', (select nome from erp.naturezas where id = pg_temp.nat('05.01.04'))),
+  'naturezas: mover a linha para divisão sem a natureza é recusado');
+-- a reclassificação só apaga linha liberada (quando a natureza esvaziada se apaga), nunca liga
+select pg_temp.como(null);
+select set_config('role', 'erp_reclassificacao', true);
+select pg_temp.falha(format($$insert into erp.naturezas_liberadas (centro_custo_id, divisao_id, natureza_id) values (%L, %L, %L)$$,
+  :'cc_mkt', :'dv_inf', pg_temp.nat('04.02')), 'naturezas: a reclassificação não liga natureza');
+select set_config('role', 'none', true);
+select pg_temp.como(:'analista');
 update erp.titulo_rateios set centro_custo_id = :'cc_mkt', divisao_id = :'dv_inf', percentual = 100 where titulo_id = :'tit_nl';
 update erp.titulos set valor = 20 where id = :'tit_nl';
 select pg_temp.ok((select valor from erp.titulos where id = :'tit_nl') = 20
@@ -5089,6 +5140,22 @@ select pg_temp.erro_igual(format($$insert into erp.previsoes (empresa_id, origem
   format('A natureza "%s" não está liberada para lançamento em "%s"', (select nome from erp.naturezas where id = pg_temp.nat('04.02')),
          (select nome from erp.centros_custo where id = :'cc_sd')),
   'naturezas: no centro sem divisão vale a lista do próprio centro');
+-- mover a linha para outro centro sem a natureza é recusado
+select id as cc_sd2 from erp.centros_custo c where not exists (select 1 from erp.divisoes d where d.centro_custo_id = c.id)
+  and nome not in ('Obra', 'Marketing') and id <> :'cc_sd' order by nome limit 1 \gset
+select pg_temp.como(:'diretor');
+insert into erp.nucleo_centros (nucleo_economico_id, centro_custo_id, ligado) values (:'ne_vm', :'cc_sd2', true)
+  on conflict (nucleo_economico_id, centro_custo_id) do update set ligado = true;
+delete from erp.naturezas_liberadas where centro_custo_id = :'cc_sd2' and natureza_id = pg_temp.nat('04.01');
+select pg_temp.como(:'analista');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  (:'tit_sd', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-10-02', '2026-10-01', 10);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+values (:'tit_sd', :'ne_vm', :'cc_sd', pg_temp.nat('04.01'), 100);
+select pg_temp.erro_igual(format($$update erp.titulo_rateios set centro_custo_id = %L where titulo_id = %L$$, :'cc_sd2', :'tit_sd'),
+  format('A natureza "%s" não está liberada para lançamento em "%s"', (select nome from erp.naturezas where id = pg_temp.nat('04.01')),
+         (select nome from erp.centros_custo where id = :'cc_sd2')),
+  'naturezas: mover a linha para centro sem a natureza é recusado');
 -- a lista do centro não vale para as divisões dele
 select pg_temp.como(:'diretor');
 delete from erp.naturezas_liberadas where centro_custo_id = :'cc_mkt' and divisao_id is null and natureza_id = pg_temp.nat('04.01');
