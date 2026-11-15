@@ -4911,5 +4911,29 @@ select pg_temp.erro_igual(format($$select erp.registrar_envio_notificacao(%s, 'e
 select pg_temp.como(null);
 rollback;
 
+-- ---------------------------------------------------------------------
+\echo '# etapa do núcleo: tirada do núcleo e da data, ninguém escolhe'
+begin;
+select pg_temp.como(:'analista');
+select pg_temp.falha(format($$insert into erp.nucleo_etapas (nucleo_economico_id, inicio, etapa_id)
+  values (%L, '2026-01-01', (select id from erp.etapas where nome = 'Obra'))$$, :'ne_vm'), 'etapa: analista não marca a etapa do núcleo');
+select pg_temp.como(:'ti');
+insert into erp.nucleo_etapas (nucleo_economico_id, inicio, etapa_id) values
+  (:'ne_vm', '2000-01-01', (select id from erp.etapas where nome = 'Incorporação')),
+  (:'ne_vm', '2026-04-01', (select id from erp.etapas where nome = 'Obra'));
+select pg_temp.como(null);
+select pg_temp.ok(exists (select 1 from erp.auditoria where tabela = 'nucleo_etapas'), 'etapa: a etapa do núcleo fica na auditoria');
+select pg_temp.como(:'diretor');
+select pg_temp.ok(erp.etapa_do_nucleo(:'ne_vm', '2026-03-31') = (select id from erp.etapas where nome = 'Incorporação')
+                  and erp.etapa_do_nucleo(:'ne_vm', '2026-04-01') = (select id from erp.etapas where nome = 'Obra')
+                  and erp.etapa_do_nucleo(:'ne_corp', '2026-04-01') is null,
+  'etapa: vale a de início mais recente até a data; núcleo sem etapa fica sem');
+select pg_temp.ok((select bool_and(etapa = case when competencia < '2026-04-01' then 'Incorporação' else 'Obra' end)
+                     from erp.v_lancamentos_bi where nucleo_economico_id = :'ne_vm')
+                  and exists (select 1 from erp.v_lancamentos_bi where nucleo_economico_id = :'ne_vm'),
+  'etapa: o BI mostra a etapa do núcleo na competência de cada linha');
+select pg_temp.como(null);
+rollback;
+
 \echo '# fim'
 do $$ begin raise notice 'TODOS OS TESTES PASSARAM'; end $$;

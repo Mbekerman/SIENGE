@@ -280,6 +280,7 @@ begin
     ('nucleos_economicos', 'erp.membro()', 'erp.sou_admin()'),
     ('nucleo_centros', 'erp.membro()', 'erp.sou_admin()'),
     ('etapas', 'erp.membro()', 'erp.sou_admin()'),
+    ('nucleo_etapas', 'erp.membro()', 'erp.sou_admin()'),
     ('linhas_dre', 'erp.membro()', 'erp.sou_admin()'),
     ('niveis_aprovacao', 'erp.membro()', 'erp.sou_master()'),
     ('alcadas_pagamento', 'erp.membro()', 'erp.sou_master()'),
