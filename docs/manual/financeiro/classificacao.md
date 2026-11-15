@@ -12,7 +12,7 @@
 | Onde ele é apropriado? | Centro de custo | Marketing |
 | Que gasto é? | Natureza | Comerciais › Marketing › Marketing online |
 | Quando? | Competência e data de caixa | competência out/2027, pago em nov/2027 |
-| Em que momento do projeto? | Fase (calculada sozinha, só para relatório) | Obras |
+| Em que momento do projeto? | Etapa, antes chamada fase (calculada sozinha, só para relatório) | Obras |
 
 > ⚠️ **Nomes trocados em 14/nov/2026** (Moises). O que este manual chamava de **centro de custo** (a obra, o Corporativo) agora é **núcleo econômico**. O que chamava de **área** (Marketing, Comercial, Administrativo) agora é **centro de custo**. As regras não mudaram com a troca. No Sienge, "centro de custo" continua sendo a obra, ou seja, o nosso núcleo econômico. Cuidado na transição.
 
@@ -43,11 +43,15 @@ Hoje a BKM usa no Sienge "centro de custo Marketing, natureza MKT Online, motivo
 
 **Travas, alçadas e aprovações** podem ser dadas em qualquer das três dimensões. Também se pode **liberar ou bloquear cada pessoa para lançar** em cada uma delas.
 
-A **fase** (o momento da vida da obra) **é calculada sozinha**, a partir do núcleo e da data, e serve só para os relatórios. Ninguém a escolhe no lançamento, e ela não entra no acesso nem na aprovação.
+A **etapa** (até 15/nov/2026 chamada "fase") é o momento do empreendimento: Terreno, Aprovação de projetos, Incorporação, Lançamento, Obra, Pós-obra e Corporativo. **É calculada sozinha**, a partir do núcleo e da data, e serve só para os relatórios. Ninguém a escolhe no lançamento, e ela não entra no acesso nem na aprovação (Moises, 15/nov/2026).
+
+✅ **Divisão** é a subdivisão de um centro de custo, por exemplo Marketing › PDV, Online, Offline e Eventos. A divisão terá permissão e alçada próprias (Moises, 15/nov/2026; ainda não no código).
+
+⚠️ Cuidado com o nome: "etapa" também é usada para as etapas de uma aprovação (gestor, AF, AD) e para as etapas da implantação. No manual, "etapa do empreendimento" é a antiga fase.
 
 **Mover um núcleo de lugar na árvore, ou ligar e desligar um centro de custo num núcleo, exige aprovação** e fica registrado, porque muda quem vê e quem aprova. (A aprovação de ligar e desligar é 🟡 proposta, por extensão da regra de 8/nov.)
 
-🟡 Em aberto: Terreno, Incorporação, Obra e Assistência técnica, como centros de custo, lembram a fase (que é calculada sozinha) e a natureza. É preciso combinar a regra: o centro de custo diz quem responde pelo gasto, a natureza diz o que foi comprado e a fase diz quando.
+🟡 Em aberto: Terreno, Incorporação, Obra e Assistência técnica, como centros de custo, lembram a etapa do empreendimento (que é calculada sozinha) e a natureza. É preciso combinar a regra: o centro de custo diz quem responde pelo gasto, a natureza diz o que foi comprado e a etapa diz quando.
 
 Hoje o Sienge tem 97 centros de custo, que misturam obra, tipo de gasto e momento. Eles viram cerca de 25 núcleos econômicos na árvore, mais a lista de centros de custo. ⏳ O de-para com o Sienge está em rascunho. Enquanto os títulos forem criados lá, cada combinação núcleo × centro de custo × natureza tem de apontar para exatamente uma conta e um centro de custo (obra) do Sienge, senão o título não sobe.
 
