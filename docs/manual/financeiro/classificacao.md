@@ -59,6 +59,10 @@ Hoje a BKM usa no Sienge "centro de custo Marketing, natureza MKT Online, motivo
 
   Master, administrador, AF, AO e AD trocam a forma na hora. Não se vincula se algum contrato ativo do galho ficar numa natureza que o nível de cima não libera. Ao desvincular, o nível começa com a lista que valia. Desligar, no nível de cima, uma natureza presa por contrato de um nível vinculado é recusado.
 
+  > 🧪 No protótipo (15/nov/2026, ainda não aprovado), um nível com subníveis não escolhe naturezas: mostra, só para leitura, a soma das naturezas dos últimos níveis abaixo dele. Exemplo: Marketing › Online › Mídia paga › Meta, e abaixo de Meta os últimos níveis Lançamentos e Remarketing, cada um com as suas naturezas. 🟡 A conferir com o Moises: isso não fecha com a forma "vinculada ao nível de cima", porque o nível de cima passaria a ser a soma dos de baixo.
+
+  ![Divisão em quatro níveis, com as naturezas de cada um](../imagens/financeiro/divisao-niveis.png)
+
 🟡 **Etiquetas** (Moises, 15/nov/2026; ainda sem código): etiquetas livres nos títulos, por exemplo o nome de uma campanha, servem para filtrar e para relatórios. Não entram em aprovação, alçada nem acesso. Quem lança cria a etiqueta e a põe no título. O nome não se repete. Etiqueta não se apaga, só se desativa.
 
 ✅ Para não confundir: cada passo de uma aprovação (gestor, AF, AD) se chama **fase de aprovação** (Moises, 15/nov/2026).
