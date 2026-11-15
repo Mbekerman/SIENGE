@@ -7,6 +7,7 @@ Os avisos do sistema chegam pelo sino e, conforme a regra, por e-mail e WhatsApp
 - ✅ Um **painel** diz quem recebe cada tipo de aviso. O destino pode ser uma pessoa, um papel, uma lista (AF, AO, AD), o gestor ou os diretores do centro de custo, quem fez o pedido, quem aprova o pedido, os administradores ou o master.
 - ✅ Cada regra pode valer só para um núcleo econômico ou um centro de custo, e diz se o aviso vai também por e-mail e WhatsApp. O sino recebe sempre.
 - ✅ Ninguém recebe aviso do que não pode ver (núcleo e centro). Quem fez a ação não é avisado dela.
+- ✅ Com divisões: quem tem acesso só a uma divisão (ex.: só o PDV do Marketing) recebe os avisos daquela divisão, não os das outras nem os do centro inteiro. Quem tem o centro inteiro recebe os de todas as divisões. Quando uma faixa de alçada sai de uma divisão para outra, avisa quem cuida de qualquer uma das duas (PR #44).
 - ✅ Quando um pedido vai ao master por falta de aprovadores qualificados, o aviso diz isso.
 
 ## Avisos críticos
