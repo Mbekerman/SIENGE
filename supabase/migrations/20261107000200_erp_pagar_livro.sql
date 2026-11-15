@@ -582,11 +582,12 @@ end $$;
 create trigger t_divisao_linha before insert or update of centro_custo_id, divisao_id on erp.pagamentos
   for each row execute function erp.tg_divisao_linha();
 
--- Naturezas liberadas para lançamento em cada divisão, ou no centro sem divisão (Moises,
--- 15/11/2026). A escolha faz parte da criação da divisão; depois o master, o administrador e
--- AF, AO e AD ligam e desligam na hora, com auditoria. Natureza nova nasce desligada. Num centro
--- com divisões vale a lista de cada divisão. Desligar não mexe no que já foi lançado: só barra
--- lançar de novo ou trocar para ela.
+-- Naturezas liberadas para lançamento (Moises, 15/11/2026). Só o último nível tem lista: a
+-- divisão sem níveis abaixo, ou o centro sem divisão. O nível com níveis abaixo (o centro com
+-- divisões, a divisão com subníveis) não tem lista própria: vale a soma das listas de baixo
+-- (erp.natureza_ligada). A escolha faz parte da criação do nível; depois o master, o
+-- administrador e AF, AO e AD ligam e desligam na hora, com auditoria. Natureza nova nasce
+-- desligada. Desligar não mexe no que já foi lançado: só barra lançar de novo ou trocar para ela.
 create table erp.naturezas_liberadas (
   centro_custo_id uuid not null references erp.centros_custo on delete cascade,
   divisao_id      uuid,
@@ -596,7 +597,7 @@ create table erp.naturezas_liberadas (
 );
 create function erp.tg_natureza_liberada_cfg() returns trigger language plpgsql as $$
 begin
-  if tg_op = 'UPDATE' and tg_table_name not in ('modelos_naturezas', 'naturezas_modo') then
+  if tg_op = 'UPDATE' and tg_table_name <> 'modelos_naturezas' then
     raise exception 'Natureza liberada não se altera: desligue e ligue';
   end if;
   if erp.agindo_como('erp_acesso') or erp.sistema()
@@ -607,15 +608,10 @@ begin
   if not (erp.sou_admin() or erp.financeiro()) then
     raise exception 'Só o master, o administrador e AF, AO ou AD ligam e desligam naturezas';
   end if;
-  if tg_table_name = 'naturezas_liberadas' and tg_op = 'INSERT' then
-    if exists (select 1 from erp.naturezas_modo where divisao_id = new.divisao_id and modo = 'vinculada') then
-      raise exception 'A divisão segue as naturezas do nível de cima: passe para lista própria (ou cópia) antes de mudar';
-    end if;
-  end if;
-  if tg_table_name = 'naturezas_liberadas' and tg_op = 'DELETE' then   -- (o plpgsql não para no primeiro "and")
-    if erp.natureza_presa(old.centro_custo_id, old.divisao_id, old.natureza_id) then
-      raise exception 'A natureza "%" tem contrato ou pedido ativo neste centro e divisão: reclassifique antes de desligar',
-        (select nome from erp.naturezas where id = old.natureza_id);
+  if tg_table_name = 'naturezas_liberadas' and tg_op = 'INSERT' then   -- (o plpgsql não para no primeiro "and")
+    if (new.divisao_id is null and exists (select 1 from erp.divisoes where centro_custo_id = new.centro_custo_id and ativa))
+       or (new.divisao_id is not null and not erp.divisao_folha(new.divisao_id)) then
+      raise exception 'Este nível tem níveis abaixo: as naturezas dele são a soma das de baixo; ligue-a no último nível';
     end if;
   end if;
   return coalesce(new, old);
@@ -624,64 +620,25 @@ create trigger t_natureza_liberada_cfg before insert or update or delete on erp.
   for each row execute function erp.tg_natureza_liberada_cfg();
 create trigger t_aud_naturezas_liberadas after insert or delete on erp.naturezas_liberadas
   for each row execute function erp.tg_auditoria('centro_custo_id');
-
--- De onde vem a lista de cada divisão ou subnível (Moises, 15/11/2026). Sem linha aqui, a lista
--- é própria (marcada à mão ou por modelo). 'vinculada': segue ao vivo a lista que vale no nível
--- de cima (no primeiro nível, a do centro) e não tem lista própria. 'copia': a lista foi copiada
--- do nível de cima e depois anda sozinha; a marca só serve para mostrar. Quem muda: os mesmos
--- que ligam e desligam naturezas, na hora. Vincular confere antes que nada ativo fica numa
--- natureza que o nível de cima não libera; desvincular (ou copiar) traz a lista de cima.
-create table erp.naturezas_modo (
-  divisao_id uuid primary key references erp.divisoes,
-  modo       text not null check (modo in ('vinculada','copia'))
-);
-create trigger t_natureza_liberada_cfg before insert or update or delete on erp.naturezas_modo
-  for each row execute function erp.tg_natureza_liberada_cfg();
-create trigger t_aud_naturezas_modo after insert or update or delete on erp.naturezas_modo
-  for each row execute function erp.tg_auditoria('divisao_id');
-
--- O nível cuja lista vale para a divisão ou subnível: sobe enquanto o nível está vinculado.
--- Nulo: a lista do centro (divisão nula, ou cadeia vinculada até o primeiro nível).
-create function erp.no_naturezas(p_divisao uuid) returns uuid language sql stable as $$
-  with recursive c(id, mae_id, modo, prof) as (
-    select d.id, d.mae_id, m.modo, 0 from erp.divisoes d
-      left join erp.naturezas_modo m on m.divisao_id = d.id where d.id = p_divisao
-    union all
-    select d.id, d.mae_id, m.modo, c.prof + 1 from c join erp.divisoes d on d.id = c.mae_id
-      left join erp.naturezas_modo m on m.divisao_id = d.id where c.modo = 'vinculada')
-  select id from c where modo is distinct from 'vinculada' order by prof limit 1 $$;
-
--- Depois de mudar o modo: vinculada perde a lista própria; cópia (ou o fim do vínculo) traz a
--- lista que vale no nível de cima. Roda com quem mudou: a trava de cada linha continua valendo.
-create function erp.tg_naturezas_modo() returns trigger language plpgsql as $$
-declare v_div uuid := coalesce(new.divisao_id, old.divisao_id); d erp.divisoes; v_cima uuid;
+-- Natureza presa (Moises, 15/11/2026): não se desliga natureza em que fica contrato ou pedido
+-- ativo com linha numa natureza que deixou de valer para ele. Confere depois de apagar, pela
+-- lista que vale (a do último nível, ou a soma para a linha antiga de um nível que ganhou
+-- níveis abaixo). Vale também quando o pedido de um nível novo tira a lista do nível de cima.
+create function erp.tg_natureza_presa() returns trigger language plpgsql as $$
 begin
-  select * into d from erp.divisoes where id = v_div;
-  v_cima := erp.no_naturezas(d.mae_id);
-  if tg_op <> 'DELETE' and new.modo = 'vinculada' then
-    if erp.natureza_presa_no_galho(v_div) then
-      raise exception 'Há contrato ou pedido ativo numa natureza que o nível de cima não libera: reclassifique ou ligue-a lá antes de vincular';
-    end if;
-    delete from erp.naturezas_liberadas where divisao_id = v_div;
-  elsif (tg_op <> 'DELETE' and new.modo = 'copia') or (tg_op <> 'INSERT' and old.modo = 'vinculada') then
-    if tg_op <> 'DELETE' and new.modo = 'copia' then
-      delete from erp.naturezas_liberadas l where l.divisao_id = v_div
-         and not exists (select 1 from erp.naturezas_liberadas c where c.centro_custo_id = d.centro_custo_id
-                          and c.divisao_id is not distinct from v_cima and c.natureza_id = l.natureza_id);
-    end if;
-    insert into erp.naturezas_liberadas (centro_custo_id, divisao_id, natureza_id)
-    select d.centro_custo_id, v_div, c.natureza_id from erp.naturezas_liberadas c
-     where c.centro_custo_id = d.centro_custo_id and c.divisao_id is not distinct from v_cima
-    on conflict do nothing;
+  if erp.agindo_como('erp_reclassificacao') or erp.sistema() then return null; end if;
+  if erp.natureza_presa(old.centro_custo_id, old.divisao_id, old.natureza_id) then
+    raise exception 'A natureza "%" tem contrato ou pedido ativo neste centro e divisão: reclassifique antes de desligar',
+      (select nome from erp.naturezas where id = old.natureza_id);
   end if;
   return null;
 end $$;
-create trigger t_naturezas_modo after insert or update or delete on erp.naturezas_modo
-  for each row execute function erp.tg_naturezas_modo();
+create trigger t_natureza_presa after delete on erp.naturezas_liberadas
+  for each row execute function erp.tg_natureza_presa();
 
--- Modelos de naturezas (Moises, 15/11/2026): listas pré-definidas para marcar de uma vez ao criar
--- a divisão (ou ao ajustar uma existente). O modelo só guarda a lista; aplicar é marcar as
--- naturezas dele. Quem mexe: os mesmos que ligam e desligam naturezas.
+-- Modelos de naturezas (Moises, 15/11/2026): listas salvas para marcar de uma vez ao criar o nível
+-- (ou ao ajustar um existente). O modelo só guarda a lista; aplicar é marcar as naturezas dele.
+-- Quem mexe: os mesmos que ligam e desligam naturezas.
 create table erp.modelos_naturezas (
   id    uuid primary key default gen_random_uuid(),
   nome  text not null unique check (length(trim(nome)) > 0),
@@ -703,8 +660,25 @@ begin
   end loop;
 end $$;
 
--- A linha que uma pessoa grava usa natureza liberada na divisão (ou no centro sem divisão).
--- A cópia feita pelo sistema segue a origem, como a divisão. Invoker: precisa saber quem grava.
+-- O nível p_acima é p_nivel ou fica acima dele na árvore (nulo = o centro, acima de tudo).
+create function erp.nivel_acima(p_acima uuid, p_nivel uuid) returns boolean language sql stable as $$
+  select p_acima is not distinct from p_nivel
+      or (p_nivel is not null and (p_acima is null or exists (
+            with recursive a(id) as (select mae_id from erp.divisoes where id = p_nivel union all
+                                     select x.mae_id from erp.divisoes x join a on x.id = a.id where x.mae_id is not null)
+            select 1 from a where a.id = p_acima))) $$;
+
+-- A natureza vale para o nível (sem centro, a movimentação dispensa): a lista do próprio nível
+-- ou, se ele tem níveis abaixo, a de qualquer nível ativo abaixo dele. p_divisao nulo = o centro.
+create function erp.natureza_ligada(p_centro uuid, p_divisao uuid, p_natureza uuid) returns boolean language sql stable as $$
+  select p_centro is null or exists (
+    select 1 from erp.naturezas_liberadas l
+     where l.centro_custo_id = p_centro and l.natureza_id = p_natureza
+       and (l.divisao_id is not distinct from p_divisao
+            or exists (select 1 from erp.divisoes d where d.id = l.divisao_id and d.ativa and erp.nivel_acima(p_divisao, d.id)))) $$;
+
+-- A linha que uma pessoa grava usa natureza que vale no último nível dela (ou no centro sem
+-- divisão). A cópia feita pelo sistema segue a origem, como a divisão. Invoker: precisa saber quem grava.
 create function erp.tg_natureza_liberada() returns trigger language plpgsql as $$
 begin
   if new.centro_custo_id is null or erp.agindo_como('erp_situacao') or erp.sistema() then return new; end if;
@@ -732,39 +706,28 @@ begin
   end loop;
 end $$;
 
--- A natureza está liberada no centro e na divisão ou subnível, pela lista que vale para ele
--- (erp.no_naturezas; sem centro, a movimentação dispensa).
-create function erp.natureza_ligada(p_centro uuid, p_divisao uuid, p_natureza uuid) returns boolean language sql stable as $$
-  select p_centro is null or exists (select 1 from erp.naturezas_liberadas where centro_custo_id = p_centro
-                                       and divisao_id is not distinct from erp.no_naturezas(p_divisao) and natureza_id = p_natureza) $$;
-
--- Natureza presa (Moises, 15/11/2026): não se desliga natureza que tem contrato ou pedido ativo
--- com linha nela, naquele centro e divisão; primeiro se reclassifica. A trava olha todos os
--- contratos (definer, migration _erp_rls) e só diz sim ou não; a lista, cada um vê a sua.
+-- Algum contrato ou pedido ativo do centro ficou com linha na natureza, sem ela valer para o
+-- nível da linha? A trava olha todos os contratos (definer, migration _erp_rls) e só diz sim
+-- ou não; a lista, cada um vê a sua. p_divisao é o nível que perdeu a natureza: contam as linhas
+-- dele e as antigas dos níveis acima dele.
 create function erp.natureza_presa(p_centro uuid, p_divisao uuid, p_natureza uuid) returns boolean language sql stable as $$
   select exists (select 1 from erp.compromisso_rateios r join erp.compromissos c on c.id = r.compromisso_id
                   where c.situacao = 'ativo' and r.centro_custo_id = p_centro and r.natureza_id = p_natureza
-                    and erp.no_naturezas(coalesce(r.subdivisao_id, r.divisao_id)) is not distinct from p_divisao) $$;
--- Vincular o nível ao de cima deixaria algum contrato ou pedido ativo do galho numa natureza
--- desligada? (definer, como a de cima; roda depois de gravar o vínculo)
-create function erp.natureza_presa_no_galho(p_divisao uuid) returns boolean language sql stable as $$
-  with recursive g(id) as (select p_divisao union all select d.id from erp.divisoes d join g on d.mae_id = g.id)
-  select exists (select 1 from erp.compromisso_rateios r join erp.compromissos c on c.id = r.compromisso_id
-                  where c.situacao = 'ativo' and coalesce(r.subdivisao_id, r.divisao_id) in (select id from g)
+                    and erp.nivel_acima(coalesce(r.subdivisao_id, r.divisao_id), p_divisao)
                     and not erp.natureza_ligada(r.centro_custo_id, coalesce(r.subdivisao_id, r.divisao_id), r.natureza_id)) $$;
 create function erp.compromissos_na_natureza(p_centro uuid, p_divisao uuid, p_natureza uuid)
 returns setof uuid language sql stable as $$
   select distinct c.id from erp.compromissos c join erp.compromisso_rateios r on r.compromisso_id = c.id
    where c.situacao = 'ativo' and r.centro_custo_id = p_centro and r.natureza_id = p_natureza
-     and erp.no_naturezas(coalesce(r.subdivisao_id, r.divisao_id)) is not distinct from p_divisao $$;
+     and erp.nivel_acima(coalesce(r.subdivisao_id, r.divisao_id), p_divisao) $$;
 
--- Títulos em aberto (ou em rascunho) com linha na natureza, no centro e na divisão: o que
--- quem desliga a natureza precisa ver. Invoker: cada um vê os títulos que já vê.
+-- Títulos em aberto (ou em rascunho) com linha na natureza, no centro e no nível (ou acima
+-- dele): o que quem desliga a natureza precisa ver. Invoker: cada um vê os títulos que já vê.
 create function erp.titulos_abertos_na_natureza(p_centro uuid, p_divisao uuid, p_natureza uuid)
 returns setof uuid language sql stable as $$
   select distinct t.id from erp.titulos t join erp.titulo_rateios r on r.titulo_id = t.id
    where t.situacao in ('rascunho','aberto') and r.centro_custo_id = p_centro and r.natureza_id = p_natureza
-     and erp.no_naturezas(coalesce(r.subdivisao_id, r.divisao_id)) is not distinct from p_divisao $$;
+     and erp.nivel_acima(coalesce(r.subdivisao_id, r.divisao_id), p_divisao) $$;
 
 -- A empresa de um registro não muda depois de criado (S-056): o rateio, o livro e a caução
 -- foram conferidos contra ela.
