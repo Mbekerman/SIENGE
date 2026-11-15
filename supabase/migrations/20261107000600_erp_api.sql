@@ -75,8 +75,7 @@ create function erp.aprovo_titulo(p_titulo uuid) returns boolean language sql st
     exists (select 1 from erp.titulo_alcadas a join erp.titulos t on t.id = a.titulo_id and t.rodada = a.rodada
              where a.titulo_id = p_titulo
                and (erp.estou_nas_listas(a.etapas) or coalesce(erp.meu_papel(), '') = 'diretor'
-                    or ('AREA' = any(a.etapas) and exists (select 1 from erp.centro_aprovadores c
-                                                            where c.centro_custo_id = a.centro_custo_id and c.user_id = erp.eu()))))
+                    or exists (select 1 from unnest(a.etapas) e where erp._ocupa_vaga(e, a.centro_custo_id, erp.eu()))))
     or exists (select 1 from erp.titulo_aprovacoes x where x.titulo_id = p_titulo and x.por = erp.eu())) $$;
 
 -- Título: vê quem vê alguma linha do rateio e nenhuma linha restrita fica escondida dele; sem

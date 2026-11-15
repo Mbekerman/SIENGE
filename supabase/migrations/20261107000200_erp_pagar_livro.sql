@@ -1231,8 +1231,12 @@ begin
   if not exists (select 1 from erp.centro_aprovadores
                   where centro_custo_id = old.centro_custo_id and user_id <> old.user_id)
      and exists (select 1 from erp.titulo_alcadas a join erp.titulos t on t.id = a.titulo_id
-                  where a.centro_custo_id = old.centro_custo_id and t.situacao = 'aberto'
-                    and erp.alcada_pendente(a.titulo_id) = 'AREA' and not erp.alcada_recusada(a.titulo_id)) then
+                  where a.centro_custo_id = old.centro_custo_id and t.situacao = 'aberto' and t.rodada = a.rodada
+                    and not erp.alcada_recusada(a.titulo_id)
+                    and exists (select 1 from generate_subscripts(a.etapas, 1) i
+                                 where a.etapas[i] = 'AREA'
+                                   and not exists (select 1 from erp.titulo_aprovacoes v where v.titulo_id = a.titulo_id
+                                                    and v.rodada = a.rodada and v.etapa = i and v.aprovado))) then
     raise exception 'O centro tem títulos esperando o gestor da área; cadastre outro gestor antes';
   end if;
   return coalesce(new, old);
@@ -1240,15 +1244,47 @@ end $$;
 create trigger t_centro_aprovador before update or delete on erp.centro_aprovadores
   for each row execute function erp.tg_centro_aprovador();
 
+-- Faixas por centro de custo (Moises, 15/11/2026): o centro com faixas próprias usa as dele; os
+-- outros, as gerais (centro nulo). Cada faixa tem dois limites, o acumulado do mês no centro e o
+-- valor do título; o título cai na faixa mais exigente das duas contas. Cada faixa tem as vagas de
+-- aprovação (etapas): um papel (AREA = gestor da área, DIRETOR_AREA = diretor da área, AF, AO, AD)
+-- ou uma pessoa pelo nome ('P:' e o id do usuário), que não precisa ter cargo. O número de
+-- aprovadores é o número de vagas; a mesma pessoa não ocupa duas. Em sequência (padrão) ou em
+-- paralelo. Sem gente qualificada para preencher as vagas, o título vai ao master, com o motivo.
 create table erp.alcadas_pagamento (
-  id     uuid primary key default gen_random_uuid(),
-  ate    numeric(15,2) check (ate > 0),          -- acumulado do mês até este valor; nulo = acima de todas
-  etapas text[] not null check (cardinality(etapas) > 0 and etapas <@ '{AREA,AF,AO,AD}'),
-  unique nulls not distinct (ate)
+  id              uuid primary key default gen_random_uuid(),
+  centro_custo_id uuid references erp.centros_custo,   -- nulo: as faixas gerais
+  ate             numeric(15,2) check (ate > 0),          -- acumulado do mês até este valor; nulo = sem limite
+  ate_titulo      numeric(15,2) check (ate_titulo > 0),   -- valor do título até este valor; nulo = sem limite
+  etapas          text[] not null check (cardinality(etapas) > 0),
+  paralelo        boolean not null default false,
+  unique nulls not distinct (centro_custo_id, ate, ate_titulo)
 );
+-- a vaga: um papel ou uma pessoa ativa que pode aprovar (nem administrador, nem só da sucessão)
+create function erp.tg_alcada_vagas() returns trigger language plpgsql as $$
+declare e text; v_user uuid;
+begin
+  if tg_op = 'DELETE' then return old; end if;
+  foreach e in array new.etapas loop
+    if e in ('AREA','DIRETOR_AREA','AF','AO','AD') then continue; end if;
+    if e !~ '^P:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+      raise exception 'Vaga de aprovação inválida: % (use AREA, DIRETOR_AREA, AF, AO, AD ou P: e o usuário)', e;
+    end if;
+    v_user := substr(e, 3)::uuid;
+    if not exists (select 1 from erp.usuarios where id = v_user) then raise exception 'Aprovador da vaga não existe: %', v_user; end if;
+    perform erp.recusar_admin_aprovador(v_user);
+    perform erp.recusar_so_sucessao(v_user);
+  end loop;
+  if (select count(*) from unnest(new.etapas) x where x like 'P:%') <> (select count(distinct x) from unnest(new.etapas) x where x like 'P:%') then
+    raise exception 'A mesma pessoa não ocupa duas vagas da faixa';
+  end if;
+  return new;
+end $$;
 insert into erp.alcadas_pagamento (ate, etapas) values (50000, '{AREA,AF}'), (null, '{AREA,AF,AD}');
 create trigger t_so_admin before insert or update or delete on erp.alcadas_pagamento
   for each row execute function erp.tg_so_admin();
+create trigger t_alcada_vagas before insert or update on erp.alcadas_pagamento
+  for each row execute function erp.tg_alcada_vagas();
 create trigger t_aud_alcadas_pagamento after insert or update or delete on erp.alcadas_pagamento
   for each row execute function erp.tg_auditoria('id');
 
@@ -1283,9 +1319,15 @@ create table erp.titulo_alcadas (
   titulo_id       uuid not null references erp.titulos,
   rodada          int not null default 1,       -- a volta da alçada (titulos.rodada)
   etapas          text[] not null,
-  centro_custo_id uuid not null references erp.centros_custo,   -- o centro de maior acumulado
+  paralelo        boolean not null default false,
+  centro_custo_id uuid not null references erp.centros_custo,   -- o centro da faixa mais exigente
   acumulado       numeric(15,2) not null,
   titulos         uuid[] not null,              -- os títulos que formaram o acumulado (S-064)
+  alcada_id       uuid,                         -- a faixa que decidiu
+  -- sem gente qualificada para todas as vagas na confirmação: vai ao master (que sempre decide),
+  -- com o aviso do motivo; quem passar a ocupar a vaga depois também decide
+  falta_aprovadores boolean not null default false,
+  vagas_sem_gente   text[] not null default '{}',
   definida_em     timestamptz not null default clock_timestamp(),
   primary key (titulo_id, rodada)
 );
@@ -1679,7 +1721,8 @@ end $$;
 create function erp._definir_alcada(p_titulo uuid) returns void language plpgsql as $$
 declare t erp.titulos; v_modo text := (select acumulado from erp.regra_alcada_pagamento);
         v_forn boolean := (select soma_fornecedor from erp.regra_alcada_pagamento);
-        r record; v_soma numeric; v_ids uuid[]; v_centro uuid; v_acum numeric; v_titulos uuid[]; v_etapas text[];
+        r record; v_soma numeric; v_ids uuid[]; v_centro uuid; v_acum numeric; v_titulos uuid[];
+        f erp.alcadas_pagamento; v_faixa erp.alcadas_pagamento; v_falta text[];
 begin
   select * into t from erp.titulos where id = p_titulo;
   if t.sentido <> 'pagar' or t.tipo in ('imposto','societario') then return; end if;
@@ -1689,10 +1732,12 @@ begin
    where c.id in (select tr.centro_custo_id from erp.titulo_rateios tr where tr.titulo_id = t.id)
    order by c.id for update;
   perform erp._cobrir_adiantamento(t);
-  -- cada linha do rateio em centro com gestor aprovador; vale o maior acumulado
-  for r in select tr.centro_custo_id, tr.nucleo_economico_id from erp.titulo_rateios tr
+  -- cada linha do rateio em centro com gestor aprovador ou com faixas próprias; vale a faixa mais
+  -- exigente (mais vagas) entre os centros, e no empate o maior acumulado
+  for r in select distinct tr.centro_custo_id, tr.nucleo_economico_id from erp.titulo_rateios tr
             where tr.titulo_id = t.id
-              and exists (select 1 from erp.centro_aprovadores a where a.centro_custo_id = tr.centro_custo_id) loop
+              and (exists (select 1 from erp.centro_aprovadores a where a.centro_custo_id = tr.centro_custo_id)
+                   or exists (select 1 from erp.alcadas_pagamento ap where ap.centro_custo_id = tr.centro_custo_id)) loop
     -- a parte de cada título no centro; com soma_fornecedor, o mesmo fornecedor conta inteiro
     select round(coalesce(sum(t2.valor * r2.percentual / 100 - erp.cobertura(r2.id)), 0), 2), array_agg(distinct t2.id) into v_soma, v_ids
       from erp.titulos t2 join erp.titulo_rateios r2 on r2.titulo_id = t2.id
@@ -1703,14 +1748,72 @@ begin
        and (v_modo = 'centro' or t2.empresa_id = t.empresa_id)
        and (v_modo <> 'nucleo_centro' or r2.centro_custo_id <> r.centro_custo_id
             or r2.nucleo_economico_id is not distinct from r.nucleo_economico_id);
-    if v_acum is null or v_soma > v_acum then v_acum := v_soma; v_centro := r.centro_custo_id; v_titulos := v_ids; end if;
+    f := erp._faixa_alcada(r.centro_custo_id, v_soma, t.valor);
+    if f.id is null then raise exception 'Não há alçada de pagamento configurada para %', v_soma; end if;
+    if v_faixa.id is null or cardinality(f.etapas) > cardinality(v_faixa.etapas)
+       or (cardinality(f.etapas) = cardinality(v_faixa.etapas) and v_soma > v_acum) then
+      v_faixa := f; v_acum := v_soma; v_centro := r.centro_custo_id; v_titulos := v_ids;
+    end if;
   end loop;
   if v_centro is null then return; end if;
-  select etapas into v_etapas from erp.alcadas_pagamento
-   where ate is null or v_acum <= ate order by (ate is null), ate limit 1;
-  if v_etapas is null then raise exception 'Não há alçada de pagamento configurada para %', v_acum; end if;
-  insert into erp.titulo_alcadas (titulo_id, rodada, etapas, centro_custo_id, acumulado, titulos)
-  values (t.id, t.rodada, v_etapas, v_centro, v_acum, v_titulos);
+  v_falta := erp._vagas_sem_gente(v_faixa.etapas, v_centro, t.criado_por);
+  insert into erp.titulo_alcadas (titulo_id, rodada, etapas, paralelo, centro_custo_id, acumulado, titulos, alcada_id,
+                                  falta_aprovadores, vagas_sem_gente)
+  values (t.id, t.rodada, v_faixa.etapas, v_faixa.paralelo, v_centro, v_acum, v_titulos, v_faixa.id,
+          cardinality(v_falta) > 0, v_falta);
+  if cardinality(v_falta) > 0 then
+    perform erp.registrar_evento('alcada_falta_aprovadores', 'titulos', t.id::text, null, v_centro,
+      jsonb_build_object('titulo_id', t.id, 'rodada', t.rodada, 'etapas', v_faixa.etapas, 'vagas_sem_gente', v_falta,
+                         'acumulado', v_acum, 'valor', t.valor, 'motivo', 'Faltam aprovadores qualificados: o título vai ao master'));
+  end if;
+end $$;
+
+-- A faixa do título no centro: as do centro, se ele tem, senão as gerais. A faixa pelo acumulado
+-- e a faixa pelo valor do título; vale a mais alta (a mais exigente).
+create function erp._faixa_alcada(p_centro uuid, p_acumulado numeric, p_valor numeric) returns erp.alcadas_pagamento
+language plpgsql stable as $$
+declare v_centro uuid; v_ia int; v_it int; v erp.alcadas_pagamento;
+begin
+  v_centro := case when exists (select 1 from erp.alcadas_pagamento where centro_custo_id = p_centro) then p_centro end;
+  with f as (select a.*, row_number() over (order by a.ate nulls last, a.ate_titulo nulls last) n
+               from erp.alcadas_pagamento a where a.centro_custo_id is not distinct from v_centro)
+  select min(n) filter (where ate is null or p_acumulado <= ate),
+         min(n) filter (where ate_titulo is null or p_valor <= ate_titulo) into v_ia, v_it from f;
+  if v_ia is null or v_it is null then return null; end if;
+  select a.* into v from (select a0.*, row_number() over (order by a0.ate nulls last, a0.ate_titulo nulls last) n
+                            from erp.alcadas_pagamento a0 where a0.centro_custo_id is not distinct from v_centro) a
+   where a.n = greatest(v_ia, v_it);
+  return v;
+end $$;
+
+-- Quem pode ocupar a vaga no centro (papel ou pessoa pelo nome), ativo.
+create function erp._ocupa_vaga(p_vaga text, p_centro uuid, p_user uuid) returns boolean language plpgsql stable as $$
+begin
+  if not exists (select 1 from erp.usuarios where id = p_user and ativo and not administrador and not so_sucessao) then return false; end if;
+  return case
+    when p_vaga = 'AREA' then exists (select 1 from erp.centro_aprovadores where centro_custo_id = p_centro and user_id = p_user)
+    when p_vaga = 'DIRETOR_AREA' then exists (select 1 from erp.centro_diretores where centro_custo_id = p_centro and user_id = p_user)
+    when p_vaga in ('AF','AO','AD') then exists (select 1 from erp.listas_financeiro where lista = p_vaga and user_id = p_user)
+    when p_vaga like 'P:%' then substr(p_vaga, 3)::uuid = p_user
+    else false end;
+end $$;
+
+-- As vagas que não têm quem as ocupe: cada pessoa numa vaga só, e quem lançou fora (menos a AD
+-- que aprova o próprio). Preenche primeiro as vagas com menos candidatos.
+create function erp._vagas_sem_gente(p_etapas text[], p_centro uuid, p_autor uuid) returns text[] language plpgsql stable as $$
+declare r record; v_usados uuid[] := '{}'; v_quem uuid; v_falta text[] := '{}';
+begin
+  for r in select i, p_etapas[i] as vaga,
+                  (select count(*) from erp.usuarios u where erp._ocupa_vaga(p_etapas[i], p_centro, u.id)) as n
+             from generate_subscripts(p_etapas, 1) i order by 3, 1 loop
+    select u.id into v_quem from erp.usuarios u
+     where erp._ocupa_vaga(r.vaga, p_centro, u.id) and u.id <> all (v_usados)
+       and (u.id is distinct from p_autor
+            or (r.vaga = 'AD' and exists (select 1 from erp.listas_financeiro l where l.lista = 'AD' and l.user_id = u.id and l.aprova_proprio)))
+     order by u.id limit 1;
+    if v_quem is null then v_falta := v_falta || r.vaga; else v_usados := v_usados || v_quem; end if;
+  end loop;
+  return v_falta;
 end $$;
 
 -- Etapa da vez: a primeira sem aprovação; nula quando aprovado por todas (ou sem alçada).
@@ -1739,8 +1842,8 @@ begin
   select a0.* into a from erp.titulo_alcadas a0 join erp.titulos t0 on t0.id = a0.titulo_id and t0.rodada = a0.rodada
    where a0.titulo_id = p_titulo;
   if a.titulo_id is null then raise exception 'Este título não tem alçada de pagamento'; end if;
-  if not (erp.estou_nas_listas(a.etapas) or coalesce(erp.meu_papel(), '') = 'diretor'
-          or exists (select 1 from erp.centro_aprovadores c where c.centro_custo_id = a.centro_custo_id and c.user_id = erp.eu())) then
+  if not (erp.estou_nas_listas(a.etapas) or coalesce(erp.meu_papel(), '') = 'diretor' or erp.sou_master()
+          or exists (select 1 from unnest(a.etapas) e where erp._ocupa_vaga(e, a.centro_custo_id, erp.eu()))) then
     raise exception 'Só quem aprova o título vê o acumulado';
   end if;
   -- exatamente os títulos que entraram na soma, com a parte deles no centro. S-062: em detalhe só
@@ -1778,8 +1881,15 @@ begin
   if a.titulo_id is null then raise exception 'Este título não tem alçada de pagamento'; end if;
   if erp.alcada_recusada(p_titulo) then raise exception 'O título foi recusado na alçada'; end if;
   if erp.em_revisao(p_titulo) then raise exception 'O título está em revisão; aguarde o ajuste de quem lançou'; end if;
+  if erp.alcada_etapa(p_titulo) is null then raise exception 'O título já foi aprovado em todas as etapas'; end if;
+  -- em sequência, a vaga da vez; em paralelo, a primeira vaga pendente que a pessoa ocupa
   v_etapa := erp.alcada_etapa(p_titulo);
-  if v_etapa is null then raise exception 'O título já foi aprovado em todas as etapas'; end if;
+  if a.paralelo and not v_master then
+    v_etapa := coalesce((select min(i) from generate_subscripts(a.etapas, 1) i
+                          where erp._ocupa_vaga(a.etapas[i], a.centro_custo_id, v_eu)
+                            and not exists (select 1 from erp.titulo_aprovacoes v where v.titulo_id = p_titulo and v.rodada = a.rodada
+                                             and v.etapa = i and v.aprovado)), v_etapa);
+  end if;
   v_lista := a.etapas[v_etapa];
   -- quem lançou não aprova, salvo o master e a AD autorizada (na etapa da AD)
   v_proprio := v_master or (v_lista = 'AD' and erp.aprova_proprio(array['AD']));
@@ -1805,6 +1915,10 @@ begin
                     where c.centro_custo_id = a.centro_custo_id and c.user_id = v_eu and u.ativo) then
       raise exception 'Esta etapa é do gestor da área';
     end if;
+  elsif v_lista = 'DIRETOR_AREA' then
+    if not erp._ocupa_vaga(v_lista, a.centro_custo_id, v_eu) then raise exception 'Esta etapa é do diretor da área'; end if;
+  elsif v_lista like 'P:%' then
+    if not erp._ocupa_vaga(v_lista, a.centro_custo_id, v_eu) then raise exception 'Esta etapa é de outra pessoa'; end if;
   elsif not erp.estou_nas_listas(array[v_lista]) then
     raise exception 'Esta etapa é de quem está em %', v_lista;
   end if;

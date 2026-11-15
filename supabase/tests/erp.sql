@@ -3876,5 +3876,190 @@ select pg_temp.erro_igual($$update erp.tipos_evento set critico = false where co
 select pg_temp.como(null);
 rollback;
 
+\echo '# alçada por centro de custo: limite do título e do acumulado, vagas por papel ou pessoa, paralelo, falta de aprovadores'
+begin;
+create function pg_temp.tit(p_id uuid, p_cc uuid, p_nat text, p_valor numeric) returns void language sql as $$
+  insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+    (p_id, '20000000-0000-0000-0000-000000000003', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-09-02', '2026-09-01', p_valor);
+  insert into erp.parcelas (titulo_id, numero, vencimento, valor) values (p_id, 1, '2026-09-20', p_valor);
+  insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+  values (p_id, '40000000-0000-0000-0000-000000000001', p_cc, pg_temp.nat(p_nat), 100);
+  select erp.confirmar_titulo(p_id); $$;
+select pg_temp.sis();
+insert into erp.centro_aprovadores values (:'cc_mkt', :'gestor');
+insert into erp.centro_diretores (centro_custo_id, user_id) values (:'cc_mkt', :'diretor2');
+insert into erp.listas_financeiro (lista, user_id) values ('AF', :'contador');
+-- as vagas: papel conhecido ou pessoa que pode aprovar, cada pessoa numa vaga só
+select pg_temp.erro_igual(format($$insert into erp.alcadas_pagamento (centro_custo_id, ate, etapas) values (%L, 1, '{AREA,XX}')$$, :'cc_mkt'),
+  'Vaga de aprovação inválida: XX (use AREA, DIRETOR_AREA, AF, AO, AD ou P: e o usuário)', 'alçada por centro: vaga com código desconhecido é recusada');
+select pg_temp.erro_igual(format($$insert into erp.alcadas_pagamento (centro_custo_id, ate, etapas) values (%L, 1, array['P:' || %L])$$, :'cc_mkt', :'ti'),
+  'Administrador não aprova nada no ERP', 'alçada por centro: o administrador não ocupa vaga');
+select pg_temp.erro_igual(format($$insert into erp.alcadas_pagamento (centro_custo_id, ate, etapas) values (%L, 1, array['P:' || %L, 'AF', 'P:' || %L])$$, :'cc_mkt', :'analista2', :'analista2'),
+  'A mesma pessoa não ocupa duas vagas da faixa', 'alçada por centro: a mesma pessoa não ocupa duas vagas');
+select pg_temp.falha(format($$insert into erp.alcadas_pagamento (centro_custo_id, ate, etapas) values (%L, 1, '{P:99999999-0000-0000-0000-000000000000}')$$, :'cc_mkt'),
+  'alçada por centro: pessoa que não existe não ocupa vaga');
+-- Marketing: até 2 mil no título e 10 mil no mês, 1 aprovador; até 100 mil e 200 mil, 2 em paralelo;
+-- acima, gestor, diretor da área e AF em sequência. Obra: até 5 mil, uma pessoa pelo nome; acima, AF e outra pessoa.
+insert into erp.alcadas_pagamento (id, centro_custo_id, ate, ate_titulo, etapas, paralelo) values
+  ('86000000-0000-0000-0000-000000000001', :'cc_mkt', 10000, 2000, '{AREA}', false),
+  ('86000000-0000-0000-0000-000000000002', :'cc_mkt', 200000, 100000, '{AF,AREA}', true),
+  ('86000000-0000-0000-0000-000000000003', :'cc_mkt', null, null, '{AREA,DIRETOR_AREA,AF}', false),
+  ('86000000-0000-0000-0000-000000000004', :'cc_obra', null, 5000, array['P:' || :'analista2'], false),
+  ('86000000-0000-0000-0000-000000000005', :'cc_obra', null, null, array['AF', 'P:' || :'contador'], false);
+select pg_temp.volta();
+select pg_temp.como(:'analista');
+select pg_temp.tit('84000000-0000-0000-0000-000000000001', :'cc_mkt', '05.01.04', 1500);
+select pg_temp.ok((select alcada_id = '86000000-0000-0000-0000-000000000001' and etapas = '{AREA}' and not falta_aprovadores
+                     from erp.titulo_alcadas where titulo_id = '84000000-0000-0000-0000-000000000001'),
+  'alçada por centro: o centro com faixas próprias usa as dele (1 aprovador até 2 mil)');
+select pg_temp.tit('84000000-0000-0000-0000-000000000002', :'cc_mkt', '05.01.04', 3000);
+select pg_temp.ok((select alcada_id = '86000000-0000-0000-0000-000000000002' and paralelo from erp.titulo_alcadas where titulo_id = '84000000-0000-0000-0000-000000000002'),
+  'alçada por centro: o valor do título passa do limite e sobe de faixa, mesmo com o acumulado baixo');
+select pg_temp.tit('84000000-0000-0000-0000-000000000003', :'cc_mkt', '05.01.04', 6000);
+select pg_temp.tit('84000000-0000-0000-0000-000000000004', :'cc_mkt', '05.01.04', 1000);
+select pg_temp.ok((select alcada_id = '86000000-0000-0000-0000-000000000002' and acumulado > 10000 from erp.titulo_alcadas where titulo_id = '84000000-0000-0000-0000-000000000004'),
+  'alçada por centro: título pequeno com o acumulado acima do limite também sobe (vale o mais exigente)');
+-- o gestor não sai enquanto a vaga dele espera, mesmo que não seja a da vez (os outros títulos
+-- já passaram por ele)
+select pg_temp.como(:'gestor');
+select erp.decidir_titulo('84000000-0000-0000-0000-000000000001', true);
+select erp.decidir_titulo('84000000-0000-0000-0000-000000000003', true);
+select erp.decidir_titulo('84000000-0000-0000-0000-000000000004', true);
+select pg_temp.sis();
+select pg_temp.erro_igual(format($$delete from erp.centro_aprovadores where centro_custo_id = %L and user_id = %L$$, :'cc_mkt', :'gestor'),
+  'O centro tem títulos esperando o gestor da área; cadastre outro gestor antes', 'alçada por centro: o gestor com vaga pendente em paralelo não sai do centro');
+select pg_temp.volta();
+-- em paralelo: o gestor (segunda vaga) aprova antes do AF
+select pg_temp.como(:'gestor');
+select erp.decidir_titulo('84000000-0000-0000-0000-000000000002', true) as r_par \gset
+select pg_temp.ok(:'r_par' = 'pendente'
+                  and exists (select 1 from erp.titulo_aprovacoes where titulo_id = '84000000-0000-0000-0000-000000000002' and etapa = 2 and por = :'gestor'),
+  'alçada por centro: em paralelo, o gestor aprova a vaga dele antes da vaga do AF');
+select pg_temp.erro_igual($$select erp.decidir_titulo('84000000-0000-0000-0000-000000000002', true)$$,
+  'Você já aprovou uma etapa deste título', 'alçada por centro: em paralelo, a mesma pessoa não aprova duas vagas');
+select pg_temp.como(:'contador');
+select pg_temp.ok(erp.decidir_titulo('84000000-0000-0000-0000-000000000002', true) = 'aprovado', 'alçada por centro: em paralelo, com as duas vagas, o título fica aprovado');
+-- em sequência, com o diretor da área
+select pg_temp.como(:'analista');
+select pg_temp.tit('84000000-0000-0000-0000-000000000005', :'cc_mkt', '05.01.04', 150000);
+select pg_temp.ok((select cardinality(etapas) = 3 and not paralelo and not falta_aprovadores from erp.titulo_alcadas where titulo_id = '84000000-0000-0000-0000-000000000005'),
+  'alçada por centro: acima de 100 mil, três aprovadores em sequência');
+select pg_temp.como(:'contador');
+select pg_temp.erro_igual($$select erp.decidir_titulo('84000000-0000-0000-0000-000000000005', true)$$,
+  'Esta etapa é do gestor da área', 'alçada por centro: em sequência, o AF espera a vez');
+select pg_temp.como(:'gestor'); select erp.decidir_titulo('84000000-0000-0000-0000-000000000005', true);
+select pg_temp.como(:'contador');
+select pg_temp.erro_igual($$select erp.decidir_titulo('84000000-0000-0000-0000-000000000005', true)$$,
+  'Esta etapa é do diretor da área', 'alçada por centro: a vaga do diretor da área é só dele');
+select pg_temp.como(:'diretor2');
+select pg_temp.ok(erp.aprovo_titulo('84000000-0000-0000-0000-000000000005'), 'alçada por centro: o diretor da área vê o título');
+select pg_temp.ok(erp.decidir_titulo('84000000-0000-0000-0000-000000000005', true) = 'pendente',
+  'alçada por centro: o diretor da área aprova a vaga dele');
+select pg_temp.como(:'contador');
+select pg_temp.ok(erp.decidir_titulo('84000000-0000-0000-0000-000000000005', true) = 'aprovado', 'alçada por centro: o AF fecha a sequência');
+-- Obra: o centro sem gestor entra na alçada pelas faixas próprias; a vaga de uma pessoa pelo nome
+select pg_temp.como(:'diretor'); update erp.usuarios set ativo = false where id = :'analista2';
+select pg_temp.como(:'analista');
+select pg_temp.tit('84000000-0000-0000-0000-000000000014', :'cc_obra', '04.01', 100);
+select pg_temp.ok((select falta_aprovadores from erp.titulo_alcadas where titulo_id = '84000000-0000-0000-0000-000000000014'),
+  'alçada por centro: usuário inativo não ocupa a vaga');
+select pg_temp.como(:'diretor'); update erp.usuarios set ativo = true where id = :'analista2';
+select pg_temp.como(:'analista');
+select pg_temp.tit('84000000-0000-0000-0000-000000000011', :'cc_obra', '04.01', 4000);
+select pg_temp.ok((select alcada_id = '86000000-0000-0000-0000-000000000004' and not falta_aprovadores from erp.titulo_alcadas where titulo_id = '84000000-0000-0000-0000-000000000011'),
+  'alçada por centro: centro sem gestor aprovador, com faixas próprias, tem alçada');
+select pg_temp.como(:'leitor');
+select pg_temp.ok(not erp.aprovo_titulo('84000000-0000-0000-0000-000000000011'), 'alçada por centro: quem não ocupa vaga não aprova o título');
+select pg_temp.como(:'contador');
+select pg_temp.erro_igual($$select erp.decidir_titulo('84000000-0000-0000-0000-000000000011', true)$$,
+  'Esta etapa é de outra pessoa', 'alçada por centro: a vaga com o nome de uma pessoa é só dela');
+select pg_temp.como(:'analista2');
+select pg_temp.ok(erp.aprovo_titulo('84000000-0000-0000-0000-000000000011')
+                  and (select count(*) from erp.titulos_do_acumulado('84000000-0000-0000-0000-000000000011')) >= 1,
+  'alçada por centro: a pessoa da vaga, sem cargo, vê o título e o acumulado');
+select pg_temp.ok(erp.decidir_titulo('84000000-0000-0000-0000-000000000011', true) = 'aprovado', 'alçada por centro: a pessoa da vaga aprova');
+-- falta de aprovadores: quem lançou é a pessoa da vaga
+select pg_temp.tit('84000000-0000-0000-0000-000000000012', :'cc_obra', '04.01', 3000);
+select pg_temp.ok((select falta_aprovadores and vagas_sem_gente = array['P:' || :'analista2'] from erp.titulo_alcadas where titulo_id = '84000000-0000-0000-0000-000000000012'),
+  'alçada por centro: sem gente qualificada (a pessoa da vaga lançou), o título fica marcado para o master');
+select pg_temp.erro_igual($$select erp.decidir_titulo('84000000-0000-0000-0000-000000000012', true)$$,
+  'Quem lançou não aprova o próprio lançamento', 'alçada por centro: quem lançou continua não aprovando');
+select pg_temp.sis();
+select pg_temp.ok(exists (select 1 from erp.eventos e join erp.tipos_evento te on te.codigo = e.tipo
+                           where e.tipo = 'alcada_falta_aprovadores' and te.critico and e.dados->>'titulo_id' = '84000000-0000-0000-0000-000000000012'
+                             and e.dados->>'motivo' like 'Faltam aprovadores qualificados%'),
+  'alçada por centro: a falta de aprovadores vira evento crítico, com o motivo');
+select pg_temp.ok(not exists (select 1 from erp.eventos where tipo = 'alcada_falta_aprovadores' and dados->>'titulo_id' = '84000000-0000-0000-0000-000000000011'),
+  'alçada por centro: com gente para as vagas, não há evento');
+select pg_temp.volta();
+select pg_temp.como(:'diretor');
+select pg_temp.ok(erp.decidir_titulo('84000000-0000-0000-0000-000000000012', true) = 'aprovado', 'alçada por centro: o master aprova o título que veio por falta de aprovadores');
+-- a mesma pessoa não conta duas vezes: o único AF é também a pessoa da outra vaga
+select pg_temp.como(:'analista');
+select pg_temp.tit('84000000-0000-0000-0000-000000000013', :'cc_obra', '04.01', 8000);
+select pg_temp.ok((select alcada_id = '86000000-0000-0000-0000-000000000005' and falta_aprovadores and cardinality(vagas_sem_gente) = 1
+                     from erp.titulo_alcadas where titulo_id = '84000000-0000-0000-0000-000000000013'),
+  'alçada por centro: a mesma pessoa em duas vagas conta uma vez só (falta um aprovador)');
+-- quem passa a ocupar a vaga depois também decide
+select pg_temp.sis(); insert into erp.listas_financeiro (lista, user_id) values ('AF', :'gestor'); select pg_temp.volta();
+select pg_temp.como(:'gestor');
+select pg_temp.ok(erp.decidir_titulo('84000000-0000-0000-0000-000000000013', true) = 'pendente', 'alçada por centro: o AF que entrou depois aprova a vaga');
+select pg_temp.como(:'contador');
+select pg_temp.ok(erp.decidir_titulo('84000000-0000-0000-0000-000000000013', true) = 'aprovado', 'alçada por centro: e a pessoa da outra vaga fecha');
+-- centro sem faixas próprias continua nas gerais
+select pg_temp.sis(); delete from erp.alcadas_pagamento where centro_custo_id = :'cc_mkt'; select pg_temp.volta();
+select pg_temp.como(:'analista');
+select pg_temp.tit('84000000-0000-0000-0000-000000000006', :'cc_mkt', '05.01.04', 1500);
+select pg_temp.ok((select etapas = '{AREA,AF,AD}' and alcada_id = (select id from erp.alcadas_pagamento where centro_custo_id is null and ate is null)
+                     from erp.titulo_alcadas where titulo_id = '84000000-0000-0000-0000-000000000006'),
+  'alçada por centro: sem faixas próprias, o centro usa as gerais (acima de 50 mil no mês, com a AD)');
+-- empate de vagas entre centros do rateio: vale o centro de maior acumulado
+select id as cc_a from erp.centros_custo where nome not in ('Obra', 'Marketing') order by nome limit 1 \gset
+select id as cc_b from erp.centros_custo where nome not in ('Obra', 'Marketing') order by nome offset 1 limit 1 \gset
+select pg_temp.como(:'diretor');
+insert into erp.nucleo_centros (nucleo_economico_id, centro_custo_id, ligado) values (:'ne_vm', :'cc_a', true), (:'ne_vm', :'cc_b', true)
+  on conflict (nucleo_economico_id, centro_custo_id) do update set ligado = true;
+select pg_temp.sis();
+insert into erp.alcadas_pagamento (centro_custo_id, etapas) values (:'cc_a', '{AF}'), (:'cc_b', '{AF}');
+select pg_temp.volta();
+create function pg_temp.tit2(p_id uuid, p_c1 uuid, p_c2 uuid, p_valor numeric) returns void language sql as $$
+  insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+    (p_id, '20000000-0000-0000-0000-000000000003', 'avulso', '10000000-0000-0000-0000-000000000008', '2026-09-02', '2026-09-01', p_valor);
+  insert into erp.parcelas (titulo_id, numero, vencimento, valor) values (p_id, 1, '2026-09-20', p_valor);
+  insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+  values (p_id, '40000000-0000-0000-0000-000000000001', p_c1, pg_temp.nat('05.01.04'), 50),
+         (p_id, '40000000-0000-0000-0000-000000000001', p_c2, pg_temp.nat('05.01.04'), 50);
+  select erp.confirmar_titulo(p_id); $$;
+select pg_temp.como(:'analista');
+select pg_temp.tit('84000000-0000-0000-0000-000000000021', :'cc_a', '05.01.04', 5000);
+select pg_temp.tit2('84000000-0000-0000-0000-000000000022', :'cc_a', :'cc_b', 1000);
+select pg_temp.ok((select centro_custo_id = :'cc_a' from erp.titulo_alcadas where titulo_id = '84000000-0000-0000-0000-000000000022'),
+  'alçada por centro: no empate de vagas, vale o centro de maior acumulado (o primeiro)');
+select pg_temp.tit('84000000-0000-0000-0000-000000000023', :'cc_b', '05.01.04', 20000);
+select pg_temp.tit2('84000000-0000-0000-0000-000000000024', :'cc_a', :'cc_b', 1000);
+select pg_temp.ok((select centro_custo_id = :'cc_b' from erp.titulo_alcadas where titulo_id = '84000000-0000-0000-0000-000000000024'),
+  'alçada por centro: no empate de vagas, vale o centro de maior acumulado (o segundo)');
+-- modo livre também no limite do título
+select pg_temp.como(:'diretor');
+update erp.regras_mudanca_config set modo = 'livre_ate', percentual = 10, meses = 3 where tabela = 'alcadas_pagamento';
+select pg_temp.sis();
+alter table erp.auditoria disable trigger t_auditoria_guarda;
+update erp.auditoria set em = em - interval '4 months' where tabela = 'alcadas_pagamento' and registro = '86000000-0000-0000-0000-000000000004';
+alter table erp.auditoria enable trigger t_auditoria_guarda;
+select pg_temp.volta();
+select pg_temp.como(:'contador');
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', '{"id": "86000000-0000-0000-0000-000000000004", "ate_titulo": 5400}', 'livre') as lt1 \gset
+select pg_temp.ok((select aprovacao = 'livre' and situacao = 'aplicada' from erp.mudancas_config where id = :'lt1')
+                  and (select ate_titulo from erp.alcadas_pagamento where id = '86000000-0000-0000-0000-000000000004') = 5400,
+  'alçada por centro: no modo livre, o limite do título muda na hora dentro do percentual');
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', '{"id": "86000000-0000-0000-0000-000000000004", "ate_titulo": 6000}', 'mais') as lt2 \gset
+select pg_temp.ok((select aprovacao <> 'livre' and situacao = 'pendente' from erp.mudancas_config where id = :'lt2'),
+  'alçada por centro: acima do percentual, o limite do título pede aprovação');
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', '{"id": "86000000-0000-0000-0000-000000000004", "paralelo": true}', 'paralelo') as lt3 \gset
+select pg_temp.ok((select aprovacao <> 'livre' and situacao = 'pendente' from erp.mudancas_config where id = :'lt3'),
+  'alçada por centro: mudar paralelo ou vagas nunca é livre');
+select pg_temp.como(null);
+rollback;
+
 \echo '# fim'
 do $$ begin raise notice 'TODOS OS TESTES PASSARAM'; end $$;
