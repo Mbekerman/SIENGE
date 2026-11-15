@@ -290,6 +290,26 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 
 ✅ Também confirmados no documento de desenho (7/nov/2026): as duas opções de cada pessoa da AD só o master muda, e todo lançamento aprovado por quem o lançou fica marcado e entra na revisão do master; um relatório mostra os pagamentos que caíram em "sem regra"; no lote, a conferência grava a "impressão digital" do arquivo, para saber se ele mudou.
 
+### As telas do Admin
+
+> 🧪 Protótipo, versão de 15/nov/2026, ainda sem código e ainda não aprovado pelo Moises.
+
+O item **Admin** do menu tem sete seções:
+
+| Seção | O que faz | Quem muda e como |
+| --- | --- | --- |
+| **Centros e divisões** | Lista os centros e as divisões. O pedido de divisão nova já leva as naturezas liberadas, com Marcar todas e Desmarcar todas. | O administrador pede; vale depois de aprovado pela lista de acesso. |
+| **Naturezas por divisão** | Uma chave por natureza em cada divisão. Ao desligar, avisa os títulos em aberto que estão nela. | Master, administrador, AF, AO e AD, na hora, sem pedido. Os demais só veem. |
+| **Faixas de alçada** | As faixas de cada centro e de cada divisão, com o limite por título, o acumulado do mês, as vagas, a ordem (em paralelo ou em sequência) e a opção "passa também pelo centro". | Por pedido de mudança. |
+| **Acesso das pessoas** | O papel, o núcleo e o centro de cada pessoa, e as divisões: todas (incluindo as que forem criadas) ou só algumas. | Por pedido de mudança de acesso. |
+| **Etapa dos núcleos** | A etapa de cada núcleo e a data em que cada uma começa. | Só o administrador. |
+| **Pedidos de mudança** | Os pedidos para você decidir e os seus, com o que muda (hoje e pedido), quem pediu, a situação e os votos. Mostra quando o pedido foi ao master por falta de aprovadores. | Decide quem está na lista de aprovadores do tipo de pedido. |
+| **Notificações** | O painel de avisos (ver [Notificações](notificacoes.md)). | Ver a página de notificações. |
+
+![As seções do Admin no computador: divisão nova com as naturezas, naturezas por divisão, faixas de alçada, acesso das pessoas, etapa dos núcleos e pedidos de mudança](../imagens/transversais/admin-config-desk.png)
+
+![As mesmas seções no celular](../imagens/transversais/admin-config-cel.png)
+
 ## Mudanças de acesso e sucessão do master
 
 ✅ Decidido pelo Moises em 14/nov/2026:
