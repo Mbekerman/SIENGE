@@ -250,7 +250,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 
 ✅ Travas novas, autorizadas pelo Moises em 14/nov/2026 (S-053 a S-055), também no banco e sem tela que as desligue:
 
-- **Só o administrador** cadastra e altera as contas bancárias da empresa, e tudo fica na auditoria. Usuários: ver [Mudanças de acesso](#mudanças-de-acesso-e-sucessão-do-master) (regra de 14/nov à noite).
+- ~~Só o administrador cadastra e altera as contas bancárias da empresa~~ (14/nov). Desde 15/nov, **só o master** (ver abaixo). Tudo fica na auditoria. Usuários: ver [Mudanças de acesso](#mudanças-de-acesso-e-sucessão-do-master) (regra de 14/nov à noite).
 - **Ninguém muda o próprio papel, acesso ou login**, nem o administrador.
 - O mês só fecha e reabre pelas funções da diretoria (ver [Fechamento](../financeiro/reclassificacao-e-fechamento.md)).
 - Orçamento publicado não se edita (ver [Orçamento](../financeiro/orcamento-e-fluxo-de-caixa.md)).
@@ -265,6 +265,9 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 - A **reclassificação** só é pedida por quem tem cadastro no ERP, e só quem pediu pode cancelar.
 
 ## Quem muda a configuração
+
+- ✅ **Por ora, a configuração de dinheiro e aprovação só o master muda**; o administrador (TI) não muda. Inclui: alçadas de pagamento e de reclassificação, níveis de aprovação, regra do adiantamento e da alçada, regras de ajuste da revisão, naturezas do sistema, contas bancárias da empresa e códigos do Sienge (Moises, 15/nov/2026). Onde as linhas abaixo dizem "o master ou um administrador", vale agora só o master.
+- ✅ **Pagamento e baixa** só registram o financeiro (AF, AO, AD), o master e a ligação automática com o Sienge (Moises, 15/nov/2026).
 
 - ✅ **Listas AF e AO:** qualquer pessoa da AD pode mexer, menos numa lista da qual ela mesma faça parte. Toda mudança avisa o master e as outras pessoas da AD (Moises, 7/nov/2026).
 - ✅ **Prazos e opções** (demora, lembretes, destino do "sem regra", prazo da nota do adiantamento): o master ou um administrador (Moises, 7/nov/2026).
