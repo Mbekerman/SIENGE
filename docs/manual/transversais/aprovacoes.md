@@ -278,7 +278,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 ## Quem muda a configuração
 
 - ✅ **Por ora, a configuração de dinheiro e aprovação só o master muda**; o administrador (TI) não muda. Inclui: alçadas de pagamento e de reclassificação, níveis de aprovação, regra do adiantamento e da alçada, regras de ajuste da revisão, naturezas do sistema, contas bancárias da empresa e códigos do Sienge (Moises, 15/nov/2026). Onde as linhas abaixo dizem "o master ou um administrador", vale agora só o master.
-- ✅ **Pedidos de mudança na configuração de dinheiro** (Moises, 15/nov/2026): a AF, a AD e o administrador pedem a mudança, com motivo. Aprova a **lista de aprovadores de cada tabela**, que só o master define, com o mínimo de votos. Quem pediu não aprova; o master aprova qualquer pedido. Cada tabela fica em **sempre com aprovação** ou, nas faixas de alçada, **livre até X% a cada N meses**: a AF ou a AD muda o valor da faixa sem aprovação se ficar a até X% do valor de N meses atrás. Tirar fase de aprovação, criar ou tirar faixa, conta bancária e código do Sienge sempre passam por aprovação. Toda mudança avisa o Moises.
+- ✅ **Pedidos de mudança na configuração de dinheiro** (Moises, 15/nov/2026): a AF, a AD e o administrador pedem a mudança, com motivo. Aprova a **lista de aprovadores de cada tabela**, que só o master define, com o mínimo de votos. Quem pediu não aprova; o master aprova qualquer pedido. Cada tabela fica em **sempre com aprovação** ou, nas faixas de alçada, **livre até X% a cada N meses**: a AF ou a AD muda o valor da faixa sem aprovação se ficar a até X% do valor de N meses atrás. O percentual e o período são configuráveis; 10% a cada 3 meses é só o valor inicial (Moises, 15/nov/2026). Tirar fase de aprovação, criar ou tirar faixa, conta bancária e código do Sienge sempre passam por aprovação. Toda mudança avisa o Moises.
 - ✅ O pedido do administrador nunca é livre. Se a lista não tem pessoas suficientes além de quem pediu, o pedido vai para o master (Moises, 15/nov/2026).
 - ✅ **Pagamento e baixa** só registram o financeiro (AF, AO, AD), o master e a ligação automática com o Sienge (Moises, 15/nov/2026).
 
@@ -289,6 +289,25 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 - ✅ **Duas alçadas de valor**, ambas configuráveis: o valor da operação e o acumulado no mês (Moises, 7/nov/2026).
 
 ✅ Também confirmados no documento de desenho (7/nov/2026): as duas opções de cada pessoa da AD só o master muda, e todo lançamento aprovado por quem o lançou fica marcado e entra na revisão do master; um relatório mostra os pagamentos que caíram em "sem regra"; no lote, a conferência grava a "impressão digital" do arquivo, para saber se ele mudou.
+
+### As telas do Admin
+
+> 🧪 Protótipo, versão de 15/nov/2026, ainda sem código e ainda não aprovado pelo Moises.
+
+O item **Admin** do menu tem seis seções. A seção Etapa dos núcleos, que aparece na imagem, sai, porque a etapa do empreendimento saiu do sistema (Moises, 15/nov/2026).
+
+| Seção | O que faz | Quem muda e como |
+| --- | --- | --- |
+| **Centros e divisões** | Lista os centros e as divisões. O pedido de divisão nova já leva as naturezas liberadas, com Marcar todas e Desmarcar todas. | O administrador pede; vale depois de aprovado pela lista de acesso. |
+| **Naturezas por divisão** | Uma chave por natureza em cada divisão. Ao desligar, avisa os títulos em aberto que estão nela. | Master, administrador, AF, AO e AD, na hora, sem pedido. Os demais só veem. |
+| **Faixas de alçada** | As faixas de cada centro e de cada divisão, com o limite por título, o acumulado do mês, as vagas, a ordem (em paralelo ou em sequência) e a opção "passa também pelo centro". | Por pedido de mudança. |
+| **Acesso das pessoas** | O papel, o núcleo e o centro de cada pessoa, e as divisões: todas (incluindo as que forem criadas) ou só algumas. | Por pedido de mudança de acesso. |
+| **Pedidos de mudança** | Os pedidos para você decidir e os seus, com o que muda (hoje e pedido), quem pediu, a situação e os votos. Mostra quando o pedido foi ao master por falta de aprovadores. | Decide quem está na lista de aprovadores do tipo de pedido. |
+| **Notificações** | O painel de avisos (ver [Notificações](notificacoes.md)). | Ver a página de notificações. |
+
+![As seções do Admin no computador: divisão nova com as naturezas, naturezas por divisão, faixas de alçada, acesso das pessoas, etapa dos núcleos (que sai) e pedidos de mudança](../imagens/transversais/admin-config-desk.png)
+
+![As mesmas seções no celular](../imagens/transversais/admin-config-cel.png)
 
 ## Mudanças de acesso e sucessão do master
 

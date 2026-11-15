@@ -12,7 +12,6 @@
 | Onde ele é apropriado? | Centro de custo | Marketing |
 | Que gasto é? | Natureza | Comerciais › Marketing › Marketing online |
 | Quando? | Competência e data de caixa | competência out/2027, pago em nov/2027 |
-| Em que momento do projeto? | Etapa, antes chamada fase (calculada sozinha, só para relatório) | Obras |
 
 > ⚠️ **Nomes trocados em 14/nov/2026** (Moises). O que este manual chamava de **centro de custo** (a obra, o Corporativo) agora é **núcleo econômico**. O que chamava de **área** (Marketing, Comercial, Administrativo) agora é **centro de custo**. As regras não mudaram com a troca. No Sienge, "centro de custo" continua sendo a obra, ou seja, o nosso núcleo econômico. Cuidado na transição.
 
@@ -43,9 +42,7 @@ Hoje a BKM usa no Sienge "centro de custo Marketing, natureza MKT Online, motivo
 
 **Travas, alçadas e aprovações** podem ser dadas em qualquer das três dimensões. Também se pode **liberar ou bloquear cada pessoa para lançar** em cada uma delas.
 
-A **etapa** (até 15/nov/2026 chamada "fase") é o momento do empreendimento: Terreno, Aprovação de projetos, Incorporação, Lançamento, Obra, Pós-obra e Corporativo. **É calculada sozinha**, a partir do núcleo e da data, e serve só para os relatórios. Ninguém a escolhe no lançamento, e ela não entra no acesso nem na aprovação (Moises, 15/nov/2026).
-
-🟡 Como o sistema sabe a etapa (em revisão, ainda não está na versão de desenvolvimento): o administrador marca, em cada núcleo, a etapa e a data em que ela começa. Por exemplo, Incorporação até março e Obra a partir de 1º de abril. Nos relatórios, cada lançamento aparece com a etapa que o núcleo tinha no mês de competência dele, mesmo que a etapa mude depois. Toda mudança de etapa fica registrada, com quem mudou e quando.
+✅ **Não há etapa do empreendimento** (Moises, 15/nov/2026). A etapa (Terreno, Incorporação, Obra...) saiu do sistema porque se confundia com o centro de custo. O momento do gasto é dito só pelo **centro de custo** e pela **divisão**.
 
 ✅ **Divisão** é a subdivisão de um centro de custo, por exemplo Marketing › PDV, Online, Offline e Eventos. Decisões do Moises de 15/nov/2026 (no código a partir do PR #41):
 
@@ -53,12 +50,24 @@ A **etapa** (até 15/nov/2026 chamada "fase") é o momento do empreendimento: Te
 - Com divisão ativa no centro, **toda linha de rateio, previsão e orçamento precisa dizer a divisão**.
 - **Acesso:** pode descer até a divisão. O modelo dá todas as divisões (inclusive as futuras, menos as excluídas) ou uma lista (com as futuras, se marcado). Cada divisão incluída pode ter nível próprio. A exceção da pessoa na divisão vence a do centro. Quem tem só algumas divisões não vê a linha do centro sem divisão.
 - **Alçada:** a divisão pode ter faixas próprias, com o acumulado só da divisão. Cada faixa diz se aprova só na divisão ou se passa também pelo centro, cujo acumulado soma o centro inteiro. Divisão sem faixas segue o centro. Na alçada da divisão, o gestor da área é o gestor do centro, e o responsável da divisão entra como vaga nominal. Quem tem vaga na alçada da divisão e na do centro **aprova uma vez só**, e a aprovação vale pelas duas; em sequência, ela entra no centro quando chegar a vez dele lá. Entre duas divisões, uma aprovação não vale pela outra (Moises, 15/nov/2026).
+- 🟡 **Naturezas da divisão** (em revisão, ainda não está na versão de desenvolvimento): ao criar a divisão, escolhem-se as naturezas em que se pode lançar nela. Dá para marcar todas, desmarcar todas ou escolher uma a uma. Depois, o master, o administrador e o AF, o AO e o AD ligam e desligam cada natureza na hora, sem aprovação, e toda mudança fica registrada. No centro sem divisão vale a lista do próprio centro. No centro com divisões vale a lista de cada divisão. Natureza nova nasce desligada em todas as divisões. Não se desliga uma natureza numa divisão, ou num centro, enquanto houver **compromisso ativo** com linha nela ali (contrato, pedido, assinatura, compra avulsa, guia ou folha): antes é preciso reclassificar esses compromissos, e ao tentar desligar o sistema mostra quais, com o tipo de cada um. Compromisso encerrado não impede. Títulos e notas já lançados seguem normalmente; desligar só impede lançar nela ou trocar para ela daí em diante. O administrador (TI) também muda na hora, como exceção à regra de que as mudanças dele passam por aprovação (confirmado pelo Moises, 15/nov/2026). **Modelos de naturezas:** são listas prontas, por exemplo "Marketing online". Ao criar uma divisão, ou ao ajustar uma que já existe, aplica-se um modelo e as naturezas dele ficam marcadas de uma vez; depois dá para ajustar uma a uma. Quem cria e muda modelos são os mesmos que ligam as naturezas: master, administrador, AF, AO e AD. Tudo fica registrado.
+- 🟡 **Subníveis da divisão** (Moises, 15/nov/2026; ainda sem código): a divisão pode ter até 4 níveis abaixo do centro (Divisão Nível 1 a 4), por exemplo Marketing › Mídia › Online › Google. Só se lança no último nível. Se uma divisão ganha subníveis, o lançamento novo exige o subnível, e o que já estava na divisão fica onde está. Acesso, alçada e o carimbo do pagamento e do adiantamento ficam na divisão de primeiro nível e não descem. O rateio de um título pode se dividir entre subníveis. Um nível com subníveis ativos não se desativa.
+- ✅ **Naturezas de cada nível** (Moises, 15/nov/2026; ainda sem código): os níveis se chamam **Divisão Nível 1, 2, 3 e 4**. Só o último nível de cada galho tem lista própria de naturezas. O centro e todo nível que tem níveis abaixo **não têm naturezas próprias**: mostram, só para leitura, a soma das naturezas de todos os níveis abaixo deles, para dar o relatório por natureza no centro e em cada divisão. Ao criar um nível, a escolha das naturezas é obrigatória, de uma destas formas:
+  - à mão, uma a uma, com Marcar todas e Desmarcar todas;
+  - por um **modelo salvo** (a escolha feita também pode ser salva como modelo);
+  - **copiando de um nível irmão**;
+  - no primeiro nível abaixo de outro, copiando a lista do nível de cima.
 
-✅ Para não confundir: cada passo de uma aprovação (gestor, AF, AD) se chama **fase de aprovação** (Moises, 15/nov/2026). "Etapa" fica só para o momento do empreendimento.
+  Master, administrador, AF, AO e AD mudam as naturezas na hora. A antiga forma "vinculada ao nível de cima" não existe mais (Moises, 15/nov/2026). O primeiro nível criado abaixo de outro pode copiar a lista desse nível de cima; daí em diante, o de cima deixa de ter lista própria. Não se cria esse primeiro nível se ele não cobrir as naturezas dos compromissos ativos que ficaram no nível de cima: o envio fica bloqueado e a tela lista cada compromisso com o tipo. Desligar uma natureza continua barrado enquanto houver compromisso ativo nela, inclusive um antigo que ficou num nível acima. Entram nessa trava todos os compromissos ativos: contrato, pedido, assinatura, compra avulsa, guia e folha.
+
+  ![Divisão em quatro níveis: o centro e os níveis com filhos mostram a soma; os últimos níveis têm naturezas próprias](../imagens/financeiro/divisao-niveis.png)
+
+🟡 **Etiquetas** (Moises, 15/nov/2026; ainda sem código): etiquetas livres nos títulos, por exemplo o nome de uma campanha, servem para filtrar e para relatórios. Não entram em aprovação, alçada nem acesso. Quem lança cria a etiqueta e a põe no título. O nome não se repete. Etiqueta não se apaga, só se desativa.
+
+✅ Para não confundir: cada passo de uma aprovação (gestor, AF, AD) se chama **fase de aprovação** (Moises, 15/nov/2026).
 
 **Mover um núcleo de lugar na árvore, ou ligar e desligar um centro de custo num núcleo, exige aprovação** e fica registrado, porque muda quem vê e quem aprova. (A aprovação de ligar e desligar é 🟡 proposta, por extensão da regra de 8/nov.)
 
-🟡 Em aberto: Terreno, Incorporação, Obra e Assistência técnica, como centros de custo, lembram a etapa do empreendimento (que é calculada sozinha) e a natureza. É preciso combinar a regra: o centro de custo diz quem responde pelo gasto, a natureza diz o que foi comprado e a etapa diz quando.
 
 Hoje o Sienge tem 97 centros de custo, que misturam obra, tipo de gasto e momento. Eles viram cerca de 25 núcleos econômicos na árvore, mais a lista de centros de custo. ⏳ O de-para com o Sienge está em rascunho. Enquanto os títulos forem criados lá, cada combinação núcleo × centro de custo × natureza tem de apontar para exatamente uma conta e um centro de custo (obra) do Sienge, senão o título não sobe.
 

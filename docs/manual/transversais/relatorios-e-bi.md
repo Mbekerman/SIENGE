@@ -8,7 +8,7 @@
 
 - Os **gráficos e as análises ficam no próprio sistema**. O Power BI deixa de ser usado.
 - **Quem vê o quê é liberado no sistema, pessoa a pessoa.** Também dá para criar **grupos**: quem entra num grupo passa a ver o que o grupo vê.
-- **O acesso combina núcleo econômico e centro de custo** (Moises, 8/nov/2026; nomes trocados em 14/nov/2026): a pessoa vê o que está ao mesmo tempo nos núcleos e nos centros de custo liberados para ela, **com herança para baixo** (quem tem "São Paulo" vê todos os núcleos de São Paulo). A etapa (antiga "fase") não entra no acesso. ✅ Também se pode liberar ou bloquear cada pessoa para **lançar** em cada uma das três dimensões: núcleo, centro de custo e natureza (Moises, 14/nov/2026).
+- **O acesso combina núcleo econômico e centro de custo** (Moises, 8/nov/2026; nomes trocados em 14/nov/2026): a pessoa vê o que está ao mesmo tempo nos núcleos e nos centros de custo liberados para ela, **com herança para baixo** (quem tem "São Paulo" vê todos os núcleos de São Paulo). ✅ Também se pode liberar ou bloquear cada pessoa para **lançar** em cada uma das três dimensões: núcleo, centro de custo e natureza (Moises, 14/nov/2026).
 - A **folha PJ** aparece só somada por núcleo econômico e mês.
 - Datas e horas são gravadas e mostradas no **horário de São Paulo**. (Um pagamento às 22h do dia 31 fica no dia 31, não no mês seguinte.)
 - Todas as datas de um lançamento (competência, emissão, vencimento, pagamento) podem ser usadas nos relatórios; a competência é a data padrão. Também aparecem os dias de atraso (pagamento menos vencimento) e o prazo de pagamento (pagamento menos emissão).
