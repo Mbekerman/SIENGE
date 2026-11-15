@@ -953,7 +953,7 @@ select pg_temp.ok(not exists (
        '_vejo_titulo','_lanco_titulo','_vejo_documento','_lanco_documento','_vejo_compromisso','_lanco_compromisso',
        '_vejo_pagamento','_lanco_pagamento',
        'previsao_saldo','parcela_saldo','pagamento_saldo',
-       'regra_adiantamento_atual','autor_lancamento','abatimento_aprovado','gestor_abate_divisao','adiantamento_anterior_em_aberto','centro_ligado',
+       'regra_adiantamento_atual','autor_lancamento','abatimento_aprovado','gestor_abate_divisao','adiantamento_anterior_em_aberto','centro_ligado','natureza_presa',
        'checar_natureza','checar_centro','em_revisao','pode_ajustar','_ajustavel','_nota_ajustavel','_titulo_em_revisao_da_nota',
        'cadeia_titulo','conferir_ajuste','alcada_fase','alcada_pendente','alcada_recusada','titulos_do_acumulado',
        'checar_competencia','_registrar_ajuste','recusar_so_sucessao','recusar_admin_aprovador','_beneficiarios_acesso',
@@ -5150,6 +5150,42 @@ insert into erp.previsoes (empresa_id, origem, nucleo_economico_id, centro_custo
 values (:'spe', 'manual', :'ne_vm', :'cc_mkt', :'dv_inf', pg_temp.nat('04.01'), '2026-10-01', '2026-10-10', 9);
 select pg_temp.ok(exists (select 1 from erp.previsoes where divisao_id = :'dv_inf' and valor = 9),
   'naturezas: com divisão, vale a lista da divisão mesmo com a natureza desligada no centro');
+-- reclassificação para natureza desligada no centro e divisão das linhas: recusada no pedido e
+-- de novo ao aprovar (Moises, 15/11/2026)
+select pg_temp.erro_igual(format($$select erp.pedir_reclassificacao(%L, %L, 'x', jsonb_build_object('lancamentos',
+    (select jsonb_agg(id) from erp.lancamentos where divisao_id = %L and natureza_id = %L)))$$,
+    pg_temp.nat('04.01'), pg_temp.nat('04.02'), :'dv_inf', pg_temp.nat('04.01')),
+  'A natureza de destino não está liberada em "Marketing > Influencer": ligue-a lá ou filtre o pedido',
+  'naturezas: não se reclassifica para natureza desligada na divisão das linhas');
+select pg_temp.como(:'ti');
+insert into erp.naturezas_liberadas (centro_custo_id, divisao_id, natureza_id) values (:'cc_mkt', :'dv_inf', pg_temp.nat('04.02'));
+select pg_temp.como(:'analista');
+select erp.pedir_reclassificacao(pg_temp.nat('04.01'), pg_temp.nat('04.02'), 'teste', jsonb_build_object('lancamentos',
+    (select jsonb_agg(id) from erp.lancamentos where divisao_id = :'dv_inf' and natureza_id = pg_temp.nat('04.01')))) as r_nl \gset
+select pg_temp.como(:'ti');
+delete from erp.naturezas_liberadas where divisao_id = :'dv_inf' and natureza_id = pg_temp.nat('04.02');
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual(format($$select erp.decidir_reclassificacao(%L, true)$$, :'r_nl'),
+  'A natureza de destino não está liberada em "Marketing > Influencer": ligue-a lá ou filtre o pedido',
+  'naturezas: desligada depois do pedido, a reclassificação não se aplica');
+-- natureza presa: com contrato ou pedido ativo nela, no centro e na divisão, não se desliga
+select pg_temp.como(:'analista');
+insert into erp.compromisso_rateios (compromisso_id, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, percentual)
+values (:'cmp_nl', :'ne_vm', :'cc_mkt', :'dv_inf', pg_temp.nat('04.01'), 100);
+select pg_temp.ok(array(select erp.compromissos_na_natureza(:'cc_mkt', :'dv_inf', pg_temp.nat('04.01'))) = array[:'cmp_nl'::uuid],
+  'naturezas: quem vai desligar vê os contratos e pedidos ativos que a prendem');
+select pg_temp.como(:'ti');
+select pg_temp.ok(not exists (select 1 from erp.compromissos where id = :'cmp_nl'), 'naturezas: (o administrador não vê o contrato)');
+select pg_temp.erro_igual(format($$delete from erp.naturezas_liberadas where divisao_id = %L and natureza_id = %L$$, :'dv_inf', pg_temp.nat('04.01')),
+  format('A natureza "%s" tem contrato ou pedido ativo neste centro e divisão: reclassifique antes de desligar', (select nome from erp.naturezas where id = pg_temp.nat('04.01'))),
+  'naturezas: não se desliga natureza com contrato ativo na divisão, mesmo que quem desliga não veja o contrato');
+select pg_temp.ok(not exists (select erp.compromissos_na_natureza(:'cc_mkt', null, pg_temp.nat('04.01')))
+                  and not erp.natureza_presa(:'cc_mkt', null, pg_temp.nat('04.01')),
+  'naturezas: o contrato prende só no centro e na divisão dele');
+select pg_temp.sis(); update erp.compromissos set situacao = 'encerrado' where id = :'cmp_nl'; select pg_temp.volta();
+delete from erp.naturezas_liberadas where divisao_id = :'dv_inf' and natureza_id = pg_temp.nat('04.01');
+select pg_temp.ok(not exists (select 1 from erp.naturezas_liberadas where divisao_id = :'dv_inf' and natureza_id = pg_temp.nat('04.01')),
+  'naturezas: contrato encerrado não prende a natureza');
 select pg_temp.como(null);
 rollback;
 

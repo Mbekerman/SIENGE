@@ -527,6 +527,12 @@ begin
   if not (erp.sou_admin() or erp.financeiro()) then
     raise exception 'Só o master, o administrador e AF, AO ou AD ligam e desligam naturezas';
   end if;
+  if tg_table_name = 'naturezas_liberadas' and tg_op = 'DELETE' then   -- (o plpgsql não para no primeiro "and")
+    if erp.natureza_presa(old.centro_custo_id, old.divisao_id, old.natureza_id) then
+      raise exception 'A natureza "%" tem contrato ou pedido ativo neste centro e divisão: reclassifique antes de desligar',
+        (select nome from erp.naturezas where id = old.natureza_id);
+    end if;
+  end if;
   return coalesce(new, old);
 end $$;
 create trigger t_natureza_liberada_cfg before insert or update or delete on erp.naturezas_liberadas
@@ -587,6 +593,23 @@ begin
                       for each row execute function erp.tg_natureza_liberada()', t);
   end loop;
 end $$;
+
+-- Natureza presa (Moises, 15/11/2026): não se desliga natureza que tem contrato ou pedido ativo
+-- com linha nela, naquele centro e divisão; primeiro se reclassifica. A trava olha todos os
+-- contratos (definer, migration _erp_rls) e só diz sim ou não; a lista, cada um vê a sua.
+create function erp.natureza_presa(p_centro uuid, p_divisao uuid, p_natureza uuid) returns boolean language sql stable as $$
+  select exists (select 1 from erp.compromisso_rateios r join erp.compromissos c on c.id = r.compromisso_id
+                  where c.situacao = 'ativo' and r.centro_custo_id = p_centro
+                    and r.divisao_id is not distinct from p_divisao and r.natureza_id = p_natureza) $$;
+create function erp.compromissos_na_natureza(p_centro uuid, p_divisao uuid, p_natureza uuid)
+returns setof uuid language sql stable as $$
+  select distinct c.id from erp.compromissos c join erp.compromisso_rateios r on r.compromisso_id = c.id
+   where c.situacao = 'ativo' and r.centro_custo_id = p_centro
+     and r.divisao_id is not distinct from p_divisao and r.natureza_id = p_natureza $$;
+-- A natureza está liberada no centro e na divisão (sem centro, a movimentação dispensa).
+create function erp.natureza_ligada(p_centro uuid, p_divisao uuid, p_natureza uuid) returns boolean language sql stable as $$
+  select p_centro is null or exists (select 1 from erp.naturezas_liberadas where centro_custo_id = p_centro
+                                       and divisao_id is not distinct from p_divisao and natureza_id = p_natureza) $$;
 
 -- Títulos em aberto (ou em rascunho) com linha na natureza, no centro e na divisão: o que
 -- quem desliga a natureza precisa ver. Invoker: cada um vê os títulos que já vê.
