@@ -892,10 +892,10 @@ select pg_temp.ok(not exists (select 1 from pg_class c join pg_namespace n on n.
                                                   and p.policyname = 'perfil_inclui' and 'authenticated' = any(p.roles))),
   'catálogo: authenticated só grava em tabela com política de gravação por perfil');
 select pg_temp.ok(not exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
-                               where n.nspname = 'erp' and c.relkind in ('r','p') and c.relname not in ('avisos_sucessao','eventos')
+                               where n.nspname = 'erp' and c.relkind in ('r','p') and c.relname not in ('avisos_sucessao','eventos','envios_notificacao')
                                  and not exists (select 1 from pg_policies p where p.schemaname = 'erp' and p.tablename = c.relname
                                                   and p.policyname = 'perfil_le' and 'authenticated' = any(p.roles))),
-  'catálogo: toda tabela tem a política de leitura por perfil (só os avisos da sucessão e os eventos ficam fora da API)');
+  'catálogo: toda tabela tem a política de leitura por perfil (só os avisos da sucessão, os eventos e a fila de envio ficam fora da API)');
 select pg_temp.ok(not has_table_privilege('authenticated', 'erp.lancamentos', 'INSERT,UPDATE,DELETE')
                   and not has_table_privilege('authenticated', 'erp.auditoria', 'INSERT,UPDATE,DELETE')
                   and not has_table_privilege('authenticated', 'erp.caucao_movimentos', 'INSERT,UPDATE,DELETE')
@@ -926,7 +926,7 @@ select pg_temp.ok(not exists (
        'registrar_movimento_societario','fechar_mes','reabrir_mes','pedir_reclassificacao','decidir_reclassificacao',
        'cancelar_reclassificacao','pedir_mudanca_acesso','decidir_mudanca_acesso','cancelar_mudanca_acesso','passar_master',
        'pedir_sucessao_master','decidir_sucessao_master','vetar_sucessao_master','efetivar_sucessao_master',
-       'pedir_mudanca_config','decidir_mudanca_config','cancelar_mudanca_config')),
+       'pedir_mudanca_config','decidir_mudanca_config','cancelar_mudanca_config','marcar_notificacoes_lidas')),
   'catálogo: das funções security definer, authenticated só executa as da lista (RPCs e conferências de quem está logado)');
 select pg_temp.ok(not has_function_privilege('authenticated', 'erp._aplicar_mudanca_acesso(uuid)', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp.gerar_avisos_sucessao()', 'EXECUTE')
@@ -1233,17 +1233,17 @@ select pg_temp.ok(not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'erp' and p.prosecdef
     and (not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) c where c like 'search\_path=%' and c like '%pg\_temp')
-         or p.proowner not in ('erp_conferencia'::regrole, 'erp_situacao'::regrole, 'erp_reclassificacao'::regrole, 'erp_auditoria'::regrole, 'erp_acesso'::regrole, 'erp_config'::regrole, 'erp_eventos'::regrole))),
+         or p.proowner not in ('erp_conferencia'::regrole, 'erp_situacao'::regrole, 'erp_reclassificacao'::regrole, 'erp_auditoria'::regrole, 'erp_acesso'::regrole, 'erp_config'::regrole, 'erp_eventos'::regrole, 'erp_notificacoes'::regrole))),
   'catálogo: todo security definer do `erp` tem search_path fixo e é de erp_conferencia, erp_situacao ou erp_reclassificacao');
 select pg_temp.ok((select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
                    where n.nspname = 'erp' and p.prosecdef) >= 37,
   'catálogo: as funções de conferência são security definer');
-select pg_temp.ok((select count(*) = 8 and bool_and(not rolcanlogin and not rolsuper and not rolbypassrls) from pg_roles
+select pg_temp.ok((select count(*) = 9 and bool_and(not rolcanlogin and not rolsuper and not rolbypassrls) from pg_roles
                    where rolname in ('erp_sistema', 'erp_conferencia', 'erp_situacao', 'erp_reclassificacao', 'erp_auditoria', 'erp_acesso',
-                                     'erp_config', 'erp_eventos'))
+                                     'erp_config', 'erp_eventos', 'erp_notificacoes'))
                   and not exists (select 1 from pg_auth_members
                                   where roleid in ('erp_conferencia'::regrole, 'erp_situacao'::regrole, 'erp_reclassificacao'::regrole, 'erp_auditoria'::regrole, 'erp_acesso'::regrole,
-                                                   'erp_config'::regrole, 'erp_eventos'::regrole)),
+                                                   'erp_config'::regrole, 'erp_eventos'::regrole, 'erp_notificacoes'::regrole)),
   'catálogo: os papéis erp_* não entram, não ignoram RLS, e conferência, situação e reclassificação não têm membros');
 select pg_temp.ok(not exists (
   select 1 from pg_auth_members m join pg_roles r on r.oid = m.roleid join pg_roles u on u.oid = m.member
@@ -1272,9 +1272,14 @@ select pg_temp.ok(not exists (
              and tablename in ('naturezas_sistema','niveis_aprovacao','alcadas_pagamento','alcadas_reclassificacao',
                                'regra_adiantamento','regra_alcada_pagamento','regras_ajuste','contas_bancarias',
                                'codigos_externos','aprovadores_config','regras_mudanca_config','mudancas_config',
-                               'mudanca_config_votos','usuarios','auditoria')
+                               'mudanca_config_votos','usuarios','auditoria','regras_notificacao','tipos_evento')
              and (cmd = 'ALL' or (cmd = 'SELECT' and tablename in ('usuarios','auditoria'))))
     and not (policyname = 'eventos_grava' and tablename = 'eventos' and cmd = 'INSERT' and roles = '{erp_eventos}')
+    -- a distribuição das notificações: lê quem recebe, grava só o sino e a fila
+    and not (policyname = 'notificacoes' and roles = '{erp_notificacoes}' and coalesce(qual, with_check) ~ 'agindo_como\(''erp_notificacoes''::text\)'
+             and ((cmd = 'ALL' and tablename in ('notificacoes','envios_notificacao'))
+                  or (cmd = 'SELECT' and tablename in ('usuarios','master','tipos_evento','regras_notificacao','preferencias_notificacao',
+                                                       'listas_financeiro','centro_aprovadores','centro_diretores','aprovadores_config','nucleo_centros'))))
     and not (policyname in ('perfil_le', 'perfil_inclui', 'perfil_altera', 'perfil_apaga') and roles = '{authenticated}')),
   'catálogo: no `erp` só há as políticas sistema, conferencia, operacao e as de perfil, estas só para authenticated');
 
@@ -3992,6 +3997,10 @@ select pg_temp.ok(exists (select 1 from erp.eventos e join erp.tipos_evento te o
   'alçada por centro: a falta de aprovadores vira evento crítico, com o motivo');
 select pg_temp.ok(not exists (select 1 from erp.eventos where tipo = 'alcada_falta_aprovadores' and dados->>'titulo_id' = '84000000-0000-0000-0000-000000000011'),
   'alçada por centro: com gente para as vagas, não há evento');
+select pg_temp.ok((select n.detalhe from erp.notificacoes n join erp.eventos e on e.id = n.evento_id
+                    where e.tipo = 'alcada_falta_aprovadores' and e.dados->>'titulo_id' = '84000000-0000-0000-0000-000000000012'
+                      and n.user_id = '00000000-0000-0000-0000-00000000000a') = 'Veio para você por falta de aprovadores mínimos qualificados',
+  'notificações: o master recebe o título que veio por falta de aprovadores mínimos qualificados, com esse texto');
 select pg_temp.volta();
 select pg_temp.como(:'diretor');
 select pg_temp.ok(erp.decidir_titulo('84000000-0000-0000-0000-000000000012', true) = 'aprovado', 'alçada por centro: o master aprova o título que veio por falta de aprovadores');
@@ -4374,6 +4383,197 @@ select pg_temp.ok(:'dbg5' = 'aprovado'
 select pg_temp.ok((select bool_and(v.centro_custo_id = a.centro_custo_id and v.divisao_id is not distinct from a.divisao_id and v.titulo_id = a.titulo_id)
                      from erp.titulo_aprovacoes v join erp.titulo_alcadas a on a.id = v.alcada_id),
   'divisão: a aprovação leva o centro e a divisão da alçada');
+select pg_temp.como(null);
+rollback;
+
+-- ---------------------------------------------------------------------
+\echo '# notificações: painel, sino e fila (Moises, 15/11/2026)'
+begin;
+\set u_n '00000000-0000-0000-0000-000000000021'
+-- crítico vai ao master por e-mail e WhatsApp, sem regra
+select pg_temp.sis();
+insert into erp.listas_financeiro (lista, user_id) values ('AF', :'analista2');
+select pg_temp.ok(exists (select 1 from erp.notificacoes n join erp.eventos e on e.id = n.evento_id
+                           where e.tipo = 'lista_financeiro_alterada' and e.registro = :'analista2' and n.user_id = :'diretor' and n.critico)
+                  and (select count(*) from erp.envios_notificacao v join erp.notificacoes n on n.id = v.notificacao_id
+                        join erp.eventos e on e.id = n.evento_id
+                        where e.tipo = 'lista_financeiro_alterada' and e.registro = :'analista2' and n.user_id = :'diretor') = 2,
+  'notificações: entrar alguém na AF avisa o master no sino, no e-mail e no WhatsApp');
+insert into erp.usuarios (id, login_id, nome, papel, administrador) values (:'u_n', :'u_n', 'TI 2', 'leitura', true);
+select pg_temp.ok(exists (select 1 from erp.notificacoes where tipo = 'administrador_alterado' and user_id = :'diretor'),
+  'notificações: administrador novo avisa o master');
+select pg_temp.volta();
+
+-- preferência: crítico só desliga o WhatsApp
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual($$insert into erp.preferencias_notificacao (user_id, tipo, canal) values ('00000000-0000-0000-0000-00000000000a', 'lista_financeiro_alterada', 'email')$$,
+  'Aviso crítico não se desliga no e-mail; só no WhatsApp', 'notificações: o aviso crítico não se desliga no e-mail');
+insert into erp.preferencias_notificacao (user_id, tipo, canal) values (:'diretor', 'lista_financeiro_alterada', 'whatsapp');
+select pg_temp.falha($$insert into erp.preferencias_notificacao (user_id, tipo, canal) values ('00000000-0000-0000-0000-00000000000b', 'natureza_sistema_alterada', 'email')$$,
+  'notificações: ninguém mexe na preferência de outra pessoa');
+select pg_temp.sis();
+delete from erp.listas_financeiro where lista = 'AF' and user_id = :'analista2';
+select pg_temp.ok((select array_agg(v.canal) from erp.envios_notificacao v join erp.notificacoes n on n.id = v.notificacao_id
+                    join erp.eventos e on e.id = n.evento_id
+                   where e.tipo = 'lista_financeiro_alterada' and e.dados->>'acao' = 'delete' and n.user_id = :'diretor') = '{email}',
+  'notificações: com o WhatsApp desligado, o crítico segue no sino e no e-mail');
+select pg_temp.volta();
+
+-- o painel: o administrador não grava direto; pede, e o master aprova
+select pg_temp.como(:'ti');
+select pg_temp.erro_igual($$insert into erp.regras_notificacao (tipo, destino, user_id) values ('natureza_sistema_alterada', 'pessoa', '00000000-0000-0000-0000-00000000000b')$$,
+  'O painel de notificações muda pelo pedido (erp.pedir_mudanca_config), que o master aprova',
+  'notificações: o administrador não muda o painel direto');
+select erp.pedir_mudanca_config('regras_notificacao', 'incluir',
+  jsonb_build_object('tipo', 'natureza_sistema_alterada', 'destino', 'pessoa', 'user_id', :'analista'), 'avisar o Rafael') as pn \gset
+select pg_temp.ok((select aprovacao = 'master' from erp.mudancas_config where id = :'pn')
+                  and not exists (select 1 from erp.regras_notificacao where tipo = 'natureza_sistema_alterada'),
+  'notificações: o pedido do administrador no painel vai ao master e não vale antes');
+select pg_temp.ok(not exists (select 1 from erp.notificacoes where tipo = 'mudanca_config_pedida'),
+  'notificações: quem pediu não é avisado do próprio pedido (e não vê o sino dos outros)');
+select pg_temp.sis();
+select pg_temp.ok((select detalhe from erp.notificacoes where tipo = 'mudanca_config_pedida' and user_id = :'diretor') = 'Motivo: avisar o Rafael',
+  'notificações: o master recebe o pedido com o motivo, sem "falta de aprovadores" (no painel, quem aprova é ele)');
+select pg_temp.volta();
+select pg_temp.como(:'diretor');
+select erp.decidir_mudanca_config(:'pn', true);
+select pg_temp.ok(exists (select 1 from erp.regras_notificacao where tipo = 'natureza_sistema_alterada' and user_id = :'analista'),
+  'notificações: aprovado pelo master, o painel muda');
+select pg_temp.sis();
+select pg_temp.ok(exists (select 1 from erp.eventos where tipo = 'notificacoes_alteradas' and tabela = 'regras_notificacao' and por = :'diretor' and dados->>'mudanca_id' = :'pn')
+                  and not exists (select 1 from erp.notificacoes n join erp.eventos e on e.id = n.evento_id
+                                   where e.tipo = 'notificacoes_alteradas' and n.user_id = :'diretor'),
+  'notificações: a mudança do painel vira evento crítico; quem agiu (o master) não é avisado do que fez');
+select pg_temp.volta();
+
+-- a lista de críticos: o administrador pede, o master aprova
+select pg_temp.como(:'ti');
+select erp.pedir_mudanca_config('tipos_evento', 'alterar', '{"codigo": "natureza_sistema_alterada", "critico": true}', 'é sensível') as pc \gset
+select pg_temp.como(:'diretor');
+select erp.decidir_mudanca_config(:'pc', true);
+select pg_temp.ok((select critico from erp.tipos_evento where codigo = 'natureza_sistema_alterada'),
+  'notificações: a lista de críticos muda pelo pedido aprovado pelo master');
+select pg_temp.falha($$insert into erp.tipos_evento (codigo, rotulo, modulo) values ('x', 'X', 'x')$$,
+  'notificações: tipo de evento novo só pela carga');
+
+-- ninguém recebe o que não pode ver
+select pg_temp.sis();
+insert into erp.regras_notificacao (tipo, destino, user_id) values ('natureza_sistema_alterada', 'pessoa', :'ti');
+select erp.registrar_evento('natureza_sistema_alterada', 'teste', 'com-centro', :'ne_vm', :'cc_mkt', '{}');
+select erp.registrar_evento('natureza_sistema_alterada', 'teste', 'sem-centro', null, null, '{}');
+select pg_temp.ok(exists (select 1 from erp.notificacoes n join erp.eventos e on e.id = n.evento_id where e.registro = 'com-centro' and n.user_id = :'analista')
+                  and not exists (select 1 from erp.notificacoes n join erp.eventos e on e.id = n.evento_id where e.registro = 'com-centro' and n.user_id = :'ti')
+                  and exists (select 1 from erp.notificacoes n join erp.eventos e on e.id = n.evento_id where e.registro = 'sem-centro' and n.user_id = :'ti'),
+  'notificações: o evento do centro não vai a quem não vê o centro; o de configuração vai');
+select pg_temp.volta();
+
+-- o sino
+select pg_temp.como(:'analista');
+select pg_temp.ok((select count(*) from erp.notificacoes) > 0 and not exists (select 1 from erp.notificacoes where user_id <> :'analista'),
+  'notificações: cada um vê só o próprio sino');
+select erp.marcar_notificacoes_lidas() as lidas \gset
+select pg_temp.ok(:lidas > 0 and not exists (select 1 from erp.notificacoes where lida_em is null), 'notificações: marcar como lidas');
+select pg_temp.falha($$update erp.notificacoes set titulo = 'x'$$, 'notificações: a notificação não se altera pela API');
+select pg_temp.falha($$select * from erp.envios_notificacao$$, 'notificações: a fila de envio não se lê pela API');
+select pg_temp.falha($$select erp.registrar_envio_notificacao(1, 'email')$$, 'notificações: só o servidor registra o envio');
+
+-- o servidor marca o envio
+select pg_temp.sis();
+select v.notificacao_id as nv from erp.envios_notificacao v join erp.notificacoes n on n.id = v.notificacao_id
+ where n.user_id = :'diretor' and v.canal = 'email' limit 1 \gset
+select erp.registrar_envio_notificacao(:nv, 'email', 'caixa cheia');
+select erp.registrar_envio_notificacao(:nv, 'email');
+select pg_temp.ok((select tentativas = 2 and enviado_em is not null and erro is null from erp.envios_notificacao where notificacao_id = :nv and canal = 'email'),
+  'notificações: a tentativa que falhou fica contada e o envio é marcado');
+select pg_temp.falha(format($$select erp.registrar_envio_notificacao(%s, 'email')$$, :nv), 'notificações: envio já feito não se registra de novo');
+
+-- S-099: quem recebe, por destino e filtro
+\set u_vm  '00000000-0000-0000-0000-000000000022'
+\set u_ina '00000000-0000-0000-0000-000000000023'
+\set u_suc '00000000-0000-0000-0000-000000000024'
+insert into erp.usuarios (id, login_id, nome, papel, ativo) values
+  (:'u_vm', :'u_vm', 'Só Vila Maria Marketing', 'analista', true),
+  (:'u_ina', :'u_ina', 'Inativo', 'leitura', false);
+insert into erp.usuarios (id, login_id, nome, papel, so_sucessao) values (:'u_suc', :'u_suc', 'Só da sucessão', 'leitura', true);
+insert into erp.perfis_modelo (id, nome) values ('a2000000-0000-0000-0000-000000000099', 'Só Marketing (notificações)');
+insert into erp.perfil_centros values ('a2000000-0000-0000-0000-000000000099', :'cc_mkt', 'leitor');
+insert into erp.atribuicoes (id, user_id, perfil_id, escopo) values ('a3000000-0000-0000-0000-000000000099', :'u_vm', 'a2000000-0000-0000-0000-000000000099', 'lista');
+insert into erp.atribuicao_nucleos values ('a3000000-0000-0000-0000-000000000099', :'ne_vm', true);
+insert into erp.centro_aprovadores values (:'cc_obra', :'gestor');
+insert into erp.aprovadores_config values ('contas_bancarias', :'contador');
+insert into erp.regras_notificacao (tipo, destino, user_id) values ('natureza_sistema_alterada', 'pessoa', :'u_vm');
+insert into erp.regras_notificacao (tipo, destino, papel) values ('natureza_sistema_alterada', 'papel', 'leitura');
+insert into erp.regras_notificacao (tipo, destino, user_id, ativa) values ('natureza_sistema_alterada', 'pessoa', :'diretor2', false);
+insert into erp.regras_notificacao (tipo, destino, user_id, centro_id) values ('natureza_sistema_alterada', 'pessoa', :'analista2', :'cc_obra');
+insert into erp.regras_notificacao (tipo, destino, user_id, nucleo_id) values ('natureza_sistema_alterada', 'pessoa', :'analista2', :'ne_corp');
+insert into erp.regras_notificacao (tipo, destino) values ('natureza_sistema_alterada', 'gestor_centro'), ('natureza_sistema_alterada', 'aprovadores_config');
+select erp.registrar_evento('natureza_sistema_alterada', 'teste', 'vm-mkt', :'ne_vm', :'cc_mkt', '{}');
+select erp.registrar_evento('natureza_sistema_alterada', 'teste', 'vm-obra', :'ne_vm', :'cc_obra', '{}');
+select erp.registrar_evento('natureza_sistema_alterada', 'teste', 'corp-mkt', :'ne_corp', :'cc_mkt', '{}');
+select erp.registrar_evento('natureza_sistema_alterada', 'teste', 'so-obra', null, :'cc_obra', '{}');
+select erp.registrar_evento('natureza_sistema_alterada', 'teste', 'so-corp', :'ne_corp', null, '{}');
+select erp.registrar_evento('natureza_sistema_alterada', 'contas_bancarias', 'geral', null, null, '{}');
+create function pg_temp.recebeu(u uuid, reg text) returns boolean language sql as
+  $$ select exists (select 1 from erp.notificacoes n join erp.eventos e on e.id = n.evento_id where n.user_id = u and e.registro = reg) $$;
+select pg_temp.ok(pg_temp.recebeu(:'u_vm', 'vm-mkt') and not pg_temp.recebeu(:'u_vm', 'vm-obra') and not pg_temp.recebeu(:'u_vm', 'corp-mkt')
+                  and not pg_temp.recebeu(:'u_vm', 'so-obra') and not pg_temp.recebeu(:'u_vm', 'so-corp') and pg_temp.recebeu(:'u_vm', 'geral'),
+  'S-099: quem vê só um núcleo × centro recebe só os eventos dele (centro e núcleo conferidos)');
+select pg_temp.ok(pg_temp.recebeu(:'leitor', 'geral') and not pg_temp.recebeu(:'u_ina', 'geral') and not pg_temp.recebeu(:'u_suc', 'geral'),
+  'S-099: o inativo e o só da sucessão não recebem, mesmo pelo papel');
+select pg_temp.ok(not pg_temp.recebeu(:'diretor2', 'geral'), 'S-099: regra desligada não vale');
+select pg_temp.ok(pg_temp.recebeu(:'analista2', 'vm-obra') and pg_temp.recebeu(:'analista2', 'corp-mkt')
+                  and not pg_temp.recebeu(:'analista2', 'vm-mkt') and not pg_temp.recebeu(:'analista2', 'geral'),
+  'S-099: a regra com centro ou núcleo vale só para eventos dele');
+select pg_temp.ok(pg_temp.recebeu(:'gestor', 'vm-obra') and not pg_temp.recebeu(:'gestor', 'vm-mkt'),
+  'S-099: o gestor do centro recebe só os eventos do centro dele');
+select pg_temp.ok(pg_temp.recebeu(:'contador', 'geral') and not pg_temp.recebeu(:'contador', 'vm-mkt'),
+  'S-099: o aprovador da configuração recebe só os eventos da tabela dele');
+-- crítico com a regra sem e-mail: o e-mail vai mesmo assim
+insert into erp.regras_notificacao (tipo, destino, user_id, email) values ('conta_bancaria_alterada', 'pessoa', :'analista2', false);
+select erp.registrar_evento('conta_bancaria_alterada', 'teste', 'critico-sem-email', null, null, '{}');
+select pg_temp.ok((select array_agg(v.canal) from erp.envios_notificacao v join erp.notificacoes n on n.id = v.notificacao_id
+                    join erp.eventos e on e.id = n.evento_id where e.registro = 'critico-sem-email' and n.user_id = :'analista2') = '{email}',
+  'S-099: aviso crítico sai no e-mail mesmo com a regra sem e-mail');
+-- desligado o e-mail quando o tipo não era crítico: virando crítico, o e-mail volta
+update erp.tipos_evento set critico = false where codigo = 'natureza_sistema_alterada';
+insert into erp.preferencias_notificacao (user_id, tipo, canal) values (:'u_vm', 'natureza_sistema_alterada', 'email');
+update erp.tipos_evento set critico = true where codigo = 'natureza_sistema_alterada';
+select erp.registrar_evento('natureza_sistema_alterada', 'teste', 'virou-critico', null, null, '{}');
+select pg_temp.ok((select array_agg(v.canal) from erp.envios_notificacao v join erp.notificacoes n on n.id = v.notificacao_id
+                    join erp.eventos e on e.id = n.evento_id where e.registro = 'virou-critico' and n.user_id = :'u_vm') = '{email}',
+  'S-099: a preferência antiga de e-mail não desliga o tipo que virou crítico');
+select pg_temp.erro_igual(format($$insert into erp.regras_notificacao (tipo, destino, user_id) values ('natureza_sistema_alterada', 'pessoa', %L)$$, :'u_suc'),
+  'Usuário só de sucessão não recebe acesso no ERP', 'S-099: o painel não aponta para quem é só da sucessão');
+insert into erp.grupo_sucessao values (:'diretor2');
+insert into erp.delegados_acesso values (:'diretor2');
+select pg_temp.ok(exists (select 1 from erp.eventos where tipo = 'aprovadores_alterados' and tabela = 'grupo_sucessao')
+                  and exists (select 1 from erp.eventos where tipo = 'aprovadores_alterados' and tabela = 'delegados_acesso'),
+  'S-099: mudar o grupo de sucessão e os delegados de acesso vira evento crítico');
+-- a guarda do sino
+select n.id as n_ana from erp.notificacoes n join erp.eventos e on e.id = n.evento_id where e.registro = 'vm-obra' and n.user_id = :'analista2' \gset
+select pg_temp.erro_igual(format($$update erp.notificacoes set titulo = 'x' where id = %s$$, :n_ana), 'Da notificação só muda a leitura',
+  'S-099: da notificação só muda a leitura, nem pelo sistema');
+select pg_temp.erro_igual(format($$delete from erp.notificacoes where id = %s$$, :n_ana), 'Notificação não se apaga', 'S-099: notificação não se apaga');
+select pg_temp.volta();
+
+-- o que é de cada um
+select pg_temp.como(:'analista2');
+insert into erp.preferencias_notificacao (user_id, tipo, canal) values (:'analista2', 'natureza_sistema_alterada', 'whatsapp');
+select pg_temp.como(:'diretor2');
+select pg_temp.ok(not exists (select 1 from erp.preferencias_notificacao where user_id = :'analista2'), 'S-099: ninguém lê a preferência de outro');
+delete from erp.preferencias_notificacao where user_id = :'analista2';
+delete from erp.preferencias_notificacao;   -- sem where: a leitura não entra, só a política de apagar
+select erp.marcar_notificacoes_lidas(array[:n_ana]::bigint[]) as lidas_outro \gset
+select pg_temp.ok(:lidas_outro = 0, 'S-099: ninguém marca como lida a notificação de outro');
+select pg_temp.ok(not exists (select 1 from erp.regras_notificacao), 'S-099: o painel não se lê fora do administrador e do master');
+select pg_temp.sis();
+select pg_temp.ok(exists (select 1 from erp.preferencias_notificacao where user_id = :'analista2')
+                  and (select lida_em is null from erp.notificacoes where id = :n_ana),
+  'S-099: a preferência e o sino do outro ficam como estavam');
+select pg_temp.volta();
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format($$select erp.registrar_envio_notificacao(%s, 'email')$$, :n_ana), 'Só o servidor registra o envio da notificação',
+  'S-099: o registro do envio confere que é o servidor');
 select pg_temp.como(null);
 rollback;
 
