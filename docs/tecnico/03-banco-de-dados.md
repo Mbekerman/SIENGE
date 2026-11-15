@@ -30,7 +30,7 @@ Onde está: branch `claude/project-thread-dknc98` deste repositório (commits `6
 | `supabase/tests/shim_supabase.sql` | Imita o mínimo do Supabase (`auth.uid()` lido de `request.jwt.claim.sub`) |
 | `docs/erp.md` | Dicionário das tabelas e regras, em português (fonte principal para o detalhe de cada tabela) |
 
-Conferido nesta documentação em 15/nov/2026 (`develop` em `fb848b2`): `bash supabase/tests/run.sh` aplica as 9 migrations e passa os 917 testes. Até 14/nov o esquema se chamava `nucleo`; os commits antigos citados nesta pasta usam esse nome.
+Conferido nesta documentação em 15/nov/2026 (`develop` em `dac3b5f`): `bash supabase/tests/run.sh` aplica as 9 migrations e passa os 1002 testes. Até 14/nov o esquema se chamava `nucleo`; os commits antigos citados nesta pasta usam esse nome.
 
 **Três dimensões (14/nov/2026):** `erp.nucleos_economicos` (antigo `centros_custo`: empreendimento, corporativo ou outro; nunca uma área), `erp.centros_custo` (antigo `departamentos`: lista raiz única, com Novos negócios, Terreno, Incorporação, Projetos, Obra, Assistência técnica, Comercial, Marketing, Financeiro, Administrativo, Jurídico e Diretoria) e a natureza. `erp.nucleo_centros` diz qual centro está ligado em cada núcleo: sem linha vale como desligado, só o administrador mexe, com auditoria, e nada se apaga. `erp.checar_centro` recusa centro desligado nos rateios, nas previsões, nas linhas de orçamento e no livro. Despesa exige núcleo **e** centro de custo; movimentação dispensa o centro.
 
