@@ -200,6 +200,40 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 
 🟡 Pelo banco de dados de 7/nov/2026: diretor, gestor, analista e leitura; à parte, administrador (configuração) e contador (vota nas alçadas que pedem o contador). Segue o modelo do BKM Terrenos, com hierarquia analista → gestor → diretor.
 
+## Alçada de pagamento do piloto (Marketing)
+
+✅ Decidida pelo Moises em 14/nov/2026; no banco desde o PR #14.
+
+- **Onde vale:** no piloto, Marketing. A alçada vale para o título a pagar com rateio num centro de custo que tem **gestor da área** cadastrado pelo administrador. Centro sem gestor cadastrado fica fora.
+- **Acumulado:** o do **mês de competência**, por centro de custo, somando todos os núcleos e empresas, já contando o próprio título.
+- **Faixas:**
+  - até R$ 50 mil no acumulado: aprovam o gestor da área e depois a AF;
+  - acima de R$ 50 mil: aprovam o gestor da área, depois a AF e depois a AD. Vale para o título que passa dos 50 mil e para todos os seguintes do mês.
+- ✅ O acumulado soma também o que **o mesmo fornecedor** tem no mês em outros centros de custo, para não escapar da alçada repartindo o gasto. O administrador pode desligar (Moises, 14/nov/2026).
+- **Configuração:** as faixas e o modo de somar (grupo, empresa ou núcleo) são valores iniciais; o administrador muda, com registro.
+- **Regras do código** (a conferir com o Moises): a alçada é fixada na confirmação do título, e um título lançado depois não muda a de um anterior; as fases de aprovação correm em sequência; quem lançou não aprova e cada pessoa aprova uma fase de aprovação só; sem a alçada completa, o título não é pago; quem aprova vê os títulos do mês que formaram o acumulado.
+- **Fora da alçada:** imposto retido e movimento entre sócios.
+
+**Alçada por centro de custo** (Moises, 15/nov/2026; no código a partir do PR #37):
+
+- ✅ Cada centro de custo pode ter **faixas próprias**; o que não tem usa as gerais.
+- ✅ Cada faixa tem dois limites: o **valor do título** e o **acumulado do mês no centro**. Vale a faixa mais exigente das duas contas.
+- ✅ O número de aprovadores é o número de **vagas** da faixa. Uma vaga é um papel (gestor da área, diretor da área, AF, AO, AD) ou uma pessoa pelo nome, sem precisar de cargo. As vagas andam em sequência ou em paralelo.
+- ✅ A mesma pessoa não ocupa duas vagas; o administrador não aprova; quem lançou não aprova (salvo a pessoa da AD com a marca de aprovar o próprio).
+- ~~No rateio em vários centros, vale o centro com mais vagas~~ (substituído em 15/nov/2026, 13h20). ✅ No rateio em vários centros, **cada centro tem uma aprovação separada**, com o valor que cabe a ele e o rito daquele centro (o limite por título olha o **valor inteiro do título** em cada centro, para que dividir no rateio não baixe a faixa; o acumulado do mês é o de cada centro; Moises, 15/nov/2026). Quem tem vaga em mais de um centro aprova em cada um. O título só fica aprovado quando todos os centros aprovaram, e quem lançou e quem aprova veem que centros e que vagas ainda faltam. O voto do master aprova todos os centros de uma vez.
+- ✅ Se faltam aprovadores qualificados, o título vai ao Moises, com o aviso de que veio por falta de aprovadores mínimos qualificados. Quem passar a ocupar a vaga depois também pode aprovar.
+- ✅ O último diretor da área não sai enquanto houver título esperando por ele.
+- ✅ A AF e a AD podem mexer no limite do título no modo livre, como no limite do acumulado. Mudar as vagas ou o paralelo sempre pede aprovação.
+
+**Aprovar, recusar ou pedir revisão** (Moises, 14/nov/2026). Cada fase de aprovação da alçada tem as três saídas:
+
+- ✅ **Recusar** exige justificativa e **cancela o título**. Se o título é de uma nota, cancela a nota inteira, com os impostos retidos; a previsão e a caução voltam, e o número da nota fica livre para ser lançado de novo.
+- ✅ **Pedir revisão** exige o motivo. O título fica aberto, mas ninguém aprova nem paga até ele ser reenviado. Podem ajustar quem lançou, o gestor da área e a AF. No título avulso, muda-se o título, as parcelas e o rateio; no título de nota, muda-se a nota.
+- ✅ **Reenvio:** a aprovação recomeça, mas **quem ajustou ou reenviou já aprova a própria fase de aprovação** na volta nova: a gestora da área aprova a fase da área, a AF aprova a fase da AF. Quem lançou continua sendo o autor, e o título segue para a próxima fase de aprovação que falta. Quem ajustou não aprova nenhuma outra fase (Moises, 14/nov/2026, 21h35; substitui a leitura anterior de que quem reenvia não aprova a volta).
+- ✅ Cada mudança do ajuste fica registrada com quem fez, o valor de antes e o de depois. Linha nova (uma parcela, uma linha de rateio) segue a regra de cada campo.
+- ⏳ Futuro (Moises): por ora esses passos são fixos. Depois ele quer cadastrar fluxos de aprovação e ligar cada um a um processo ou área.
+- ✅ **O que se pode ajustar:** o administrador define, por campo e por papel, se o campo pode mudar e, nos números e datas, se só para mais, só para menos ou para os dois lados. Começa tudo liberado.
+
 ## Pagamento com multa ou juros
 
 ✅ **Decidido** (Moises, 7/nov/2026): pagar com multa ou juros é "falha grave, desperdício por desorganização". Por isso, **o título com multa ou juros precisa de uma aprovação específica**, somada às regras normais, de uma pessoa definida pelo administrador. Por padrão, essa pessoa é a AD.
@@ -225,7 +259,28 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 8. Todo pagamento tem pelo menos uma aprovação. No PJ, a aprovação são os dois "ok" do mês.
 9. Toda mudança de configuração fica registrada.
 
+✅ Travas novas, autorizadas pelo Moises em 14/nov/2026 (S-053 a S-055), também no banco e sem tela que as desligue:
+
+- ~~Só o administrador cadastra e altera as contas bancárias da empresa~~ (14/nov). Desde 15/nov, **só o master** (ver abaixo). Tudo fica na auditoria. Usuários: ver [Mudanças de acesso](#mudanças-de-acesso-e-sucessão-do-master) (regra de 14/nov à noite).
+- **Ninguém muda o próprio papel, acesso ou login**, nem o administrador.
+- O mês só fecha e reabre pelas funções da diretoria (ver [Fechamento](../financeiro/reclassificacao-e-fechamento.md)).
+- Orçamento publicado não se edita (ver [Orçamento](../financeiro/orcamento-e-fluxo-de-caixa.md)).
+
+✅ Mais travas autorizadas pelo Moises em 14/nov/2026 (S-056 a S-058):
+
+- Rateio, previsão, orçamento e pagamento só usam **núcleo econômico da mesma empresa** do registro.
+- Depois de criado, contrato, nota, título, orçamento, pagamento ou conta **não muda de empresa**: cria-se outro.
+- **Título criado à mão é sempre avulso**, sem nota e sem contrato. Os títulos de nota, de imposto retido, de caução e de movimento entre sócios só nascem pelas operações do sistema.
+- Com a nota lançada, **o rateio e as retenções dela não mudam**. Com caução retida, o rateio do contrato também não muda.
+- **Movimento entre sócios** não se altera nem se apaga.
+- A **reclassificação** só é pedida por quem tem cadastro no ERP, e só quem pediu pode cancelar.
+
 ## Quem muda a configuração
+
+- ✅ **Por ora, a configuração de dinheiro e aprovação só o master muda**; o administrador (TI) não muda. Inclui: alçadas de pagamento e de reclassificação, níveis de aprovação, regra do adiantamento e da alçada, regras de ajuste da revisão, naturezas do sistema, contas bancárias da empresa e códigos do Sienge (Moises, 15/nov/2026). Onde as linhas abaixo dizem "o master ou um administrador", vale agora só o master.
+- ✅ **Pedidos de mudança na configuração de dinheiro** (Moises, 15/nov/2026): a AF, a AD e o administrador pedem a mudança, com motivo. Aprova a **lista de aprovadores de cada tabela**, que só o master define, com o mínimo de votos. Quem pediu não aprova; o master aprova qualquer pedido. Cada tabela fica em **sempre com aprovação** ou, nas faixas de alçada, **livre até X% a cada N meses**: a AF ou a AD muda o valor da faixa sem aprovação se ficar a até X% do valor de N meses atrás. Tirar fase de aprovação, criar ou tirar faixa, conta bancária e código do Sienge sempre passam por aprovação. Toda mudança avisa o Moises.
+- ✅ O pedido do administrador nunca é livre. Se a lista não tem pessoas suficientes além de quem pediu, o pedido vai para o master (Moises, 15/nov/2026).
+- ✅ **Pagamento e baixa** só registram o financeiro (AF, AO, AD), o master e a ligação automática com o Sienge (Moises, 15/nov/2026).
 
 - ✅ **Listas AF e AO:** qualquer pessoa da AD pode mexer, menos numa lista da qual ela mesma faça parte. Toda mudança avisa o master e as outras pessoas da AD (Moises, 7/nov/2026).
 - ✅ **Prazos e opções** (demora, lembretes, destino do "sem regra", prazo da nota do adiantamento): o master ou um administrador (Moises, 7/nov/2026).
@@ -234,6 +289,28 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 - ✅ **Duas alçadas de valor**, ambas configuráveis: o valor da operação e o acumulado no mês (Moises, 7/nov/2026).
 
 ✅ Também confirmados no documento de desenho (7/nov/2026): as duas opções de cada pessoa da AD só o master muda, e todo lançamento aprovado por quem o lançou fica marcado e entra na revisão do master; um relatório mostra os pagamentos que caíram em "sem regra"; no lote, a conferência grava a "impressão digital" do arquivo, para saber se ele mudou.
+
+## Mudanças de acesso e sucessão do master
+
+✅ Decidido pelo Moises em 14/nov/2026:
+
+- **Toda mudança de acesso fica pendente até ser aprovada.** Vale para modelos, atribuições, exceções, gestor e diretor da área, AF, AO, AD, tipos de núcleo, marca de natureza restrita e mudança do tipo de um núcleo.
+- Aprovam os **aprovadores de acesso**, uma lista configurável com um mínimo de aprovações. Quem pediu e quem ganha o acesso não aprovam.
+- **O master** muda a lista de aprovadores sozinho; os outros só a mudam com a unanimidade da própria lista. Só o master cria e administra administradores, e só ele define o grupo de sucessão.
+- **Tudo o que o master faz vale na hora**, sem aprovação. Ele escolhe, tipo a tipo, quais mudanças de acesso pedidas pelo administrador precisam de aprovação; todas começam exigindo.
+- **O administrador é o TI e não aprova nada.** Ele não entra na AF, na AO, na AD, como gestor ou diretor da área, nos aprovadores de acesso nem no grupo de sucessão.
+- **Usuários:** o usuário novo **nasce inativo**; o administrador pede a ativação, aprovada conforme o nível do papel (abaixo). Papel e contador mudam por pedido aprovado ou pelo master. Login, desativar, reativar, apagar e usuário de sucessão: só o master. Ninguém muda o próprio cadastro, nem o master (Moises, 14/nov/2026, 21h; antes "nasce como leitura").
+- **AF, AO e AD:** só com a aprovação do master.
+- **Quem aprova cada nível de papel** (o master configura): para leitura, analista, gestor, diretor, contador, gestor da área e diretor da área, o master escolhe entre **Nenhuma** (vale na hora), **Delegado** (basta um dos delegados que ele escolheu), **Lista** (todos os aprovadores de acesso) ou **Master** (só ele). Valores iniciais: leitura e analista no Delegado; gestor, contador e as áreas na Lista; diretor no Master.
+- **O master sempre basta:** um voto dele aprova qualquer pedido de acesso; num título, aprova de uma vez todas as fases de aprovação que faltam (exceção à regra de uma fase por pessoa); numa reclassificação, aprova sozinho. Quem lançou ou pediu não aprova, nem o master.
+
+**Sucessão do master:**
+
+1. O grupo de sucessão pode ter usuários só para isso, inclusive familiares de fora da empresa, sem nenhum outro acesso.
+2. O pedido de sucessão já aponta quem será o novo master.
+3. A unanimidade do grupo não tem prazo.
+4. Depois da unanimidade, o master tem **7 dias para vetar**, contados do **primeiro aviso enviado** a ele (sem aviso enviado, a sucessão não corre), e recebe 2 avisos por dia, por e-mail e WhatsApp. Cada aviso traz um link para uma página com o botão **Interromper** (um clique).
+5. Sem veto, o novo master assume.
 
 ## Remuneração variável (comissões, prêmios, sorteios)
 

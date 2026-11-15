@@ -23,3 +23,12 @@ O cadastro guarda: CPF ou CNPJ, nome, contatos, dados bancários e Pix.
 **O que o sistema confere:** CPF ou CNPJ válido e não repetido.
 
 **Bom saber:** no teste de 6/nov/2026, o título gerado no Sienge já veio com o Pix do fornecedor puxado do cadastro dele.
+
+## Quem muda o cadastro
+
+✅ Moises, 15/nov/2026:
+
+- Toda mudança no cadastro de pessoas fica na auditoria.
+- A empresa do grupo, só o master muda.
+- Em fornecedor que já foi usado, CNPJ, nome, tipo e "ativo" só o financeiro (AF, AO, AD) muda, e só ele tira o papel de fornecedor.
+- O contato (e-mail, telefone) qualquer editor muda.

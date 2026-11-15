@@ -8,14 +8,37 @@
 
 - Os **gráficos e as análises ficam no próprio sistema**. O Power BI deixa de ser usado.
 - **Quem vê o quê é liberado no sistema, pessoa a pessoa.** Também dá para criar **grupos**: quem entra num grupo passa a ver o que o grupo vê.
-- **O acesso combina núcleo econômico e centro de custo** (Moises, 8/nov/2026; nomes trocados em 14/nov/2026): a pessoa vê o que está ao mesmo tempo nos núcleos e nos centros de custo liberados para ela, **com herança para baixo** (quem tem "São Paulo" vê todos os núcleos de São Paulo). A fase não entra no acesso. ✅ Também se pode liberar ou bloquear cada pessoa para **lançar** em cada uma das três dimensões: núcleo, centro de custo e natureza (Moises, 14/nov/2026).
+- **O acesso combina núcleo econômico e centro de custo** (Moises, 8/nov/2026; nomes trocados em 14/nov/2026): a pessoa vê o que está ao mesmo tempo nos núcleos e nos centros de custo liberados para ela, **com herança para baixo** (quem tem "São Paulo" vê todos os núcleos de São Paulo). A etapa (antiga "fase") não entra no acesso. ✅ Também se pode liberar ou bloquear cada pessoa para **lançar** em cada uma das três dimensões: núcleo, centro de custo e natureza (Moises, 14/nov/2026).
 - A **folha PJ** aparece só somada por núcleo econômico e mês.
 - Datas e horas são gravadas e mostradas no **horário de São Paulo**. (Um pagamento às 22h do dia 31 fica no dia 31, não no mês seguinte.)
 - Todas as datas de um lançamento (competência, emissão, vencimento, pagamento) podem ser usadas nos relatórios; a competência é a data padrão. Também aparecem os dias de atraso (pagamento menos vencimento) e o prazo de pagamento (pagamento menos emissão).
 
 ✅ O Power BI não fica nem como ponte (Moises, 8/nov/2026).
 
-🟡 Proposta ainda não decidida: a natureza PJ fica fora de qualquer combinação, com acesso próprio.
+### Perfis de acesso (Moises, 14/nov/2026)
+
+- ✅ O acesso é dado por **perfis-modelo** salvos. Em cada centro de custo, o perfil é **Leitor**, **Lançador restrito** (vê só o que ele mesmo lançou) ou **Lançador**. A pessoa fica ligada ao modelo, e uma pessoa pode ter vários.
+- ✅ Cada atribuição tem **validade** e um **escopo de núcleos**, de um de três jeitos: (a) os núcleos marcados na hora, mais os criados depois nos tipos escolhidos; (b) todos, inclusive os futuros; (c) todos dos tipos escolhidos. Os três aceitam exceções.
+- ✅ Quando duas atribuições se sobrepõem, vale o nível maior. A exceção individual vence o modelo.
+- ✅ Os **tipos de núcleo** são uma lista que o administrador edita.
+- ✅ **Natureza restrita** é uma marca que o administrador põe na natureza; ela só abre com liberação própria. No início, pró-labore e folha PJ.
+- ✅ Ninguém muda o próprio acesso.
+
+### Quem vê e quem grava cada registro
+
+✅ Regras no código desde 15/nov/2026 (PR #34, juntado na develop):
+
+1. Usuário inativo não vê nada. O usuário só da sucessão vê apenas o próprio cadastro e a sucessão. Sem cadastro ativo, ninguém grava.
+2. Título, nota e contrato: vê quem vê alguma linha do rateio pelo perfil (núcleo × centro × natureza). Se alguma linha é de natureza restrita (PJ) que a pessoa não vê, o registro some inteiro, e o pagamento que o baixa também.
+3. O lançador restrito vê e mexe só no que ele lançou.
+4. Quem aprova o título na rodada (lista da fase de aprovação, diretoria, gestor da área) vê o título, inclusive o de PJ.
+5. Linha sem núcleo e sem centro: só a diretoria e o financeiro veem. Transferência entre contas: só o financeiro e o master gravam. Movimento entre sócios: só a diretoria e o financeiro registram.
+6. Configuração: todos leem; só o administrador ou o master gravam.
+7. O papel leitura não grava, mesmo com perfil de lançador.
+8. Para confirmar título, lançar nota, liberar caução ou publicar orçamento, é preciso poder lançar em **todas** as linhas. Quem ajusta título em revisão também.
+9. No acumulado da alçada, quem aprova vê em detalhe só os títulos a que tem acesso; o resto aparece numa linha só, "Outros N títulos (sem acesso)", com a soma.
+
+🟡 Proposta ainda não decidida: a natureza PJ fica fora de qualquer combinação, com acesso próprio (a "natureza restrita" acima já cobre parte disso).
 
 ## Controle de prazos do pagamento (SLA)
 
@@ -26,7 +49,7 @@
 
 ## Um livro único para todos os números
 
-✅ **Decidido** (7/nov/2026). Cada etapa do sistema (orçamento, previsão, título, pagamento, caução) escreve linhas num **livro de lançamentos único**, sempre com as mesmas classificações: empresa, núcleo econômico, centro de custo, natureza, fase, competência, data de caixa e estágio (orçado, previsto, comprometido, realizado).
+✅ **Decidido** (7/nov/2026). Cada etapa do sistema (orçamento, previsão, título, pagamento, caução) escreve linhas num **livro de lançamentos único**, sempre com as mesmas classificações: empresa, núcleo econômico, centro de custo, natureza, etapa, competência, data de caixa e estágio (orçado, previsto, comprometido, realizado).
 
 É desse livro que saem os relatórios, o BI, o fluxo de caixa e as respostas dos agentes de IA. Perguntas como estas viram um filtro, sem montar planilha:
 

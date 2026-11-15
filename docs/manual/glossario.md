@@ -12,6 +12,9 @@ As palavras abaixo têm um sentido preciso no ERP BKM. Quando houver diferença 
 | **Baixa** | A ligação entre um pagamento e uma parcela: quanto daquele pagamento baixou aquela parcela, com juros, multa e desconto. Pagar só parte deixa saldo a pagar. (Antes de 14/11/2026 o manual chamava isso de quitação.) |
 | **Caução** | Parte do valor da nota que a BKM retém do fornecedor como garantia. Fica num extrato por contrato até ser liberada. |
 | **Centro de custo** | Onde a despesa é apropriada dentro do núcleo econômico: Marketing, Terreno, Incorporação, Obra, Assistência técnica, Administrativo... Uma lista única da empresa, ligada ou desligada em cada núcleo. ⚠️ Antes de 14/11/2026 o manual chamava isso de **área**. No Sienge, "centro de custo" é a obra, ou seja, o nosso **núcleo econômico**. |
+| **Divisão** | Subdivisão de um centro de custo, por exemplo Marketing › PDV, Online, Offline e Eventos. Terá permissão e alçada próprias (Moises, 15/11/2026). |
+| **Etapa do empreendimento** | O momento do empreendimento: Terreno, Aprovação de projetos, Incorporação, Lançamento, Obra, Pós-obra e Corporativo. Calculada sozinha, só para relatório. ⚠️ Até 15/11/2026 chamada **fase**. Não confundir com a **fase de aprovação**. |
+| **Fase de aprovação** | Cada passo de uma aprovação: gestor da área, depois AF, depois AD, conforme a faixa (Moises, 15/11/2026). |
 | **Compromisso** | O acordo que vai gerar gasto: contrato, pedido de compra, assinatura recorrente, despesa avulsa, guia de imposto ou folha. |
 | **Competência** | O mês a que a despesa pertence (pode ser diferente do mês em que é paga). |
 | **Data de caixa** | O dia em que o dinheiro sai ou entra no banco. |

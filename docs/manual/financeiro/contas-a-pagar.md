@@ -29,7 +29,9 @@ Compromisso  →  Previsão  →  Documento  →  Título (parcelas)  →  Pagam
 
 ✅ **Decidido** (6 e 7/nov/2026): as previsões ficam **só no ERP BKM** e não são lançadas no Sienge. Motivo, comprovado em teste no Sienge em 6/nov/2026: um título criado pela API não pode ter tipo, número nem valor alterados depois, então uma previsão no Sienge nunca vira título real e teria de ser apagada à mão todo mês.
 
-Quando a nota chega e o título nasce, ele **consome** a previsão correspondente, e a diferença entre o previsto e o realizado fica registrada. Uma previsão não se edita: se mudou, cancela-se e cria-se outra.
+Quando a nota chega e o título nasce, ele **consome** a previsão correspondente, e a diferença entre o previsto e o realizado fica registrada. Uma previsão pode ser editada (volta para aprovação) ou cancelada e substituída por outra (Moises, 14/nov/2026).
+
+✅ A nota só consome a previsão que casa com ela: **mesma empresa, mesmo fornecedor, mesmo núcleo econômico, mesmo centro de custo e mesma natureza** (trava autorizada pelo Moises, 14/nov/2026).
 
 ## Primeira etapa da implantação: o pedido de pagamento
 
@@ -402,7 +404,14 @@ Assim, o realizado do sistema sempre bate com o dinheiro que saiu do banco.
 - Quem lançou o pagamento não aprova o abatimento dele, e quem lançou o título não libera o pagamento dele sem abater o adiantamento (regra geral: quem lança não aprova).
 - 🟡 Regra do código, a confirmar com o Moises: a liberação para pagar sem deduzir vale só para os adiantamentos que já existiam quando ela foi aprovada. Se sair um adiantamento novo para o fornecedor, o título precisa de nova liberação.
 - Quem criou o título ou o pagamento, e quando, o sistema grava sozinho; ninguém altera.
+- ✅ Pagamento e adiantamento também saem carimbados com a **divisão**, quando o centro tem divisões; o adiantamento só abate títulos da mesma divisão, e abater em outra divisão do mesmo centro pede a aprovação do **gestor do centro** ou de AF, AO ou AD; em outro centro, só AF, AO ou AD (Moises, 15/nov/2026). Atenção na implantação: adiantamento lançado antes de o centro ganhar divisões fica sem divisão e, depois, só abate com essa aprovação.
+- ✅ O adiantamento só abate sem aprovação o título que está **inteiro** no mesmo núcleo, centro e divisão do adiantamento. Se uma linha do rateio está fora, mesmo 1%, o título todo pede aprovação: o gestor do centro, quando tudo está no centro dele e só a divisão muda; com uma linha em outro centro, só AF, AO ou AD (Moises, 15/nov/2026).
 - ✅ O abatimento sem aprovação exige **o mesmo núcleo econômico e o mesmo centro de custo**; e, entre os adiantamentos que servem, **abate-se primeiro o mais antigo** (Moises, 14/nov/2026).
+- ✅ **Todo adiantamento começa por um pedido de adiantamento**, com fornecedor, valor, competência, um núcleo econômico e um centro de custo. O pedido passa pela mesma alçada de pagamento (gestor da área, AF e, acima de R$ 50 mil no mês, AD) (Moises, 14/nov/2026).
+- ✅ O dinheiro só sai **depois do pedido aprovado**, para o mesmo fornecedor, com o mesmo núcleo e centro, e sem passar do valor do pedido. Pedido recusado não paga. Pago por inteiro, o pedido se encerra.
+- ✅ O adiantamento **conta uma vez** no acumulado do mês. Quando chega a nota do mesmo fornecedor, no mesmo núcleo e centro, ela soma só o que passa do adiantamento já pago. Exemplo: adiantamento de R$ 20 mil e depois nota de R$ 25 mil somam R$ 25 mil, não R$ 45 mil.
+- A parte do adiantamento que já foi abatida num título não desconta de novo. Exemplo: um adiantamento de R$ 3 mil, com R$ 2 mil abatidos numa nota antiga, só desconta mais R$ 1 mil de uma nota nova.
+- 🟡 Regras do código, a confirmar com o Moises: o pedido entra no acumulado ao ser confirmado, como os outros títulos, e não só depois de aprovado; e um pedido aprovado mas ainda não pago não desconta da nota.
 - O adiantamento sem nota passa pela mesma aprovação do título, mais o gestor do contrato (ver [Aprovações](../transversais/aprovacoes.md#os-cinco-momentos-de-aprovação)).
 
 ## Tarefa: pedir um adiantamento sem nota
