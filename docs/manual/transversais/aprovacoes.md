@@ -292,7 +292,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 
 ### As telas do Admin
 
-> 🧪 Protótipo, versão de 15/nov/2026, ainda sem código e ainda não aprovado pelo Moises.
+> ✅ Telas aprovadas pelo Moises em 15/nov/2026 (protótipo, versão 35), ainda sem código. As imagens são de versões um pouco anteriores.
 
 O item **Admin** do menu tem sete seções. A seção Etapa dos núcleos, que aparece na imagem, sai, porque a etapa do empreendimento saiu do sistema (Moises, 15/nov/2026).
 

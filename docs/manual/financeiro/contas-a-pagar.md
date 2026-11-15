@@ -107,7 +107,7 @@ Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depo
 
 #### O que muda nas telas com o piloto do Marketing
 
-> 🧪 Protótipo, versão de 15/nov/2026, ainda sem código e ainda não aprovado pelo Moises.
+> ✅ Telas aprovadas pelo Moises em 15/nov/2026 (protótipo, versão 35), ainda sem código. As imagens são de versões um pouco anteriores.
 
 - **Novo pedido:** tem o campo **divisão**. Ele é obrigatório quando o centro de custo tem divisões. O pedido pode ser **rateado** entre centros: cada centro aprova a sua parte, com a alçada dele, e o título só segue quando todos aprovarem. O pedido também pode **abater um adiantamento** em aberto. Se o adiantamento é de outra divisão do mesmo centro, o abatimento pede o gestor do centro ou AF, AO ou AD. Se é de outro centro, pede AF, AO ou AD.
 - **Para aprovar:** a ficha do pedido mostra um quadro por alçada, com cada vaga e quem já aprovou. Quando a divisão "passa pelo centro", uma aprovação vale para os dois. Quando faltam aprovadores, aparece o aviso de que o pedido foi ao master, com o motivo.
