@@ -443,14 +443,6 @@ language sql stable as $$
                    and nc.ligado and c.ativo)
 $$;
 
--- Fase do empreendimento (o momento do projeto; antes chamada fase): coluna de relatório, não entra no acesso nem na aprovação.
-create table erp.etapas (
-  id    uuid primary key default gen_random_uuid(),
-  nome  text not null unique,
-  ordem int not null default 0,
-  ativa boolean not null default true
-);
-
 -- ---------------------------------------------------------------------
 -- Árvore de naturezas (dinâmica: o administrador cria, renomeia, move e desativa)
 -- ---------------------------------------------------------------------

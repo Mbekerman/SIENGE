@@ -279,7 +279,6 @@ begin
     ('divisoes', 'erp.membro()', null),                       -- só pelo pedido aprovado (S-101)
     ('nucleos_economicos', 'erp.membro()', 'erp.sou_admin()'),
     ('nucleo_centros', 'erp.membro()', 'erp.sou_admin()'),
-    ('etapas', 'erp.membro()', 'erp.sou_admin()'),
     -- naturezas liberadas por divisão: o master, o administrador e AF, AO, AD, na hora (Moises, 15/11/2026)
     ('naturezas_liberadas', 'erp.membro()', 'erp.sou_admin() or erp.financeiro()'),
     ('modelos_naturezas', 'erp.membro()', 'erp.sou_admin() or erp.financeiro()'),
