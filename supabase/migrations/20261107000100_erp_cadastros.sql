@@ -53,6 +53,18 @@ create function erp.sistema() returns boolean language sql stable as $$
                                          where n.nspname = 'erp'))) $$;
 
 -- O próprio cadastro de quem está agindo (security definer na migration _erp_rls).
+-- Quem grava (S-087): fora do sistema, só quem tem cadastro ativo no ERP. Os gatilhos que põem o
+-- autor (criado_por, por, pedida_por, aprovado_por...) usam esta, e não erp.eu(), para nunca
+-- gravar uma linha sem autor, o que pularia "quem lançou não aprova".
+create function erp.autor() returns uuid language plpgsql stable as $$
+declare v uuid := erp.eu();
+begin
+  if v is null and not erp.sistema() then
+    raise exception 'Só quem tem cadastro ativo no ERP grava';
+  end if;
+  return v;
+end $$;
+
 create function erp.meu_usuario() returns erp.usuarios language sql stable as
   $$ select * from erp.usuarios where id = erp.eu() and ativo $$;
 
@@ -473,7 +485,7 @@ begin
   end if;
 
   if tg_op = 'INSERT' then
-    new.criada_por := erp.eu();
+    new.criada_por := erp.autor();
     if new.mae_id is not null and erp.natureza_em_uso(new.mae_id) and erp.natureza_folha(new.mae_id) then
       raise exception 'A natureza "%" já tem lançamentos: reclassifique-os antes de criar galhos abaixo dela (só se lança no último nível)', m.nome;
     end if;

@@ -85,6 +85,7 @@ create table erp.compromissos (
   dia_vencimento    int check (dia_vencimento between 1 and 31),
   caucao_percentual numeric(5,2) not null default 0 check (caucao_percentual between 0 and 100),
   situacao          text not null default 'ativo' check (situacao in ('ativo','encerrado','cancelado')),
+  criado_por        uuid,                       -- quem lançou (erp.tg_autor); a RLS do lançador restrito usa
   criado_em         timestamptz not null default now(),
   check (fim is null or fim >= inicio),
   -- a assinatura recorrente substitui o contrato fictício: tem periodicidade e valor por período
@@ -147,6 +148,7 @@ create table erp.previsoes (
   valor           numeric(15,2) not null check (valor > 0),
   descricao       text,
   situacao        text not null default 'aberta' check (situacao in ('aberta','consumida','cancelada')),
+  criada_por      uuid,                         -- quem lançou; vazio quando o sistema gera
   criada_em       timestamptz not null default now()
 );
 create index on erp.previsoes (compromisso_id) where situacao = 'aberta';
@@ -225,7 +227,7 @@ create table erp.titulos (
 create function erp.tg_autor() returns trigger language plpgsql as $$
 begin
   if tg_op = 'INSERT' then
-    new.criado_por := erp.eu();
+    new.criado_por := erp.autor();
     new.criado_em := clock_timestamp();
   elsif new.criado_por is distinct from old.criado_por or new.criado_em is distinct from old.criado_em then
     raise exception 'Quem lançou e quando não mudam';
@@ -236,6 +238,18 @@ create trigger t_autor before insert or update on erp.titulos
   for each row execute function erp.tg_autor();
 create trigger t_autor before insert or update on erp.documentos_fiscais
   for each row execute function erp.tg_autor();
+create trigger t_autor before insert or update on erp.compromissos
+  for each row execute function erp.tg_autor();
+-- a previsão guarda só quem lançou (criada_em já tem o padrão)
+create function erp.tg_autor_previsao() returns trigger language plpgsql as $$
+begin
+  if tg_op = 'INSERT' then new.criada_por := erp.autor();
+  elsif new.criada_por is distinct from old.criada_por then raise exception 'Quem lançou não muda';
+  end if;
+  return new;
+end $$;
+create trigger t_autor before insert or update on erp.previsoes
+  for each row execute function erp.tg_autor_previsao();
 
 create table erp.titulo_rateios (
   id              uuid primary key default gen_random_uuid(),
@@ -511,7 +525,7 @@ create function erp.tg_orcamento_versao() returns trigger language plpgsql as $$
 begin
   if tg_op = 'INSERT' then
     if new.situacao <> 'rascunho' then raise exception 'Versão de orçamento nasce em rascunho'; end if;
-    new.criada_por := erp.eu();
+    new.criada_por := erp.autor();
     new.criada_em := clock_timestamp();
     return new;
   end if;
@@ -553,7 +567,7 @@ end $$;
 -- ---------------------------------------------------------------------
 -- Previsão → livro (estágio previsto)
 -- ---------------------------------------------------------------------
-create function erp.previsao_saldo(p_id uuid) returns numeric language sql stable as $$
+create function erp._previsao_saldo(p_id uuid) returns numeric language sql stable as $$
   select p.valor - coalesce((select sum(tp.valor) from erp.titulo_previsoes tp join erp.titulos t on t.id = tp.titulo_id
                               where tp.previsao_id = p.id and t.situacao <> 'cancelado'), 0)
   from erp.previsoes p where p.id = p_id $$;
@@ -592,7 +606,7 @@ begin
     return new;
   end if;
   if new.situacao = 'cancelada' and old.situacao = 'aberta' then
-    v_saldo := erp.previsao_saldo(new.id);
+    v_saldo := erp._previsao_saldo(new.id);
     if v_saldo > 0 then
       insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, fase_id, centro_custo_id,
                                       competencia, data_caixa, valor, previsao_id)
@@ -950,7 +964,7 @@ begin
        and dr.nucleo_economico_id is not distinct from p.nucleo_economico_id
        and dr.centro_custo_id is not distinct from p.centro_custo_id
        and dr.natureza_id = p.natureza_id;
-    v_cons := least(v_resta, erp.previsao_saldo(p.id), v_lim);
+    v_cons := least(v_resta, erp._previsao_saldo(p.id), v_lim);
     continue when v_cons <= 0;
     insert into erp.titulo_previsoes (titulo_id, previsao_id, valor) values (v_tit, p.id, v_cons);
     v_resta := v_resta - v_cons;
@@ -1027,7 +1041,7 @@ create function erp.tg_adiantamento_sem_pedido() returns trigger language plpgsq
 begin
   if new.adiantamento_id is null
      and new.pessoa_id is distinct from (select pessoa_id from erp.empresas where id = new.empresa_id)
-     and erp.pagamento_saldo(new.id) > 0 then
+     and erp._pagamento_saldo(new.id) > 0 then
     raise exception 'Adiantamento só sai ligado a um pedido de adiantamento aprovado na alçada';
   end if;
   return null;
@@ -1035,13 +1049,33 @@ end $$;
 create constraint trigger t_adiantamento_pedido after insert on erp.pagamentos
   deferrable initially deferred for each row execute function erp.tg_adiantamento_sem_pedido();
 
-create function erp.parcela_saldo(p_id uuid) returns numeric language sql stable as $$
+create function erp._parcela_saldo(p_id uuid) returns numeric language sql stable as $$
   select p.valor - coalesce((select sum(principal) from erp.quitacoes where parcela_id = p.id), 0)
   from erp.parcelas p where p.id = p_id $$;
 
-create function erp.pagamento_saldo(p_id uuid) returns numeric language sql stable as $$
+create function erp._pagamento_saldo(p_id uuid) returns numeric language sql stable as $$
   select g.valor - coalesce((select sum(principal + juros + multa - desconto) from erp.quitacoes where pagamento_id = g.id), 0)
   from erp.pagamentos g where g.id = p_id $$;
+
+-- Saldos para quem consulta (S-034): o mesmo número, só de registro que a pessoa vê; de outro,
+-- nulo. As travas por dentro usam as versões com _, que veem tudo e não têm EXECUTE para a API.
+create function erp.previsao_saldo(p_id uuid) returns numeric language plpgsql stable as $$
+begin
+  if erp.sistema() or erp.vejo_previsao(p_id) then return erp._previsao_saldo(p_id); end if;
+  return null;
+end $$;
+create function erp.parcela_saldo(p_id uuid) returns numeric language plpgsql stable as $$
+begin
+  if erp.sistema() or erp.vejo_titulo((select titulo_id from erp.parcelas where id = p_id)) then
+    return erp._parcela_saldo(p_id);
+  end if;
+  return null;
+end $$;
+create function erp.pagamento_saldo(p_id uuid) returns numeric language plpgsql stable as $$
+begin
+  if erp.sistema() or erp.vejo_pagamento(p_id) then return erp._pagamento_saldo(p_id); end if;
+  return null;
+end $$;
 
 -- ---------------------------------------------------------------------
 -- Adiantamento em aberto (decisões do Moises de 7/11 e 14/11/2026, configuráveis)
@@ -1258,7 +1292,7 @@ begin
     raise exception 'A alçada do título só se grava pela confirmação e pela aprovação';
   end if;
   if tg_table_name = 'titulo_aprovacoes' then
-    if new.origem = 'decisao' then new.por := erp.eu(); end if;
+    if new.origem = 'decisao' then new.por := erp.autor(); end if;
     new.em := clock_timestamp();
   end if;
   return new;
@@ -1293,7 +1327,7 @@ begin
     raise exception 'A revisão do título só se grava pela aprovação e pelo reenvio';
   end if;
   if tg_op = 'INSERT' then
-    new.pedida_por := erp.eu();
+    new.pedida_por := erp.autor();
     new.pedida_em := clock_timestamp();
     new.resposta := null; new.reenviada_por := null; new.reenviada_em := null;
   else
@@ -1301,7 +1335,7 @@ begin
        or (to_jsonb(new) - 'resposta' - 'reenviada_por' - 'reenviada_em') <> (to_jsonb(old) - 'resposta' - 'reenviada_por' - 'reenviada_em') then
       raise exception 'A revisão do título já foi respondida';
     end if;
-    new.reenviada_por := erp.eu();
+    new.reenviada_por := erp.autor();
     new.reenviada_em := clock_timestamp();
   end if;
   return new;
@@ -1408,7 +1442,7 @@ create function erp.tg_titulo_ajuste() returns trigger language plpgsql as $$
 begin
   if tg_op <> 'INSERT' then raise exception 'O registro do ajuste não se altera nem se apaga'; end if;
   if not erp.agindo_como('erp_situacao') then raise exception 'O registro do ajuste só é escrito pelas travas do ajuste'; end if;
-  new.por := erp.eu();
+  new.por := erp.autor();
   new.em := clock_timestamp();
   return new;
 end $$;
@@ -1419,7 +1453,16 @@ create function erp._registrar_ajuste(p_titulo uuid, p_tabela text, p_antes json
 returns void language plpgsql as $$
 declare v_rev uuid := (select id from erp.titulo_revisoes where titulo_id = p_titulo and reenviada_em is null);
 begin
+  -- Os gatilhos das tabelas ajustáveis chamam esta função, por isso a API pode chamá-la. Chamada
+  -- direta (fora de gatilho) forjaria a trilha e a aprovação pelo ajuste: recusada. Dentro do
+  -- gatilho, só quem pode ajustar o título em revisão.
+  if not erp.sistema() and pg_trigger_depth() = 0 then
+    raise exception 'O ajuste só se registra pela mudança na tabela';
+  end if;
   if v_rev is null or p_antes is not distinct from p_depois then return; end if;
+  if not erp.sistema() and not erp.pode_ajustar(p_titulo) then
+    raise exception 'Só quem pode ajustar registra o ajuste';
+  end if;
   insert into erp.titulo_ajustes (revisao_id, titulo_id, tabela, antes, depois, por)
   values (v_rev, p_titulo, p_tabela, p_antes, p_depois, erp.eu());
 end $$;
@@ -1497,7 +1540,7 @@ begin
   end if;
   new.competencia := coalesce((select competencia from erp.documentos_fiscais where id = new.documento_id),
                               (select competencia from erp.titulos where id = new.titulo_id));
-  new.aprovado_por := erp.eu();
+  new.aprovado_por := erp.autor();
   new.aprovado_em := clock_timestamp();
   return new;
 end $$;
@@ -1894,7 +1937,7 @@ create function erp.abatimento_aprovado(p_pagamento uuid, p_titulo uuid) returns
 create function erp.adiantamento_anterior_em_aberto(p_pagamento uuid, p_titulo uuid) returns boolean language sql stable as $$
   select exists (select 1 from erp.pagamentos g join erp.pagamentos g2
                    on g2.empresa_id = g.empresa_id and g2.pessoa_id = g.pessoa_id and g2.id <> g.id
-                 where g.id = p_pagamento and g2.criado_em < g.criado_em and erp.pagamento_saldo(g2.id) > 0
+                 where g.id = p_pagamento and g2.criado_em < g.criado_em and erp._pagamento_saldo(g2.id) > 0
                    and not exists (select 1 from erp.liberacoes_sem_abater l
                                    where l.titulo_id = p_titulo and l.aprovado_em >= g2.criado_em)) $$;
 
@@ -1915,7 +1958,7 @@ begin
   if v_lancou is not null and v_lancou = erp.eu() and not erp.aprova_proprio(v_listas) then
     raise exception 'Quem lançou não aprova o próprio lançamento';
   end if;
-  new.aprovado_por := erp.eu();
+  new.aprovado_por := erp.autor();
   new.aprovado_em := clock_timestamp();
   return new;
 end $$;
@@ -1965,12 +2008,12 @@ begin
     end if;
   end if;
   -- roda depois da gravação: a própria quitação já entra nos saldos
-  if erp.parcela_saldo(pa.id) < 0 then
-    raise exception 'A quitação (%) passa do saldo da parcela (%)', new.principal, erp.parcela_saldo(pa.id) + new.principal;
+  if erp._parcela_saldo(pa.id) < 0 then
+    raise exception 'A quitação (%) passa do saldo da parcela (%)', new.principal, erp._parcela_saldo(pa.id) + new.principal;
   end if;
   v_total := new.principal + new.juros + new.multa - new.desconto;
-  if erp.pagamento_saldo(g.id) < 0 then
-    raise exception 'A quitação (%) passa do saldo do pagamento (%)', v_total, erp.pagamento_saldo(g.id) + v_total;
+  if erp._pagamento_saldo(g.id) < 0 then
+    raise exception 'A quitação (%) passa do saldo do pagamento (%)', v_total, erp._pagamento_saldo(g.id) + v_total;
   end if;
   v_comp := erp.mes(g.data);
 
@@ -2004,7 +2047,7 @@ begin
             v_comp, g.data, new.desconto, t.id, pa.id, new.id, g.id);
   end if;
   -- título sem saldo vira quitado
-  if not exists (select 1 from erp.parcelas p where p.titulo_id = t.id and erp.parcela_saldo(p.id) > 0) then
+  if not exists (select 1 from erp.parcelas p where p.titulo_id = t.id and erp._parcela_saldo(p.id) > 0) then
     update erp.titulos set situacao = 'quitado' where id = t.id;   -- definer erp_situacao (_erp_rls)
   end if;
   return new;
@@ -2023,6 +2066,7 @@ begin
   perform erp.exigir_editor();
   select t2.* into t from erp.titulos t2 join erp.parcelas p on p.titulo_id = t2.id where p.id = p_parcela;
   v_saldo := erp.parcela_saldo(p_parcela);
+  if t.id is null or v_saldo is null then raise exception 'Parcela não encontrada'; end if;
   -- carimbo: o núcleo e o centro de maior peso no rateio do título
   select nucleo_economico_id, centro_custo_id into v_nucleo, v_centro
   from erp.titulo_rateios where titulo_id = t.id order by percentual desc, id limit 1;
@@ -2050,7 +2094,7 @@ begin
   if not erp.agindo_como('erp_situacao') then
     raise exception 'A caução só se movimenta pelo lançamento da nota e pela liberação';
   end if;
-  new.por := erp.eu();
+  new.por := erp.autor();
   new.em := now();
   return new;
 end $$;
@@ -2125,6 +2169,10 @@ create function erp.registrar_movimento_societario(p_tipo text, p_pagadora uuid,
 declare v_pag uuid; v_rec uuid; v_id uuid; v_nat uuid := erp.natureza_sistema('entre_socios');
 begin
   perform erp.exigir_editor();
+  -- os títulos entre sócios não têm núcleo nem centro: são da diretoria e do financeiro
+  if not (erp.sistema() or coalesce(erp.meu_papel(), '') = 'diretor' or erp.financeiro() or erp.sou_master()) then
+    raise exception 'Movimento entre sócios só pela diretoria ou pelo financeiro';
+  end if;
   v_pag := erp._criar_titulo(p_pagadora, 'pagar', 'societario', (select pessoa_id from erp.empresas where id = p_recebedora),
                                 null, null, p_data, erp.mes(p_data), p_valor, array[p_data], null, null, p_descricao);
   v_rec := erp._criar_titulo(p_recebedora, 'receber', 'societario', (select pessoa_id from erp.empresas where id = p_pagadora),

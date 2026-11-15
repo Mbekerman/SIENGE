@@ -23,7 +23,7 @@ begin
     raise exception 'O mês só fecha e reabre pela diretoria';
   end if;
   if tg_op = 'INSERT' then
-    new.fechado_por := erp.eu();
+    new.fechado_por := erp.autor();
     new.fechado_em := clock_timestamp();
   end if;
   return coalesce(new, old);

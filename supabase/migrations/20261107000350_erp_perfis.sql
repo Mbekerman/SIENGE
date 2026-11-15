@@ -995,6 +995,11 @@ declare s erp.sucessoes_master;
 begin
   select * into s from erp.sucessoes_master where id = p_id for update;
   if s.id is null or s.situacao <> 'pendente' then raise exception 'Não há essa sucessão pendente'; end if;
+  -- quem efetiva: a rotina do servidor, o grupo de sucessão ou o indicado (passado o prazo, o
+  -- resultado é o mesmo; chamar só antecipa a rotina)
+  if not (erp.sistema() or erp.vejo_sucessao() or s.novo_id = erp.eu()) then
+    raise exception 'Só o grupo de sucessão ou o indicado efetivam a sucessão';
+  end if;
   if s.unanime_em is null then raise exception 'A sucessão precisa da aprovação de todo o grupo de sucessão'; end if;
   if s.vale_em is null then raise exception 'O prazo da sucessão só corre depois do primeiro aviso enviado ao master'; end if;
   if clock_timestamp() < s.vale_em then raise exception 'A sucessão só vale depois de %', s.vale_em; end if;
