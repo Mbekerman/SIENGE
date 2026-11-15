@@ -5120,6 +5120,33 @@ select pg_temp.ok((select valor from erp.titulos where id = :'tit_nl') = 20
 select pg_temp.falha(format($$insert into erp.previsoes (empresa_id, origem, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, competencia, data_prevista, valor)
   values (%L, 'manual', %L, %L, %L, %L, '2026-10-01', '2026-10-10', 70)$$, :'spe', :'ne_vm', :'cc_mkt', :'dv_inf', pg_temp.nat('05.01.04')),
   'naturezas: na natureza desligada não se lança de novo');
+-- modelos de naturezas: lista pronta para marcar de uma vez
+select pg_temp.como(:'ti');
+insert into erp.modelos_naturezas (id, nome) values ('8b000000-0000-0000-0000-0000000000c7', 'Marketing digital');
+insert into erp.modelo_naturezas (modelo_id, natureza_id) values
+  ('8b000000-0000-0000-0000-0000000000c7', pg_temp.nat('05.01.04')), ('8b000000-0000-0000-0000-0000000000c7', pg_temp.nat('04.02'));
+update erp.modelos_naturezas set nome = 'Marketing online' where id = '8b000000-0000-0000-0000-0000000000c7';
+select pg_temp.ok((select count(*) from erp.modelo_naturezas where modelo_id = '8b000000-0000-0000-0000-0000000000c7') = 2
+                  and exists (select 1 from erp.auditoria where tabela = 'modelo_naturezas' and registro = '8b000000-0000-0000-0000-0000000000c7'),
+  'naturezas: o administrador salva modelo de naturezas, com auditoria, e o renomeia');
+select pg_temp.falha($$update erp.modelo_naturezas set natureza_id = natureza_id where modelo_id = '8b000000-0000-0000-0000-0000000000c7'$$,
+  'naturezas: a linha do modelo não se altera: tire e ponha');
+select pg_temp.como(:'analista');
+insert into erp.modelo_naturezas (modelo_id, natureza_id) values ('8b000000-0000-0000-0000-0000000000c7', pg_temp.nat('04.01'));
+select pg_temp.ok((select count(*) from erp.modelo_naturezas where modelo_id = '8b000000-0000-0000-0000-0000000000c7') = 3,
+  'naturezas: AF também mexe no modelo');
+select pg_temp.como(:'analista2');
+select pg_temp.ok((select count(*) from erp.modelo_naturezas where modelo_id = '8b000000-0000-0000-0000-0000000000c7') = 3,
+  'naturezas: todo membro lê os modelos');
+select pg_temp.falha($$insert into erp.modelos_naturezas (nome) values ('Meu modelo')$$, 'naturezas: quem não liga natureza não cria modelo');
+select pg_temp.falha($$delete from erp.modelo_naturezas where modelo_id = '8b000000-0000-0000-0000-0000000000c7'$$, 'naturezas: quem não liga natureza não mexe no modelo');
+select pg_temp.como(null);
+alter table erp.modelo_naturezas disable trigger t_natureza_liberada_cfg;
+select pg_temp.como(:'analista2');
+select pg_temp.falha(format($$insert into erp.modelo_naturezas (modelo_id, natureza_id) values ('8b000000-0000-0000-0000-0000000000c7', %L)$$, pg_temp.nat('04.03')),
+  'naturezas: a regra de acesso do modelo, sozinha, já recusa quem não pode');
+select pg_temp.como(null);
+alter table erp.modelo_naturezas enable trigger t_natureza_liberada_cfg;
 -- natureza nova nasce desligada
 select pg_temp.como(:'ti');
 insert into erp.naturezas (codigo, mae_id, nome) values ('05.01.97', pg_temp.nat('05.01'), 'Natureza nova (teste)');

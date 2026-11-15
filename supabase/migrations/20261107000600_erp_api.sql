@@ -283,6 +283,8 @@ begin
     ('nucleo_etapas', 'erp.membro()', 'erp.sou_admin()'),
     -- naturezas liberadas por divisão: o master, o administrador e AF, AO, AD, na hora (Moises, 15/11/2026)
     ('naturezas_liberadas', 'erp.membro()', 'erp.sou_admin() or erp.financeiro()'),
+    ('modelos_naturezas', 'erp.membro()', 'erp.sou_admin() or erp.financeiro()'),
+    ('modelo_naturezas', 'erp.membro()', 'erp.sou_admin() or erp.financeiro()'),
     ('linhas_dre', 'erp.membro()', 'erp.sou_admin()'),
     ('niveis_aprovacao', 'erp.membro()', 'erp.sou_master()'),
     ('alcadas_pagamento', 'erp.membro()', 'erp.sou_master()'),

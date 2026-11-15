@@ -522,7 +522,9 @@ create table erp.naturezas_liberadas (
 );
 create function erp.tg_natureza_liberada_cfg() returns trigger language plpgsql as $$
 begin
-  if tg_op = 'UPDATE' then raise exception 'Natureza liberada não se altera: desligue e ligue'; end if;
+  if tg_op = 'UPDATE' and tg_table_name <> 'modelos_naturezas' then
+    raise exception 'Natureza liberada não se altera: desligue e ligue';
+  end if;
   if erp.agindo_como('erp_acesso') or erp.sistema()
      or (tg_op = 'DELETE' and erp.agindo_como('erp_reclassificacao')) then   -- a natureza esvaziada e apagada
     return coalesce(new, old);
@@ -537,6 +539,30 @@ create trigger t_natureza_liberada_cfg before insert or update or delete on erp.
   for each row execute function erp.tg_natureza_liberada_cfg();
 create trigger t_aud_naturezas_liberadas after insert or delete on erp.naturezas_liberadas
   for each row execute function erp.tg_auditoria('centro_custo_id');
+
+-- Modelos de naturezas (Moises, 15/11/2026): listas pré-definidas para marcar de uma vez ao criar
+-- a divisão (ou ao ajustar uma existente). O modelo só guarda a lista; aplicar é marcar as
+-- naturezas dele. Quem mexe: os mesmos que ligam e desligam naturezas.
+create table erp.modelos_naturezas (
+  id    uuid primary key default gen_random_uuid(),
+  nome  text not null unique check (length(trim(nome)) > 0),
+  ativo boolean not null default true
+);
+create table erp.modelo_naturezas (
+  modelo_id   uuid not null references erp.modelos_naturezas on delete cascade,
+  natureza_id uuid not null references erp.naturezas on delete cascade,
+  primary key (modelo_id, natureza_id)
+);
+do $$
+declare t record;
+begin
+  for t in select * from (values ('modelos_naturezas', 'id'), ('modelo_naturezas', 'modelo_id')) v(tabela, chave) loop
+    execute format('create trigger t_natureza_liberada_cfg before insert or update or delete on erp.%I
+                      for each row execute function erp.tg_natureza_liberada_cfg()', t.tabela);
+    execute format('create trigger t_aud_%s after insert or update or delete on erp.%I
+                      for each row execute function erp.tg_auditoria(%L)', t.tabela, t.tabela, t.chave);
+  end loop;
+end $$;
 
 -- A linha que uma pessoa grava usa natureza liberada na divisão (ou no centro sem divisão).
 -- A cópia feita pelo sistema segue a origem, como a divisão. Invoker: precisa saber quem grava.
