@@ -4260,8 +4260,12 @@ select pg_temp.ok(pg_temp.acesso_d(:'analista2', :'ne1', :'cc_mkt', :'dv_pdv') =
   'divisão: na lista, a divisão incluída com nível próprio; a outra fica de fora');
 select pg_temp.ok(pg_temp.acesso_d(:'analista2', :'ne1', :'cc_mkt', null) = 'nenhum',
   'divisão: quem só tem a lista não vê a linha do centro sem divisão');
+select pg_temp.como(:'ti'); insert into erp.divisoes (id, centro_custo_id, nome, criado_em) values (:'dv_evt', :'cc_mkt', 'Eventos', '2000-01-01');
+select pg_temp.ok((select criado_em > '2026-01-01' from erp.divisoes where id = :'dv_evt'),
+  'divisão: a data de criação é sempre a do cadastro (é o corte das futuras; S-102)');
+select pg_temp.ok(pg_temp.acesso_d(:'analista2', :'ne1', :'cc_mkt', :'dv_evt') = 'nenhum',
+  'divisão: na lista sem a marca das futuras, a divisão nova não entra (S-102)');
 select pg_temp.sis(); update erp.perfil_centros set divisoes_futuras = true where perfil_id = :'m_pdv'; select pg_temp.volta();
-select pg_temp.como(:'ti'); insert into erp.divisoes (id, centro_custo_id, nome) values (:'dv_evt', :'cc_mkt', 'Eventos');
 select pg_temp.ok(pg_temp.acesso_d(:'analista2', :'ne1', :'cc_mkt', :'dv_evt') = 'leitor'
                   and pg_temp.acesso_d(:'analista2', :'ne1', :'cc_mkt', :'dv_onl') = 'nenhum',
   'divisão: na lista com as futuras, a divisão criada depois entra com o nível do centro; a de antes não');
@@ -4276,6 +4280,26 @@ select pg_temp.ok(pg_temp.acesso_d(:'analista2', :'ne1', :'cc_mkt', :'dv_onl') =
   'divisão: em todas, a excluída fica de fora e as outras (e a linha sem divisão) seguem o centro');
 select pg_temp.falha(format($$insert into erp.perfil_centro_divisoes (perfil_id, centro_custo_id, divisao_id, incluir) values (%L, %L, %L, true)$$, :'m_pdv', :'cc_mkt', :'dv_obra'),
   'divisão: o modelo não marca divisão de outro centro');
+-- exceção vencida ou de outro núcleo não vale (S-102)
+select pg_temp.sis();
+insert into erp.excecoes_divisao (user_id, nucleo_economico_id, divisao_id, nivel, fim) values (:'analista2', :'ne1', :'dv_pdv', 'nenhum', current_date - 1);
+insert into erp.excecoes_divisao (user_id, nucleo_economico_id, divisao_id, nivel) values (:'analista2', '40000000-0000-0000-0000-000000000002', :'dv_pdv', 'nenhum');
+select pg_temp.volta();
+select pg_temp.ok(pg_temp.acesso_d(:'analista2', :'ne1', :'cc_mkt', :'dv_pdv') = 'lancador',
+  'divisão: a exceção vencida e a de outro núcleo não valem (S-102)');
+select pg_temp.sis(); delete from erp.excecoes_divisao where user_id = :'analista2'; select pg_temp.volta();
+-- natureza restrita liberada pelo modelo só onde o modelo dá a divisão; lançar confere a divisão (S-102)
+select pg_temp.sis();
+update erp.naturezas set restrita = true where codigo = '05.01.02';
+insert into erp.perfil_naturezas values (:'m_pdv', pg_temp.nat('05.01.02'));
+select pg_temp.volta();
+create function pg_temp.lib_d(u uuid, n uuid, c uuid, nat uuid, d uuid, out lib boolean, out lanca boolean) language plpgsql as $$
+declare r text := pg_temp.dono_ini();
+begin lib := erp.natureza_liberada(u, n, c, nat, d); lanca := erp.lanca_linha(u, n, c, null, d); perform set_config('role', r, false); end $$;
+select pg_temp.ok((select lib and lanca from pg_temp.lib_d(:'analista2', :'ne1', :'cc_mkt', pg_temp.nat('05.01.02'), :'dv_pdv'))
+                  and (select not lib and not lanca from pg_temp.lib_d(:'analista2', :'ne1', :'cc_mkt', pg_temp.nat('05.01.02'), :'dv_onl')),
+  'divisão: a restrita liberada pelo modelo e o lançar valem só nas divisões que ele dá (S-102)');
+select pg_temp.sis(); delete from erp.perfil_naturezas where perfil_id = :'m_pdv'; update erp.naturezas set restrita = false where codigo = '05.01.02'; select pg_temp.volta();
 -- exceção da divisão vence a do centro
 select pg_temp.sis();
 insert into erp.excecoes_centro (user_id, nucleo_economico_id, centro_custo_id, nivel) values (:'analista2', :'ne1', :'cc_mkt', 'lancador');
@@ -4284,6 +4308,29 @@ select pg_temp.volta();
 select pg_temp.ok(pg_temp.acesso_d(:'analista2', :'ne1', :'cc_mkt', :'dv_pdv') = 'nenhum'
                   and pg_temp.acesso_d(:'analista2', :'ne1', :'cc_mkt', :'dv_onl') = 'lancador',
   'divisão: a exceção da divisão vence a do centro, que vale nas outras divisões');
+-- pela API, com o PDV tirado pela exceção: a previsão, o orçamento e o título do PDV seguem a divisão (S-102)
+select pg_temp.sis();
+insert into erp.previsoes (id, empresa_id, origem, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, competencia, data_prevista, valor)
+values ('88000000-0000-0000-0000-0000000000a1', '20000000-0000-0000-0000-000000000003', 'manual', :'ne1', :'cc_mkt', :'dv_pdv', pg_temp.nat('05.01.04'), '2026-09-01', '2026-09-10', 50);
+insert into erp.orcamento_versoes (id, empresa_id, tipo, nome, data_base) values ('88000000-0000-0000-0000-0000000000a2', '20000000-0000-0000-0000-000000000003', 'viabilidade', 'div', '2026-01-01');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('88000000-0000-0000-0000-0000000000a3', '20000000-0000-0000-0000-000000000003', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-09-02', '2026-09-01', 10);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, percentual)
+values ('88000000-0000-0000-0000-0000000000a3', :'ne1', :'cc_mkt', :'dv_pdv', pg_temp.nat('05.01.04'), 100);
+select pg_temp.volta();
+select pg_temp.como(:'analista2');
+select pg_temp.ok(not exists (select 1 from erp.previsoes where id = '88000000-0000-0000-0000-0000000000a1'),
+  'divisão: a previsão da divisão tirada some (S-102)');
+select pg_temp.falha(format($$insert into erp.orcamento_linhas (versao_id, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, competencia, valor)
+  values ('88000000-0000-0000-0000-0000000000a2', %L, %L, %L, %L, '2026-09-01', -10)$$, :'ne1', :'cc_mkt', :'dv_pdv', pg_temp.nat('05.01.04')),
+  'divisão: não lança orçamento na divisão tirada (S-102)');
+insert into erp.orcamento_linhas (versao_id, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, competencia, valor)
+values ('88000000-0000-0000-0000-0000000000a2', :'ne1', :'cc_mkt', :'dv_onl', pg_temp.nat('05.01.04'), '2026-09-01', -10);
+select pg_temp.ok(not erp.lanco_titulo('88000000-0000-0000-0000-0000000000a3'),
+  'divisão: não grava no título com linha na divisão tirada (S-102)');
+select pg_temp.como(:'analista');
+select pg_temp.ok(not exists (select 1 from erp.excecoes_divisao where user_id = :'analista2'),
+  'divisão: a exceção da divisão de outra pessoa não aparece para quem não cuida de acesso (S-102)');
 -- pela API: o título do PDV some para quem perdeu o PDV
 select pg_temp.como(:'analista2');
 select pg_temp.ok(not erp.vejo_titulo('88000000-0000-0000-0000-000000000001')
