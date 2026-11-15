@@ -1525,6 +1525,10 @@ select pg_temp.como(:'gestor'); select erp.decidir_titulo('82000000-0000-0000-00
 select pg_temp.como(:'diretor2');
 select pg_temp.erro_igual($$select erp.decidir_titulo('82000000-0000-0000-0000-000000000093', true)$$,
   'Quem lançou não aprova o próprio lançamento', 'próprio: a marca da AD não vale na etapa do AF');
+-- S-088: a marca da AD não vale numa aprovação cuja lista não tem a AD
+select pg_temp.sis(); update erp.regra_alcada_pagamento set excecao_competencia = '{AF}'; select pg_temp.volta();
+select pg_temp.erro_igual($$insert into erp.excecoes_competencia (titulo_id, justificativa) values ('82000000-0000-0000-0000-000000000091', 'x')$$,
+  'Quem lançou não aprova o próprio lançamento', 'S-088: sem a AD na lista, a marca da AD não aprova o próprio lançamento');
 rollback to savepoint proprio;
 select pg_temp.ok(not exists (select 1 from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000004'),
   'alçada: centro sem gestor aprovador (fora do piloto) não tem alçada');
