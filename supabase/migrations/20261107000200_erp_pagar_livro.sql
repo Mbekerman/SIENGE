@@ -1113,7 +1113,10 @@ create table erp.listas_financeiro (            -- quem está em cada lista de a
 create function erp.tg_so_admin() returns trigger language plpgsql as $$
 begin
   -- papéis de aprovação: também pelo pedido de acesso aprovado (erp_acesso, migration _erp_perfis)
-  if not (erp.agindo_como('erp_acesso') and tg_table_name in ('listas_financeiro', 'centro_aprovadores', 'usuarios')) then
+  -- configuração de dinheiro: também pelo pedido de mudança aprovado (erp_config, migration _erp_config)
+  if not (erp.agindo_como('erp_acesso') and tg_table_name in ('listas_financeiro', 'centro_aprovadores', 'usuarios'))
+     and not (erp.agindo_como('erp_config') and tg_table_name in ('alcadas_pagamento', 'niveis_aprovacao', 'naturezas_sistema',
+                                                       'contas_bancarias', 'codigos_externos')) then
     perform erp.exigir_admin();
   end if;
   return coalesce(new, old);
@@ -1159,7 +1162,7 @@ create table erp.regra_adiantamento (
 insert into erp.regra_adiantamento default values;
 create function erp.tg_regra_adiantamento() returns trigger language plpgsql as $$
 begin
-  perform erp.exigir_admin();
+  if not erp.agindo_como('erp_config') then perform erp.exigir_admin(); end if;   -- pedido aprovado (_erp_config)
   if tg_op <> 'UPDATE' then raise exception 'A regra do adiantamento é uma só; altere os valores'; end if;
   return new;
 end $$;
@@ -1266,7 +1269,7 @@ create table erp.regra_alcada_pagamento (
 insert into erp.regra_alcada_pagamento default values;
 create function erp.tg_regra_alcada() returns trigger language plpgsql as $$
 begin
-  perform erp.exigir_admin();
+  if not erp.agindo_como('erp_config') then perform erp.exigir_admin(); end if;   -- pedido aprovado (_erp_config)
   if tg_op <> 'UPDATE' then raise exception 'A regra da alçada de pagamento é uma só; altere os valores'; end if;
   return new;
 end $$;
@@ -1434,7 +1437,7 @@ select c.campo, q.quem, c.rotulo, c.tipo from (values
 ) c(campo, rotulo, tipo) cross join (values ('AF'), ('AREA'), ('AUTOR')) q(quem);
 create function erp.tg_regras_ajuste() returns trigger language plpgsql as $$
 begin
-  perform erp.exigir_admin();
+  if not erp.agindo_como('erp_config') then perform erp.exigir_admin(); end if;   -- pedido aprovado (_erp_config)
   if tg_op <> 'UPDATE' or (new.campo, new.quem, new.rotulo, new.tipo) is distinct from (old.campo, old.quem, old.rotulo, old.tipo) then
     raise exception 'As regras do ajuste são fixas; altere só se pode e para que lado';
   end if;
