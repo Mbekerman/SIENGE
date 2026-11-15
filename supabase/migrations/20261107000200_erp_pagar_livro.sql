@@ -309,8 +309,9 @@ create table erp.titulo_previsoes (
 );
 
 -- Etiquetas livres nos títulos (Moises, 15/11/2026), por exemplo a campanha: só para filtrar e
--- agrupar nos relatórios; não entram em aprovação, alçada nem acesso. Quem lança cria a
--- etiqueta; o nome não se repete (sem diferença de maiúsculas e espaços nas pontas).
+-- agrupar nos relatórios; não entram em aprovação, alçada nem acesso. Só AF, AD e o master
+-- criam, renomeiam e desativam etiqueta; quem lança só usa as que existem (Moises, 15/11/2026,
+-- S-112). O nome não se repete (sem diferença de maiúsculas e espaços nas pontas).
 create table erp.etiquetas (
   id     uuid primary key default gen_random_uuid(),
   nome   text not null check (length(trim(nome)) > 0),
@@ -325,9 +326,13 @@ create table erp.titulo_etiquetas (
 create function erp.tg_etiqueta() returns trigger language plpgsql as $$
 begin
   if tg_op = 'DELETE' then raise exception 'Etiqueta não se apaga; desative'; end if;
+  -- erp.sou_master nasce na migration _erp_api
+  if not (erp.sistema() or erp.sou_master() or erp.estou_nas_listas(array['AF','AD'])) then
+    raise exception 'Só AF, AD e o master criam e mudam etiquetas; use uma das que existem';
+  end if;
   return new;
 end $$;
-create trigger t_etiqueta before delete on erp.etiquetas for each row execute function erp.tg_etiqueta();
+create trigger t_etiqueta before insert or update or delete on erp.etiquetas for each row execute function erp.tg_etiqueta();
 create trigger t_aud_etiquetas after insert or update on erp.etiquetas
   for each row execute function erp.tg_auditoria('id');
 create function erp.tg_titulo_etiqueta() returns trigger language plpgsql as $$

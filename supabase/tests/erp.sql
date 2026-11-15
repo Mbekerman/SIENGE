@@ -5432,9 +5432,36 @@ select pg_temp.erro_igual(format($$update erp.divisoes set raiz_id = %L where id
   'A divisão não muda de centro de custo, de nível de cima nem de data de criação', 'níveis: a raiz não muda');
 select pg_temp.volta();
 select pg_temp.como(:'analista');
--- etiquetas livres
+-- etiquetas livres: só AF, AD e o master criam e mudam; quem lança usa as que existem
+select pg_temp.erro_igual($$insert into erp.etiquetas (nome) values ('Natal')$$,
+  'Só AF, AD e o master criam e mudam etiquetas; use uma das que existem', 'etiquetas: quem lança (na AO) não cria etiqueta');
+select pg_temp.como(null);
+alter table erp.etiquetas disable trigger t_etiqueta;
+select pg_temp.como(:'analista');
+select pg_temp.falha($$insert into erp.etiquetas (nome) values ('Natal')$$, 'etiquetas: a regra de acesso, sozinha, também recusa');
+select pg_temp.como(null);
+alter table erp.etiquetas enable trigger t_etiqueta;
+select pg_temp.como(:'analista');
+select pg_temp.ok(pg_temp.erro_como_dono($$insert into erp.etiquetas (nome) values ('Natal')$$)
+                  = 'Só AF, AD e o master criam e mudam etiquetas; use uma das que existem',
+  'etiquetas: o gatilho barra por baixo da API');
+select pg_temp.sis(); insert into erp.listas_financeiro (lista, user_id) values ('AF', :'analista2'); select pg_temp.volta();
+select pg_temp.como(:'analista2');
 insert into erp.etiquetas (id, nome) values (:'et_bf', 'Black Friday');
+select pg_temp.ok(exists (select 1 from erp.etiquetas where id = :'et_bf'), 'etiquetas: AF cria etiqueta');
+select pg_temp.sis(); insert into erp.listas_financeiro (lista, user_id) values ('AD', :'gestor'); select pg_temp.volta();
+select pg_temp.como(:'gestor');
+insert into erp.etiquetas (nome) values ('Dia das Mães');
+update erp.etiquetas set nome = 'Dia das Mães 2026' where nome = 'Dia das Mães';
+select pg_temp.ok(exists (select 1 from erp.etiquetas where nome = 'Dia das Mães 2026'), 'etiquetas: AD cria e renomeia etiqueta');
+select pg_temp.como(:'analista');
+select pg_temp.falha(format($$update erp.etiquetas set nome = 'Black Week' where id = %L$$, :'et_bf'), 'etiquetas: quem lança não renomeia etiqueta');
+select pg_temp.ok(pg_temp.erro_como_dono(format($$update erp.etiquetas set nome = 'Black Week' where id = %L$$, :'et_bf'))
+                  = 'Só AF, AD e o master criam e mudam etiquetas; use uma das que existem',
+  'etiquetas: o gatilho barra renomear por baixo da API');
+select pg_temp.como(:'diretor');
 select pg_temp.falha($$insert into erp.etiquetas (nome) values ('  black friday ')$$, 'etiquetas: o nome não se repete');
+select pg_temp.como(:'analista');
 insert into erp.titulo_etiquetas (titulo_id, etiqueta_id) values (:'t_niv', :'et_bf');
 select pg_temp.ok(exists (select 1 from erp.titulo_etiquetas where titulo_id = :'t_niv'), 'etiquetas: quem lança põe etiqueta no título');
 select pg_temp.erro_igual(format($$update erp.titulo_etiquetas set titulo_id = %L where titulo_id = %L$$, :'t_pdv', :'t_niv'),
@@ -5452,8 +5479,10 @@ select pg_temp.erro_igual(format($$delete from erp.etiquetas where id = %L$$, :'
 select pg_temp.como(:'leitor');
 select pg_temp.falha(format($$delete from erp.titulo_etiquetas where titulo_id = %L$$, :'t_niv'), 'etiquetas: leitura não tira etiqueta');
 select pg_temp.falha($$insert into erp.etiquetas (nome) values ('Leitura')$$, 'etiquetas: leitura não cria etiqueta');
-select pg_temp.como(:'analista');
+select pg_temp.como(:'diretor');
 update erp.etiquetas set ativa = false where id = :'et_bf';
+select pg_temp.ok(not (select ativa from erp.etiquetas where id = :'et_bf'), 'etiquetas: o master desativa');
+select pg_temp.como(:'analista');
 select pg_temp.erro_igual(format($$insert into erp.titulo_etiquetas (titulo_id, etiqueta_id) values (%L, %L)$$, :'t_pdv', :'et_bf'),
   'A etiqueta está desativada', 'etiquetas: desativada não entra em título novo');
 select pg_temp.como(null);
