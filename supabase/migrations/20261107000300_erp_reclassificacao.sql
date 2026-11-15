@@ -240,8 +240,8 @@ begin
   if v_n = 0 and not p_apagar_origem then raise exception 'Nenhum lançamento encontrado com esse filtro'; end if;
   -- por dentro a função vê o livro todo: o pedido só leva o que quem pede vê na origem e lança no destino
   if not erp.sistema() and exists (select 1 from erp.lancamentos l join _itens i on i.lancamento_id = l.id
-                                    where not (erp.vejo(l.nucleo_economico_id, l.centro_custo_id, l.natureza_id, null)
-                                               and erp.lanco(l.nucleo_economico_id, l.centro_custo_id, p_destino, null))) then
+                                    where not (erp.vejo(l.nucleo_economico_id, l.centro_custo_id, l.natureza_id, null, l.divisao_id)
+                                               and erp.lanco(l.nucleo_economico_id, l.centro_custo_id, p_destino, null, l.divisao_id))) then
     raise exception 'O pedido leva lançamentos fora do seu acesso (núcleo, centro ou natureza); filtre pelo que você lança';
   end if;
 

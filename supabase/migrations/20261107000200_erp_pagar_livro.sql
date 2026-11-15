@@ -99,7 +99,11 @@ create table erp.compromisso_rateios (
   natureza_id     uuid not null references erp.naturezas,
   etapa_id         uuid references erp.etapas,
   centro_custo_id uuid references erp.centros_custo,
-  percentual      numeric(7,4) not null check (percentual > 0 and percentual <= 100)
+  divisao_id      uuid,
+  percentual      numeric(7,4) not null check (percentual > 0 and percentual <= 100),
+  -- a divisão é do centro da linha
+  foreign key (divisao_id, centro_custo_id) references erp.divisoes (id, centro_custo_id),
+  check (divisao_id is null or centro_custo_id is not null)
 );
 
 -- ---------------------------------------------------------------------
@@ -124,9 +128,13 @@ create table erp.orcamento_linhas (
   natureza_id     uuid not null references erp.naturezas,
   etapa_id         uuid references erp.etapas,
   centro_custo_id uuid references erp.centros_custo,
+  divisao_id      uuid,
   competencia     date not null check (extract(day from competencia) = 1),
   data_caixa      date,
-  valor           numeric(15,2) not null check (valor <> 0)   -- com sinal: receita +, gasto −
+  valor           numeric(15,2) not null check (valor <> 0),  -- com sinal: receita +, gasto −
+  -- a divisão é do centro da linha
+  foreign key (divisao_id, centro_custo_id) references erp.divisoes (id, centro_custo_id),
+  check (divisao_id is null or centro_custo_id is not null)
 );
 
 -- ---------------------------------------------------------------------
@@ -143,13 +151,17 @@ create table erp.previsoes (
   natureza_id     uuid not null references erp.naturezas,
   etapa_id         uuid references erp.etapas,
   centro_custo_id uuid references erp.centros_custo,
+  divisao_id      uuid,
   competencia     date not null check (extract(day from competencia) = 1),
   data_prevista   date not null,
   valor           numeric(15,2) not null check (valor > 0),
   descricao       text,
   situacao        text not null default 'aberta' check (situacao in ('aberta','consumida','cancelada')),
   criada_por      uuid,                         -- quem lançou; vazio quando o sistema gera
-  criada_em       timestamptz not null default now()
+  criada_em       timestamptz not null default now(),
+  -- a divisão é do centro da linha
+  foreign key (divisao_id, centro_custo_id) references erp.divisoes (id, centro_custo_id),
+  check (divisao_id is null or centro_custo_id is not null)
 );
 create index on erp.previsoes (compromisso_id) where situacao = 'aberta';
 
@@ -195,7 +207,11 @@ create table erp.documento_rateios (
   natureza_id     uuid not null references erp.naturezas,
   etapa_id         uuid references erp.etapas,
   centro_custo_id uuid references erp.centros_custo,
-  percentual      numeric(7,4) not null check (percentual > 0 and percentual <= 100)
+  divisao_id      uuid,
+  percentual      numeric(7,4) not null check (percentual > 0 and percentual <= 100),
+  -- a divisão é do centro da linha
+  foreign key (divisao_id, centro_custo_id) references erp.divisoes (id, centro_custo_id),
+  check (divisao_id is null or centro_custo_id is not null)
 );
 
 -- ---------------------------------------------------------------------
@@ -258,7 +274,11 @@ create table erp.titulo_rateios (
   natureza_id     uuid not null references erp.naturezas,
   etapa_id         uuid references erp.etapas,
   centro_custo_id uuid references erp.centros_custo,
-  percentual      numeric(7,4) not null check (percentual > 0 and percentual <= 100)
+  divisao_id      uuid,
+  percentual      numeric(7,4) not null check (percentual > 0 and percentual <= 100),
+  -- a divisão é do centro da linha
+  foreign key (divisao_id, centro_custo_id) references erp.divisoes (id, centro_custo_id),
+  check (divisao_id is null or centro_custo_id is not null)
 );
 
 create table erp.parcelas (
@@ -365,6 +385,7 @@ create table erp.lancamentos (
   natureza_id         uuid not null references erp.naturezas,
   etapa_id             uuid references erp.etapas,
   centro_custo_id     uuid references erp.centros_custo,
+  divisao_id          uuid,
   competencia         date not null check (extract(day from competencia) = 1),
   data_caixa          date,             -- nula = sem data (caução retida)
   valor               numeric(15,2) not null check (valor <> 0),
@@ -377,7 +398,10 @@ create table erp.lancamentos (
   pagamento_id        uuid references erp.pagamentos,
   caucao_movimento_id uuid references erp.caucao_movimentos,
   criado_em           timestamptz not null default clock_timestamp(),
-  check ((estagio = 'orcado') = (orcamento_versao_id is not null))
+  check ((estagio = 'orcado') = (orcamento_versao_id is not null)),
+  -- a divisão é do centro da linha
+  foreign key (divisao_id, centro_custo_id) references erp.divisoes (id, centro_custo_id),
+  check (divisao_id is null or centro_custo_id is not null)
 );
 create index on erp.lancamentos (natureza_id);
 create index on erp.lancamentos (empresa_id, competencia);
@@ -450,6 +474,36 @@ create trigger t_class before insert or update of natureza_id, nucleo_economico_
 create trigger t_class before insert or update of natureza_id, nucleo_economico_id, centro_custo_id, versao_id on erp.orcamento_linhas
   for each row execute function erp.tg_classificacao();
 
+-- A divisão (Moises, 15/11/2026): a da linha está ativa, e o centro com divisão ativa exige a
+-- divisão em cada linha que uma pessoa grava. A linha que o sistema copia (título da nota,
+-- previsão da assinatura) segue a de origem, para a rotina não parar quando o centro ganha
+-- divisões depois. Que a divisão é do centro, a chave estrangeira composta garante.
+-- Invoker de propósito: precisa saber quem grava (erp.agindo_como).
+create function erp.tg_divisao_linha() returns trigger language plpgsql as $$
+begin
+  if new.divisao_id is not null and tg_op = 'UPDATE' and new.divisao_id is not distinct from old.divisao_id then
+    return new;
+  end if;
+  if new.divisao_id is not null then
+    if not (select ativa from erp.divisoes where id = new.divisao_id) then
+      raise exception 'A divisão está desativada';
+    end if;
+  elsif new.centro_custo_id is not null and not (erp.agindo_como('erp_situacao') or erp.sistema())
+        and exists (select 1 from erp.divisoes where centro_custo_id = new.centro_custo_id and ativa) then
+    raise exception 'O centro de custo "%" tem divisões: diga a divisão da linha',
+      (select nome from erp.centros_custo where id = new.centro_custo_id);
+  end if;
+  return new;
+end $$;
+do $$
+declare t text;
+begin
+  foreach t in array array['compromisso_rateios', 'documento_rateios', 'titulo_rateios', 'previsoes', 'orcamento_linhas'] loop
+    execute format('create trigger t_divisao_linha before insert or update of centro_custo_id, divisao_id on erp.%I
+                      for each row execute function erp.tg_divisao_linha()', t);
+  end loop;
+end $$;
+
 -- A empresa de um registro não muda depois de criado (S-056): o rateio, o livro e a caução
 -- foram conferidos contra ela.
 create function erp.tg_empresa_fixa() returns trigger language plpgsql as $$
@@ -469,23 +523,23 @@ end $$;
 -- Rateio de um registro (compromisso, documento ou título) dividindo um total em centavos exatos:
 -- cada parte = arredondamento do acumulado menos o do acumulado anterior, então a soma fecha.
 create function erp.ratear(p_origem text, p_id uuid, p_total numeric)
-returns table (nucleo_economico_id uuid, natureza_id uuid, etapa_id uuid, centro_custo_id uuid, valor numeric)
+returns table (nucleo_economico_id uuid, natureza_id uuid, etapa_id uuid, centro_custo_id uuid, divisao_id uuid, valor numeric)
 language sql stable as $$
   with r as (
-    select nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, percentual, id from erp.compromisso_rateios
+    select nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id, percentual, id from erp.compromisso_rateios
       where p_origem = 'compromisso' and compromisso_id = p_id
     union all
-    select nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, percentual, id from erp.documento_rateios
+    select nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id, percentual, id from erp.documento_rateios
       where p_origem = 'documento' and documento_id = p_id
     union all
-    select nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, percentual, id from erp.titulo_rateios
+    select nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id, percentual, id from erp.titulo_rateios
       where p_origem = 'titulo' and titulo_id = p_id
   ), a as (
     select r.*, sum(percentual) over (order by percentual desc, id) as acum,
            sum(percentual) over () as total_pct
     from r
   )
-  select nucleo_economico_id, natureza_id, etapa_id, centro_custo_id,
+  select nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id,
          round(p_total * acum / total_pct, 2) - round(p_total * (acum - percentual) / total_pct, 2)
   from a
 $$;
@@ -552,7 +606,7 @@ declare v erp.orcamento_versoes;
 begin
   perform erp.exigir_editor();
   if not erp.sistema() and exists (select 1 from erp.orcamento_linhas l where l.versao_id = p_versao
-                                     and not erp.lanco(l.nucleo_economico_id, l.centro_custo_id, l.natureza_id, null)) then
+                                     and not erp.lanco(l.nucleo_economico_id, l.centro_custo_id, l.natureza_id, null, l.divisao_id)) then
     raise exception 'Você não lança em todas as linhas deste orçamento';
   end if;
   select * into v from erp.orcamento_versoes where id = p_versao for update;
@@ -561,8 +615,8 @@ begin
    where empresa_id = v.empresa_id and empreendimento_id is not distinct from v.empreendimento_id
      and tipo = v.tipo and situacao = 'vigente' and tipo <> 'reprojecao';
   insert into erp.lancamentos (estagio, orcamento_versao_id, empresa_id, nucleo_economico_id, natureza_id, etapa_id,
-                                  centro_custo_id, competencia, data_caixa, valor, orcamento_linha_id)
-  select 'orcado', v.id, v.empresa_id, l.nucleo_economico_id, l.natureza_id, l.etapa_id, l.centro_custo_id,
+                                  centro_custo_id, divisao_id, competencia, data_caixa, valor, orcamento_linha_id)
+  select 'orcado', v.id, v.empresa_id, l.nucleo_economico_id, l.natureza_id, l.etapa_id, l.centro_custo_id, l.divisao_id,
          l.competencia, l.data_caixa, l.valor, l.id
   from erp.orcamento_linhas l where l.versao_id = v.id;
   update erp.orcamento_versoes set situacao = 'vigente' where id = v.id;
@@ -603,18 +657,18 @@ create function erp.tg_previsao() returns trigger language plpgsql as $$
 declare v_saldo numeric;
 begin
   if tg_op = 'INSERT' then
-    insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id,
+    insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id,
                                     competencia, data_caixa, valor, previsao_id)
-    values ('previsto', new.empresa_id, new.nucleo_economico_id, new.natureza_id, new.etapa_id, new.centro_custo_id,
+    values ('previsto', new.empresa_id, new.nucleo_economico_id, new.natureza_id, new.etapa_id, new.centro_custo_id, new.divisao_id,
             new.competencia, new.data_prevista, erp.sinal(new.sentido) * new.valor, new.id);
     return new;
   end if;
   if new.situacao = 'cancelada' and old.situacao = 'aberta' then
     v_saldo := erp._previsao_saldo(new.id);
     if v_saldo > 0 then
-      insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id,
+      insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id,
                                       competencia, data_caixa, valor, previsao_id)
-      values ('previsto', new.empresa_id, new.nucleo_economico_id, new.natureza_id, new.etapa_id, new.centro_custo_id,
+      values ('previsto', new.empresa_id, new.nucleo_economico_id, new.natureza_id, new.etapa_id, new.centro_custo_id, new.divisao_id,
               new.competencia, new.data_prevista, -erp.sinal(new.sentido) * v_saldo, new.id);
     end if;
   end if;
@@ -653,9 +707,9 @@ begin
   v_saldo := p.valor - coalesce((select sum(tp.valor) from erp.titulo_previsoes tp join erp.titulos t on t.id = tp.titulo_id
                                  where tp.previsao_id = p.id and tp.titulo_id <> new.titulo_id and t.situacao <> 'cancelado'), 0);
   if new.valor > v_saldo then raise exception 'O consumo (%) passa do saldo da previsão (%)', new.valor, v_saldo; end if;
-  insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id,
+  insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id,
                                   competencia, data_caixa, valor, previsao_id, titulo_id)
-  values ('previsto', p.empresa_id, p.nucleo_economico_id, p.natureza_id, p.etapa_id, p.centro_custo_id,
+  values ('previsto', p.empresa_id, p.nucleo_economico_id, p.natureza_id, p.etapa_id, p.centro_custo_id, p.divisao_id,
           p.competencia, p.data_prevista, -erp.sinal(p.sentido) * new.valor, p.id, new.titulo_id);
   if new.valor = v_saldo then
     update erp.previsoes set situacao = 'consumida' where id = p.id;   -- definer erp_situacao (_erp_rls)
@@ -685,8 +739,8 @@ begin
     if not exists (select 1 from erp.previsoes where compromisso_id = c.id and competencia = d and situacao <> 'cancelada') then
       for r in select * from erp.ratear('compromisso', c.id, c.valor_periodo) loop
         insert into erp.previsoes (empresa_id, origem, compromisso_id, pessoa_id, nucleo_economico_id, natureza_id, etapa_id,
-                                      centro_custo_id, competencia, data_prevista, valor, descricao)
-        values (c.empresa_id, 'assinatura', c.id, c.pessoa_id, r.nucleo_economico_id, r.natureza_id, r.etapa_id, r.centro_custo_id,
+                                      centro_custo_id, divisao_id, competencia, data_prevista, valor, descricao)
+        values (c.empresa_id, 'assinatura', c.id, c.pessoa_id, r.nucleo_economico_id, r.natureza_id, r.etapa_id, r.centro_custo_id, r.divisao_id,
                 d, least(d + (coalesce(c.dia_vencimento, 1) - 1), (d + interval '1 month - 1 day')::date),
                 r.valor, c.descricao);
       end loop;
@@ -819,9 +873,9 @@ declare p record; r record;
 begin
   for p in select * from erp.parcelas where titulo_id = t.id and t.tipo <> 'adiantamento' order by numero loop
     for r in select * from erp.ratear('titulo', t.id, p.valor) loop
-      insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id,
+      insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id,
                                       competencia, data_caixa, valor, titulo_id, parcela_id)
-      values ('comprometido', t.empresa_id, r.nucleo_economico_id, r.natureza_id, r.etapa_id, r.centro_custo_id,
+      values ('comprometido', t.empresa_id, r.nucleo_economico_id, r.natureza_id, r.etapa_id, r.centro_custo_id, r.divisao_id,
               t.competencia, p.vencimento, erp.sinal(t.sentido) * r.valor, t.id, p.id);
     end loop;
   end loop;
@@ -830,13 +884,13 @@ end $$;
 -- combinação). p_estagio nulo estorna tudo; 'comprometido', só o comprometido.
 create function erp._estornar_titulo(p_titulo uuid, p_estagio text) returns void language plpgsql as $$
 begin
-  insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id,
+  insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id,
                                competencia, data_caixa, valor, titulo_id, parcela_id, previsao_id)
-  select estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id,
+  select estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id,
          competencia, data_caixa, -sum(valor), p_titulo, parcela_id, previsao_id
     from erp.lancamentos
    where titulo_id = p_titulo and (p_estagio is null or estagio = p_estagio)
-   group by estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id,
+   group by estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id,
             competencia, data_caixa, parcela_id, previsao_id
   having sum(valor) <> 0;
 end $$;
@@ -886,12 +940,12 @@ begin
     insert into erp.parcelas (titulo_id, numero, vencimento, valor) values (v_id, i, p_vencimentos[i], v_parc);
   end loop;
   if p_rateio_origem is not null then
-    insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, percentual)
-    select v_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, percentual from (
-      select nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, percentual from erp.compromisso_rateios
+    insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id, percentual)
+    select v_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id, percentual from (
+      select nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id, percentual from erp.compromisso_rateios
         where p_rateio_origem = 'compromisso' and compromisso_id = p_rateio_id
       union all
-      select nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, percentual from erp.documento_rateios
+      select nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id, percentual from erp.documento_rateios
         where p_rateio_origem = 'documento' and documento_id = p_rateio_id) r;
   end if;
   return v_id;
@@ -1430,7 +1484,7 @@ create function erp.pode_ajustar(p_titulo uuid) returns boolean language plpgsql
 begin return (erp.eu() is not null
     and (erp.sou_master() or not exists (select 1 from erp.titulo_rateios r join erp.titulos t on t.id = r.titulo_id
                                           where r.titulo_id = p_titulo
-                                            and not erp.lanco(r.nucleo_economico_id, r.centro_custo_id, r.natureza_id, t.criado_por)))
+                                            and not erp.lanco(r.nucleo_economico_id, r.centro_custo_id, r.natureza_id, t.criado_por, r.divisao_id)))
     and (
          erp.autor_lancamento('titulo', p_titulo) = erp.eu()
       or erp.estou_nas_listas(array['AF'])
@@ -1476,6 +1530,7 @@ select c.campo, q.quem, c.rotulo, c.tipo from (values
   ('titulo_rateios.nucleo_economico_id', 'o núcleo econômico do rateio', 'outro'),
   ('titulo_rateios.centro_custo_id', 'o centro de custo do rateio', 'outro'),
   ('titulo_rateios.natureza_id', 'a natureza do rateio', 'outro'), ('titulo_rateios.etapa_id', 'a etapa do rateio', 'outro'),
+  ('titulo_rateios.divisao_id', 'a divisão do rateio', 'outro'),
   ('titulo_rateios.percentual', 'o percentual do rateio', 'outro'),
   ('documentos_fiscais.emitente_id', 'o emitente da nota', 'outro'), ('documentos_fiscais.tipo', 'o tipo da nota', 'outro'),
   ('documentos_fiscais.numero', 'o número da nota', 'outro'), ('documentos_fiscais.serie', 'a série da nota', 'outro'),
@@ -1486,6 +1541,7 @@ select c.campo, q.quem, c.rotulo, c.tipo from (values
   ('documento_rateios.centro_custo_id', 'o centro de custo do rateio da nota', 'outro'),
   ('documento_rateios.natureza_id', 'a natureza do rateio da nota', 'outro'),
   ('documento_rateios.etapa_id', 'a etapa do rateio da nota', 'outro'),
+  ('documento_rateios.divisao_id', 'a divisão do rateio da nota', 'outro'),
   ('documento_rateios.percentual', 'o percentual do rateio da nota', 'outro'),
   ('documento_retencoes.linhas', 'as retenções da nota (incluir ou tirar)', 'outro'),
   ('documento_retencoes.imposto', 'o imposto retido', 'outro'), ('documento_retencoes.orgao_id', 'o órgão da retenção', 'outro'),
@@ -2184,7 +2240,7 @@ create trigger t_sem_truncate before truncate on erp.titulo_ajustes
 
 create function erp.tg_quitacao() returns trigger language plpgsql as $$
 declare g erp.pagamentos; pa erp.parcelas; t erp.titulos; r record; v_total numeric;
-        v_nucleo uuid; v_etapa uuid; v_dep uuid; v_comp date;
+        v_nucleo uuid; v_etapa uuid; v_dep uuid; v_div uuid; v_comp date;
 begin
   select * into g from erp.pagamentos where id = new.pagamento_id for update;
   select * into pa from erp.parcelas where id = new.parcela_id for update;
@@ -2231,26 +2287,26 @@ begin
           g.id, new.id, t.id, pa.id);
   -- principal: realizado na natureza do título e estorno do comprometido
   for r in select * from erp.ratear('titulo', t.id, new.principal) loop
-    insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id,
+    insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id,
                                     competencia, data_caixa, valor, titulo_id, parcela_id, quitacao_id, pagamento_id)
-    values ('realizado', t.empresa_id, r.nucleo_economico_id, r.natureza_id, r.etapa_id, r.centro_custo_id,
+    values ('realizado', t.empresa_id, r.nucleo_economico_id, r.natureza_id, r.etapa_id, r.centro_custo_id, r.divisao_id,
             t.competencia, g.data, -r.valor, t.id, pa.id, new.id, g.id),
-           ('comprometido', t.empresa_id, r.nucleo_economico_id, r.natureza_id, r.etapa_id, r.centro_custo_id,
+           ('comprometido', t.empresa_id, r.nucleo_economico_id, r.natureza_id, r.etapa_id, r.centro_custo_id, r.divisao_id,
             t.competencia, pa.vencimento, r.valor, t.id, pa.id, new.id, g.id);
   end loop;
   -- juros, multa e desconto: no centro de maior peso do rateio, competência do pagamento
-  select nucleo_economico_id, etapa_id, centro_custo_id into v_nucleo, v_etapa, v_dep
+  select nucleo_economico_id, etapa_id, centro_custo_id, divisao_id into v_nucleo, v_etapa, v_dep, v_div
   from erp.titulo_rateios where titulo_id = t.id order by percentual desc, id limit 1;
   if new.juros + new.multa > 0 then
-    insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id,
+    insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id,
                                     competencia, data_caixa, valor, titulo_id, parcela_id, quitacao_id, pagamento_id)
-    values ('realizado', t.empresa_id, v_nucleo, erp.natureza_sistema('juros_multas'), v_etapa, v_dep,
+    values ('realizado', t.empresa_id, v_nucleo, erp.natureza_sistema('juros_multas'), v_etapa, v_dep, v_div,
             v_comp, g.data, -(new.juros + new.multa), t.id, pa.id, new.id, g.id);
   end if;
   if new.desconto > 0 then
-    insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id,
+    insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id,
                                     competencia, data_caixa, valor, titulo_id, parcela_id, quitacao_id, pagamento_id)
-    values ('realizado', t.empresa_id, v_nucleo, erp.natureza_sistema('descontos_obtidos'), v_etapa, v_dep,
+    values ('realizado', t.empresa_id, v_nucleo, erp.natureza_sistema('descontos_obtidos'), v_etapa, v_dep, v_div,
             v_comp, g.data, new.desconto, t.id, pa.id, new.id, g.id);
   end if;
   -- título sem saldo vira quitado
@@ -2325,9 +2381,9 @@ begin
   end if;
   v_sinal := case new.tipo when 'retencao' then -1 else 1 end;
   for r in select * from erp.ratear('compromisso', c.id, new.valor) loop
-    insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id,
+    insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id,
                                     competencia, data_caixa, valor, caucao_movimento_id)
-    values ('comprometido', c.empresa_id, r.nucleo_economico_id, r.natureza_id, r.etapa_id, r.centro_custo_id,
+    values ('comprometido', c.empresa_id, r.nucleo_economico_id, r.natureza_id, r.etapa_id, r.centro_custo_id, r.divisao_id,
             erp.mes(new.em::date), null, v_sinal * r.valor, new.id);
   end loop;
   return new;

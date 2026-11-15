@@ -30,7 +30,27 @@ create table erp.perfil_centros (
   perfil_id       uuid not null references erp.perfis_modelo,
   centro_custo_id uuid not null references erp.centros_custo,
   nivel           text not null check (nivel in ('leitor','lancador_restrito','lancador')),
-  primary key (perfil_id, centro_custo_id)
+  -- as divisões do centro (Moises, 15/11/2026: "mesmo esquema dos Núcleos"): todas, inclusive as
+  -- futuras, menos as excluídas; ou lista, as incluídas e, se marcado, as criadas depois desta
+  -- linha. Em todos os escopos, a divisão excluída fica de fora.
+  divisoes         text not null default 'todas' check (divisoes in ('todas','lista')),
+  divisoes_futuras boolean not null default false,
+  criado_em        timestamptz not null default clock_timestamp(),   -- "futura" = divisão criada depois disto
+  primary key (perfil_id, centro_custo_id),
+  check (divisoes = 'lista' or not divisoes_futuras)
+);
+-- divisão incluída (no escopo lista) ou excluída (em qualquer um); a incluída pode ter nível
+-- próprio, que vale no lugar do nível do centro (Leitor no centro, Lançador no PDV)
+create table erp.perfil_centro_divisoes (
+  perfil_id       uuid not null,
+  centro_custo_id uuid not null,
+  divisao_id      uuid not null,
+  incluir         boolean not null,
+  nivel           text check (nivel in ('leitor','lancador_restrito','lancador')),
+  primary key (perfil_id, divisao_id),
+  foreign key (perfil_id, centro_custo_id) references erp.perfil_centros,
+  foreign key (divisao_id, centro_custo_id) references erp.divisoes (id, centro_custo_id),
+  check (incluir or nivel is null)
 );
 -- naturezas restritas que o modelo libera (o galho inteiro), nos centros do modelo
 create table erp.perfil_naturezas (
@@ -102,6 +122,15 @@ create table erp.excecoes_centro (
   fim                 date,
   primary key (user_id, nucleo_economico_id, centro_custo_id)
 );
+-- exceção de nível num núcleo × divisão: vence a do centro e os modelos; 'nenhum' tira o acesso
+create table erp.excecoes_divisao (
+  user_id             uuid not null references erp.usuarios,
+  nucleo_economico_id uuid not null references erp.nucleos_economicos,
+  divisao_id          uuid not null references erp.divisoes,
+  nivel               text not null check (nivel in ('nenhum','leitor','lancador_restrito','lancador')),
+  fim                 date,
+  primary key (user_id, nucleo_economico_id, divisao_id)
+);
 -- exceção de natureza: libera (restrita) ou bloqueia o galho, num centro ou em todos (centro vazio)
 create table erp.excecoes_natureza (
   id              uuid primary key default gen_random_uuid(),
@@ -132,7 +161,7 @@ begin
   if tg_op <> 'DELETE' then v_new := to_jsonb(new); end if;
   -- confere o dono de antes e o de depois: trocar a pessoa ou a atribuição da linha também é mudar acesso
   if v_eu is not null and (
-       (tg_table_name in ('atribuicoes','excecoes_centro','excecoes_natureza','centro_diretores')
+       (tg_table_name in ('atribuicoes','excecoes_centro','excecoes_divisao','excecoes_natureza','centro_diretores')
         and v_eu::text in (v_old->>'user_id', v_new->>'user_id'))
     or (tg_table_name in ('atribuicao_nucleos','atribuicao_tipos')
         and exists (select 1 from erp.atribuicoes a
@@ -144,9 +173,10 @@ end $$;
 do $$
 declare t record;
 begin
-  for t in select * from (values ('perfis_modelo', 'id'), ('perfil_centros', 'perfil_id'), ('perfil_naturezas', 'perfil_id'),
+  for t in select * from (values ('perfis_modelo', 'id'), ('perfil_centros', 'perfil_id'), ('perfil_centro_divisoes', 'perfil_id'),
+                                 ('perfil_naturezas', 'perfil_id'),
                                  ('atribuicoes', 'id'), ('atribuicao_nucleos', 'atribuicao_id'), ('atribuicao_tipos', 'atribuicao_id'),
-                                 ('excecoes_centro', 'user_id'), ('excecoes_natureza', 'id'),
+                                 ('excecoes_centro', 'user_id'), ('excecoes_divisao', 'user_id'), ('excecoes_natureza', 'id'),
                                  ('centro_diretores', 'user_id')) v(tabela, chave) loop
     execute format('create trigger t_acesso_admin before insert or update or delete on erp.%I
                       for each row execute function erp.tg_acesso_admin()', t.tabela);
@@ -198,29 +228,55 @@ language sql stable as $$
                          where t.atribuicao_id = a.id and n.id = p_nucleo and n.criado_em > a.criado_em)
          end $$;
 
--- O acesso da pessoa num núcleo × centro: vê tudo do centro? lança? (vê só o que lançou = lança
--- sem ver tudo). A exceção vence; sem exceção, a soma dos modelos que cobrem o núcleo.
-create function erp.acesso(p_user uuid, p_nucleo uuid, p_centro uuid, out ve_tudo boolean, out lanca boolean)
+-- O nível que um modelo dá no centro × divisão (nulo: nenhum). A divisão incluída usa o nível
+-- dela ou o do centro; a excluída, nenhum; a não marcada, o do centro no escopo todas e, no
+-- escopo lista, só se for futura e o modelo pegar as futuras. A linha sem divisão (centro sem
+-- divisões, ou linha de antes delas) vale pelo nível do centro só no escopo todas: quem só tem
+-- o PDV não vê o que ficou sem divisão no Marketing.
+create function erp._nivel_modelo(p_perfil uuid, p_centro uuid, p_divisao uuid) returns text language sql stable as $$
+  select case
+           when x.incluir is false then null
+           when x.incluir then coalesce(x.nivel, pc.nivel)
+           when pc.divisoes = 'todas' then pc.nivel
+           when p_divisao is not null and pc.divisoes_futuras and d.criado_em > pc.criado_em then pc.nivel
+         end
+    from erp.perfil_centros pc
+    left join erp.divisoes d on d.id = p_divisao and d.centro_custo_id = pc.centro_custo_id
+    left join erp.perfil_centro_divisoes x on x.perfil_id = pc.perfil_id and x.divisao_id = p_divisao
+                                           and x.centro_custo_id = pc.centro_custo_id
+   where pc.perfil_id = p_perfil and pc.centro_custo_id = p_centro $$;
+
+-- O acesso da pessoa num núcleo × centro × divisão: vê tudo? lança? (vê só o que lançou = lança
+-- sem ver tudo). A exceção da divisão vence a do centro, que vence os modelos; sem exceção, a
+-- soma dos modelos que cobrem o núcleo.
+create function erp.acesso(p_user uuid, p_nucleo uuid, p_centro uuid, p_divisao uuid default null,
+                           out ve_tudo boolean, out lanca boolean)
 language plpgsql stable as $$
 declare v_exc text;
 begin
-  select e.nivel into v_exc from erp.excecoes_centro e
-   where e.user_id = p_user and e.nucleo_economico_id = p_nucleo and e.centro_custo_id = p_centro
-     and (e.fim is null or current_date <= e.fim);
+  if p_divisao is not null then
+    select e.nivel into v_exc from erp.excecoes_divisao e
+     where e.user_id = p_user and e.nucleo_economico_id = p_nucleo and e.divisao_id = p_divisao
+       and (e.fim is null or current_date <= e.fim);
+  end if;
+  if v_exc is null then
+    select e.nivel into v_exc from erp.excecoes_centro e
+     where e.user_id = p_user and e.nucleo_economico_id = p_nucleo and e.centro_custo_id = p_centro
+       and (e.fim is null or current_date <= e.fim);
+  end if;
   if v_exc is not null then
     ve_tudo := v_exc in ('leitor','lancador');
     lanca := v_exc in ('lancador_restrito','lancador');
     return;
   end if;
-  select coalesce(bool_or(pc.nivel in ('leitor','lancador')), false), coalesce(bool_or(pc.nivel in ('lancador_restrito','lancador')), false)
+  select coalesce(bool_or(n in ('leitor','lancador')), false), coalesce(bool_or(n in ('lancador_restrito','lancador')), false)
     into ve_tudo, lanca
-    from erp.atribuicoes_no_nucleo(p_user, p_nucleo) a
-    join erp.perfil_centros pc on pc.perfil_id = a.perfil_id and pc.centro_custo_id = p_centro;
+    from (select erp._nivel_modelo(a.perfil_id, p_centro, p_divisao) as n from erp.atribuicoes_no_nucleo(p_user, p_nucleo) a) m;
 end $$;
 
 -- A natureza está liberada para a pessoa no núcleo × centro? Bloqueio da pessoa vence; restrita
 -- só com liberação (do modelo que dá o centro naquele núcleo, ou da pessoa).
-create function erp.natureza_liberada(p_user uuid, p_nucleo uuid, p_centro uuid, p_natureza uuid)
+create function erp.natureza_liberada(p_user uuid, p_nucleo uuid, p_centro uuid, p_natureza uuid, p_divisao uuid default null)
 returns boolean language plpgsql stable as $$
 begin
   if exists (select 1 from erp.excecoes_natureza e
@@ -234,28 +290,29 @@ begin
                   where e.user_id = p_user and e.efeito = 'liberar' and (e.fim is null or current_date <= e.fim)
                     and (e.centro_custo_id is null or e.centro_custo_id = p_centro)
                     and e.natureza_id in (select erp.galhos_acima(p_natureza)))
+      -- liberada pelo modelo que dá acesso àquele centro × divisão no núcleo
       or exists (select 1 from erp.atribuicoes_no_nucleo(p_user, p_nucleo) a
-                   join erp.perfil_centros pc on pc.perfil_id = a.perfil_id and pc.centro_custo_id = p_centro
                    join erp.perfil_naturezas pn on pn.perfil_id = a.perfil_id
-                  where pn.natureza_id in (select erp.galhos_acima(p_natureza)));
+                  where erp._nivel_modelo(a.perfil_id, p_centro, p_divisao) is not null
+                    and pn.natureza_id in (select erp.galhos_acima(p_natureza)));
 end $$;
 
--- A pessoa vê uma linha classificada em núcleo × centro × natureza, lançada por p_autor?
-create function erp.ve_linha(p_user uuid, p_nucleo uuid, p_centro uuid, p_natureza uuid, p_autor uuid)
+-- A pessoa vê uma linha classificada em núcleo × centro × divisão × natureza, lançada por p_autor?
+create function erp.ve_linha(p_user uuid, p_nucleo uuid, p_centro uuid, p_natureza uuid, p_autor uuid, p_divisao uuid default null)
 returns boolean language plpgsql stable as $$
 declare a record;
 begin
-  select * into a from erp.acesso(p_user, p_nucleo, p_centro);
+  select * into a from erp.acesso(p_user, p_nucleo, p_centro, p_divisao);
   if not (a.ve_tudo or (a.lanca and p_autor = p_user)) then return false; end if;
-  return p_natureza is null or erp.natureza_liberada(p_user, p_nucleo, p_centro, p_natureza);
+  return p_natureza is null or erp.natureza_liberada(p_user, p_nucleo, p_centro, p_natureza, p_divisao);
 end $$;
 
--- A pessoa pode lançar em núcleo × centro × natureza?
-create function erp.lanca_linha(p_user uuid, p_nucleo uuid, p_centro uuid, p_natureza uuid)
+-- A pessoa pode lançar em núcleo × centro × divisão × natureza?
+create function erp.lanca_linha(p_user uuid, p_nucleo uuid, p_centro uuid, p_natureza uuid, p_divisao uuid default null)
 returns boolean language plpgsql stable as $$
 begin
-  return (select lanca from erp.acesso(p_user, p_nucleo, p_centro))
-     and (p_natureza is null or erp.natureza_liberada(p_user, p_nucleo, p_centro, p_natureza));
+  return (select lanca from erp.acesso(p_user, p_nucleo, p_centro, p_divisao))
+     and (p_natureza is null or erp.natureza_liberada(p_user, p_nucleo, p_centro, p_natureza, p_divisao));
 end $$;
 
 -- ---------------------------------------------------------------------------------------------
@@ -356,9 +413,10 @@ create table erp.regras_mudanca_acesso (
 );
 insert into erp.regras_mudanca_acesso (tabela, rotulo) values
   ('perfis_modelo', 'Modelos de acesso'), ('perfil_centros', 'Centros de um modelo'),
+  ('perfil_centro_divisoes', 'Divisões incluídas ou excluídas de um centro do modelo'),
   ('perfil_naturezas', 'Naturezas restritas liberadas por um modelo'), ('atribuicoes', 'Atribuições de modelo a pessoas'),
   ('atribuicao_tipos', 'Tipos de núcleo de uma atribuição'), ('atribuicao_nucleos', 'Núcleos de uma atribuição'),
-  ('excecoes_centro', 'Exceções de centro'), ('excecoes_natureza', 'Exceções de natureza'),
+  ('excecoes_centro', 'Exceções de centro'), ('excecoes_divisao', 'Exceções de divisão'), ('excecoes_natureza', 'Exceções de natureza'),
   ('tipos_nucleo', 'Tipos de núcleo'),
   ('aprovadores_acesso', 'Aprovadores de acesso'), ('regra_acesso', 'Mínimo de aprovações e prazo da sucessão'),
   ('naturezas', 'Marca restrita e galho restrito de natureza'), ('nucleos_economicos', 'Tipo de um núcleo');
@@ -557,7 +615,7 @@ begin
 end $$;
 create or replace function erp.tg_acesso_admin() returns trigger language plpgsql as $$
 begin
-  if tg_op <> 'DELETE' and tg_table_name in ('atribuicoes','excecoes_centro','excecoes_natureza','centro_diretores','aprovadores_acesso') then
+  if tg_op <> 'DELETE' and tg_table_name in ('atribuicoes','excecoes_centro','excecoes_divisao','excecoes_natureza','centro_diretores','aprovadores_acesso') then
     perform erp.recusar_so_sucessao((to_jsonb(new)->>'user_id')::uuid);
   end if;
   if erp.agindo_como('erp_acesso') or erp.sistema() then return coalesce(new, old); end if;
@@ -613,11 +671,13 @@ begin
   return case p_tabela
     when 'perfis_modelo' then (select to_jsonb(t) from erp.perfis_modelo t where id = (d->>'id')::uuid)
     when 'perfil_centros' then (select to_jsonb(t) from erp.perfil_centros t where perfil_id = (d->>'perfil_id')::uuid and centro_custo_id = (d->>'centro_custo_id')::uuid)
+    when 'perfil_centro_divisoes' then (select to_jsonb(t) from erp.perfil_centro_divisoes t where perfil_id = (d->>'perfil_id')::uuid and divisao_id = (d->>'divisao_id')::uuid)
     when 'perfil_naturezas' then (select to_jsonb(t) from erp.perfil_naturezas t where perfil_id = (d->>'perfil_id')::uuid and natureza_id = (d->>'natureza_id')::uuid)
     when 'atribuicoes' then (select to_jsonb(t) from erp.atribuicoes t where id = (d->>'id')::uuid)
     when 'atribuicao_tipos' then (select to_jsonb(t) from erp.atribuicao_tipos t where atribuicao_id = (d->>'atribuicao_id')::uuid and tipo_nucleo = d->>'tipo_nucleo')
     when 'atribuicao_nucleos' then (select to_jsonb(t) from erp.atribuicao_nucleos t where atribuicao_id = (d->>'atribuicao_id')::uuid and nucleo_economico_id = (d->>'nucleo_economico_id')::uuid)
     when 'excecoes_centro' then (select to_jsonb(t) from erp.excecoes_centro t where user_id = (d->>'user_id')::uuid and nucleo_economico_id = (d->>'nucleo_economico_id')::uuid and centro_custo_id = (d->>'centro_custo_id')::uuid)
+    when 'excecoes_divisao' then (select to_jsonb(t) from erp.excecoes_divisao t where user_id = (d->>'user_id')::uuid and nucleo_economico_id = (d->>'nucleo_economico_id')::uuid and divisao_id = (d->>'divisao_id')::uuid)
     when 'excecoes_natureza' then (select to_jsonb(t) from erp.excecoes_natureza t where id = (d->>'id')::uuid)
     when 'centro_diretores' then (select to_jsonb(t) from erp.centro_diretores t where centro_custo_id = (d->>'centro_custo_id')::uuid and user_id = (d->>'user_id')::uuid)
     when 'centro_aprovadores' then (select to_jsonb(t) from erp.centro_aprovadores t where centro_custo_id = (d->>'centro_custo_id')::uuid and user_id = (d->>'user_id')::uuid)
@@ -641,7 +701,7 @@ end $$;
 --   - tipos de núcleo e regra da lista: ninguém além de quem pede.
 create function erp._beneficiarios_acesso(p_tabela text, d jsonb, a jsonb) returns uuid[] language plpgsql stable as $$
 begin
-  if p_tabela in ('atribuicoes','excecoes_centro','excecoes_natureza','centro_diretores','centro_aprovadores','listas_financeiro','aprovadores_acesso') then
+  if p_tabela in ('atribuicoes','excecoes_centro','excecoes_divisao','excecoes_natureza','centro_diretores','centro_aprovadores','listas_financeiro','aprovadores_acesso') then
     return array_remove(array[(d->>'user_id')::uuid, (a->>'user_id')::uuid], null);
   elsif p_tabela = 'usuarios' then
     return array[(d->>'id')::uuid];
@@ -649,10 +709,11 @@ begin
     return array(select user_id from erp.atribuicoes where id = (d->>'atribuicao_id')::uuid
                  union select (m.dados->>'user_id')::uuid from erp.mudancas_acesso m
                         where m.tabela = 'atribuicoes' and m.dados->>'id' = d->>'atribuicao_id' and m.situacao = 'pendente');
-  elsif p_tabela in ('perfis_modelo','perfil_centros','perfil_naturezas') then
+  elsif p_tabela in ('perfis_modelo','perfil_centros','perfil_centro_divisoes','perfil_naturezas') then
     return array(select distinct user_id from erp.atribuicoes where perfil_id = coalesce(d->>'perfil_id', d->>'id')::uuid);
   elsif p_tabela = 'naturezas' then
-    return array(select user_id from erp.atribuicoes union select user_id from erp.excecoes_centro where nivel <> 'nenhum');
+    return array(select user_id from erp.atribuicoes union select user_id from erp.excecoes_centro where nivel <> 'nenhum'
+                 union select user_id from erp.excecoes_divisao where nivel <> 'nenhum');
   elsif p_tabela = 'nucleos_economicos' then
     return array(select a2.user_id from erp.atribuicoes a2 join erp.atribuicao_tipos t on t.atribuicao_id = a2.id
                   where t.tipo_nucleo = d->>'tipo');
@@ -797,9 +858,17 @@ begin
     elsif m.operacao = 'alterar' then update erp.perfis_modelo t set nome = r.nome, descricao = r.descricao, ativo = r.ativo from jsonb_populate_record(null::erp.perfis_modelo, d) r where t.id = r.id;
     else delete from erp.perfis_modelo where id = (d->>'id')::uuid; end if;
   when 'perfil_centros' then
-    if m.operacao = 'incluir' then insert into erp.perfil_centros select * from jsonb_populate_record(null::erp.perfil_centros, d);
-    elsif m.operacao = 'alterar' then update erp.perfil_centros t set nivel = r.nivel from jsonb_populate_record(null::erp.perfil_centros, d) r where t.perfil_id = r.perfil_id and t.centro_custo_id = r.centro_custo_id;
+    -- a data de criação é sempre a de quando vale (é o corte das divisões futuras)
+    if m.operacao = 'incluir' then
+      insert into erp.perfil_centros (perfil_id, centro_custo_id, nivel, divisoes, divisoes_futuras)
+      select r.perfil_id, r.centro_custo_id, r.nivel, coalesce(r.divisoes, 'todas'), coalesce(r.divisoes_futuras, false)
+        from jsonb_populate_record(null::erp.perfil_centros, d) r;
+    elsif m.operacao = 'alterar' then update erp.perfil_centros t set nivel = r.nivel, divisoes = r.divisoes, divisoes_futuras = r.divisoes_futuras from jsonb_populate_record(null::erp.perfil_centros, d) r where t.perfil_id = r.perfil_id and t.centro_custo_id = r.centro_custo_id;
     else delete from erp.perfil_centros where perfil_id = (d->>'perfil_id')::uuid and centro_custo_id = (d->>'centro_custo_id')::uuid; end if;
+  when 'perfil_centro_divisoes' then
+    if m.operacao = 'incluir' then insert into erp.perfil_centro_divisoes select * from jsonb_populate_record(null::erp.perfil_centro_divisoes, d);
+    elsif m.operacao = 'alterar' then update erp.perfil_centro_divisoes t set incluir = r.incluir, nivel = r.nivel from jsonb_populate_record(null::erp.perfil_centro_divisoes, d) r where t.perfil_id = r.perfil_id and t.divisao_id = r.divisao_id;
+    else delete from erp.perfil_centro_divisoes where perfil_id = (d->>'perfil_id')::uuid and divisao_id = (d->>'divisao_id')::uuid; end if;
   when 'perfil_naturezas' then
     if m.operacao = 'incluir' then insert into erp.perfil_naturezas select * from jsonb_populate_record(null::erp.perfil_naturezas, d);
     elsif m.operacao = 'excluir' then delete from erp.perfil_naturezas where perfil_id = (d->>'perfil_id')::uuid and natureza_id = (d->>'natureza_id')::uuid;
@@ -823,6 +892,10 @@ begin
     if m.operacao = 'incluir' then insert into erp.excecoes_centro select * from jsonb_populate_record(null::erp.excecoes_centro, d);
     elsif m.operacao = 'alterar' then update erp.excecoes_centro t set nivel = r.nivel, fim = r.fim from jsonb_populate_record(null::erp.excecoes_centro, d) r where t.user_id = r.user_id and t.nucleo_economico_id = r.nucleo_economico_id and t.centro_custo_id = r.centro_custo_id;
     else delete from erp.excecoes_centro where user_id = (d->>'user_id')::uuid and nucleo_economico_id = (d->>'nucleo_economico_id')::uuid and centro_custo_id = (d->>'centro_custo_id')::uuid; end if;
+  when 'excecoes_divisao' then
+    if m.operacao = 'incluir' then insert into erp.excecoes_divisao select * from jsonb_populate_record(null::erp.excecoes_divisao, d);
+    elsif m.operacao = 'alterar' then update erp.excecoes_divisao t set nivel = r.nivel, fim = r.fim from jsonb_populate_record(null::erp.excecoes_divisao, d) r where t.user_id = r.user_id and t.nucleo_economico_id = r.nucleo_economico_id and t.divisao_id = r.divisao_id;
+    else delete from erp.excecoes_divisao where user_id = (d->>'user_id')::uuid and nucleo_economico_id = (d->>'nucleo_economico_id')::uuid and divisao_id = (d->>'divisao_id')::uuid; end if;
   when 'excecoes_natureza' then
     if m.operacao = 'incluir' then insert into erp.excecoes_natureza select * from jsonb_populate_record(null::erp.excecoes_natureza, d);
     elsif m.operacao = 'alterar' then update erp.excecoes_natureza t set efeito = r.efeito, fim = r.fim from jsonb_populate_record(null::erp.excecoes_natureza, d) r where t.id = r.id;

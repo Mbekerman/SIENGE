@@ -377,6 +377,36 @@ create table erp.centros_custo (
   ativo boolean not null default true
 );
 
+-- Divisão: a subdivisão de um centro de custo (Marketing > PDV, Online, Offline, Eventos;
+-- Moises, 15/11/2026). Opcional: centro sem divisão ativa segue como antes. Com divisão ativa,
+-- toda linha de rateio, previsão e orçamento daquele centro diz a divisão. O acesso e a alçada
+-- podem descer até ela. Só o administrador cria e muda, com auditoria; não se apaga, desativa.
+create table erp.divisoes (
+  id              uuid primary key default gen_random_uuid(),
+  centro_custo_id uuid not null references erp.centros_custo,
+  nome            text not null check (length(trim(nome)) > 0),
+  ativa           boolean not null default true,
+  criado_em       timestamptz not null default clock_timestamp(),   -- "futura" = criada depois do escopo
+  unique (centro_custo_id, nome),
+  unique (id, centro_custo_id)
+);
+create function erp.tg_divisao() returns trigger language plpgsql as $$
+begin
+  perform erp.exigir_admin();
+  if tg_op in ('DELETE', 'TRUNCATE') then raise exception 'Divisão não se apaga; desative'; end if;
+  if tg_op = 'INSERT' then new.criado_em := clock_timestamp();
+  elsif new.centro_custo_id <> old.centro_custo_id or new.criado_em <> old.criado_em then
+    raise exception 'A divisão não muda de centro de custo nem de data de criação';
+  end if;
+  return new;
+end $$;
+create trigger t_divisao before insert or update or delete on erp.divisoes
+  for each row execute function erp.tg_divisao();
+create trigger t_divisao_truncate before truncate on erp.divisoes
+  for each statement execute function erp.tg_divisao();
+create trigger t_aud_divisoes after insert or update or delete on erp.divisoes
+  for each row execute function erp.tg_auditoria('id');
+
 -- Quais centros de custo estão ligados em cada núcleo (o Corporativo não tem Obra; uma loja
 -- não tem Incorporação). Sem linha = desligado. Ligar e desligar é configuração, com auditoria;
 -- desligar não apaga o histórico, só impede lançamentos novos.
