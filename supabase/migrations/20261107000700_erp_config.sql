@@ -60,7 +60,8 @@ insert into erp.tipos_evento (codigo, rotulo, modulo, critico) values
   ('natureza_sistema_alterada', 'Natureza do sistema alterada', 'configuracao', false),
   ('regra_config_alterada', 'Quem aprova a configuração de dinheiro alterado', 'configuracao', true),
   ('mudanca_config_pedida', 'Pedido de mudança da configuração de dinheiro', 'configuracao', false),
-  ('mudanca_config_encerrada', 'Pedido de mudança da configuração recusado, cancelado ou superado', 'configuracao', false);
+  ('mudanca_config_encerrada', 'Pedido de mudança da configuração recusado, cancelado ou superado', 'configuracao', false),
+  ('alcada_falta_aprovadores', 'Título foi ao master por falta de aprovadores qualificados', 'pagar', true);
 
 create table erp.eventos (
   id        bigint generated always as identity primary key,
@@ -292,7 +293,7 @@ declare v_eu uuid := erp.eu(); v_master boolean := erp.sou_master();
         v_fin boolean := erp.estou_nas_listas('{AF,AD}');
         v_dados jsonb := coalesce(p_dados, '{}'); v_antes jsonb; v_regra erp.regras_mudanca_config;
         v_tipo text; v_min int := 0; v_ref numeric; v_novo numeric; v_referencia jsonb; v_aprov int; v_id uuid;
-        v_cols text[]; v_falta boolean := false; v_janela numeric[];
+        v_cols text[]; v_falta boolean := false; v_janela numeric[]; v_livre boolean; v_col text;
 begin
   if v_eu is null then raise exception 'O pedido precisa de um usuário'; end if;
   if not (v_master or v_admin or v_fin) then
@@ -339,26 +340,33 @@ begin
     v_tipo := 'master';                       -- quem aprova a configuração, só o master define (ponto 1)
   else
     select * into v_regra from erp.regras_mudanca_config where tabela = p_tabela;
-    -- modo livre: o AF ou o AD, só o valor de uma faixa que já existe, a até X% do de N meses atrás
+    -- modo livre: o AF ou o AD, só os valores (o acumulado e o do título) de uma faixa que já
+    -- existe, cada um a até X% de todo valor que ele teve na janela: o de N meses atrás, os que
+    -- vieram depois e o atual (S-094: o AF não desfaz sozinho um aperto aprovado)
     if v_regra.modo = 'livre_ate' and v_fin and p_operacao = 'alterar'
-       and (v_dados - 'ate') = (v_antes - 'ate') and v_antes->>'ate' is not null and v_dados->>'ate' is not null then
-      -- o valor novo fica a até X% de todo valor que a faixa teve na janela: o de N meses atrás,
-      -- os que vieram depois e o atual (S-094: o AF não desfaz sozinho um aperto aprovado)
-      v_ref := erp._valor_config_em(p_tabela, (v_dados->>'id')::uuid, 'ate',
-                                    clock_timestamp() - make_interval(months => v_regra.meses));
-      v_novo := (v_dados->>'ate')::numeric;
-      select array_agg(x) into v_janela from (
-        select v_ref as x
-        union all select (a.depois->>'ate')::numeric from erp.auditoria a
-         where a.tabela = p_tabela and a.registro = v_dados->>'id'
-           and a.em > clock_timestamp() - make_interval(months => v_regra.meses)
-        union all select (v_antes->>'ate')::numeric) j;
-      if v_ref is not null and not exists (select 1 from unnest(v_janela) x
-                                            where x is null or abs(v_novo - x) > x * v_regra.percentual / 100) then
-        v_tipo := 'livre';
-      end if;
-      v_referencia := jsonb_build_object('valor_antes', v_ref, 'meses', v_regra.meses, 'percentual', v_regra.percentual,
-                                         'janela', to_jsonb(v_janela));
+       and (v_dados - 'ate' - 'ate_titulo') = (v_antes - 'ate' - 'ate_titulo') then
+      v_livre := true;
+      v_referencia := jsonb_build_object('meses', v_regra.meses, 'percentual', v_regra.percentual);
+      foreach v_col in array array['ate', 'ate_titulo'] loop
+        continue when (v_dados->v_col) is not distinct from (v_antes->v_col);
+        if v_antes->>v_col is null or v_dados->>v_col is null then v_livre := false; exit; end if;   -- "sem limite" não é valor
+        v_ref := erp._valor_config_em(p_tabela, (v_dados->>'id')::uuid, v_col,
+                                      clock_timestamp() - make_interval(months => v_regra.meses));
+        v_novo := (v_dados->>v_col)::numeric;
+        select array_agg(x) into v_janela from (
+          select v_ref as x
+          union all select (a.depois->>v_col)::numeric from erp.auditoria a
+           where a.tabela = p_tabela and a.registro = v_dados->>'id'
+             and a.em > clock_timestamp() - make_interval(months => v_regra.meses)
+          union all select (v_antes->>v_col)::numeric) j;
+        if v_ref is null or exists (select 1 from unnest(v_janela) x
+                                     where x is null or abs(v_novo - x) > x * v_regra.percentual / 100) then
+          v_livre := false;
+        end if;
+        v_referencia := v_referencia || jsonb_build_object(case v_col when 'ate' then 'valor_antes' else 'valor_antes_titulo' end, v_ref,
+                                                           case v_col when 'ate' then 'janela' else 'janela_titulo' end, to_jsonb(v_janela));
+      end loop;
+      if v_livre then v_tipo := 'livre'; end if;
     end if;
     if v_tipo is null then
       select count(*) into v_aprov from erp.aprovadores_config a join erp.usuarios u on u.id = a.user_id and u.ativo
