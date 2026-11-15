@@ -485,7 +485,9 @@ begin
   if tg_op <> 'DELETE' then v_new := to_jsonb(new); end if;
   perform erp.registrar_evento(v_tipo, tg_table_name,
     (select string_agg(coalesce(v_new, v_old)->>k, '|') from unnest(erp._chave_config(tg_table_name)) k),
-    null, null,
+    -- a faixa da alçada leva o centro dela (o novo; no delete, o antigo), para o aviso ir a quem
+    -- cuida do centro (S-100); a faixa geral e as outras tabelas ficam sem centro
+    null, case when tg_table_name = 'alcadas_pagamento' then (coalesce(v_new, v_old)->>'centro_custo_id')::uuid end,
     jsonb_build_object('acao', lower(tg_op), 'antes', v_old, 'depois', v_new)
       || coalesce(erp._contexto_mudanca_config(tg_table_name), '{}'));
   return null;

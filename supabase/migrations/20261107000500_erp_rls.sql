@@ -94,7 +94,7 @@ begin
     ('erp.liberar_caucao(uuid, numeric, date, uuid, text)', 'erp_situacao'),
     ('erp.publicar_orcamento(uuid)', 'erp_situacao'),
     -- alçada de pagamento: decidir grava a fase; as conferências leem por baixo do RLS
-    ('erp.decidir_titulo(uuid, boolean, text, boolean, uuid)', 'erp_situacao'),
+    ('erp.decidir_titulo(uuid, boolean, text, boolean, uuid, uuid)', 'erp_situacao'),
     ('erp.reenviar_titulo(uuid, text, date[], uuid[])', 'erp_situacao'),
     ('erp.em_revisao(uuid)', 'erp_conferencia'), ('erp.pode_ajustar(uuid)', 'erp_conferencia'),
     ('erp._ajustavel(uuid)', 'erp_conferencia'), ('erp._nota_ajustavel(uuid)', 'erp_conferencia'),

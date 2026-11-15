@@ -442,7 +442,7 @@ grant execute on function
   -- operações
   erp.confirmar_titulo(uuid), erp.lancar_documento(uuid, date[], uuid[]),
   erp.liberar_caucao(uuid, numeric, date, uuid, text), erp.publicar_orcamento(uuid),
-  erp.decidir_titulo(uuid, boolean, text, boolean, uuid), erp.reenviar_titulo(uuid, text, date[], uuid[]),
+  erp.decidir_titulo(uuid, boolean, text, boolean, uuid, uuid), erp.reenviar_titulo(uuid, text, date[], uuid[]),
   erp.registrar_movimento_societario(text, uuid, uuid, numeric, date, text),
   erp.fechar_mes(uuid, date), erp.reabrir_mes(uuid, date),
   erp.pedir_reclassificacao(uuid, uuid, text, jsonb, boolean), erp.decidir_reclassificacao(uuid, boolean, text),

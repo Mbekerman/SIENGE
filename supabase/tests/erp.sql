@@ -4175,5 +4175,207 @@ select pg_temp.ok((select aprovacao <> 'livre' and situacao = 'pendente' from er
 select pg_temp.como(null);
 rollback;
 
+-- ---------------------------------------------------------------------
+\echo '# divisões do centro de custo: cadastro, divisão na linha, acesso até a divisão, alçada na divisão e no centro'
+begin;
+\set dv_pdv '87000000-0000-0000-0000-000000000001'
+\set dv_onl '87000000-0000-0000-0000-000000000002'
+\set dv_evt '87000000-0000-0000-0000-000000000003'
+\set dv_obra '87000000-0000-0000-0000-000000000009'
+\set ne1 '40000000-0000-0000-0000-000000000001'
+create function pg_temp.tit_div(p_id uuid, p_valor numeric, p_d1 uuid, p_pct1 numeric default 100, p_d2 uuid default null) returns void language sql as $$
+  insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+    (p_id, '20000000-0000-0000-0000-000000000003', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-09-02', '2026-09-01', p_valor);
+  insert into erp.parcelas (titulo_id, numero, vencimento, valor) values (p_id, 1, '2026-09-20', p_valor);
+  insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, percentual)
+  select p_id, '40000000-0000-0000-0000-000000000001', '45000000-0000-0000-0000-000000000002', d, pg_temp.nat('05.01.04'), pct
+    from (values (p_d1, p_pct1), (p_d2, 100 - p_pct1)) v(d, pct) where pct > 0;
+  select erp.confirmar_titulo(p_id); $$;
+create function pg_temp.acesso_d(u uuid, n uuid, c uuid, d uuid) returns text language plpgsql as $$
+declare r text := pg_temp.dono_ini(); a record;
+begin select * into a from erp.acesso(u, n, c, d); perform set_config('role', r, false);
+  return case when a.ve_tudo and a.lanca then 'lancador' when a.ve_tudo then 'leitor' when a.lanca then 'lancador_restrito' else 'nenhum' end; end $$;
+
+-- cadastro: só o administrador, com auditoria; não se apaga nem muda de centro
+select pg_temp.como(:'analista');
+select pg_temp.falha(format($$insert into erp.divisoes (centro_custo_id, nome) values (%L, 'PDV')$$, :'cc_mkt'), 'divisão: analista não cria divisão');
+select pg_temp.ok(pg_temp.erro_como_dono(format($$insert into erp.divisoes (centro_custo_id, nome) values (%L, 'PDV')$$, :'cc_mkt'))
+                  = 'Só o administrador pode mudar a configuração', 'divisão: o gatilho também barra quem não é administrador');
+select pg_temp.como(:'ti');
+insert into erp.divisoes (id, centro_custo_id, nome) values (:'dv_pdv', :'cc_mkt', 'PDV'), (:'dv_onl', :'cc_mkt', 'Online'), (:'dv_obra', :'cc_obra', 'Fundação');
+select pg_temp.ok((select count(*) from erp.auditoria where tabela = 'divisoes') = 3, 'divisão: o administrador cria, com auditoria');
+select pg_temp.erro_igual(format($$delete from erp.divisoes where id = %L$$, :'dv_onl'), 'Divisão não se apaga; desative', 'divisão: não se apaga');
+select pg_temp.erro_igual(format($$update erp.divisoes set centro_custo_id = %L where id = %L$$, :'cc_obra', :'dv_onl'),
+  'A divisão não muda de centro de custo nem de data de criação', 'divisão: não muda de centro');
+select pg_temp.falha(format($$insert into erp.divisoes (centro_custo_id, nome) values (%L, 'PDV')$$, :'cc_mkt'), 'divisão: nome repetido no mesmo centro é recusado');
+
+-- a linha: o centro com divisão ativa exige a divisão; a divisão é do centro e está ativa
+select pg_temp.como(:'analista');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('88000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000003', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-09-02', '2026-09-01', 100);
+select pg_temp.erro_igual(format($$insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+  values ('88000000-0000-0000-0000-000000000001', %L, %L, %L, 100)$$, :'ne1', :'cc_mkt', pg_temp.nat('05.01.04')),
+  'O centro de custo "Marketing" tem divisões: diga a divisão da linha', 'divisão: centro com divisões exige a divisão na linha');
+select pg_temp.falha(format($$insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, percentual)
+  values ('88000000-0000-0000-0000-000000000001', %L, %L, %L, %L, 100)$$, :'ne1', :'cc_mkt', :'dv_obra', pg_temp.nat('05.01.04')),
+  'divisão: divisão de outro centro não entra na linha');
+select pg_temp.erro_igual(format($$insert into erp.previsoes (empresa_id, origem, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+  values ('20000000-0000-0000-0000-000000000003', 'manual', %L, %L, %L, '2026-09-01', '2026-09-10', 50)$$, :'ne1', :'cc_mkt', pg_temp.nat('05.01.04')),
+  'O centro de custo "Marketing" tem divisões: diga a divisão da linha', 'divisão: a previsão também diz a divisão');
+select pg_temp.como(:'ti'); update erp.divisoes set ativa = false where id = :'dv_onl'; select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format($$insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, percentual)
+  values ('88000000-0000-0000-0000-000000000001', %L, %L, %L, %L, 100)$$, :'ne1', :'cc_mkt', :'dv_onl', pg_temp.nat('05.01.04')),
+  'A divisão está desativada', 'divisão: a desativada não recebe linha nova');
+select pg_temp.como(:'ti'); update erp.divisoes set ativa = true where id = :'dv_onl'; select pg_temp.como(:'analista');
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, percentual)
+values ('88000000-0000-0000-0000-000000000001', :'ne1', :'cc_mkt', :'dv_pdv', pg_temp.nat('05.01.04'), 100);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('88000000-0000-0000-0000-000000000001', 1, '2026-09-20', 100);
+select erp.confirmar_titulo('88000000-0000-0000-0000-000000000001');
+select pg_temp.ok((select bool_and(divisao_id = :'dv_pdv') and count(*) > 0 from erp.lancamentos where titulo_id = '88000000-0000-0000-0000-000000000001'),
+  'divisão: o livro leva a divisão da linha');
+-- centro sem divisão continua sem pedir divisão
+select pg_temp.ok((select count(*) = 0 from erp.divisoes where centro_custo_id = (select id from erp.centros_custo where nome = 'Jurídico')),
+  'divisão: os outros centros seguem sem divisão');
+
+-- acesso até a divisão, no esquema dos núcleos: modelo Leitor no Marketing, só a lista (PDV como Lançador)
+\set m_pdv 'a0000000-0000-0000-0000-0000000000d1'
+select pg_temp.sis();
+delete from erp.atribuicoes where user_id = :'analista2';
+insert into erp.perfis_modelo (id, nome) values (:'m_pdv', 'Marketing PDV');
+insert into erp.perfil_centros (perfil_id, centro_custo_id, nivel, divisoes) values (:'m_pdv', :'cc_mkt', 'leitor', 'lista');
+insert into erp.perfil_centro_divisoes (perfil_id, centro_custo_id, divisao_id, incluir, nivel) values (:'m_pdv', :'cc_mkt', :'dv_pdv', true, 'lancador');
+insert into erp.atribuicoes (user_id, perfil_id, escopo) values (:'analista2', :'m_pdv', 'todos');
+select pg_temp.volta();
+select pg_temp.ok(pg_temp.acesso_d(:'analista2', :'ne1', :'cc_mkt', :'dv_pdv') = 'lancador'
+                  and pg_temp.acesso_d(:'analista2', :'ne1', :'cc_mkt', :'dv_onl') = 'nenhum',
+  'divisão: na lista, a divisão incluída com nível próprio; a outra fica de fora');
+select pg_temp.ok(pg_temp.acesso_d(:'analista2', :'ne1', :'cc_mkt', null) = 'nenhum',
+  'divisão: quem só tem a lista não vê a linha do centro sem divisão');
+select pg_temp.sis(); update erp.perfil_centros set divisoes_futuras = true where perfil_id = :'m_pdv'; select pg_temp.volta();
+select pg_temp.como(:'ti'); insert into erp.divisoes (id, centro_custo_id, nome) values (:'dv_evt', :'cc_mkt', 'Eventos');
+select pg_temp.ok(pg_temp.acesso_d(:'analista2', :'ne1', :'cc_mkt', :'dv_evt') = 'leitor'
+                  and pg_temp.acesso_d(:'analista2', :'ne1', :'cc_mkt', :'dv_onl') = 'nenhum',
+  'divisão: na lista com as futuras, a divisão criada depois entra com o nível do centro; a de antes não');
+select pg_temp.sis();
+update erp.perfil_centros set divisoes = 'todas', divisoes_futuras = false where perfil_id = :'m_pdv';
+insert into erp.perfil_centro_divisoes (perfil_id, centro_custo_id, divisao_id, incluir) values (:'m_pdv', :'cc_mkt', :'dv_onl', false);
+select pg_temp.volta();
+select pg_temp.ok(pg_temp.acesso_d(:'analista2', :'ne1', :'cc_mkt', :'dv_onl') = 'nenhum'
+                  and pg_temp.acesso_d(:'analista2', :'ne1', :'cc_mkt', :'dv_evt') = 'leitor'
+                  and pg_temp.acesso_d(:'analista2', :'ne1', :'cc_mkt', null) = 'leitor'
+                  and pg_temp.acesso_d(:'analista2', :'ne1', :'cc_mkt', :'dv_pdv') = 'lancador',
+  'divisão: em todas, a excluída fica de fora e as outras (e a linha sem divisão) seguem o centro');
+select pg_temp.falha(format($$insert into erp.perfil_centro_divisoes (perfil_id, centro_custo_id, divisao_id, incluir) values (%L, %L, %L, true)$$, :'m_pdv', :'cc_mkt', :'dv_obra'),
+  'divisão: o modelo não marca divisão de outro centro');
+-- exceção da divisão vence a do centro
+select pg_temp.sis();
+insert into erp.excecoes_centro (user_id, nucleo_economico_id, centro_custo_id, nivel) values (:'analista2', :'ne1', :'cc_mkt', 'lancador');
+insert into erp.excecoes_divisao (user_id, nucleo_economico_id, divisao_id, nivel) values (:'analista2', :'ne1', :'dv_pdv', 'nenhum');
+select pg_temp.volta();
+select pg_temp.ok(pg_temp.acesso_d(:'analista2', :'ne1', :'cc_mkt', :'dv_pdv') = 'nenhum'
+                  and pg_temp.acesso_d(:'analista2', :'ne1', :'cc_mkt', :'dv_onl') = 'lancador',
+  'divisão: a exceção da divisão vence a do centro, que vale nas outras divisões');
+-- pela API: o título do PDV some para quem perdeu o PDV
+select pg_temp.como(:'analista2');
+select pg_temp.ok(not erp.vejo_titulo('88000000-0000-0000-0000-000000000001')
+                  and not exists (select 1 from erp.lancamentos where titulo_id = '88000000-0000-0000-0000-000000000001'),
+  'divisão: sem acesso à divisão, a pessoa não vê o título nem o livro dele');
+select pg_temp.sis(); delete from erp.excecoes_divisao where user_id = :'analista2'; select pg_temp.volta();
+select pg_temp.ok(erp.vejo_titulo('88000000-0000-0000-0000-000000000001'), 'divisão: com a divisão de volta, vê o título');
+-- as tabelas de acesso da divisão só mudam por pedido aprovado; a data do corte das futuras é a de quando vale
+select pg_temp.como(:'ti');
+select pg_temp.erro_igual(format($$insert into erp.excecoes_divisao (user_id, nucleo_economico_id, divisao_id, nivel) values (%L, %L, %L, 'leitor')$$, :'leitor', :'ne1', :'dv_pdv'),
+  'Mudança de acesso só por pedido aprovado (erp.pedir_mudanca_acesso)', 'divisão: exceção da divisão só por pedido');
+select pg_temp.erro_igual(format($$insert into erp.perfil_centro_divisoes (perfil_id, centro_custo_id, divisao_id, incluir) values (%L, %L, %L, false)$$, :'tudo', :'cc_mkt', :'dv_evt'),
+  'Mudança de acesso só por pedido aprovado (erp.pedir_mudanca_acesso)', 'divisão: divisão do modelo só por pedido');
+select pg_temp.como(:'diretor');
+select erp.pedir_mudanca_acesso('perfil_centros', 'incluir',
+  jsonb_build_object('perfil_id', :'m_pdv', 'centro_custo_id', :'cc_obra', 'nivel', 'leitor', 'divisoes', 'lista', 'divisoes_futuras', true, 'criado_em', '2000-01-01'), 'teste') as pc1 \gset
+select pg_temp.ok((select criado_em > '2026-01-01' and divisoes = 'lista' and divisoes_futuras from erp.perfil_centros where perfil_id = :'m_pdv' and centro_custo_id = :'cc_obra'),
+  'divisão: o corte das divisões futuras é a data em que o pedido vale, nunca a do pedido');
+select pg_temp.ok(pg_temp.acesso_d(:'analista2', '40000000-0000-0000-0000-000000000001', :'cc_obra', :'dv_obra') = 'nenhum',
+  'divisão: a divisão criada antes do corte não entra pelas futuras');
+select erp.pedir_mudanca_acesso('excecoes_divisao', 'incluir',
+  jsonb_build_object('user_id', :'leitor', 'nucleo_economico_id', :'ne1', 'divisao_id', :'dv_pdv', 'nivel', 'lancador'), 'teste') as ed1 \gset
+select pg_temp.ok((select situacao = 'aplicada' and beneficiarios = array[:'leitor']::uuid[] from erp.mudancas_acesso where id = :'ed1'),
+  'divisão: o pedido de exceção da divisão aplica e marca quem ganha o acesso');
+
+-- alçada na divisão: o PDV tem faixas próprias; até 5 mil no mês, só a divisão; acima, a divisão e o centro
+select pg_temp.sis();
+update erp.regra_alcada_pagamento set soma_fornecedor = false;
+insert into erp.centro_aprovadores values (:'cc_mkt', :'gestor');
+insert into erp.listas_financeiro (lista, user_id) values ('AF', :'contador');
+insert into erp.alcadas_pagamento (id, centro_custo_id, divisao_id, ate, fases, passa_pelo_centro) values
+  ('86000000-0000-0000-0000-0000000000d1', :'cc_mkt', :'dv_pdv', 5000, array['P:' || :'analista2'], false),
+  ('86000000-0000-0000-0000-0000000000d2', :'cc_mkt', :'dv_pdv', null, array['P:' || :'analista2'], true),
+  ('86000000-0000-0000-0000-0000000000d3', :'cc_mkt', null, 1000000, '{AREA,AF}', false);
+select pg_temp.ok((select count(*) = 3 and bool_and(centro_id = :'cc_mkt') from erp.eventos
+                    where tipo = 'alcada_alterada' and registro like '86000000-0000-0000-0000-0000000000d_'),
+  'divisão: o evento da faixa leva o centro dela (S-100)');
+delete from erp.alcadas_pagamento where id = '86000000-0000-0000-0000-0000000000d1';
+select pg_temp.ok((select centro_id = :'cc_mkt' from erp.eventos where tipo = 'alcada_alterada' and dados->>'acao' = 'delete'
+                    and registro = '86000000-0000-0000-0000-0000000000d1'),
+  'divisão: no delete, o evento leva o centro da faixa apagada (S-100)');
+insert into erp.alcadas_pagamento (id, centro_custo_id, divisao_id, ate, fases, passa_pelo_centro) values
+  ('86000000-0000-0000-0000-0000000000d1', :'cc_mkt', :'dv_pdv', 5000, array['P:' || :'analista2'], false);
+select pg_temp.falha($$insert into erp.alcadas_pagamento (ate, fases, passa_pelo_centro) values (7, '{AF}', true)$$,
+  'divisão: só a faixa da divisão passa pelo centro');
+select pg_temp.falha(format($$insert into erp.alcadas_pagamento (centro_custo_id, divisao_id, ate, fases) values (%L, %L, 7, '{AF}')$$, :'cc_obra', :'dv_pdv'),
+  'divisão: a faixa da divisão é do centro dela');
+select pg_temp.volta();
+select pg_temp.como(:'analista');
+select pg_temp.tit_div('88000000-0000-0000-0000-000000000002', 1000, :'dv_pdv');
+select pg_temp.ok((select count(*) = 1 and bool_and(divisao_id = :'dv_pdv' and alcada_id = '86000000-0000-0000-0000-0000000000d1' and acumulado = 1100)
+                     from erp.titulo_alcadas where titulo_id = '88000000-0000-0000-0000-000000000002'),
+  'divisão: até o limite, só a alçada da divisão, com o acumulado só da divisão');
+select pg_temp.tit_div('88000000-0000-0000-0000-000000000003', 300, :'dv_onl');
+select pg_temp.ok((select count(*) = 1 and bool_and(divisao_id is null and acumulado = 1400 and fases = '{AREA,AF}' and alcada_id = '86000000-0000-0000-0000-0000000000d3')
+                     from erp.titulo_alcadas where titulo_id = '88000000-0000-0000-0000-000000000003'),
+  'divisão: a divisão sem faixas segue a alçada do centro, que soma o centro inteiro');
+select pg_temp.tit_div('88000000-0000-0000-0000-000000000004', 4000, :'dv_pdv');
+select pg_temp.ok((select count(*) = 2
+                          and bool_or(divisao_id = :'dv_pdv' and alcada_id = '86000000-0000-0000-0000-0000000000d2' and acumulado = 5100)
+                          and bool_or(divisao_id is null and acumulado = 5400 and valor_no_centro = 4000)
+                     from erp.titulo_alcadas where titulo_id = '88000000-0000-0000-0000-000000000004'),
+  'divisão: acima do limite da divisão, a faixa manda passar também pelo centro');
+-- quem aprova: a pessoa da vaga na divisão, o gestor e o AF no centro; cada alçada com a sua aprovação
+select pg_temp.como(:'analista2');
+select erp.decidir_titulo('88000000-0000-0000-0000-000000000004', true) as dbg \gset
+select pg_temp.ok(:'dbg' = 'pendente'
+                  and (select situacao = 'aprovado' from erp.v_titulo_alcadas where titulo_id = '88000000-0000-0000-0000-000000000004' and divisao = 'PDV')
+                  and (select situacao = 'pendente' from erp.v_titulo_alcadas where titulo_id = '88000000-0000-0000-0000-000000000004' and divisao_id is null),
+  'divisão: a divisão aprova e o acompanhamento mostra o centro ainda pendente');
+select pg_temp.como(:'gestor');
+select pg_temp.erro_igual(format($$select erp.decidir_titulo('88000000-0000-0000-0000-000000000004', true, null, false, %L, %L)$$, :'cc_mkt', :'dv_pdv'),
+  'Esta divisão já aprovou o título', 'divisão: a alçada pedida já aprovada é recusada');
+select pg_temp.erro_igual(format($$select erp.decidir_titulo('88000000-0000-0000-0000-000000000004', true, null, false, %L, %L)$$, :'cc_mkt', :'dv_onl'),
+  'Esta divisão não tem alçada própria neste título', 'divisão: divisão sem alçada no título é recusada');
+select erp.decidir_titulo('88000000-0000-0000-0000-000000000004', true, null, false, :'cc_mkt');
+select pg_temp.como(:'contador');
+select pg_temp.ok(erp.decidir_titulo('88000000-0000-0000-0000-000000000004', true) = 'aprovado', 'divisão: com a divisão e o centro, o título fica aprovado');
+-- rateio entre duas divisões: o PDV com a alçada dele (a parte dele) e o centro pela linha do Online
+select pg_temp.como(:'analista');
+select pg_temp.tit_div('88000000-0000-0000-0000-000000000005', 2000, :'dv_pdv', 50, :'dv_onl');
+select pg_temp.ok((select count(*) = 2
+                          and bool_or(divisao_id = :'dv_pdv' and valor_no_centro = 1000)
+                          and bool_or(divisao_id is null and valor_no_centro = 2000)
+                     from erp.titulo_alcadas where titulo_id = '88000000-0000-0000-0000-000000000005'),
+  'divisão: no rateio entre divisões, a do PDV pela parte dele e o centro pelo centro inteiro');
+select pg_temp.como(:'contador');
+select pg_temp.ok((select count(*) = 1 and bool_and(divisao_id is null) from erp.titulos_do_acumulado('88000000-0000-0000-0000-000000000005')
+                    where titulo_id is not null and titulo_id = '88000000-0000-0000-0000-000000000005'),
+  'divisão: o AF vê o acumulado só da alçada em que aprova');
+select pg_temp.como(:'diretor');
+select erp.decidir_titulo('88000000-0000-0000-0000-000000000005', true) as dbg5 \gset
+select pg_temp.ok(:'dbg5' = 'aprovado'
+                  and (select count(*) = 2 from erp.v_titulo_alcadas where titulo_id = '88000000-0000-0000-0000-000000000005' and situacao = 'aprovado'),
+  'divisão: o master aprova a divisão e o centro de uma vez');
+-- a aprovação sempre aponta a alçada dela, com o centro e a divisão copiados dela
+select pg_temp.ok((select bool_and(v.centro_custo_id = a.centro_custo_id and v.divisao_id is not distinct from a.divisao_id and v.titulo_id = a.titulo_id)
+                     from erp.titulo_aprovacoes v join erp.titulo_alcadas a on a.id = v.alcada_id),
+  'divisão: a aprovação leva o centro e a divisão da alçada');
+select pg_temp.como(null);
+rollback;
+
 \echo '# fim'
 do $$ begin raise notice 'TODOS OS TESTES PASSARAM'; end $$;
