@@ -65,7 +65,6 @@ Regra do Moises (8/nov/2026): controles, segurança da informação e SLA são a
 
 | Id | Gravidade | Onde | Desde |
 | --- | --- | --- | --- |
-| S-100 | Baixa (desenho) | Evento de mudança da faixa de alçada (`alcada_alterada`) sem o centro da faixa | 15/nov/2026 |
 | S-092 | Baixa (API) | Funções `security definer` com EXECUTE que respondem sobre qualquer id | 15/nov/2026 |
 | S-068 | Média (desenho) | Janela da competência ancorada na emissão digitada | 14/nov/2026 |
 | S-050 | Baixa | Deploy do `bkm_dev` colado à mão | 14/nov/2026 |
@@ -124,6 +123,11 @@ Ainda não há código para revisar nestes pontos; ficam como requisito para que
 
 | Id | Gravidade | Falha | Correção | Conferido |
 | --- | --- | --- | --- | --- |
+| S-104 | Baixa (testes) | Propagação da aprovação entre a divisão e o centro e trava do adiantamento por núcleo sem testes que segurassem. | Testes novos. | Mutações mortas, menos uma equivalente; PR #41, `3389da7`. |
+| S-103 | Média (desenho) | O adiantamento abatia o título inteiro quando o título tinha alguma linha no núcleo × centro do carimbo (99% em outro centro passava sem aprovação). | Por decisão do Moises, só abate sem aprovação o título todo no carimbo; o resto pede aprovação. | Sonda e mutações; PR #41, `830e79d`. |
+| S-102 | Média (testes) | Acesso por divisão: 11 de 32 mutações passavam sem teste falhar (futuras, exceções, natureza, lançar, políticas). | Testes novos. | 32 de 32 mortas; PR #41, `d11ec03`. |
+| S-101 | Média (desenho) | O administrador criava e desativava divisões direto, sem pedido e sem evento, mudando acesso e lançamento. | Por decisão do Moises, divisão só por pedido de mudança de acesso aprovado. | Mutações; PR #41, `36436e0`. |
+| S-100 | Baixa (desenho) | O evento de mudança da faixa de alçada saía sem o centro, e o painel não filtrava por centro. | O evento leva o centro da faixa. | PR #41. |
 | S-099 | Média (testes) | Notificações (PR #40): 20 de 33 mutações passavam sem teste falhar, inclusive o filtro de visão do evento, as políticas das preferências, a guarda do sino e o registro do envio. O código segurava nas sondas. | Testes novos. | As 33 mutações morrem; PR #40, `4740d24`. |
 | S-098 | Média (desenho) | O limite por título olhava só a parte do título em cada centro: dividir no rateio entre centros do mesmo gestor fugia da faixa mais exigente. | Por decisão do Moises, o limite do título usa o valor inteiro do título em cada centro; o acumulado continua por centro. | Sonda: 1.000 em 50/50 com limite de 600 pede gestor e AF nos dois centros; PR #37, `7ca3d30`. |
 | S-097 | Baixa (testes) | Mutações da alçada por centro que passavam sem teste falhar (vagas de outro centro, administrador ou só da sucessão numa vaga, modo livre levando o limite a nulo, código por centro), e tirar o último diretor da área com vaga dele pendente não era barrado. | Testes novos e trava em `centro_diretores`. | 29 mutações, todas pegas menos uma equivalente (2ª chave de ordenação); PR #37, `7ca3d30`. |
@@ -260,3 +264,4 @@ Ainda não há código para revisar nestes pontos; ficam como requisito para que
 | 15/nov/2026 | PR #36, pedido de mudança da configuração de dinheiro e `erp.eventos` (`27cb1ad` a `9bf77a9`; 824 testes; juntado em `d5f0817`): SQL dinâmico (tabela da lista fixa, colunas conferidas no catálogo, `%I` e `using`), referência pela auditoria, contexto do evento pela transação e catálogo (só as três RPCs para a API, eventos sem leitura, papéis novos sem membros) conferidos; 24 mutações próprias, 22 pegas, 1 equivalente e 1 lacuna baixa. Abre e corrige S-094 e S-095 | 824 |
 | 15/nov/2026 | PR #37, alçada de pagamento por centro de custo (`2f46357` a `7ca3d30`; 878 testes; juntado em `7ac6fd7`): sondas do rateio (S-096) e do fracionamento (S-098), ambas corrigidas por decisão do Moises; 29 mutações no código novo, todas pegas menos uma equivalente (S-097). |
 | 15/nov/2026 | PR #40, notificações (`37383cc` a `4740d24`; 917 testes; juntado em `fb848b2`): sondas do sino, da fila, das preferências, do painel e da lista de críticos sem falha; 33 mutações, 20 vivas na primeira rodada (S-099), todas mortas depois; achada a S-100 (evento da faixa de alçada sem centro, corrigida no PR #41). |
+| 15/nov/2026 | PR #41, divisões no centro de custo (`ec020bf` a `3389da7`; 1002 testes; juntado em `dac3b5f`): sondas do gatilho da divisão, da linha sem divisão, do corte das futuras e da criação de divisão; cerca de 60 mutações em quatro rodadas; achadas S-101 e S-103 (desenho, decididas pelo Moises) e S-102 e S-104 (testes), todas corrigidas. |
