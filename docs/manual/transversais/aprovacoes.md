@@ -211,7 +211,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
   - acima de R$ 50 mil: aprovam o gestor da área, depois a AF e depois a AD. Vale para o título que passa dos 50 mil e para todos os seguintes do mês.
 - ✅ O acumulado soma também o que **o mesmo fornecedor** tem no mês em outros centros de custo, para não escapar da alçada repartindo o gasto. O administrador pode desligar (Moises, 14/nov/2026).
 - **Configuração:** as faixas e o modo de somar (grupo, empresa ou núcleo) são valores iniciais; o administrador muda, com registro.
-- **Regras do código** (a conferir com o Moises): a alçada é fixada na confirmação do título, e um título lançado depois não muda a de um anterior; as etapas correm em sequência; quem lançou não aprova e cada pessoa aprova uma etapa só; sem a alçada completa, o título não é pago; quem aprova vê os títulos do mês que formaram o acumulado.
+- **Regras do código** (a conferir com o Moises): a alçada é fixada na confirmação do título, e um título lançado depois não muda a de um anterior; as fases de aprovação correm em sequência; quem lançou não aprova e cada pessoa aprova uma fase de aprovação só; sem a alçada completa, o título não é pago; quem aprova vê os títulos do mês que formaram o acumulado.
 - **Fora da alçada:** imposto retido e movimento entre sócios.
 
 **Alçada por centro de custo** (Moises, 15/nov/2026; no código a partir do PR #37):
@@ -225,11 +225,11 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 - ✅ O último diretor da área não sai enquanto houver título esperando por ele.
 - ✅ A AF e a AD podem mexer no limite do título no modo livre, como no limite do acumulado. Mudar as vagas ou o paralelo sempre pede aprovação.
 
-**Aprovar, recusar ou pedir revisão** (Moises, 14/nov/2026). Cada etapa da alçada tem as três saídas:
+**Aprovar, recusar ou pedir revisão** (Moises, 14/nov/2026). Cada fase de aprovação da alçada tem as três saídas:
 
 - ✅ **Recusar** exige justificativa e **cancela o título**. Se o título é de uma nota, cancela a nota inteira, com os impostos retidos; a previsão e a caução voltam, e o número da nota fica livre para ser lançado de novo.
 - ✅ **Pedir revisão** exige o motivo. O título fica aberto, mas ninguém aprova nem paga até ele ser reenviado. Podem ajustar quem lançou, o gestor da área e a AF. No título avulso, muda-se o título, as parcelas e o rateio; no título de nota, muda-se a nota.
-- ✅ **Reenvio:** a aprovação recomeça, mas **quem ajustou ou reenviou já aprova a própria etapa** na volta nova: a gestora da área aprova a etapa da área, a AF aprova a etapa da AF. Quem lançou continua sendo o autor, e o título segue para a próxima etapa que falta. Quem ajustou não aprova nenhuma outra etapa (Moises, 14/nov/2026, 21h35; substitui a leitura anterior de que quem reenvia não aprova a volta).
+- ✅ **Reenvio:** a aprovação recomeça, mas **quem ajustou ou reenviou já aprova a própria fase de aprovação** na volta nova: a gestora da área aprova a fase da área, a AF aprova a fase da AF. Quem lançou continua sendo o autor, e o título segue para a próxima fase de aprovação que falta. Quem ajustou não aprova nenhuma outra fase (Moises, 14/nov/2026, 21h35; substitui a leitura anterior de que quem reenvia não aprova a volta).
 - ✅ Cada mudança do ajuste fica registrada com quem fez, o valor de antes e o de depois. Linha nova (uma parcela, uma linha de rateio) segue a regra de cada campo.
 - ⏳ Futuro (Moises): por ora esses passos são fixos. Depois ele quer cadastrar fluxos de aprovação e ligar cada um a um processo ou área.
 - ✅ **O que se pode ajustar:** o administrador define, por campo e por papel, se o campo pode mudar e, nos números e datas, se só para mais, só para menos ou para os dois lados. Começa tudo liberado.
@@ -278,7 +278,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 ## Quem muda a configuração
 
 - ✅ **Por ora, a configuração de dinheiro e aprovação só o master muda**; o administrador (TI) não muda. Inclui: alçadas de pagamento e de reclassificação, níveis de aprovação, regra do adiantamento e da alçada, regras de ajuste da revisão, naturezas do sistema, contas bancárias da empresa e códigos do Sienge (Moises, 15/nov/2026). Onde as linhas abaixo dizem "o master ou um administrador", vale agora só o master.
-- ✅ **Pedidos de mudança na configuração de dinheiro** (Moises, 15/nov/2026): a AF, a AD e o administrador pedem a mudança, com motivo. Aprova a **lista de aprovadores de cada tabela**, que só o master define, com o mínimo de votos. Quem pediu não aprova; o master aprova qualquer pedido. Cada tabela fica em **sempre com aprovação** ou, nas faixas de alçada, **livre até X% a cada N meses**: a AF ou a AD muda o valor da faixa sem aprovação se ficar a até X% do valor de N meses atrás. Tirar etapa, criar ou tirar faixa, conta bancária e código do Sienge sempre passam por aprovação. Toda mudança avisa o Moises.
+- ✅ **Pedidos de mudança na configuração de dinheiro** (Moises, 15/nov/2026): a AF, a AD e o administrador pedem a mudança, com motivo. Aprova a **lista de aprovadores de cada tabela**, que só o master define, com o mínimo de votos. Quem pediu não aprova; o master aprova qualquer pedido. Cada tabela fica em **sempre com aprovação** ou, nas faixas de alçada, **livre até X% a cada N meses**: a AF ou a AD muda o valor da faixa sem aprovação se ficar a até X% do valor de N meses atrás. Tirar fase de aprovação, criar ou tirar faixa, conta bancária e código do Sienge sempre passam por aprovação. Toda mudança avisa o Moises.
 - ✅ O pedido do administrador nunca é livre. Se a lista não tem pessoas suficientes além de quem pediu, o pedido vai para o master (Moises, 15/nov/2026).
 - ✅ **Pagamento e baixa** só registram o financeiro (AF, AO, AD), o master e a ligação automática com o Sienge (Moises, 15/nov/2026).
 
@@ -302,7 +302,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 - **Usuários:** o usuário novo **nasce inativo**; o administrador pede a ativação, aprovada conforme o nível do papel (abaixo). Papel e contador mudam por pedido aprovado ou pelo master. Login, desativar, reativar, apagar e usuário de sucessão: só o master. Ninguém muda o próprio cadastro, nem o master (Moises, 14/nov/2026, 21h; antes "nasce como leitura").
 - **AF, AO e AD:** só com a aprovação do master.
 - **Quem aprova cada nível de papel** (o master configura): para leitura, analista, gestor, diretor, contador, gestor da área e diretor da área, o master escolhe entre **Nenhuma** (vale na hora), **Delegado** (basta um dos delegados que ele escolheu), **Lista** (todos os aprovadores de acesso) ou **Master** (só ele). Valores iniciais: leitura e analista no Delegado; gestor, contador e as áreas na Lista; diretor no Master.
-- **O master sempre basta:** um voto dele aprova qualquer pedido de acesso; num título, aprova de uma vez todas as etapas que faltam (exceção à regra de uma etapa por pessoa); numa reclassificação, aprova sozinho. Quem lançou ou pediu não aprova, nem o master.
+- **O master sempre basta:** um voto dele aprova qualquer pedido de acesso; num título, aprova de uma vez todas as fases de aprovação que faltam (exceção à regra de uma fase por pessoa); numa reclassificação, aprova sozinho. Quem lançou ou pediu não aprova, nem o master.
 
 **Sucessão do master:**
 

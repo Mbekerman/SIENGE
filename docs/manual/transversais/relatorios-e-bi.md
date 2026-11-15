@@ -31,7 +31,7 @@
 1. Usuário inativo não vê nada. O usuário só da sucessão vê apenas o próprio cadastro e a sucessão. Sem cadastro ativo, ninguém grava.
 2. Título, nota e contrato: vê quem vê alguma linha do rateio pelo perfil (núcleo × centro × natureza). Se alguma linha é de natureza restrita (PJ) que a pessoa não vê, o registro some inteiro, e o pagamento que o baixa também.
 3. O lançador restrito vê e mexe só no que ele lançou.
-4. Quem aprova o título na rodada (lista da etapa, diretoria, gestor da área) vê o título, inclusive o de PJ.
+4. Quem aprova o título na rodada (lista da fase de aprovação, diretoria, gestor da área) vê o título, inclusive o de PJ.
 5. Linha sem núcleo e sem centro: só a diretoria e o financeiro veem. Transferência entre contas: só o financeiro e o master gravam. Movimento entre sócios: só a diretoria e o financeiro registram.
 6. Configuração: todos leem; só o administrador ou o master gravam.
 7. O papel leitura não grava, mesmo com perfil de lançador.

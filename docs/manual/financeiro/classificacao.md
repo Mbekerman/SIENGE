@@ -47,7 +47,7 @@ A **etapa** (até 15/nov/2026 chamada "fase") é o momento do empreendimento: Te
 
 ✅ **Divisão** é a subdivisão de um centro de custo, por exemplo Marketing › PDV, Online, Offline e Eventos. A divisão terá permissão e alçada próprias (Moises, 15/nov/2026; ainda não no código).
 
-⚠️ Cuidado com o nome: "etapa" também é usada para as etapas de uma aprovação (gestor, AF, AD) e para as etapas da implantação. No manual, "etapa do empreendimento" é a antiga fase.
+✅ Para não confundir: cada passo de uma aprovação (gestor, AF, AD) se chama **fase de aprovação** (Moises, 15/nov/2026). "Etapa" fica só para o momento do empreendimento.
 
 **Mover um núcleo de lugar na árvore, ou ligar e desligar um centro de custo num núcleo, exige aprovação** e fica registrado, porque muda quem vê e quem aprova. (A aprovação de ligar e desligar é 🟡 proposta, por extensão da regra de 8/nov.)
 
