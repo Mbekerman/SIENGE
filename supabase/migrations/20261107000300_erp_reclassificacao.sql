@@ -90,7 +90,10 @@ create table erp.alcadas_reclassificacao (
   unique nulls not distinct (criterio, faixa, ate)
 );
 create function erp.tg_alcada() returns trigger language plpgsql as $$
-begin perform erp.exigir_admin(); return coalesce(new, old); end $$;
+begin
+  if not erp.agindo_como('erp_config') then perform erp.exigir_admin(); end if;   -- pedido aprovado (_erp_config)
+  return coalesce(new, old);
+end $$;
 create trigger t_alcada before insert or update or delete on erp.alcadas_reclassificacao
   for each row execute function erp.tg_alcada();
 create trigger t_aud_alcada after insert or update or delete on erp.alcadas_reclassificacao

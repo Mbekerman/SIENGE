@@ -892,14 +892,17 @@ select pg_temp.ok(not exists (select 1 from pg_class c join pg_namespace n on n.
                                                   and p.policyname = 'perfil_inclui' and 'authenticated' = any(p.roles))),
   'catálogo: authenticated só grava em tabela com política de gravação por perfil');
 select pg_temp.ok(not exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
-                               where n.nspname = 'erp' and c.relkind in ('r','p') and c.relname <> 'avisos_sucessao'
+                               where n.nspname = 'erp' and c.relkind in ('r','p') and c.relname not in ('avisos_sucessao','eventos')
                                  and not exists (select 1 from pg_policies p where p.schemaname = 'erp' and p.tablename = c.relname
                                                   and p.policyname = 'perfil_le' and 'authenticated' = any(p.roles))),
-  'catálogo: toda tabela tem a política de leitura por perfil (só os avisos da sucessão ficam só do sistema)');
+  'catálogo: toda tabela tem a política de leitura por perfil (só os avisos da sucessão e os eventos ficam fora da API)');
 select pg_temp.ok(not has_table_privilege('authenticated', 'erp.lancamentos', 'INSERT,UPDATE,DELETE')
                   and not has_table_privilege('authenticated', 'erp.auditoria', 'INSERT,UPDATE,DELETE')
                   and not has_table_privilege('authenticated', 'erp.caucao_movimentos', 'INSERT,UPDATE,DELETE')
                   and not has_table_privilege('authenticated', 'erp.avisos_sucessao', 'SELECT,INSERT,UPDATE,DELETE')
+                  and not has_table_privilege('authenticated', 'erp.eventos', 'SELECT,INSERT,UPDATE,DELETE')
+                  and not has_table_privilege('authenticated', 'erp.mudancas_config', 'INSERT,UPDATE,DELETE')
+                  and not has_table_privilege('authenticated', 'erp.mudanca_config_votos', 'INSERT,UPDATE,DELETE')
                   and not has_table_privilege('authenticated', 'erp.mudancas_acesso', 'INSERT,UPDATE,DELETE')
                   and not has_table_privilege('authenticated', 'erp.atribuicoes', 'INSERT,UPDATE,DELETE'),
   'catálogo: livro, auditoria, caução e acesso não têm gravação direta pela API');
@@ -922,12 +925,17 @@ select pg_temp.ok(not exists (
        'confirmar_titulo','lancar_documento','liberar_caucao','publicar_orcamento','decidir_titulo','reenviar_titulo',
        'registrar_movimento_societario','fechar_mes','reabrir_mes','pedir_reclassificacao','decidir_reclassificacao',
        'cancelar_reclassificacao','pedir_mudanca_acesso','decidir_mudanca_acesso','cancelar_mudanca_acesso','passar_master',
-       'pedir_sucessao_master','decidir_sucessao_master','vetar_sucessao_master','efetivar_sucessao_master')),
+       'pedir_sucessao_master','decidir_sucessao_master','vetar_sucessao_master','efetivar_sucessao_master',
+       'pedir_mudanca_config','decidir_mudanca_config','cancelar_mudanca_config')),
   'catálogo: das funções security definer, authenticated só executa as da lista (RPCs e conferências de quem está logado)');
 select pg_temp.ok(not has_function_privilege('authenticated', 'erp._aplicar_mudanca_acesso(uuid)', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp.gerar_avisos_sucessao()', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp.vetar_sucessao_por_link(text)', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp._pagamento_saldo(uuid)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp._aplicar_mudanca_config(uuid)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp.registrar_evento(text, text, text, uuid, uuid, jsonb)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp._executar_config(text, text, jsonb)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp._contexto_mudanca_config(text)', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp._criar_titulo(uuid, text, text, uuid, uuid, uuid, date, date, numeric, date[], text, uuid, text)', 'EXECUTE'),
   'catálogo: o que aplica sem conferir, os saldos internos e as rotinas do servidor ficam sem EXECUTE para a API');
 -- S-079: nenhuma função que recebe a pessoa (p_user) é executável pela API
@@ -1225,15 +1233,17 @@ select pg_temp.ok(not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'erp' and p.prosecdef
     and (not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) c where c like 'search\_path=%' and c like '%pg\_temp')
-         or p.proowner not in ('erp_conferencia'::regrole, 'erp_situacao'::regrole, 'erp_reclassificacao'::regrole, 'erp_auditoria'::regrole, 'erp_acesso'::regrole))),
+         or p.proowner not in ('erp_conferencia'::regrole, 'erp_situacao'::regrole, 'erp_reclassificacao'::regrole, 'erp_auditoria'::regrole, 'erp_acesso'::regrole, 'erp_config'::regrole, 'erp_eventos'::regrole))),
   'catálogo: todo security definer do `erp` tem search_path fixo e é de erp_conferencia, erp_situacao ou erp_reclassificacao');
 select pg_temp.ok((select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
                    where n.nspname = 'erp' and p.prosecdef) >= 37,
   'catálogo: as funções de conferência são security definer');
-select pg_temp.ok((select count(*) = 6 and bool_and(not rolcanlogin and not rolsuper and not rolbypassrls) from pg_roles
-                   where rolname in ('erp_sistema', 'erp_conferencia', 'erp_situacao', 'erp_reclassificacao', 'erp_auditoria', 'erp_acesso'))
+select pg_temp.ok((select count(*) = 8 and bool_and(not rolcanlogin and not rolsuper and not rolbypassrls) from pg_roles
+                   where rolname in ('erp_sistema', 'erp_conferencia', 'erp_situacao', 'erp_reclassificacao', 'erp_auditoria', 'erp_acesso',
+                                     'erp_config', 'erp_eventos'))
                   and not exists (select 1 from pg_auth_members
-                                  where roleid in ('erp_conferencia'::regrole, 'erp_situacao'::regrole, 'erp_reclassificacao'::regrole, 'erp_auditoria'::regrole, 'erp_acesso'::regrole)),
+                                  where roleid in ('erp_conferencia'::regrole, 'erp_situacao'::regrole, 'erp_reclassificacao'::regrole, 'erp_auditoria'::regrole, 'erp_acesso'::regrole,
+                                                   'erp_config'::regrole, 'erp_eventos'::regrole)),
   'catálogo: os papéis erp_* não entram, não ignoram RLS, e conferência, situação e reclassificação não têm membros');
 select pg_temp.ok(not exists (
   select 1 from pg_auth_members m join pg_roles r on r.oid = m.roleid join pg_roles u on u.oid = m.member
@@ -1257,6 +1267,14 @@ select pg_temp.ok(not exists (
     and not (policyname = 'conferencia' and cmd = 'SELECT' and roles = '{erp_conferencia}')
     and not (policyname = 'operacao' and cmd = 'ALL' and roles::text[] @> '{erp_situacao,erp_reclassificacao,erp_acesso}' and cardinality(roles) = 3)
     and not (policyname = 'auditoria_grava' and tablename = 'auditoria' and cmd = 'INSERT' and roles = '{erp_auditoria}')
+    -- o pedido da configuração de dinheiro (só dentro das funções dele) e o registro dos eventos
+    and not (policyname = 'config' and roles = '{erp_config}' and coalesce(qual, with_check) ~ 'agindo_como\(''erp_config''::text\)'
+             and tablename in ('naturezas_sistema','niveis_aprovacao','alcadas_pagamento','alcadas_reclassificacao',
+                               'regra_adiantamento','regra_alcada_pagamento','regras_ajuste','contas_bancarias',
+                               'codigos_externos','aprovadores_config','regras_mudanca_config','mudancas_config',
+                               'mudanca_config_votos','usuarios','auditoria')
+             and (cmd = 'ALL' or (cmd = 'SELECT' and tablename in ('usuarios','auditoria'))))
+    and not (policyname = 'eventos_grava' and tablename = 'eventos' and cmd = 'INSERT' and roles = '{erp_eventos}')
     and not (policyname in ('perfil_le', 'perfil_inclui', 'perfil_altera', 'perfil_apaga') and roles = '{authenticated}')),
   'catálogo: no `erp` só há as políticas sistema, conferencia, operacao e as de perfil, estas só para authenticated');
 
@@ -3582,6 +3600,279 @@ select pg_temp.sis(); delete from erp.atribuicoes where user_id = :'u4'; delete 
 select pg_temp.como(:'u4');
 select pg_temp.ok(exists (select 1 from erp.pagamentos where id = 'c2000000-0000-0000-0000-0000000000d1') and pg_temp.vejo_tits() = '',
   'acesso: sem o perfil, quem lançou o pagamento ainda o vê, e não vê mais os títulos');
+select pg_temp.como(null);
+rollback;
+
+-- ---------------------------------------------------------------------
+\echo '# configuração de dinheiro: pedido do AF e do AD, aprovadores por tabela, modo livre, eventos'
+begin;
+select pg_temp.sis();
+insert into erp.listas_financeiro (lista, user_id) values ('AF', :'gestor'), ('AD', :'diretor2') on conflict do nothing;
+insert into erp.aprovadores_config (tabela, user_id) values ('alcadas_pagamento', :'analista2'), ('alcadas_pagamento', :'diretor2');
+select id as faixa50 from erp.alcadas_pagamento where ate = 50000 \gset
+select id as faixa_topo from erp.alcadas_pagamento where ate is null \gset
+select pg_temp.volta();
+
+-- quem pede
+select pg_temp.como(:'leitor');
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', '{"id": "%s", "ate": 52000}', 'subir')$$, :'faixa50'),
+  'Só o AF, o AD, o administrador ou o master pedem mudança na configuração de dinheiro', 'config: quem não é AF, AD, administrador nem master não pede');
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', '{"id": "%s", "ate": 52000}', 'subir')$$, :'faixa50'),
+  'Só o AF, o AD, o administrador ou o master pedem mudança na configuração de dinheiro', 'config: o AO não pede');
+select pg_temp.como(:'gestor');
+select pg_temp.erro_igual($$select erp.pedir_mudanca_config('listas_financeiro', 'incluir', '{"lista": "AD", "user_id": "00000000-0000-0000-0000-00000000000e"}', 'eu')$$,
+  'A tabela listas_financeiro não é da configuração de dinheiro', 'config: AF, AO e AD não entram por aqui (são acesso)');
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', '{"id": "%s", "xpto": 1}', 'x')$$, :'faixa50'),
+  'Campo que não existe em alcadas_pagamento', 'config: campo desconhecido é recusado');
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', '{"id": "%s", "ate": 52000}', ' ')$$, :'faixa50'),
+  'O pedido precisa de motivo', 'config: pedido sem motivo é recusado');
+-- a trava da tabela vale já no pedido
+select pg_temp.erro_igual($$select erp.pedir_mudanca_config('regras_ajuste', 'excluir', '{"campo": "documento_retencoes.valor", "quem": "AF"}', 'tirar')$$,
+  'As regras do ajuste são fixas; altere só se pode e para que lado', 'config: o pedido que a trava da tabela recusa nem nasce');
+select pg_temp.ok(not exists (select 1 from erp.mudancas_config), 'config: nenhum pedido ficou das recusas');
+
+-- modo aprovação (padrão): o AF pede, a lista aprova
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 52000), 'reajuste') as m1 \gset
+select pg_temp.ok((select aprovacao = 'lista' and minimo = 1 and situacao = 'pendente' from erp.mudancas_config where id = :'m1')
+                  and (select ate from erp.alcadas_pagamento where id = :'faixa50') = 50000,
+  'config: o pedido do AF fica pendente da lista e a alçada não muda');
+select pg_temp.erro_igual(format($$select erp.decidir_mudanca_config(%L, true)$$, :'m1'), 'Quem pediu a mudança não a aprova', 'config: quem pediu não aprova');
+select pg_temp.falha(format($$update erp.mudancas_config set situacao = 'aplicada' where id = %L$$, :'m1'), 'config: o pedido não muda pela API');
+select pg_temp.como(:'leitor');
+select pg_temp.ok(not exists (select 1 from erp.mudancas_config), 'config: quem não pede nem aprova não vê os pedidos');
+select pg_temp.erro_igual(format($$select erp.decidir_mudanca_config(%L, true)$$, :'m1'), 'Só um aprovador desta configuração decide o pedido',
+  'config: nem decide');
+select pg_temp.como(:'analista');      -- AO, fora da lista da tabela
+select pg_temp.erro_igual(format($$select erp.decidir_mudanca_config(%L, true)$$, :'m1'), 'Só um aprovador desta configuração decide o pedido',
+  'config: fora da lista da tabela não decide');
+select pg_temp.como(:'analista2');
+select pg_temp.erro_igual(format($$select erp.decidir_mudanca_config(%L, false)$$, :'m1'), 'Recusar o pedido precisa de justificativa',
+  'config: recusar pede justificativa');
+select erp.decidir_mudanca_config(:'m1', true) as d1 \gset
+select pg_temp.ok(:'d1' = 'aplicada' and (select ate from erp.alcadas_pagamento where id = :'faixa50') = 52000,
+  'config: o aprovador da lista aprova e a alçada muda');
+select pg_temp.erro_igual(format($$select erp.decidir_mudanca_config(%L, true)$$, :'m1'), 'O pedido já está aplicada', 'config: pedido encerrado não se decide de novo');
+select pg_temp.falha($$select * from erp.eventos$$, 'config: os eventos não se leem pela API');
+select pg_temp.sis();
+select pg_temp.ok(exists (select 1 from erp.eventos where tipo = 'mudanca_config_pedida' and dados->>'mudanca_id' = :'m1' and por = :'gestor'),
+  'config: o pedido vira evento, com quem pediu');
+select pg_temp.ok((select count(*) = 1 from erp.eventos e join erp.tipos_evento t on t.codigo = e.tipo
+                    where e.tipo = 'alcada_alterada' and t.critico and e.dados->>'mudanca_id' = :'m1' and e.por = :'analista2'
+                      and e.dados->>'pedida_por' = :'gestor' and e.dados->'aprovada_por' ? :'analista2'
+                      and (e.dados->'antes'->>'ate')::numeric = 50000 and (e.dados->'depois'->>'ate')::numeric = 52000),
+  'config: a mudança aplicada vira um evento crítico de alçada, com antes, depois, quem pediu e quem aprovou');
+-- os eventos só crescem
+select pg_temp.erro_igual($$update erp.eventos set dados = '{}'$$, 'O evento não se altera nem se apaga', 'config: o evento não se altera, nem pelo sistema');
+select pg_temp.erro_igual($$delete from erp.eventos$$, 'O evento não se altera nem se apaga', 'config: nem se apaga');
+select pg_temp.erro_igual($$insert into erp.eventos (tipo) values ('alcada_alterada')$$, 'Evento só pelo erp.registrar_evento', 'config: evento só pela função');
+select pg_temp.volta();
+
+-- recusa e cancelamento
+select pg_temp.como(:'diretor2');      -- AD
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 90000), 'subir muito') as m2 \gset
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 80000), 'outra') as m3 \gset
+select pg_temp.como(:'analista2');
+select erp.decidir_mudanca_config(:'m2', false, 'alto demais') as d2 \gset
+select pg_temp.ok(:'d2' = 'recusada' and (select ate from erp.alcadas_pagamento where id = :'faixa50') = 52000,
+  'config: a recusa encerra o pedido e nada muda');
+select pg_temp.erro_igual(format($$select erp.cancelar_mudanca_config(%L)$$, :'m3'), 'Só quem pediu cancela o pedido pendente', 'config: só quem pediu cancela');
+select pg_temp.como(:'diretor2');
+select erp.cancelar_mudanca_config(:'m3');
+select pg_temp.sis();
+select pg_temp.ok((select situacao from erp.mudancas_config where id = :'m3') = 'cancelada'
+                  and exists (select 1 from erp.eventos where tipo = 'mudanca_config_encerrada' and dados->>'mudanca_id' = :'m2' and dados->>'situacao' = 'recusada')
+                  and exists (select 1 from erp.eventos where tipo = 'mudanca_config_encerrada' and dados->>'mudanca_id' = :'m3' and dados->>'situacao' = 'cancelada'),
+  'config: recusa e cancelamento viram evento');
+select pg_temp.erro_igual(format($$delete from erp.mudancas_config where id = %L$$, :'m3'), 'O histórico de mudanças da configuração não se apaga',
+  'config: o histórico dos pedidos não se apaga');
+select pg_temp.volta();
+
+-- obsoleto: a linha mudou depois do pedido
+select pg_temp.como(:'gestor');
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 60000), 'a') as m4 \gset
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 61000), 'b') as m5 \gset
+select pg_temp.como(:'analista2');
+select erp.decidir_mudanca_config(:'m4', true);
+select erp.decidir_mudanca_config(:'m5', true) as d5 \gset
+select pg_temp.ok(:'d5' = 'obsoleta' and (select ate from erp.alcadas_pagamento where id = :'faixa50') = 60000,
+  'config: o pedido feito sobre a linha antiga fica obsoleto');
+
+-- mínimo de 2 votos
+select pg_temp.como(:'diretor');
+update erp.regras_mudanca_config set minimo = 2 where tabela = 'alcadas_pagamento';
+select pg_temp.como(:'gestor');
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 49000), 'voltar') as m6 \gset
+select pg_temp.como(:'analista2');
+select pg_temp.ok(erp.decidir_mudanca_config(:'m6', true) = 'pendente', 'config: com mínimo 2, um voto não basta');
+select pg_temp.como(:'diretor2');
+select erp.decidir_mudanca_config(:'m6', true) as d6 \gset
+select pg_temp.ok(:'d6' = 'aplicada' and (select ate from erp.alcadas_pagamento where id = :'faixa50') = 49000,
+  'config: o segundo voto aplica');
+-- S-095: o voto de quem saiu da lista não conta
+select pg_temp.como(:'gestor');
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 48000), 'saiu') as m6b \gset
+select pg_temp.como(:'analista2');
+select erp.decidir_mudanca_config(:'m6b', true);
+select pg_temp.como(:'diretor');
+delete from erp.aprovadores_config where tabela = 'alcadas_pagamento' and user_id = :'analista2';
+insert into erp.aprovadores_config values ('alcadas_pagamento', :'contador');
+select pg_temp.como(:'diretor2');
+select erp.decidir_mudanca_config(:'m6b', true) as d6b \gset
+select pg_temp.ok(:'d6b' = 'pendente', 'S-095: o voto de quem saiu da lista de aprovadores não conta para o mínimo');
+select pg_temp.como(:'diretor');
+insert into erp.aprovadores_config values ('alcadas_pagamento', :'analista2');
+delete from erp.aprovadores_config where tabela = 'alcadas_pagamento' and user_id = :'contador';
+select pg_temp.como(:'gestor'); select erp.cancelar_mudanca_config(:'m6b'); select pg_temp.como(:'diretor2');
+-- quem pede sai da conta: com o AD pedindo, sobra um aprovador para 2 votos, e decide o master
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 51000), 'c') as m7 \gset
+select pg_temp.ok((select aprovacao = 'master' from erp.mudancas_config where id = :'m7'), 'config: sem aprovadores bastantes além de quem pede, decide o master');
+select pg_temp.sis();
+select pg_temp.ok((select falta_aprovadores from erp.mudancas_config where id = :'m7')
+                  and exists (select 1 from erp.eventos where tipo = 'mudanca_config_pedida' and dados->>'mudanca_id' = :'m7'
+                                 and (dados->>'falta_aprovadores')::boolean and (dados->>'aprovadores_disponiveis')::int = 1
+                                 and (dados->>'minimo_da_lista')::int = 2)
+                  and not (select falta_aprovadores from erp.mudancas_config where id = :'m6'),
+  'config: o aviso diz que foi ao master por falta de aprovadores qualificados (quantos há e quantos a lista pede)');
+select pg_temp.volta();
+select pg_temp.como(:'analista2');
+select pg_temp.erro_igual(format($$select erp.decidir_mudanca_config(%L, true)$$, :'m7'), 'Só o master decide este pedido', 'config: e a lista não decide');
+select pg_temp.como(:'diretor');
+select pg_temp.ok(erp.decidir_mudanca_config(:'m7', true) = 'aplicada', 'config: o voto do master basta');
+update erp.regras_mudanca_config set minimo = 1 where tabela = 'alcadas_pagamento';
+
+-- só o master define a lista e o modo
+select pg_temp.como(:'gestor');
+select pg_temp.falha($$update erp.regras_mudanca_config set modo = 'livre_ate', percentual = 100, meses = 1 where tabela = 'alcadas_pagamento'$$,
+  'config: o AF não muda o modo da tabela');
+select pg_temp.erro_igual($$update erp.regras_mudanca_config set modo = 'livre_ate', percentual = 100, meses = 1 where tabela = 'alcadas_pagamento'$$,
+  'Só o master decide quem aprova a configuração de dinheiro', 'config: nem pelo dono do banco com o login dele');
+select pg_temp.falha(format($$insert into erp.aprovadores_config values ('alcadas_pagamento', %L)$$, :'gestor'), 'config: nem se põe na lista');
+select pg_temp.como(:'ti');
+select pg_temp.falha(format($$delete from erp.aprovadores_config where user_id = %L$$, :'analista2'), 'config: o TI não tira aprovador');
+select erp.pedir_mudanca_config('aprovadores_config', 'incluir', jsonb_build_object('tabela', 'contas_bancarias', 'user_id', :'analista2'), 'cobrir férias') as m8 \gset
+select pg_temp.ok((select aprovacao = 'master' from erp.mudancas_config where id = :'m8'), 'config: o pedido do TI para a lista vai ao master');
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_config('aprovadores_config', 'incluir', '{"tabela": "contas_bancarias", "user_id": "%s"}', 'eu')$$, :'ti'),
+  'Administrador não aprova nada no ERP', 'config: administrador não entra na lista de aprovadores');
+select pg_temp.como(:'diretor2');
+select pg_temp.erro_igual(format($$select erp.decidir_mudanca_config(%L, true)$$, :'m8'), 'Só o master decide este pedido', 'config: a lista de aprovadores só com o master');
+select pg_temp.como(:'diretor');
+select erp.decidir_mudanca_config(:'m8', true);
+select pg_temp.ok(exists (select 1 from erp.aprovadores_config where tabela = 'contas_bancarias' and user_id = :'analista2'), 'config: o master aprova e a lista muda');
+select pg_temp.falha($$update erp.regras_mudanca_config set modo = 'livre_ate', percentual = 5, meses = 3 where tabela = 'contas_bancarias'$$,
+  'config: conta bancária não tem modo livre');
+select pg_temp.falha($$update erp.regras_mudanca_config set modo = 'livre_ate', percentual = 5, meses = 3 where tabela = 'regra_alcada_pagamento'$$,
+  'config: regra sem valor de faixa também não');
+select pg_temp.erro_igual($$update erp.regras_mudanca_config set tabela = 'outra' where tabela = 'contas_bancarias'$$,
+  'As tabelas da configuração são fixas; mude só o modo, o percentual, os meses e o mínimo', 'config: as tabelas da regra são fixas');
+update erp.regras_mudanca_config set modo = 'livre_ate', percentual = 10, meses = 3 where tabela = 'alcadas_pagamento';
+select pg_temp.sis();
+select pg_temp.ok(exists (select 1 from erp.eventos where tipo = 'regra_config_alterada' and tabela = 'regras_mudanca_config' and por = :'diretor'
+                           and not dados ? 'mudanca_id'),
+  'config: a mudança direta do master também vira evento');
+select pg_temp.volta();
+
+-- modo livre: até 10% de todo valor da faixa nos últimos 3 meses
+select pg_temp.sis();
+select pg_temp.ok(erp._valor_config_em('alcadas_pagamento', :'faixa50', 'ate', clock_timestamp() - interval '3 months') = 50000,
+  'config: o valor de 3 meses atrás vem da auditoria (o de antes da primeira mudança: 50 mil, o da carga)');
+-- as mudanças de até aqui ficam de mais de 3 meses atrás: a janela começa limpa, em 51 mil
+alter table erp.auditoria disable trigger t_auditoria_guarda;
+update erp.auditoria set em = em - interval '4 months' where tabela = 'alcadas_pagamento' and registro = :'faixa50';
+alter table erp.auditoria enable trigger t_auditoria_guarda;
+select pg_temp.volta();
+select pg_temp.como(:'gestor');
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 54000), 'livre') as l1 \gset
+select pg_temp.ok((select aprovacao = 'livre' and situacao = 'aplicada' and (referencia->>'valor_antes')::numeric = 51000 from erp.mudancas_config where id = :'l1')
+                  and (select ate from erp.alcadas_pagamento where id = :'faixa50') = 54000,
+  'config: dentro de 10% do valor de 3 meses atrás, o pedido do AF vale na hora');
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 57000), 'mais um pouco') as l2 \gset
+select pg_temp.ok((select aprovacao = 'lista' and situacao = 'pendente' from erp.mudancas_config where id = :'l2'),
+  'config: 6% sobre o de hoje, mas 12% sobre o de 3 meses atrás: pede aprovação (não se fatia)');
+select erp.cancelar_mudanca_config(:'l2');
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 49000), 'baixar') as l3 \gset
+select pg_temp.ok((select aprovacao = 'livre' from erp.mudancas_config where id = :'l3'), 'config: baixar até 10% também é livre');
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 46000), 'baixar mais') as l4 \gset
+select pg_temp.ok((select aprovacao = 'lista' from erp.mudancas_config where id = :'l4'), 'config: abaixo de 10% de algum valor da janela pede aprovação');
+select erp.cancelar_mudanca_config(:'l4');
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa_topo', 'etapas', '{AREA,AF}'::text[]), 'tirar AD') as l5 \gset
+select pg_temp.ok((select aprovacao = 'lista' from erp.mudancas_config where id = :'l5') and exists (select 1 from erp.alcadas_pagamento where id = :'faixa_topo' and 'AD' = any(etapas)),
+  'config: tirar uma etapa sempre pede aprovação, mesmo no modo livre');
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 50000, 'etapas', '{AREA}'::text[]), 'junto') as l6 \gset
+select pg_temp.ok((select aprovacao = 'lista' from erp.mudancas_config where id = :'l6'), 'config: valor e etapas juntos também pedem aprovação');
+select erp.pedir_mudanca_config('alcadas_pagamento', 'incluir', '{"ate": 20000, "etapas": ["AREA"]}', 'faixa nova') as l7 \gset
+select pg_temp.ok((select aprovacao = 'lista' from erp.mudancas_config where id = :'l7'), 'config: faixa nova pede aprovação');
+select erp.pedir_mudanca_config('alcadas_pagamento', 'excluir', jsonb_build_object('id', :'faixa50'), 'tirar faixa') as l8 \gset
+select pg_temp.ok((select aprovacao = 'lista' from erp.mudancas_config where id = :'l8'), 'config: tirar faixa pede aprovação');
+select pg_temp.como(:'ti');
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 50000), 'TI') as l9 \gset
+select pg_temp.ok((select aprovacao = 'lista' from erp.mudancas_config where id = :'l9'), 'config: o pedido do TI nunca é livre');
+select pg_temp.como(:'diretor2');
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 53000), 'AD') as l10 \gset
+select pg_temp.ok((select aprovacao = 'livre' and situacao = 'aplicada' from erp.mudancas_config where id = :'l10'), 'config: o do AD também é livre');
+select pg_temp.sis();
+select pg_temp.ok(exists (select 1 from erp.eventos where tipo = 'alcada_alterada' and dados->>'mudanca_id' = :'l10' and dados->>'aprovacao' = 'livre'),
+  'config: a mudança livre também avisa (evento crítico de alçada)');
+-- a janela anda: as mudanças de mais de 3 meses atrás viram a referência
+alter table erp.auditoria disable trigger t_auditoria_guarda;
+update erp.auditoria set em = em - interval '4 months' where tabela = 'alcadas_pagamento' and registro = :'faixa50';
+alter table erp.auditoria enable trigger t_auditoria_guarda;
+select pg_temp.volta();
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 58000), 'janela nova') as l11 \gset
+select pg_temp.ok((select aprovacao = 'livre' and (referencia->>'valor_antes')::numeric = 53000 from erp.mudancas_config where id = :'l11'),
+  'config: passados os 3 meses, a referência é o valor de 3 meses atrás (53 mil)');
+-- S-094: um aperto recente não se desfaz sem aprovação
+select pg_temp.como(:'diretor');
+update erp.alcadas_pagamento set ate = 20000 where id = :'faixa50';
+select pg_temp.como(:'gestor');
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 58000), 'desfazer') as l11b \gset
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 21000), 'um pouco') as l11c \gset
+select pg_temp.ok((select bool_and(aprovacao = 'lista' and situacao = 'pendente') from erp.mudancas_config where id in (:'l11b', :'l11c'))
+                  and (select ate from erp.alcadas_pagamento where id = :'faixa50') = 20000,
+  'S-094: depois de o master apertar a faixa, o AF não a desfaz nem a mexe no modo livre (a até 10% de todo valor da janela)');
+select erp.cancelar_mudanca_config(:'l11b'); select erp.cancelar_mudanca_config(:'l11c');
+-- faixa que não existia há 3 meses: sem referência, pede aprovação
+select pg_temp.sis(); insert into erp.alcadas_pagamento (ate, etapas) values (10000, '{AREA}'); select pg_temp.volta();
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', (select id from erp.alcadas_pagamento where ate = 10000), 'ate', 10500), 'nova') as l12 \gset
+select pg_temp.ok((select aprovacao = 'lista' from erp.mudancas_config where id = :'l12'), 'config: faixa criada dentro da janela não tem referência: pede aprovação');
+select pg_temp.sis();
+select pg_temp.ok(exists (select 1 from erp.eventos where tipo = 'alcada_alterada' and por is null and (dados->'depois'->>'ate')::numeric = 10000),
+  'config: a mudança feita pelo sistema também vira evento de alçada');
+insert into erp.aprovadores_config (tabela, user_id) values ('contas_bancarias', :'contador');
+select pg_temp.volta();
+select pg_temp.como(:'contador');
+select pg_temp.erro_igual(format($$select erp.decidir_mudanca_config(%L, true)$$, :'l12'), 'Só um aprovador desta configuração decide o pedido',
+  'config: aprovador de outra tabela não decide o pedido da alçada');
+select pg_temp.como(:'diretor2');
+
+-- conta bancária e código do Sienge: sempre aprovação
+select pg_temp.como(:'gestor');
+select erp.pedir_mudanca_config('contas_bancarias', 'alterar', jsonb_build_object('id', :'conta_inc', 'conta', '99999-9'), 'troca') as c1 \gset
+select pg_temp.ok((select aprovacao = 'lista' from erp.mudancas_config where id = :'c1')
+                  and (select conta from erp.contas_bancarias where id = :'conta_inc') is distinct from '99999-9',
+  'config: trocar a conta bancária pede aprovação');
+select pg_temp.como(:'analista2');
+select erp.decidir_mudanca_config(:'c1', true);
+select pg_temp.ok((select conta from erp.contas_bancarias where id = :'conta_inc') = '99999-9', 'config: aprovada, a conta muda');
+select pg_temp.como(:'gestor');
+select erp.pedir_mudanca_config('codigos_externos', 'incluir', '{"sistema": "sienge", "tabela": "pessoas", "registro_id": "10000000-0000-0000-0000-000000000005", "codigo": "X77"}', 'credor') as c2 \gset
+select pg_temp.ok((select aprovacao = 'master' from erp.mudancas_config where id = :'c2'), 'config: código do Sienge sem lista na tabela vai ao master');
+select pg_temp.como(:'diretor');
+select erp.decidir_mudanca_config(:'c2', true);
+select pg_temp.sis();
+select pg_temp.ok(exists (select 1 from erp.eventos where tipo = 'conta_bancaria_alterada' and dados->>'mudanca_id' = :'c1')
+                  and exists (select 1 from erp.eventos where tipo = 'codigo_externo_alterado' and dados->>'mudanca_id' = :'c2' and por = :'diretor'),
+  'config: conta e código mudados viram eventos críticos');
+insert into erp.codigos_externos (sistema, tabela, registro_id, codigo) values ('sienge', 'pessoas', '10000000-0000-0000-0000-000000000007', 'X78');
+select pg_temp.ok(not exists (select 1 from erp.eventos where tipo = 'codigo_externo_alterado' and registro like '%X78'),
+  'config: o código gravado pelo sistema (adaptador do Sienge) não vira evento');
+select pg_temp.volta();
+
+-- tipos de evento: só o master
+select pg_temp.como(:'ti');
+select pg_temp.falha($$update erp.tipos_evento set critico = false where codigo = 'alcada_alterada'$$, 'config: o TI não tira o crítico do evento de alçada');
+select pg_temp.erro_igual($$update erp.tipos_evento set critico = false where codigo = 'alcada_alterada'$$, 'Só o master muda os tipos de evento',
+  'config: nem pelo dono do banco com o login dele');
 select pg_temp.como(null);
 rollback;
 
