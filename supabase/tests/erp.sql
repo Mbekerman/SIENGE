@@ -4360,6 +4360,7 @@ insert into erp.preferencias_notificacao (user_id, tipo, canal) values (:'analis
 select pg_temp.como(:'diretor2');
 select pg_temp.ok(not exists (select 1 from erp.preferencias_notificacao where user_id = :'analista2'), 'S-099: ninguém lê a preferência de outro');
 delete from erp.preferencias_notificacao where user_id = :'analista2';
+delete from erp.preferencias_notificacao;   -- sem where: a leitura não entra, só a política de apagar
 select erp.marcar_notificacoes_lidas(array[:n_ana]::bigint[]) as lidas_outro \gset
 select pg_temp.ok(:lidas_outro = 0, 'S-099: ninguém marca como lida a notificação de outro');
 select pg_temp.ok(not exists (select 1 from erp.regras_notificacao), 'S-099: o painel não se lê fora do administrador e do master');
