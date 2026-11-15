@@ -52,6 +52,8 @@ create table erp.perfil_centro_divisoes (
   foreign key (divisao_id, centro_custo_id) references erp.divisoes (id, centro_custo_id),
   check (incluir or nivel is null)
 );
+create trigger t_primeiro_nivel before insert or update of divisao_id on erp.perfil_centro_divisoes
+  for each row execute function erp.tg_divisao_primeiro_nivel();
 -- naturezas restritas que o modelo libera (o galho inteiro), nos centros do modelo
 create table erp.perfil_naturezas (
   perfil_id   uuid not null references erp.perfis_modelo,
@@ -131,6 +133,8 @@ create table erp.excecoes_divisao (
   fim                 date,
   primary key (user_id, nucleo_economico_id, divisao_id)
 );
+create trigger t_primeiro_nivel before insert or update of divisao_id on erp.excecoes_divisao
+  for each row execute function erp.tg_divisao_primeiro_nivel();
 -- exceção de natureza: libera (restrita) ou bloqueia o galho, num centro ou em todos (centro vazio)
 create table erp.excecoes_natureza (
   id              uuid primary key default gen_random_uuid(),
@@ -685,7 +689,7 @@ begin
     when 'centro_aprovadores' then (select to_jsonb(t) from erp.centro_aprovadores t where centro_custo_id = (d->>'centro_custo_id')::uuid and user_id = (d->>'user_id')::uuid)
     when 'listas_financeiro' then (select to_jsonb(t) from erp.listas_financeiro t where lista = d->>'lista' and user_id = (d->>'user_id')::uuid)
     when 'tipos_nucleo' then (select to_jsonb(t) from erp.tipos_nucleo t where codigo = d->>'codigo')
-    when 'divisoes' then (select jsonb_build_object('id', id, 'centro_custo_id', centro_custo_id, 'nome', nome, 'ativa', ativa) from erp.divisoes where id = (d->>'id')::uuid)
+    when 'divisoes' then (select jsonb_build_object('id', id, 'centro_custo_id', centro_custo_id, 'mae_id', mae_id, 'nome', nome, 'ativa', ativa) from erp.divisoes where id = (d->>'id')::uuid)
     when 'aprovadores_acesso' then (select to_jsonb(t) from erp.aprovadores_acesso t where user_id = (d->>'user_id')::uuid)
     when 'regra_acesso' then (select to_jsonb(t) from erp.regra_acesso t)
     when 'naturezas' then (select jsonb_build_object('id', id, 'mae_id', mae_id, 'restrita', restrita) from erp.naturezas where id = (d->>'id')::uuid)
@@ -738,6 +742,35 @@ end $$;
 -- Quem aprova (aprovacao): o master, na hora, o que ele pede; AF, AO e AD, o master; a lista
 -- de aprovadores e as regras dela, a unanimidade da lista; usuários, gestor e diretor da área,
 -- pelo nível (erp.regras_nivel_acesso); o resto, a lista, salvo o que o master dispensou
+
+-- De onde o nível novo copia as naturezas: uma irmã (mesmo centro e mesmo nível de cima) ou,
+-- no primeiro nível abaixo, quem está em cima enquanto ainda tem lista própria (a divisão sem
+-- níveis abaixo, ou o centro sem divisão). Devolve o centro e a divisão (nula = o centro).
+create function erp._origem_naturezas(d jsonb) returns table (o_centro uuid, o_divisao uuid)
+language plpgsql stable as $$
+declare v_centro uuid; v_mae uuid := (d->>'mae_id')::uuid; v_de uuid := (d->>'copiar_de')::uuid; o erp.divisoes;
+begin
+  v_centro := coalesce((select x.centro_custo_id from erp.divisoes x where x.id = v_mae), (d->>'centro_custo_id')::uuid);
+  select * into o from erp.divisoes x where x.id = v_de;
+  if found and o.centro_custo_id = v_centro and o.mae_id is not distinct from v_mae and o.ativa then
+    o_centro := v_centro; o_divisao := v_de;
+  -- (o próprio nível novo não conta: ao aplicar, ele já existe)
+  elsif (v_de = v_mae and not exists (select 1 from erp.divisoes x where x.mae_id = v_mae and x.ativa
+                                       and x.id is distinct from (d->>'id')::uuid))
+        or (v_mae is null and v_de = v_centro
+            and not exists (select 1 from erp.divisoes x where x.centro_custo_id = v_centro and x.ativa
+                             and x.id is distinct from (d->>'id')::uuid)) then
+    o_centro := v_centro; o_divisao := v_mae;
+  else
+    raise exception 'Copie as naturezas de uma irmã ativa do nível novo (ou, no primeiro nível abaixo, do nível de cima)';
+  end if;
+  if not exists (select 1 from erp.naturezas_liberadas l where l.centro_custo_id = v_centro
+                  and l.divisao_id is not distinct from o_divisao) then
+    raise exception 'O nível de onde copiar não tem naturezas liberadas';
+  end if;
+  return next;
+end $$;
+
 -- (erp.regras_mudanca_acesso).
 create function erp.pedir_mudanca_acesso(p_tabela text, p_operacao text, p_dados jsonb, p_motivo text)
 returns uuid language plpgsql as $$
@@ -759,13 +792,21 @@ begin
   end if;
   if p_tabela = 'divisoes' and p_operacao = 'excluir' then raise exception 'Divisão não se apaga; desative'; end if;
   if p_tabela = 'divisoes' and exists (select 1 from jsonb_object_keys(p_dados) k
-                                        where k not in ('id','nome','ativa') and not (p_operacao = 'incluir' and k in ('centro_custo_id','naturezas'))) then
-    raise exception 'O pedido de divisão só cria (centro, nome e naturezas), renomeia e desativa';
+                                        where k not in ('id','nome','ativa') and not (p_operacao = 'incluir' and k in ('centro_custo_id','mae_id','naturezas','copiar_de'))) then
+    raise exception 'O pedido de divisão só cria (centro, nível de cima, nome e naturezas), renomeia e desativa';
   end if;
-  -- as naturezas liberadas fazem parte da criação da divisão (Moises, 15/11/2026)
-  if p_tabela = 'divisoes' and p_operacao = 'incluir'
-     and (jsonb_typeof(p_dados->'naturezas') is distinct from 'array' or jsonb_array_length(p_dados->'naturezas') = 0) then
-    raise exception 'Diga as naturezas liberadas para lançamento na divisão nova';
+  -- as naturezas fazem parte da criação de cada nível (Moises, 15/11/2026): a lista marcada (à
+  -- mão ou por modelo salvo) ou a cópia da lista de uma irmã; o primeiro nível abaixo de quem
+  -- ainda tem lista pode copiar a dele (ele passa a ser a soma das de baixo)
+  if p_tabela = 'divisoes' and p_operacao = 'incluir' then
+    if p_dados ? 'copiar_de' then
+      if p_dados ? 'naturezas' then
+        raise exception 'Diga a lista de naturezas ou de quem copiar, não os dois';
+      end if;
+      perform erp._origem_naturezas(p_dados);
+    elsif jsonb_typeof(p_dados->'naturezas') is distinct from 'array' or jsonb_array_length(p_dados->'naturezas') = 0 then
+      raise exception 'Diga as naturezas liberadas para lançamento no nível novo (marcadas, por modelo ou copiadas de uma irmã)';
+    end if;
   end if;
   if p_tabela = 'usuarios' and exists (select 1 from jsonb_object_keys(p_dados) k where k not in ('id','papel','contador','ativo')) then
     raise exception 'O pedido de usuário só muda o papel e o contador e ativa o usuário novo (login, desativar e marca de sucessor: só o master)';
@@ -891,11 +932,24 @@ begin
     else delete from erp.perfil_centro_divisoes where perfil_id = (d->>'perfil_id')::uuid and divisao_id = (d->>'divisao_id')::uuid; end if;
   when 'divisoes' then
     if m.operacao = 'incluir' then
-      insert into erp.divisoes (id, centro_custo_id, nome, ativa)
-      values ((d->>'id')::uuid, (d->>'centro_custo_id')::uuid, d->>'nome', coalesce((d->>'ativa')::boolean, true));
-      insert into erp.naturezas_liberadas (centro_custo_id, divisao_id, natureza_id)
-      select distinct (d->>'centro_custo_id')::uuid, (d->>'id')::uuid, n::uuid from jsonb_array_elements_text(d->'naturezas') n
-      on conflict do nothing;
+      insert into erp.divisoes (id, centro_custo_id, mae_id, nome, ativa)
+      values ((d->>'id')::uuid,
+              coalesce((d->>'centro_custo_id')::uuid, (select centro_custo_id from erp.divisoes where id = (d->>'mae_id')::uuid)),
+              (d->>'mae_id')::uuid, d->>'nome', coalesce((d->>'ativa')::boolean, true));
+      if d ? 'copiar_de' then
+        insert into erp.naturezas_liberadas (centro_custo_id, divisao_id, natureza_id)
+        select l.centro_custo_id, (d->>'id')::uuid, l.natureza_id from erp.naturezas_liberadas l, erp._origem_naturezas(d) o
+         where l.centro_custo_id = o.o_centro and l.divisao_id is not distinct from o.o_divisao;
+      else
+        insert into erp.naturezas_liberadas (centro_custo_id, divisao_id, natureza_id)
+        select distinct (select centro_custo_id from erp.divisoes where id = (d->>'id')::uuid), (d->>'id')::uuid, n::uuid
+          from jsonb_array_elements_text(d->'naturezas') n
+        on conflict do nothing;
+      end if;
+      -- o nível de cima (ou o centro) deixa de ter lista: vale a soma das de baixo
+      delete from erp.naturezas_liberadas
+       where centro_custo_id = (select centro_custo_id from erp.divisoes where id = (d->>'id')::uuid)
+         and divisao_id is not distinct from (d->>'mae_id')::uuid;
     else update erp.divisoes set nome = d->>'nome', ativa = (d->>'ativa')::boolean where id = (d->>'id')::uuid; end if;
   when 'perfil_naturezas' then
     if m.operacao = 'incluir' then insert into erp.perfil_naturezas select * from jsonb_populate_record(null::erp.perfil_naturezas, d);

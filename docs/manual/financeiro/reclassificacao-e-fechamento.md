@@ -45,7 +45,7 @@ O acumulado fecha a brecha de quebrar uma mudança grande em várias pequenas. M
 
 - Quem pediu não aprova o próprio pedido.
 - Recusar exige justificativa e encerra o pedido.
-- 🟡 Não se reclassifica para uma natureza **desligada** no centro e na divisão das linhas (em revisão, PR #46). Se a natureza for desligada depois do pedido, a aprovação é recusada.
+- ✅ Não se reclassifica para uma natureza **desligada** no centro e na divisão das linhas (Moises, 15/nov/2026; no código a partir do PR #46). Se a natureza for desligada depois do pedido, a aprovação é recusada.
 - Os lançamentos de um mesmo título vão juntos, para ele não ficar parte numa natureza e parte noutra.
 - Aprovado, os próximos pagamentos daquele título já caem na natureza nova.
 

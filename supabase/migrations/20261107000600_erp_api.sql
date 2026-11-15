@@ -343,6 +343,10 @@ begin
     ('titulo_revisoes', 'erp.vejo_titulo(titulo_id)', null),
     ('titulo_ajustes', 'erp.vejo_titulo(titulo_id)', null),
     ('titulo_previsoes', 'erp.vejo_titulo(titulo_id)', null),
+    -- etiquetas livres (Moises, 15/11/2026): AF, AD e o master criam e mudam (S-112); quem lança
+    -- no título põe e tira; não mexem em aprovação
+    ('etiquetas', 'erp.membro()', 'erp.sou_master() or erp.estou_nas_listas(array[''AF'',''AD''])'),
+    ('titulo_etiquetas', 'erp.vejo_titulo(titulo_id)', 'erp.lanco_titulo(titulo_id)'),
     ('liberacoes_sem_abater', 'erp.vejo_titulo(titulo_id)', 'erp.escrevo() and erp.vejo_titulo(titulo_id)'),
     ('abatimentos_cruzados', 'erp.vejo_titulo(titulo_id)', 'erp.escrevo() and erp.vejo_titulo(titulo_id) and erp.vejo_pagamento(pagamento_id)'),
     ('excecoes_competencia', 'erp.vejo_titulo(titulo_id) or erp.vejo_documento(documento_id)',

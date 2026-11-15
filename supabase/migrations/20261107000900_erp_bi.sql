@@ -21,9 +21,9 @@
 --    valor absoluto: um estorno continua com o sinal contrário.
 -- 6. Atributo do empreendimento (regional, faixa MCMV...): o atual em `d_nucleo` e a foto de cada
 --    mês em `d_nucleo_atributos`.
--- 7. Etapas do título: os instantes já gravados pelo servidor nas tabelas do ERP (quem e quando);
---    `f_titulo_etapas` só os junta numa linha por evento. Passo novo do processo grava o próprio
---    instante e a pessoa pelo servidor, e entra aqui.
+-- 7. Eventos do título: os instantes já gravados pelo servidor nas tabelas do ERP (quem e quando);
+--    `f_titulo_eventos` só os junta numa linha por evento. Passo novo do processo grava o próprio
+--    instante e a pessoa pelo servidor, e entra aqui. ("Etapa" não se usa: saiu do sistema.)
 -- Portabilidade: SQL puro, sem extensão.
 
 create schema bi;
@@ -53,7 +53,7 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------------------------------
--- Calendário único (2015 a 2040)
+-- Calendário único (de 2015 até 15 anos à frente do ano de hoje)
 -- ---------------------------------------------------------------------------------------------
 -- Feriados nacionais do calendário bancário (o da ANBIMA): os da lei, mais Carnaval (segunda e
 -- terça) e Corpus Christi, em que o banco não abre. Consciência Negra a partir de 2024 (Lei
@@ -83,54 +83,71 @@ create table bi.d_calendario (
   uteis_ate       int not null            -- dias úteis desde o início do calendário até este dia, inclusive
 );
 
-insert into bi.d_calendario
-with dias as (
-  select d::date as data from generate_series('2015-01-01'::date, '2040-12-31'::date, interval '1 day') d
-), fer as (
-  select x.data, x.nome from generate_series(2015, 2040) y
-  cross join lateral (values
-    (make_date(y, 1, 1), 'Confraternização Universal'),
-    (bi.pascoa(y) - 48, 'Carnaval'),
-    (bi.pascoa(y) - 47, 'Carnaval'),
-    (bi.pascoa(y) - 2, 'Sexta-feira Santa'),
-    (make_date(y, 4, 21), 'Tiradentes'),
-    (make_date(y, 5, 1), 'Dia do Trabalho'),
-    (bi.pascoa(y) + 60, 'Corpus Christi'),
-    (make_date(y, 9, 7), 'Independência do Brasil'),
-    (make_date(y, 10, 12), 'Nossa Senhora Aparecida'),
-    (make_date(y, 11, 2), 'Finados'),
-    (make_date(y, 11, 15), 'Proclamação da República'),
-    (case when y >= 2024 then make_date(y, 11, 20) end, 'Dia Nacional de Zumbi e da Consciência Negra'),
-    (make_date(y, 12, 25), 'Natal')) x(data, nome)
-  where x.data is not null
-), base as (
-  select d.data,
-         (select string_agg(f.nome, ' e ') from fer f where f.data = d.data) as feriado
-  from dias d
-)
-select b.data,
-       extract(year from b.data)::int,
-       case when extract(month from b.data) <= 6 then 1 else 2 end,
-       extract(quarter from b.data)::int,
-       extract(year from b.data)::int || '-T' || extract(quarter from b.data)::int,
-       extract(month from b.data)::int,
-       (array['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'])[extract(month from b.data)::int],
-       (array['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'])[extract(month from b.data)::int],
-       to_char(b.data, 'YYYY-MM'),
-       date_trunc('month', b.data)::date,
-       (date_trunc('month', b.data) + interval '1 month - 1 day')::date,
-       extract(isoyear from b.data)::int,
-       extract(week from b.data)::int,
-       (b.data - (extract(isodow from b.data)::int - 1)),
-       extract(day from b.data)::int,
-       extract(doy from b.data)::int,
-       extract(isodow from b.data)::int,
-       (array['segunda-feira','terça-feira','quarta-feira','quinta-feira','sexta-feira','sábado','domingo'])[extract(isodow from b.data)::int],
-       extract(isodow from b.data) >= 6,
-       b.feriado,
-       extract(isodow from b.data) < 6 and b.feriado is null,
-       (count(*) filter (where extract(isodow from b.data) < 6 and b.feriado is null) over (order by b.data))::int
-from base b;
+-- Cria os dias que faltam, de 2015 até 31/12 do ano de hoje + p_anos (padrão: sempre 15 anos à
+-- frente; decisão do Moises, 15/11/2026), e refaz a contagem de dias úteis. Não muda dia que já
+-- existe. Devolve quantos dias criou. Roda na migration e pela rotina mensal (abaixo); só o
+-- sistema grava (RLS do calendário).
+create function bi.estender_calendario(p_anos int default 15) returns int language plpgsql
+set search_path = pg_catalog as $$
+declare v_ate date := make_date(extract(year from bi.hoje())::int + p_anos, 12, 31); n int;
+begin
+  if p_anos < 1 then raise exception 'O calendário vai pelo menos um ano à frente'; end if;
+  insert into bi.d_calendario
+  with dias as (
+    select d::date as data from generate_series('2015-01-01'::date, v_ate, interval '1 day') d
+    where not exists (select 1 from bi.d_calendario c where c.data = d::date)
+  ), fer as (
+    select x.data, x.nome from generate_series(2015, extract(year from v_ate)::int) y
+    cross join lateral (values
+      (make_date(y, 1, 1), 'Confraternização Universal'),
+      (bi.pascoa(y) - 48, 'Carnaval'),
+      (bi.pascoa(y) - 47, 'Carnaval'),
+      (bi.pascoa(y) - 2, 'Sexta-feira Santa'),
+      (make_date(y, 4, 21), 'Tiradentes'),
+      (make_date(y, 5, 1), 'Dia do Trabalho'),
+      (bi.pascoa(y) + 60, 'Corpus Christi'),
+      (make_date(y, 9, 7), 'Independência do Brasil'),
+      (make_date(y, 10, 12), 'Nossa Senhora Aparecida'),
+      (make_date(y, 11, 2), 'Finados'),
+      (make_date(y, 11, 15), 'Proclamação da República'),
+      (case when y >= 2024 then make_date(y, 11, 20) end, 'Dia Nacional de Zumbi e da Consciência Negra'),
+      (make_date(y, 12, 25), 'Natal')) x(data, nome)
+    where x.data is not null
+  ), b as (
+    select d.data, (select string_agg(f.nome, ' e ') from fer f where f.data = d.data) as feriado from dias d
+  )
+  select b.data,
+         extract(year from b.data)::int,
+         case when extract(month from b.data) <= 6 then 1 else 2 end,
+         extract(quarter from b.data)::int,
+         extract(year from b.data)::int || '-T' || extract(quarter from b.data)::int,
+         extract(month from b.data)::int,
+         (array['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'])[extract(month from b.data)::int],
+         (array['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'])[extract(month from b.data)::int],
+         to_char(b.data, 'YYYY-MM'),
+         date_trunc('month', b.data)::date,
+         (date_trunc('month', b.data) + interval '1 month - 1 day')::date,
+         extract(isoyear from b.data)::int,
+         extract(week from b.data)::int,
+         (b.data - (extract(isodow from b.data)::int - 1)),
+         extract(day from b.data)::int,
+         extract(doy from b.data)::int,
+         extract(isodow from b.data)::int,
+         (array['segunda-feira','terça-feira','quarta-feira','quinta-feira','sexta-feira','sábado','domingo'])[extract(isodow from b.data)::int],
+         extract(isodow from b.data) >= 6,
+         b.feriado,
+         extract(isodow from b.data) < 6 and b.feriado is null,
+         0
+  from b;
+  get diagnostics n = row_count;
+  if n > 0 then
+    update bi.d_calendario c set uteis_ate = x.u
+      from (select data, (count(*) filter (where util) over (order by data))::int as u from bi.d_calendario) x
+     where x.data = c.data and c.uteis_ate <> x.u;
+  end if;
+  return n;
+end $$;
+select bi.estender_calendario();
 
 -- Dias úteis entre duas datas: os do intervalo (de, até], como o prazo bancário conta.
 create function bi.dias_uteis(p_de date, p_ate date) returns int language sql stable
@@ -141,6 +158,13 @@ alter table bi.d_calendario enable row level security;
 alter table bi.d_calendario force row level security;
 create policy sistema on bi.d_calendario using (erp.sistema()) with check (erp.sistema());
 create policy perfil_le on bi.d_calendario for select to authenticated using (erp.membro());
+-- Rotina: no dia 1 de cada mês, às 3h, cria o que faltar (no ano novo, o 15º ano à frente). Com o
+-- pg_cron, agenda aqui; sem ele, o servidor chama bi.estender_calendario() pela rotina dele.
+do $$ begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    perform cron.schedule('bi_estender_calendario', '0 6 1 * *', 'select bi.estender_calendario()');  -- 6h UTC = 3h em SP
+  end if;
+end $$;
 
 -- ---------------------------------------------------------------------------------------------
 -- Sinal da DRE: quais linhas são custo ou despesa (configuração, editada pelo administrador)
@@ -148,6 +172,9 @@ create policy perfil_le on bi.d_calendario for select to authenticated using (er
 alter table erp.linhas_dre add column subtrai boolean not null default false;
 update erp.linhas_dre set subtrai = true
  where codigo in ('deducoes','custo_terreno','custo_obra','despesas_comerciais','despesas_gerais','taxas','outras_despesas');
+-- a linha da DRE muda o sinal dos relatórios: toda mudança fica na auditoria
+create trigger t_aud_linhas_dre after insert or update or delete on erp.linhas_dre
+  for each row execute function erp.tg_auditoria('codigo');
 comment on column erp.linhas_dre.subtrai is
   'Linha de custo ou despesa: no bi, valor_dre = -valor (a saída lê positivo; o estorno, negativo)';
 
@@ -186,10 +213,26 @@ join bi.d_calendario c on c.dia = 1 and c.data between ea.inicio and coalesce(ea
 create view bi.d_centro_custo with (security_invoker = true, security_barrier = true) as
 select c.id as centro_custo_id, c.nome as centro_custo, c.ativo from erp.centros_custo c;
 
+-- Divisão em até 4 níveis abaixo do centro: cada nível com o nome achatado (nivel1 é a divisão
+-- de primeiro nível, onde ficam o acesso e a alçada) e o caminho legível.
 create view bi.d_divisao with (security_invoker = true, security_barrier = true) as
-select d.id as divisao_id, d.nome as divisao, d.centro_custo_id, c.nome as centro_custo, d.ativa,
-       bi.data_sp(d.criado_em) as criado_data
-from erp.divisoes d join erp.centros_custo c on c.id = d.centro_custo_id;
+select d.id as divisao_id, d.nome as divisao, d.centro_custo_id, c.nome as centro_custo,
+       d.mae_id, d.raiz_id, d.nivel,
+       n.nomes[1] as nivel1, n.nomes[2] as nivel2, n.nomes[3] as nivel3, n.nomes[4] as nivel4,
+       array_to_string(n.nomes, ' > ') as caminho,
+       not exists (select 1 from erp.divisoes f where f.mae_id = d.id) as ultimo_nivel,
+       d.ativa, bi.data_sp(d.criado_em) as criado_data
+from erp.divisoes d
+join erp.centros_custo c on c.id = d.centro_custo_id
+cross join lateral (
+  with recursive a as (
+    select x.id, x.mae_id, x.nome, x.nivel from erp.divisoes x where x.id = d.id
+    union all
+    select x.id, x.mae_id, x.nome, x.nivel from erp.divisoes x join a on x.id = a.mae_id)
+  select array_agg(a.nome order by a.nivel) as nomes from a) n;
+
+create view bi.d_etiqueta with (security_invoker = true, security_barrier = true) as
+select e.id as etiqueta_id, e.nome as etiqueta, e.ativa from erp.etiquetas e;
 
 create view bi.d_linha_dre with (security_invoker = true, security_barrier = true) as
 select codigo as linha_dre, nome as linha_dre_nome, ordem, subtrai from erp.linhas_dre;
@@ -202,7 +245,8 @@ select vn.id as natureza_id, vn.codigo, vn.nome, vn.caminho, vn.nivel, vn.nivel1
 from erp.v_naturezas vn join erp.linhas_dre ld on ld.codigo = vn.linha_dre;
 
 -- Fornecedor, cliente, órgão: CPF mascarado (só os dígitos do meio, ***.456.789-**; S-022);
--- CNPJ inteiro, que é público.
+-- CNPJ inteiro, que é público. A máscara vale para os relatórios; o cadastro erp.pessoas ainda
+-- dá o documento inteiro a todo membro (fechar lá é outra decisão).
 create view bi.d_pessoa with (security_invoker = true, security_barrier = true) as
 select p.id as pessoa_id, p.nome, p.nome_fantasia, p.tipo as pessoa_tipo,
        case when p.tipo = 'fisica' and p.documento is not null
@@ -227,14 +271,14 @@ with l as (
   join erp.linhas_dre ld on ld.codigo = n.linha_dre
 )
 select l.id as lancamento_id, l.estagio, l.orcamento_versao_id, l.empresa_id, l.nucleo_economico_id,
-       l.centro_custo_id, l.divisao_id, l.natureza_id, l.competencia, l.data_caixa,
+       l.centro_custo_id, l.divisao_id, l.subdivisao_id, l.natureza_id, l.competencia, l.data_caixa,
        l.valor, case when l.subtrai then -l.valor else l.valor end as valor_dre,
        l.titulo_id, l.parcela_id, l.previsao_id, l.quitacao_id, l.pagamento_id,
        l.criado_em as lancado_em, bi.data_sp(l.criado_em) as lancado_data, false as restrita
 from l where not l.restrita
 union all
 select null, l.estagio, l.orcamento_versao_id, l.empresa_id, l.nucleo_economico_id,
-       l.centro_custo_id, null, l.natureza_id, l.competencia, date_trunc('month', l.data_caixa)::date,
+       l.centro_custo_id, null, null, l.natureza_id, l.competencia, date_trunc('month', l.data_caixa)::date,
        sum(l.valor), sum(case when l.subtrai then -l.valor else l.valor end),
        null, null, null, null, null, null, null, true
 from l where l.restrita
@@ -246,7 +290,7 @@ group by l.estagio, l.orcamento_versao_id, l.empresa_id, l.nucleo_economico_id, 
 create view bi.f_parcelas with (security_invoker = true, security_barrier = true) as
 select p.id as parcela_id, t.id as titulo_id, t.empresa_id, t.pessoa_id, t.sentido, t.tipo as titulo_tipo,
        t.numero as titulo_numero, t.documento_id, t.compromisso_id, t.situacao as titulo_situacao,
-       r.nucleo_economico_id, r.centro_custo_id, r.divisao_id, r.natureza_id,
+       r.nucleo_economico_id, r.centro_custo_id, r.divisao_id, r.subdivisao_id, r.natureza_id,
        t.emissao, t.competencia, p.numero as parcela_numero, p.vencimento,
        p.valor as valor_parcela, r.valor as valor,
        round(coalesce(q.pago, 0) * r.valor / p.valor, 2) as pago,
@@ -294,13 +338,13 @@ select g.id as pagamento_id, g.adiantamento_id as pedido_titulo_id, g.empresa_id
 from erp.pagamentos g
 where g.adiantamento_id is not null;
 
--- Etapas do título: uma linha por evento, do instante gravado pelo servidor. Base dos prazos
--- (quanto tempo cada etapa levou, com quanta antecedência a nota chegou). Sem título com linha
--- restrita.
-create view bi.f_titulo_etapas with (security_invoker = true, security_barrier = true) as
+-- Eventos do título: uma linha por evento, do instante gravado pelo servidor. Base dos prazos
+-- (quanto tempo levou de um evento ao outro, com quanta antecedência a nota chegou). Sem título
+-- com linha restrita.
+create view bi.f_titulo_eventos with (security_invoker = true, security_barrier = true) as
 with e as (
   -- a nota chegou ao sistema (quem pede anexa a nota)
-  select t.id as titulo_id, 1 as ordem, 'nota_postada' as etapa, t.rodada, d.criado_em as em, d.criado_por as por,
+  select t.id as titulo_id, 1 as ordem, 'nota_postada' as evento, t.rodada, d.criado_em as em, d.criado_por as por,
          null::uuid as centro_custo_id, null::uuid as divisao_id, null::int as fase, null::text as lista, null::boolean as aprovado
     from erp.titulos t join erp.documentos_fiscais d on d.id = t.documento_id
   union all
@@ -326,10 +370,17 @@ with e as (
   select p.titulo_id, 8, 'pagamento', null, g.criado_em, g.criado_por, null, null, null, null, null
     from erp.quitacoes q join erp.pagamentos g on g.id = q.pagamento_id join erp.parcelas p on p.id = q.parcela_id
 )
-select e.titulo_id, t.empresa_id, e.etapa, e.ordem as etapa_ordem, e.rodada, e.em, bi.data_sp(e.em) as data, e.por,
+select e.titulo_id, t.empresa_id, e.evento, e.ordem as evento_ordem, e.rodada, e.em, bi.data_sp(e.em) as data, e.por,
        e.centro_custo_id, e.divisao_id, e.fase, e.lista, e.aprovado
 from e join erp.titulos t on t.id = e.titulo_id
 where not exists (select 1 from erp.titulo_rateios x where x.titulo_id = t.id and erp.natureza_restrita(x.natureza_id));
+
+-- Ponte título × etiqueta (a campanha, por exemplo): filtra e agrupa parcelas, pagamentos e o
+-- livro pelo titulo_id. Sem título com linha restrita.
+create view bi.f_titulo_etiquetas with (security_invoker = true, security_barrier = true) as
+select te.titulo_id, te.etiqueta_id
+from erp.titulo_etiquetas te
+where not exists (select 1 from erp.titulo_rateios x where x.titulo_id = te.titulo_id and erp.natureza_restrita(x.natureza_id));
 
 -- ---------------------------------------------------------------------------------------------
 -- Privilégios: só leitura para o usuário logado; nada para anon, service_role nem public
