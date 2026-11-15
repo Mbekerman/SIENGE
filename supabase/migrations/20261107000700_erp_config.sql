@@ -180,6 +180,8 @@ create table erp.mudancas_config (
   aprovacao     text not null check (aprovacao in ('nenhuma','livre','lista','master')),
   minimo        int not null,            -- votos exigidos, fixados no pedido (0: aplicada na hora)
   referencia    jsonb,                   -- no modo livre: o valor de N meses atrás e o percentual
+  -- foi ao master por falta de aprovadores qualificados na lista (o aviso diz o motivo; Moises, 15/11/2026)
+  falta_aprovadores boolean not null default false,
   situacao      text not null default 'pendente' check (situacao in ('pendente','aplicada','recusada','cancelada','obsoleta')),
   encerrada_em  timestamptz,
   aplicada_txid bigint                   -- a transação que aplicou (o evento da mudança acha o pedido)
@@ -289,7 +291,7 @@ declare v_eu uuid := erp.eu(); v_master boolean := erp.sou_master();
         v_fin boolean := erp.estou_nas_listas('{AF,AD}');
         v_dados jsonb := coalesce(p_dados, '{}'); v_antes jsonb; v_regra erp.regras_mudanca_config;
         v_tipo text; v_min int := 0; v_ref numeric; v_novo numeric; v_referencia jsonb; v_aprov int; v_id uuid;
-        v_cols text[];
+        v_cols text[]; v_falta boolean := false;
 begin
   if v_eu is null then raise exception 'O pedido precisa de um usuário'; end if;
   if not (v_master or v_admin or v_fin) then
@@ -351,20 +353,22 @@ begin
       select count(*) into v_aprov from erp.aprovadores_config a join erp.usuarios u on u.id = a.user_id and u.ativo
        where a.tabela = p_tabela and a.user_id <> v_eu;
       if v_aprov >= v_regra.minimo then v_tipo := 'lista'; v_min := v_regra.minimo;
-      else v_tipo := 'master'; end if;     -- sem aprovadores bastantes, decide o master
+      else v_tipo := 'master'; v_falta := true; end if;     -- sem aprovadores bastantes, decide o master
     end if;
   end if;
   if v_tipo = 'master' then v_min := 1; end if;
 
-  insert into erp.mudancas_config (tabela, operacao, dados, antes, motivo, pedida_por, aprovacao, minimo, referencia)
-  values (p_tabela, p_operacao, v_dados, v_antes, p_motivo, v_eu, v_tipo, v_min, v_referencia)
+  insert into erp.mudancas_config (tabela, operacao, dados, antes, motivo, pedida_por, aprovacao, minimo, referencia, falta_aprovadores)
+  values (p_tabela, p_operacao, v_dados, v_antes, p_motivo, v_eu, v_tipo, v_min, v_referencia, v_falta)
   returning id into v_id;
   if v_tipo in ('nenhuma','livre') then
     perform erp._aplicar_mudanca_config(v_id);
   else
     perform erp.registrar_evento('mudanca_config_pedida', p_tabela, v_id::text, null, null,
       jsonb_build_object('mudanca_id', v_id, 'operacao', p_operacao, 'antes', v_antes, 'depois', v_dados,
-                         'motivo', p_motivo, 'aprovacao', v_tipo, 'minimo', v_min));
+                         'motivo', p_motivo, 'aprovacao', v_tipo, 'minimo', v_min)
+      || case when v_falta then jsonb_build_object('falta_aprovadores', true, 'aprovadores_disponiveis', v_aprov,
+                                                  'minimo_da_lista', v_regra.minimo) else '{}' end);
   end if;
   return v_id;
 end $$;

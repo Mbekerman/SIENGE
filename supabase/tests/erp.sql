@@ -3712,6 +3712,14 @@ select pg_temp.ok(:'d6' = 'aplicada' and (select ate from erp.alcadas_pagamento 
 -- quem pede sai da conta: com o AD pedindo, sobra um aprovador para 2 votos, e decide o master
 select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 51000), 'c') as m7 \gset
 select pg_temp.ok((select aprovacao = 'master' from erp.mudancas_config where id = :'m7'), 'config: sem aprovadores bastantes além de quem pede, decide o master');
+select pg_temp.sis();
+select pg_temp.ok((select falta_aprovadores from erp.mudancas_config where id = :'m7')
+                  and exists (select 1 from erp.eventos where tipo = 'mudanca_config_pedida' and dados->>'mudanca_id' = :'m7'
+                                 and (dados->>'falta_aprovadores')::boolean and (dados->>'aprovadores_disponiveis')::int = 1
+                                 and (dados->>'minimo_da_lista')::int = 2)
+                  and not (select falta_aprovadores from erp.mudancas_config where id = :'m6'),
+  'config: o aviso diz que foi ao master por falta de aprovadores qualificados (quantos há e quantos a lista pede)');
+select pg_temp.volta();
 select pg_temp.como(:'analista2');
 select pg_temp.erro_igual(format($$select erp.decidir_mudanca_config(%L, true)$$, :'m7'), 'Só o master decide este pedido', 'config: e a lista não decide');
 select pg_temp.como(:'diretor');
