@@ -551,6 +551,10 @@ create function erp.publicar_orcamento(p_versao uuid) returns void language plpg
 declare v erp.orcamento_versoes;
 begin
   perform erp.exigir_editor();
+  if not erp.sistema() and exists (select 1 from erp.orcamento_linhas l where l.versao_id = p_versao
+                                     and not erp.lanco(l.nucleo_economico_id, l.centro_custo_id, l.natureza_id, null)) then
+    raise exception 'Você não lança em todas as linhas deste orçamento';
+  end if;
   select * into v from erp.orcamento_versoes where id = p_versao for update;
   if v.situacao <> 'rascunho' then raise exception 'Só se publica versão em rascunho'; end if;
   update erp.orcamento_versoes set situacao = 'substituida'
@@ -837,7 +841,18 @@ begin
   having sum(valor) <> 0;
 end $$;
 
+-- Confirmar pela API: por dentro a operação vê tudo, então confere antes que quem chama lança em
+-- todas as linhas do título. As operações que criam e confirmam o título (nota, caução, sócios)
+-- chamam a interna, depois de conferir o próprio registro.
 create function erp.confirmar_titulo(p_titulo uuid) returns void language plpgsql as $$
+begin
+  perform erp.exigir_editor();
+  if not erp.sistema() and not erp.lanco_titulo(p_titulo) then
+    raise exception 'Você não lança em todas as linhas deste título';
+  end if;
+  perform erp._confirmar_titulo(p_titulo);
+end $$;
+create function erp._confirmar_titulo(p_titulo uuid) returns void language plpgsql as $$
 declare t erp.titulos;
 begin
   perform erp.exigir_editor();
@@ -903,6 +918,9 @@ declare d erp.documentos_fiscais; v_ret numeric; v_liquido numeric; v_tit uuid; 
         v_resta numeric; v_cons numeric; v_lim numeric; p record;
 begin
   perform erp.exigir_editor();
+  if not erp.sistema() and not erp.lanco_documento(p_documento) then
+    raise exception 'Você não lança em todas as linhas desta nota';
+  end if;
   select * into d from erp.documentos_fiscais where id = p_documento for update;
   if d.situacao <> 'rascunho' then raise exception 'O documento já foi lançado'; end if;
   if coalesce(array_length(p_vencimentos, 1), 0) = 0 then raise exception 'Informe ao menos um vencimento'; end if;
@@ -918,13 +936,13 @@ begin
 
   v_tit := erp._criar_titulo(d.empresa_id, 'pagar', 'fornecedor', d.emitente_id, d.id, d.compromisso_id,
                                 d.emissao, d.competencia, v_liquido, p_vencimentos, 'documento', d.id, null);
-  perform erp.confirmar_titulo(v_tit);
+  perform erp._confirmar_titulo(v_tit);
 
   for r in select * from erp.documento_retencoes where documento_id = d.id loop
     v_imp := erp._criar_titulo(d.empresa_id, 'pagar', 'imposto', r.orgao_id, d.id, d.compromisso_id,
                                   d.emissao, d.competencia, r.valor, array[r.vencimento], 'documento', d.id,
                                   upper(r.imposto) || ' retido na nota ' || d.numero);
-    perform erp.confirmar_titulo(v_imp);
+    perform erp._confirmar_titulo(v_imp);
   end loop;
 
   if d.caucao_valor > 0 then
@@ -1346,8 +1364,15 @@ create function erp.em_revisao(p_titulo uuid) returns boolean language sql stabl
   select exists (select 1 from erp.titulo_revisoes where titulo_id = p_titulo and reenviada_em is null) $$;
 -- Quem ajusta o título em revisão: quem lançou, quem está no AF e o gestor ativo de um centro do
 -- rateio. (O escopo de núcleo, centro e natureza de cada um entra com os perfis, no primeiro grant.)
+-- S-073: além do papel, o escopo: quem ajusta lança em todas as linhas que o título tem agora
+-- (no meio do ajuste, sem linha nenhuma, não há o que conferir: tirar as linhas já exigiu lançar
+-- nelas); as linhas novas, a política de gravação do rateio confere uma a uma.
 create function erp.pode_ajustar(p_titulo uuid) returns boolean language plpgsql stable as $$
-begin return (erp.eu() is not null and (
+begin return (erp.eu() is not null
+    and (erp.sou_master() or not exists (select 1 from erp.titulo_rateios r join erp.titulos t on t.id = r.titulo_id
+                                          where r.titulo_id = p_titulo
+                                            and not erp.lanco(r.nucleo_economico_id, r.centro_custo_id, r.natureza_id, t.criado_por)))
+    and (
          erp.autor_lancamento('titulo', p_titulo) = erp.eu()
       or erp.estou_nas_listas(array['AF'])
       or exists (select 1 from erp.titulo_rateios tr join erp.centro_aprovadores c on c.centro_custo_id = tr.centro_custo_id
@@ -1715,17 +1740,23 @@ begin
           or exists (select 1 from erp.centro_aprovadores c where c.centro_custo_id = a.centro_custo_id and c.user_id = erp.eu())) then
     raise exception 'Só quem aprova o título vê o acumulado';
   end if;
-  -- exatamente os títulos que entraram na soma, com a parte deles no centro
-  -- (com as políticas por perfil, filtrar pelo que quem pergunta vê: S-062)
+  -- exatamente os títulos que entraram na soma, com a parte deles no centro. S-062: em detalhe só
+  -- os que quem pergunta vê; os outros numa linha só, com a soma no centro (fecha o acumulado
+  -- sem mostrar fornecedor, empresa nem natureza)
   return query
-    select t2.id, t2.empresa_id, p.nome, t2.competencia,
-           round(coalesce(sum(t2.valor * r2.percentual / 100 - erp.cobertura(r2.id)) filter (where r2.centro_custo_id = a.centro_custo_id), 0), 2),
-           t2.valor, t2.situacao
-      from erp.titulos t2 join erp.titulo_rateios r2 on r2.titulo_id = t2.id
-      join erp.pessoas p on p.id = t2.pessoa_id
-     where t2.id = any(a.titulos)
-     group by t2.id, t2.empresa_id, p.nome, t2.competencia, t2.valor, t2.situacao, t2.criado_em
-     order by t2.criado_em;
+    with t as (
+      select t2.id, t2.empresa_id, p.nome, t2.competencia, t2.valor, t2.situacao, t2.criado_em, erp.vejo_titulo(t2.id) as ve,
+             round(coalesce(sum(t2.valor * r2.percentual / 100 - erp.cobertura(r2.id)) filter (where r2.centro_custo_id = a.centro_custo_id), 0), 2) as no_centro
+        from erp.titulos t2 join erp.titulo_rateios r2 on r2.titulo_id = t2.id
+        join erp.pessoas p on p.id = t2.pessoa_id
+       where t2.id = any(a.titulos)
+       group by t2.id, t2.empresa_id, p.nome, t2.competencia, t2.valor, t2.situacao, t2.criado_em)
+    select * from (
+      select t.id, t.empresa_id, t.nome, t.competencia, t.no_centro, t.valor, t.situacao from t where t.ve
+      union all
+      select null::uuid, null::uuid, format('Outros %s títulos (sem acesso)', count(*)), null::date, sum(t.no_centro), null::numeric, null::text
+        from t where not t.ve having count(*) > 0) x
+     order by x.id is null, (select t3.criado_em from erp.titulos t3 where t3.id = x.id);
 end $$;
 
 -- Aprovar ou recusar a etapa da vez. Recusar exige justificativa e trava o título.
@@ -2148,6 +2179,9 @@ create function erp.liberar_caucao(p_compromisso uuid, p_valor numeric, p_vencim
 declare c erp.compromissos; v_tit uuid;
 begin
   perform erp.exigir_editor();
+  if not erp.sistema() and not erp.lanco_compromisso(p_compromisso) then
+    raise exception 'Você não lança em todas as linhas deste contrato';
+  end if;
   select * into c from erp.compromissos where id = p_compromisso for update;
   if p_valor > erp.caucao_saldo(c.id) then
     raise exception 'A caução do contrato tem só % de saldo', erp.caucao_saldo(c.id);
@@ -2157,7 +2191,7 @@ begin
                                 case when p_terceiro is null then 'Liberação de caução' else 'Caução usada: ' || p_motivo end);
   insert into erp.caucao_movimentos (compromisso_id, tipo, valor, titulo_id, motivo)
   values (c.id, case when p_terceiro is null then 'liberacao' else 'uso_terceiro' end, p_valor, v_tit, p_motivo);
-  perform erp.confirmar_titulo(v_tit);
+  perform erp._confirmar_titulo(v_tit);
   return v_tit;
 end $$;
 
@@ -2178,8 +2212,8 @@ begin
   v_rec := erp._criar_titulo(p_recebedora, 'receber', 'societario', (select pessoa_id from erp.empresas where id = p_pagadora),
                                 null, null, p_data, erp.mes(p_data), p_valor, array[p_data], null, null, p_descricao);
   insert into erp.titulo_rateios (titulo_id, natureza_id, percentual) values (v_pag, v_nat, 100), (v_rec, v_nat, 100);
-  perform erp.confirmar_titulo(v_pag);
-  perform erp.confirmar_titulo(v_rec);
+  perform erp._confirmar_titulo(v_pag);
+  perform erp._confirmar_titulo(v_rec);
   insert into erp.movimentos_societarios (tipo, pagadora_id, recebedora_id, data, valor, titulo_pagar_id, titulo_receber_id, descricao)
   values (p_tipo, p_pagadora, p_recebedora, p_data, p_valor, v_pag, v_rec, p_descricao) returning id into v_id;
   return v_id;

@@ -81,7 +81,7 @@ begin
     ('erp.checar_natureza(uuid, uuid, uuid, boolean)', 'erp_conferencia'), ('erp.checar_centro(uuid, uuid, uuid)', 'erp_conferencia'),
     ('erp.tg_nucleo_economico()', 'erp_conferencia'),
     -- operações que mudam situação (S-035)
-    ('erp.confirmar_titulo(uuid)', 'erp_situacao'), ('erp.tg_quitacao()', 'erp_situacao'),
+    ('erp.confirmar_titulo(uuid)', 'erp_situacao'), ('erp._confirmar_titulo(uuid)', 'erp_situacao'), ('erp.tg_quitacao()', 'erp_situacao'),
     ('erp.tg_titulo_previsao()', 'erp_situacao'),
     -- reclassificação aprovada (S-035); os votos também são lidos por baixo do RLS
     ('erp.decidir_reclassificacao(uuid, boolean, text)', 'erp_reclassificacao'),

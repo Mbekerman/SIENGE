@@ -97,7 +97,9 @@ create function erp.vejo_titulo(p_id uuid) returns boolean language sql stable a
 create function erp._lanco_titulo(p_id uuid, p_autor uuid) returns boolean language sql stable as $$
   select erp.escrevo() and (
     erp.sou_master()
-    or (p_autor = erp.eu() and not exists (select 1 from erp.titulo_rateios r where r.titulo_id = p_id))
+    -- sem linha nenhuma: quem lançou, ou, no meio do ajuste da revisão, quem pode ajustar
+    or (not exists (select 1 from erp.titulo_rateios r where r.titulo_id = p_id)
+        and (p_autor = erp.eu() or (erp.em_revisao(p_id) and erp.pode_ajustar(p_id))))
     or (exists (select 1 from erp.titulo_rateios r where r.titulo_id = p_id)
         and not exists (select 1 from erp.titulo_rateios r where r.titulo_id = p_id
                          and not erp.lanco(r.nucleo_economico_id, r.centro_custo_id, r.natureza_id, p_autor)))) $$;
@@ -118,7 +120,8 @@ create function erp.vejo_documento(p_id uuid) returns boolean language sql stabl
 create function erp._lanco_documento(p_id uuid, p_autor uuid) returns boolean language sql stable as $$
   select erp.escrevo() and (
     erp.sou_master()
-    or (p_autor = erp.eu() and not exists (select 1 from erp.documento_rateios r where r.documento_id = p_id))
+    or (not exists (select 1 from erp.documento_rateios r where r.documento_id = p_id)
+        and (p_autor = erp.eu() or coalesce(erp.pode_ajustar(erp._titulo_em_revisao_da_nota(p_id)), false)))
     or (exists (select 1 from erp.documento_rateios r where r.documento_id = p_id)
         and not exists (select 1 from erp.documento_rateios r where r.documento_id = p_id
                          and not erp.lanco(r.nucleo_economico_id, r.centro_custo_id, r.natureza_id, p_autor)))) $$;
