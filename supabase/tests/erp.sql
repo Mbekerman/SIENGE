@@ -3497,6 +3497,19 @@ insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, nucleo_economic
 -- ele lê o título com o acesso de quem paga, e o título PJ não aparece
 select pg_temp.falha(format($$insert into erp.quitacoes (pagamento_id, parcela_id, principal) values ('c2000000-0000-0000-0000-0000000000a7', %L, 100)$$, :'td'),
   'acesso: nem o financeiro quita título que não vê (PJ)');
+-- S-091: quem vê o adiantamento (o pagamento de 100 no Marketing) e o título, mas não é do
+-- financeiro, não abate o adiantamento com uma quitação direta
+select pg_temp.como(:'gestor'); select erp.decidir_titulo(:'ta', true);
+select pg_temp.como(:'contador'); select erp.decidir_titulo(:'ta', true);
+select pg_temp.como(:'u9');
+select pg_temp.ok(exists (select 1 from erp.pagamentos where id = 'c2000000-0000-0000-0000-0000000000a7') and pg_temp.vejo_tits() like '%A%',
+  'S-091: o lançador do Marketing vê o adiantamento e o título aprovado');
+select pg_temp.falha(format($$insert into erp.quitacoes (pagamento_id, parcela_id, principal) values ('c2000000-0000-0000-0000-0000000000a7', %L, 100)$$, :'ta'),
+  'S-091: quem não é do financeiro não abate adiantamento com quitação direta');
+select pg_temp.como(:'diretor2');
+select pg_temp.sis(); delete from erp.listas_financeiro where user_id = :'diretor2'; select pg_temp.volta();
+select pg_temp.erro_igual(format($$select erp.pagar_parcela(%L, %L, '2027-10-10')$$, :'ta', :'conta_inc'),
+  'Só o financeiro (AF, AO ou AD) registra pagamento', 'S-091: diretor fora das listas do financeiro não paga a parcela');
 -- papel leitura na AD: a lista não dá o direito de gravar
 select pg_temp.sis(); insert into erp.listas_financeiro (lista, user_id) values ('AD', :'u10'); select pg_temp.volta();
 select pg_temp.como(:'u10');
@@ -3554,6 +3567,11 @@ select pg_temp.falha(format($$update erp.contas_bancarias set conta = '00000-0' 
 select pg_temp.falha(format($$insert into erp.codigos_externos (sistema, tabela, registro_id, codigo) values ('sienge', 'pessoas', '10000000-0000-0000-0000-0000000000c1', 'X1')$$),
   'S-090: o TI não mexe nos códigos do Sienge');
 select pg_temp.falha($$update erp.regras_ajuste set permitido = permitido$$, 'S-090: nem nas regras de ajuste da revisão');
+select pg_temp.falha($$update erp.niveis_aprovacao set nome = nome || ' ' where codigo = 'gestor'$$, 'S-090: nem nos níveis de aprovação');
+select pg_temp.falha($$insert into erp.alcadas_reclassificacao (criterio, faixa, ate, nivel) values ('acumulado_mes', null, 99999, 'gestor')$$,
+  'S-090: nem na alçada da reclassificação');
+select pg_temp.falha($$update erp.naturezas_sistema set natureza_id = (select id from erp.naturezas where codigo = '05.01.02') where chave = 'descontos_obtidos'$$,
+  'S-090: nem nas naturezas do sistema');
 select pg_temp.ok((select trava from erp.regra_adiantamento) and exists (select 1 from erp.alcadas_pagamento where ate is null and 'AD' = any(etapas)),
   'S-090: a trava e o AD continuam');
 select pg_temp.como(:'diretor');
