@@ -6,6 +6,7 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
+| 15/nov/2026 | Divisão com até 4 níveis (só se lança no último; acesso, alçada e carimbo ficam no primeiro); naturezas de cada nível por lista própria, vinculada ou cópia do nível de cima; etiquetas livres nos títulos, só para filtro e relatório | [Classificação](financeiro/classificacao.md) |
 | 15/nov/2026 | A etapa do empreendimento (Terreno, Incorporação, Obra...) sai do sistema, porque se confundia com o centro de custo; o momento do gasto é dito pelo centro de custo e pela divisão. Substitui a linha da etapa logo abaixo | [Classificação](financeiro/classificacao.md) |
 | 15/nov/2026 | Adiantamento só abate sem aprovação título inteiro no mesmo núcleo, centro e divisão; uma linha fora pede aprovação do título todo. Vaga na divisão e no centro: aprova uma vez, vale pelas duas | [Contas a pagar](financeiro/contas-a-pagar.md#adiantamento-sem-nota-prazo-e-travas) |
 | 15/nov/2026 | Divisão: o administrador só pede criar, renomear ou desativar; aprovam os aprovadores de acesso (master vale na hora). Pagamento e adiantamento carimbados com a divisão; adiantamento só abate na mesma divisão, outra pede AF, AO ou AD | [Classificação](financeiro/classificacao.md) |
