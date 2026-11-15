@@ -65,6 +65,7 @@ Regra do Moises (8/nov/2026): controles, segurança da informação e SLA são a
 
 | Id | Gravidade | Onde | Desde |
 | --- | --- | --- | --- |
+| S-112 | Baixa (desenho) | Etiquetas: quem renomeia e desativa | 15/nov/2026 |
 | S-092 | Baixa (API) | Funções `security definer` com EXECUTE que respondem sobre qualquer id | 15/nov/2026 |
 | S-068 | Média (desenho) | Janela da competência ancorada na emissão digitada | 14/nov/2026 |
 | S-050 | Baixa | Deploy do `bkm_dev` colado à mão | 14/nov/2026 |
@@ -123,6 +124,7 @@ Ainda não há código para revisar nestes pontos; ficam como requisito para que
 
 | Id | Gravidade | Falha | Correção | Conferido |
 | --- | --- | --- | --- | --- |
+| S-111 | Média (testes) | Níveis da divisão e etiquetas: 21 de 48 mutações passavam sem teste falhar, inclusive subnível desativado, troca só do subnível e a leitura das etiquetas do título. | Testes novos. | 18 de 19 mortas na reconferência (a viva só adianta um erro que o `_aplicar` repete); PR #48, `e25982e`. |
 | S-110 | Baixa (testes) | Natureza presa e reclassificação da natureza inteira sem testes que segurassem. | Testes novos. | 13 de 13 mutações mortas; PR #46, `8cdd08f`. |
 | S-109 | Baixa (desenho) | Desligar natureza não barrava a reclassificação para ela nem o contrato ativo nela. | Por decisão do Moises: natureza presa por contrato ativo e reclassificação só para destino liberado. | Mutações; PR #46, `5d5c509`. |
 | S-108 | Média (testes) | Naturezas liberadas: 11 de 23 mutações passavam sem teste falhar. | Testes novos. | 26 de 28 mortas (as 2 vivas só deixam mais estrito ou têm o gatilho por trás); PR #46, `4347d3d` e `a5838f6`. |
@@ -270,3 +272,4 @@ Ainda não há código para revisar nestes pontos; ficam como requisito para que
 | 15/nov/2026 | PR #41, divisões no centro de custo (`ec020bf` a `3389da7`; 1002 testes; juntado em `dac3b5f`): sondas do gatilho da divisão, da linha sem divisão, do corte das futuras e da criação de divisão; cerca de 60 mutações em quatro rodadas; achadas S-101 e S-103 (desenho, decididas pelo Moises) e S-102 e S-104 (testes), todas corrigidas. |
 | 15/nov/2026 | PR #44, divisão nas notificações (`cffbbfc`; 1006 testes; juntado em `3b786d0`): 7 mutações próprias (visão sem a divisão, divisão de outro centro, antes, depois, dados, todas em vez de qualquer uma, divisão ignorada), 7 mortas; sem falha nova. Limite aceito: a faixa que muda de centro avisa só o centro novo. |
 | 15/nov/2026 | PR #46, naturezas liberadas por divisão, modelos e retirada da etapa (`7b9e3e3` a `8cdd08f`; 1057 testes; juntado em `6c01723`): sondas e cerca de 60 mutações em seis rodadas; achadas S-105 a S-107 (etapa do núcleo; extintas com a retirada da etapa), S-108 e S-110 (testes) e S-109 (desenho, decidida pelo Moises), todas corrigidas. `natureza_presa` entra na S-092. |
+| 15/nov/2026 | PR #48, níveis da divisão e etiquetas (`b87e87a` a `e25982e`; 1110 testes; juntado em `dcefd5f`): 48 mutações, 21 vivas na primeira rodada (S-111), corrigidas; achada a S-112 (quem renomeia etiqueta; com o Moises). |
