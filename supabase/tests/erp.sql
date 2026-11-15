@@ -953,7 +953,7 @@ select pg_temp.ok(not exists (
        '_vejo_titulo','_lanco_titulo','_vejo_documento','_lanco_documento','_vejo_compromisso','_lanco_compromisso',
        '_vejo_pagamento','_lanco_pagamento',
        'previsao_saldo','parcela_saldo','pagamento_saldo',
-       'regra_adiantamento_atual','autor_lancamento','abatimento_aprovado','gestor_abate_divisao','adiantamento_anterior_em_aberto','centro_ligado','natureza_presa',
+       'regra_adiantamento_atual','autor_lancamento','abatimento_aprovado','gestor_abate_divisao','adiantamento_anterior_em_aberto','centro_ligado','natureza_presa','natureza_presa_no_galho',
        'checar_natureza','checar_centro','em_revisao','pode_ajustar','_ajustavel','_nota_ajustavel','_titulo_em_revisao_da_nota',
        'cadeia_titulo','conferir_ajuste','alcada_fase','alcada_pendente','alcada_recusada','titulos_do_acumulado',
        'checar_competencia','_registrar_ajuste','recusar_so_sucessao','recusar_admin_aprovador','_beneficiarios_acesso',
@@ -4263,7 +4263,7 @@ select pg_temp.ok(not exists (select 1 from erp.divisoes where id = :'dv_pdv'), 
 select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('divisoes', 'excluir', jsonb_build_object('id', %L), 'x')$$, :'dv_pdv'),
   'Divisão não se apaga; desative', 'divisão: o pedido não apaga divisão');
 select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('centro_custo_id', %L, 'nome', 'X', 'criado_em', '2000-01-01'), 'x')$$, :'cc_mkt'),
-  'O pedido de divisão só cria (centro, nome e naturezas), renomeia e desativa', 'divisão: o pedido não escolhe a data de criação');
+  'O pedido de divisão só cria (centro, nível de cima, nome e naturezas), renomeia e desativa', 'divisão: o pedido não escolhe a data de criação');
 select pg_temp.como(:'apv');
 select erp.decidir_mudanca_acesso(:'mdv', true) as mdv_sit \gset
 select pg_temp.como(null);
@@ -4282,7 +4282,7 @@ select pg_temp.como(null);
 delete from erp.aprovadores_acesso where user_id = :'benef';
 select pg_temp.como(:'ti');
 select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('divisoes', 'alterar', jsonb_build_object('id', %L, 'centro_custo_id', %L), 'x')$$, :'dv_pdv', :'cc_obra'),
-  'O pedido de divisão só cria (centro, nome e naturezas), renomeia e desativa', 'divisão: o pedido não muda a divisão de centro');
+  'O pedido de divisão só cria (centro, nível de cima, nome e naturezas), renomeia e desativa', 'divisão: o pedido não muda a divisão de centro');
 select pg_temp.como(null);
 select user_id as mst from erp.master \gset
 select pg_temp.como(:'mst');
@@ -4295,7 +4295,7 @@ select pg_temp.como(:'ti');
 select pg_temp.erro_igual(format($$delete from erp.divisoes where id = %L$$, :'dv_onl'), 'Divisão não se apaga; desative', 'divisão: não se apaga');
 select pg_temp.sis();
 select pg_temp.erro_igual(format($$update erp.divisoes set centro_custo_id = %L where id = %L$$, :'cc_obra', :'dv_onl'),
-  'A divisão não muda de centro de custo nem de data de criação', 'divisão: não muda de centro');
+  'A divisão não muda de centro de custo, de nível de cima nem de data de criação', 'divisão: não muda de centro');
 select pg_temp.falha(format($$insert into erp.divisoes (centro_custo_id, nome) values (%L, 'PDV')$$, :'cc_mkt'), 'divisão: nome repetido no mesmo centro é recusado');
 select pg_temp.volta();
 
@@ -4959,9 +4959,9 @@ alter table erp.naturezas disable trigger t_teste_libera;
 \set tit_sd '88000000-0000-0000-0000-0000000000c6'
 select pg_temp.como(:'diretor');
 select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('centro_custo_id', %L, 'nome', 'Sem naturezas'), 'x')$$, :'cc_mkt'),
-  'Diga as naturezas liberadas para lançamento na divisão nova', 'naturezas: a divisão nova nasce dizendo as naturezas liberadas');
+  'Diga as naturezas liberadas para lançamento na divisão nova (marcadas, vinculadas ao nível de cima ou copiadas dele)', 'naturezas: a divisão nova nasce dizendo as naturezas liberadas');
 select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('centro_custo_id', %L, 'nome', 'Vazia', 'naturezas', '[]'::jsonb), 'x')$$, :'cc_mkt'),
-  'Diga as naturezas liberadas para lançamento na divisão nova', 'naturezas: lista vazia não cria divisão');
+  'Diga as naturezas liberadas para lançamento na divisão nova (marcadas, vinculadas ao nível de cima ou copiadas dele)', 'naturezas: lista vazia não cria divisão');
 select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('id', :'dv_inf', 'centro_custo_id', :'cc_mkt', 'nome', 'Influencer',
   'naturezas', jsonb_build_array(pg_temp.nat('05.01.04'))), 'Influencer');
 select pg_temp.ok((select array_agg(natureza_id) from erp.naturezas_liberadas where divisao_id = :'dv_inf') = array[pg_temp.nat('05.01.04')]
@@ -5216,6 +5216,181 @@ select pg_temp.erro_igual(format($$select erp.pedir_reclassificacao(%L, %L, 'x',
 select pg_temp.erro_igual(format($$select erp.pedir_reclassificacao(%L, %L, 'x', '{}', true)$$, pg_temp.nat('05.01.95'), pg_temp.nat('05.01.04')),
   'A natureza de destino não está liberada em "Marketing > Influencer 2": ligue-a lá ou filtre o pedido',
   'naturezas: a reclassificação da natureza inteira confere os rateios de nota');
+select pg_temp.como(null);
+rollback;
+
+\echo '# subníveis da divisão, naturezas vinculadas ou copiadas, etiquetas (Moises, 15/11/2026)'
+begin;
+alter table erp.divisoes disable trigger t_teste_libera;
+alter table erp.naturezas disable trigger t_teste_libera;
+\set d_mid '87000000-0000-0000-0000-0000000000d1'
+\set d_onl '87000000-0000-0000-0000-0000000000d2'
+\set d_goo '87000000-0000-0000-0000-0000000000d3'
+\set d_met '87000000-0000-0000-0000-0000000000d4'
+\set d_gse '87000000-0000-0000-0000-0000000000d5'
+\set d_eve '87000000-0000-0000-0000-0000000000d6'
+\set d_pdv '87000000-0000-0000-0000-0000000000d7'
+\set d_x5  '87000000-0000-0000-0000-0000000000d8'
+\set t_niv '88000000-0000-0000-0000-0000000000d9'
+\set c_niv '60000000-0000-0000-0000-0000000000da'
+\set t_pdv '88000000-0000-0000-0000-0000000000db'
+\set et_bf '8c000000-0000-0000-0000-0000000000dc'
+select pg_temp.como(:'diretor');
+select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('id', :'d_mid', 'centro_custo_id', :'cc_mkt', 'nome', 'Mídia',
+  'naturezas', jsonb_build_array(pg_temp.nat('05.01.04'), pg_temp.nat('04.01'))), 'Mídia');
+-- o subnível diz só o nível de cima: o centro vem dele
+select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('id', :'d_onl', 'mae_id', :'d_mid', 'nome', 'Online',
+  'naturezas_modo', 'vinculada'), 'Online');
+select pg_temp.ok((select (centro_custo_id, mae_id, raiz_id, nivel) = (:'cc_mkt'::uuid, :'d_mid'::uuid, :'d_mid'::uuid, 2) from erp.divisoes where id = :'d_onl'),
+  'níveis: o subnível nasce no centro, na raiz e no nível do de cima');
+select pg_temp.ok(not exists (select 1 from erp.naturezas_liberadas where divisao_id = :'d_onl')
+                  and erp.no_naturezas(:'d_onl') = :'d_mid',
+  'níveis: vinculado não tem lista própria e vale a lista do nível de cima');
+select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('id', :'d_goo', 'mae_id', :'d_onl', 'nome', 'Google',
+  'naturezas_modo', 'copia'), 'Google');
+select pg_temp.ok((select array_agg(natureza_id order by natureza_id) from erp.naturezas_liberadas where divisao_id = :'d_goo')
+                    = (select array_agg(natureza_id order by natureza_id) from erp.naturezas_liberadas where divisao_id = :'d_mid')
+                  and (select modo from erp.naturezas_modo where divisao_id = :'d_goo') = 'copia'
+                  and erp.no_naturezas(:'d_goo') = :'d_goo',
+  'níveis: a cópia traz a lista que vale no nível de cima (a do vinculado, que é a da Mídia) e fica marcada');
+select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('id', :'d_met', 'mae_id', :'d_onl', 'nome', 'Meta',
+  'naturezas', jsonb_build_array(pg_temp.nat('05.01.04'))), 'Meta');
+select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('id', :'d_gse', 'mae_id', :'d_goo', 'nome', 'Google Search',
+  'naturezas_modo', 'vinculada'), 'Google Search');
+select pg_temp.ok((select nivel from erp.divisoes where id = :'d_gse') = 4 and erp.no_naturezas(:'d_gse') = :'d_goo',
+  'níveis: quatro níveis abaixo do centro; o vinculado sobe até o primeiro nível com lista');
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('id', %L, 'mae_id', %L, 'nome', 'Quinto',
+  'naturezas_modo', 'vinculada'), 'x')$$, :'d_x5', :'d_gse'),
+  'A divisão vai até 4 níveis abaixo do centro de custo', 'níveis: não há quinto nível');
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('mae_id', %L, 'nome', 'Dois',
+  'naturezas_modo', 'vinculada', 'naturezas', jsonb_build_array(%L)), 'x')$$, :'d_mid', pg_temp.nat('04.01')),
+  'Diga a lista de naturezas ou o vínculo com o nível de cima, não os dois', 'níveis: lista e vínculo juntos são recusados');
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('mae_id', %L, 'nome', 'Herda',
+  'naturezas_modo', 'herda'), 'x')$$, :'d_mid'),
+  'As naturezas da divisão nova são uma lista, vinculadas ao nível de cima ou copiadas dele', 'níveis: modo desconhecido é recusado');
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('mae_id', %L, 'nome', 'Sem'), 'x')$$, :'d_mid'),
+  'Diga as naturezas liberadas para lançamento na divisão nova (marcadas, vinculadas ao nível de cima ou copiadas dele)',
+  'níveis: o subnível também nasce dizendo as naturezas');
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('divisoes', 'alterar', jsonb_build_object('id', %L, 'nome', 'Online', 'ativa', false), 'x')$$, :'d_onl'),
+  'Desative antes os subníveis desta divisão', 'níveis: não se desativa nível com subníveis ativos');
+-- lançamento: divisão de primeiro nível na linha, o último nível no subnível
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format($$insert into erp.previsoes (empresa_id, origem, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, competencia, data_prevista, valor)
+  values (%L, 'manual', %L, %L, %L, %L, '2026-10-01', '2026-10-10', 10)$$, :'spe', :'ne_vm', :'cc_mkt', :'d_mid', pg_temp.nat('05.01.04')),
+  'A divisão "Mídia" tem subníveis: diga o último nível da linha', 'níveis: divisão com subníveis pede o último nível');
+select pg_temp.erro_igual(format($$insert into erp.previsoes (empresa_id, origem, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, competencia, data_prevista, valor)
+  values (%L, 'manual', %L, %L, %L, %L, '2026-10-01', '2026-10-10', 10)$$, :'spe', :'ne_vm', :'cc_mkt', :'d_onl', pg_temp.nat('05.01.04')),
+  'A linha leva a divisão de primeiro nível; o subnível vai no campo do subnível', 'níveis: o subnível não vai no lugar da divisão');
+select pg_temp.erro_igual(format($$insert into erp.previsoes (empresa_id, origem, nucleo_economico_id, centro_custo_id, divisao_id, subdivisao_id, natureza_id, competencia, data_prevista, valor)
+  values (%L, 'manual', %L, %L, %L, %L, %L, '2026-10-01', '2026-10-10', 10)$$, :'spe', :'ne_vm', :'cc_mkt', :'d_mid', :'d_onl', pg_temp.nat('05.01.04')),
+  'Lance no último nível: "Online" tem subníveis', 'níveis: só se lança no último nível');
+insert into erp.previsoes (empresa_id, origem, nucleo_economico_id, centro_custo_id, divisao_id, subdivisao_id, natureza_id, competencia, data_prevista, valor)
+values (:'spe', 'manual', :'ne_vm', :'cc_mkt', :'d_mid', :'d_met', pg_temp.nat('05.01.04'), '2026-10-01', '2026-10-10', 11),
+       (:'spe', 'manual', :'ne_vm', :'cc_mkt', :'d_mid', :'d_gse', pg_temp.nat('04.01'), '2026-10-01', '2026-10-10', 13);
+select pg_temp.ok((select count(*) from erp.lancamentos where subdivisao_id in (:'d_met', :'d_gse') and divisao_id = :'d_mid') = 2,
+  'níveis: lança no último nível, e o livro guarda a divisão e o subnível');
+select pg_temp.ok((select subdivisao from erp.v_lancamentos_bi b join erp.lancamentos l on l.id = b.id where l.subdivisao_id = :'d_gse') = 'Online > Google > Google Search'
+                  and (select divisao from erp.v_lancamentos_bi b join erp.lancamentos l on l.id = b.id where l.subdivisao_id = :'d_gse') = 'Mídia',
+  'níveis: o BI mostra a divisão e o caminho do subnível');
+select pg_temp.erro_igual(format($$insert into erp.previsoes (empresa_id, origem, nucleo_economico_id, centro_custo_id, divisao_id, subdivisao_id, natureza_id, competencia, data_prevista, valor)
+  values (%L, 'manual', %L, %L, %L, %L, %L, '2026-10-01', '2026-10-10', 10)$$, :'spe', :'ne_vm', :'cc_mkt', :'d_mid', :'d_met', pg_temp.nat('04.01')),
+  format('A natureza "%s" não está liberada para lançamento em "Marketing > Meta"', (select nome from erp.naturezas where id = pg_temp.nat('04.01'))),
+  'níveis: a lista própria do subnível vale só para ele');
+-- rateio entre subníveis do mesmo título
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  (:'t_niv', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-10-02', '2026-10-01', 100);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, divisao_id, subdivisao_id, natureza_id, percentual)
+values (:'t_niv', :'ne_vm', :'cc_mkt', :'d_mid', :'d_gse', pg_temp.nat('04.01'), 60),
+       (:'t_niv', :'ne_vm', :'cc_mkt', :'d_mid', :'d_met', pg_temp.nat('05.01.04'), 40);
+select pg_temp.ok((select count(*) from erp.titulo_rateios where titulo_id = :'t_niv') = 2, 'níveis: o rateio divide o título entre subníveis');
+select pg_temp.ok((select array_agg(subdivisao_id order by valor) from erp.ratear('titulo', :'t_niv', 100)) = array[:'d_met'::uuid, :'d_gse'::uuid],
+  'níveis: o rateio leva o subnível adiante');
+-- vinculado segue ao vivo; a cópia não
+select pg_temp.como(:'ti');
+delete from erp.naturezas_liberadas where divisao_id = :'d_goo' and natureza_id = pg_temp.nat('05.01.04');
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format($$insert into erp.previsoes (empresa_id, origem, nucleo_economico_id, centro_custo_id, divisao_id, subdivisao_id, natureza_id, competencia, data_prevista, valor)
+  values (%L, 'manual', %L, %L, %L, %L, %L, '2026-10-01', '2026-10-10', 10)$$, :'spe', :'ne_vm', :'cc_mkt', :'d_mid', :'d_gse', pg_temp.nat('05.01.04')),
+  format('A natureza "%s" não está liberada para lançamento em "Marketing > Google Search"', (select nome from erp.naturezas where id = pg_temp.nat('05.01.04'))),
+  'níveis: desligada no nível de cima, o vinculado deixa de lançar nela na hora');
+select pg_temp.ok(erp.natureza_ligada(:'cc_mkt', :'d_met', pg_temp.nat('05.01.04')) and erp.natureza_ligada(:'cc_mkt', :'d_onl', pg_temp.nat('05.01.04')),
+  'níveis: a cópia e a lista própria não andam com a de cima');
+-- a natureza presa olha pela lista que vale: contrato no vinculado prende a natureza de cima
+insert into erp.compromissos (id, empresa_id, tipo, pessoa_id, numero, descricao, inicio, valor_total)
+values (:'c_niv', :'spe', 'contrato', '10000000-0000-0000-0000-000000000005', 'CT-NIV', 'Mídia', '2026-10-01', 1000);
+insert into erp.compromisso_rateios (compromisso_id, nucleo_economico_id, centro_custo_id, divisao_id, subdivisao_id, natureza_id, percentual)
+values (:'c_niv', :'ne_vm', :'cc_mkt', :'d_mid', :'d_gse', pg_temp.nat('04.01'), 100);
+select pg_temp.ok(array(select erp.compromissos_na_natureza(:'cc_mkt', :'d_goo', pg_temp.nat('04.01'))) = array[:'c_niv'::uuid]
+                  and not exists (select erp.compromissos_na_natureza(:'cc_mkt', :'d_gse', pg_temp.nat('04.01'))),
+  'níveis: o contrato do vinculado aparece no nível cuja lista vale para ele');
+select pg_temp.como(:'ti');
+select pg_temp.erro_igual(format($$delete from erp.naturezas_liberadas where divisao_id = %L and natureza_id = %L$$, :'d_goo', pg_temp.nat('04.01')),
+  format('A natureza "%s" tem contrato ou pedido ativo neste centro e divisão: reclassifique antes de desligar', (select nome from erp.naturezas where id = pg_temp.nat('04.01'))),
+  'níveis: não se desliga no nível de cima a natureza presa por contrato de um vinculado');
+-- vincular: o galho não pode ficar com contrato ativo em natureza que o nível de cima não libera
+delete from erp.naturezas_liberadas where divisao_id = :'d_mid' and natureza_id = pg_temp.nat('04.01');
+select pg_temp.erro_igual(format($$update erp.naturezas_modo set modo = 'vinculada' where divisao_id = %L$$, :'d_goo'),
+  'Há contrato ou pedido ativo numa natureza que o nível de cima não libera: reclassifique ou ligue-a lá antes de vincular',
+  'níveis: vincular não deixa contrato ativo do galho em natureza desligada');
+select pg_temp.erro_igual(format($$insert into erp.naturezas_liberadas (centro_custo_id, divisao_id, natureza_id) values (%L, %L, %L)$$,
+  :'cc_mkt', :'d_onl', pg_temp.nat('04.02')),
+  'A divisão segue as naturezas do nível de cima: passe para lista própria (ou cópia) antes de mudar', 'níveis: vinculado não ganha lista própria solta');
+-- vincular a Meta: a lista própria sai; desvincular traz a lista que vale em cima
+insert into erp.naturezas_modo (divisao_id, modo) values (:'d_met', 'vinculada');
+select pg_temp.ok(not exists (select 1 from erp.naturezas_liberadas where divisao_id = :'d_met') and erp.no_naturezas(:'d_met') = :'d_mid',
+  'níveis: vincular tira a lista própria e passa a valer a de cima');
+delete from erp.naturezas_modo where divisao_id = :'d_met';
+select pg_temp.ok((select array_agg(natureza_id order by natureza_id) from erp.naturezas_liberadas where divisao_id = :'d_met')
+                    = (select array_agg(natureza_id order by natureza_id) from erp.naturezas_liberadas where divisao_id = :'d_mid')
+                  and erp.no_naturezas(:'d_met') = :'d_met',
+  'níveis: ao desvincular, a lista começa com a que valia, e nada some de repente');
+select pg_temp.como(:'analista2');
+select pg_temp.falha(format($$insert into erp.naturezas_modo (divisao_id, modo) values (%L, 'vinculada')$$, :'d_met'),
+  'níveis: quem não liga natureza não muda o modo da lista');
+select pg_temp.como(null);
+select pg_temp.ok(exists (select 1 from erp.auditoria where tabela = 'naturezas_modo' and registro = :'d_met' and acao = 'delete'),
+  'níveis: o modo da lista fica na auditoria');
+-- acesso, alçada e carimbo ficam no primeiro nível
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual(format($$insert into erp.alcadas_pagamento (centro_custo_id, divisao_id, ate, fases) values (%L, %L, 1000, '{AF}')$$, :'cc_mkt', :'d_onl'),
+  'Aqui vale a divisão de primeiro nível; o subnível só entra no lançamento', 'níveis: a alçada não desce ao subnível');
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('excecoes_divisao', 'incluir', jsonb_build_object('user_id', %L, 'nucleo_economico_id', %L, 'divisao_id', %L, 'nivel', 'leitor'), 'x')$$,
+  :'analista2', :'ne_vm', :'d_onl'),
+  'Aqui vale a divisão de primeiro nível; o subnível só entra no lançamento', 'níveis: o acesso não desce ao subnível');
+-- PDV: a linha que já estava na divisão fica; a nova pede o subnível
+select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('id', :'d_eve', 'centro_custo_id', :'cc_mkt', 'nome', 'Eventos',
+  'naturezas', jsonb_build_array(pg_temp.nat('05.01.04'), pg_temp.nat('04.01'))), 'Eventos');
+select pg_temp.como(:'analista');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  (:'t_pdv', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-10-02', '2026-10-01', 50);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, percentual)
+values (:'t_pdv', :'ne_vm', :'cc_mkt', :'d_eve', pg_temp.nat('05.01.04'), 100);
+select pg_temp.como(:'diretor');
+select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('id', :'d_pdv', 'mae_id', :'d_eve', 'nome', 'Feira',
+  'naturezas_modo', 'vinculada'), 'Feira');
+select pg_temp.como(:'analista');
+update erp.titulo_rateios set natureza_id = pg_temp.nat('04.01') where titulo_id = :'t_pdv';
+select pg_temp.ok((select (divisao_id, subdivisao_id, natureza_id) is not distinct from (:'d_eve'::uuid, null::uuid, pg_temp.nat('04.01')) from erp.titulo_rateios where titulo_id = :'t_pdv'),
+  'níveis: a linha antiga fica na divisão que ganhou subníveis e ainda se ajusta');
+select pg_temp.erro_igual(format($$insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, percentual)
+  values (%L, %L, %L, %L, %L, 1)$$, :'t_niv', :'ne_vm', :'cc_mkt', :'d_eve', pg_temp.nat('04.01')),
+  'A divisão "Eventos" tem subníveis: diga o último nível da linha', 'níveis: linha nova na divisão com subníveis precisa do último nível');
+select pg_temp.erro_igual(format($$insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, divisao_id, subdivisao_id, natureza_id, percentual)
+  values (%L, %L, %L, %L, %L, %L, 1)$$, :'t_niv', :'ne_vm', :'cc_mkt', :'d_mid', :'d_pdv', pg_temp.nat('04.01')),
+  'O subnível não fica dentro da divisão da linha', 'níveis: subnível de outra divisão é recusado');
+-- etiquetas livres
+insert into erp.etiquetas (id, nome) values (:'et_bf', 'Black Friday');
+select pg_temp.falha($$insert into erp.etiquetas (nome) values ('  black friday ')$$, 'etiquetas: o nome não se repete');
+insert into erp.titulo_etiquetas (titulo_id, etiqueta_id) values (:'t_niv', :'et_bf');
+select pg_temp.ok(exists (select 1 from erp.titulo_etiquetas where titulo_id = :'t_niv'), 'etiquetas: quem lança põe etiqueta no título');
+select pg_temp.erro_igual(format($$delete from erp.etiquetas where id = %L$$, :'et_bf'), 'Etiqueta não se apaga; desative', 'etiquetas: não se apaga');
+select pg_temp.como(:'leitor');
+select pg_temp.falha(format($$delete from erp.titulo_etiquetas where titulo_id = %L$$, :'t_niv'), 'etiquetas: leitura não tira etiqueta');
+select pg_temp.falha($$insert into erp.etiquetas (nome) values ('Leitura')$$, 'etiquetas: leitura não cria etiqueta');
+select pg_temp.como(:'analista');
+update erp.etiquetas set ativa = false where id = :'et_bf';
+select pg_temp.erro_igual(format($$insert into erp.titulo_etiquetas (titulo_id, etiqueta_id) values (%L, %L)$$, :'t_pdv', :'et_bf'),
+  'A etiqueta está desativada', 'etiquetas: desativada não entra em título novo');
 select pg_temp.como(null);
 rollback;
 

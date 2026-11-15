@@ -281,6 +281,7 @@ begin
     ('nucleo_centros', 'erp.membro()', 'erp.sou_admin()'),
     -- naturezas liberadas por divisão: o master, o administrador e AF, AO, AD, na hora (Moises, 15/11/2026)
     ('naturezas_liberadas', 'erp.membro()', 'erp.sou_admin() or erp.financeiro()'),
+    ('naturezas_modo', 'erp.membro()', 'erp.sou_admin() or erp.financeiro()'),
     ('modelos_naturezas', 'erp.membro()', 'erp.sou_admin() or erp.financeiro()'),
     ('modelo_naturezas', 'erp.membro()', 'erp.sou_admin() or erp.financeiro()'),
     ('linhas_dre', 'erp.membro()', 'erp.sou_admin()'),
@@ -343,6 +344,9 @@ begin
     ('titulo_revisoes', 'erp.vejo_titulo(titulo_id)', null),
     ('titulo_ajustes', 'erp.vejo_titulo(titulo_id)', null),
     ('titulo_previsoes', 'erp.vejo_titulo(titulo_id)', null),
+    -- etiquetas livres (Moises, 15/11/2026): quem lança cria e põe; não mexem em aprovação
+    ('etiquetas', 'erp.membro()', 'erp.escrevo()'),
+    ('titulo_etiquetas', 'erp.vejo_titulo(titulo_id)', 'erp.lanco_titulo(titulo_id)'),
     ('liberacoes_sem_abater', 'erp.vejo_titulo(titulo_id)', 'erp.escrevo() and erp.vejo_titulo(titulo_id)'),
     ('abatimentos_cruzados', 'erp.vejo_titulo(titulo_id)', 'erp.escrevo() and erp.vejo_titulo(titulo_id) and erp.vejo_pagamento(pagamento_id)'),
     ('excecoes_competencia', 'erp.vejo_titulo(titulo_id) or erp.vejo_documento(documento_id)',
@@ -433,7 +437,7 @@ grant execute on function
   erp.previsao_saldo(uuid), erp.parcela_saldo(uuid), erp.pagamento_saldo(uuid),
   -- conferências das travas (chamadas pelos gatilhos invoker)
   erp.regra_adiantamento_atual(), erp.autor_lancamento(text, uuid), erp.abatimento_aprovado(uuid, uuid), erp.gestor_abate_divisao(uuid, uuid),
-  erp.adiantamento_anterior_em_aberto(uuid, uuid), erp.centro_ligado(uuid, uuid), erp.natureza_presa(uuid, uuid, uuid),
+  erp.adiantamento_anterior_em_aberto(uuid, uuid), erp.centro_ligado(uuid, uuid), erp.natureza_presa(uuid, uuid, uuid), erp.natureza_presa_no_galho(uuid),
   erp.checar_natureza(uuid, uuid, uuid, boolean), erp.checar_centro(uuid, uuid, uuid),
   erp.em_revisao(uuid), erp.pode_ajustar(uuid), erp._ajustavel(uuid), erp._nota_ajustavel(uuid),
   erp._titulo_em_revisao_da_nota(uuid), erp.cadeia_titulo(uuid), erp.conferir_ajuste(uuid, text, jsonb, jsonb),
