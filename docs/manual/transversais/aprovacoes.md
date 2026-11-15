@@ -214,6 +214,16 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 - **Regras do código** (a conferir com o Moises): a alçada é fixada na confirmação do título, e um título lançado depois não muda a de um anterior; as etapas correm em sequência; quem lançou não aprova e cada pessoa aprova uma etapa só; sem a alçada completa, o título não é pago; quem aprova vê os títulos do mês que formaram o acumulado.
 - **Fora da alçada:** imposto retido e movimento entre sócios.
 
+**Alçada por centro de custo** (Moises, 15/nov/2026; no código a partir do PR #37):
+
+- ✅ Cada centro de custo pode ter **faixas próprias**; o que não tem usa as gerais.
+- ✅ Cada faixa tem dois limites: o **valor do título** e o **acumulado do mês no centro**. Vale a faixa mais exigente das duas contas.
+- ✅ O número de aprovadores é o número de **vagas** da faixa. Uma vaga é um papel (gestor da área, diretor da área, AF, AO, AD) ou uma pessoa pelo nome, sem precisar de cargo. As vagas andam em sequência ou em paralelo.
+- ✅ A mesma pessoa não ocupa duas vagas; o administrador não aprova; quem lançou não aprova (salvo a pessoa da AD com a marca de aprovar o próprio).
+- ✅ No rateio em vários centros, vale o centro com mais vagas; no empate, o de maior acumulado.
+- ✅ Se faltam aprovadores qualificados, o título vai ao Moises, com o aviso de que veio por falta de aprovadores mínimos qualificados. Quem passar a ocupar a vaga depois também pode aprovar.
+- ✅ A AF e a AD podem mexer no limite do título no modo livre, como no limite do acumulado. Mudar as vagas ou o paralelo sempre pede aprovação.
+
 **Aprovar, recusar ou pedir revisão** (Moises, 14/nov/2026). Cada etapa da alçada tem as três saídas:
 
 - ✅ **Recusar** exige justificativa e **cancela o título**. Se o título é de uma nota, cancela a nota inteira, com os impostos retidos; a previsão e a caução voltam, e o número da nota fica livre para ser lançado de novo.
