@@ -69,13 +69,13 @@ create function erp.lanco(p_nucleo uuid, p_centro uuid, p_natureza uuid, p_autor
   $$ select erp.escrevo() and (erp.sou_master() or (erp.lanca_linha(erp.eu(), p_nucleo, p_centro, p_natureza)
                                                    and erp._ve(p_nucleo, p_centro, p_natureza, p_autor))) $$;
 
--- Quem aprova o título na rodada atual (lista da etapa, diretoria, gestor do centro) ou já decidiu.
+-- Quem aprova o título na rodada atual (lista da fase, diretoria, gestor do centro) ou já decidiu.
 create function erp.aprovo_titulo(p_titulo uuid) returns boolean language sql stable as $$
   select erp.membro() and (
     exists (select 1 from erp.titulo_alcadas a join erp.titulos t on t.id = a.titulo_id and t.rodada = a.rodada
              where a.titulo_id = p_titulo
-               and (erp.estou_nas_listas(a.etapas) or coalesce(erp.meu_papel(), '') = 'diretor'
-                    or exists (select 1 from unnest(a.etapas) e where erp._ocupa_vaga(e, a.centro_custo_id, erp.eu()))))
+               and (erp.estou_nas_listas(a.fases) or coalesce(erp.meu_papel(), '') = 'diretor'
+                    or exists (select 1 from unnest(a.fases) e where erp._ocupa_vaga(e, a.centro_custo_id, erp.eu()))))
     or exists (select 1 from erp.titulo_aprovacoes x where x.titulo_id = p_titulo and x.por = erp.eu())) $$;
 
 -- Título: vê quem vê alguma linha do rateio e nenhuma linha restrita fica escondida dele; sem
@@ -275,7 +275,7 @@ begin
     ('centros_custo', 'erp.membro()', 'erp.sou_admin()'),
     ('nucleos_economicos', 'erp.membro()', 'erp.sou_admin()'),
     ('nucleo_centros', 'erp.membro()', 'erp.sou_admin()'),
-    ('fases', 'erp.membro()', 'erp.sou_admin()'),
+    ('etapas', 'erp.membro()', 'erp.sou_admin()'),
     ('linhas_dre', 'erp.membro()', 'erp.sou_admin()'),
     ('niveis_aprovacao', 'erp.membro()', 'erp.sou_master()'),
     ('alcadas_pagamento', 'erp.membro()', 'erp.sou_master()'),
@@ -428,7 +428,7 @@ grant execute on function
   erp.checar_natureza(uuid, uuid, uuid, boolean), erp.checar_centro(uuid, uuid, uuid),
   erp.em_revisao(uuid), erp.pode_ajustar(uuid), erp._ajustavel(uuid), erp._nota_ajustavel(uuid),
   erp._titulo_em_revisao_da_nota(uuid), erp.cadeia_titulo(uuid), erp.conferir_ajuste(uuid, text, jsonb, jsonb),
-  erp.alcada_etapa(uuid), erp.alcada_pendente(uuid), erp.alcada_recusada(uuid), erp.titulos_do_acumulado(uuid),
+  erp.alcada_fase(uuid), erp.alcada_pendente(uuid), erp.alcada_recusada(uuid), erp.titulos_do_acumulado(uuid),
   erp.checar_competencia(text, uuid, date, date),
   -- chamada pelos gatilhos do ajuste; recusa chamada direta (fora de gatilho) e quem não ajusta
   erp._registrar_ajuste(uuid, text, jsonb, jsonb),

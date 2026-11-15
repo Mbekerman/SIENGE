@@ -409,8 +409,8 @@ language sql stable as $$
                    and nc.ligado and c.ativo)
 $$;
 
--- Fase (momento do projeto): coluna de relatório, não entra no acesso nem na aprovação.
-create table erp.fases (
+-- Fase do empreendimento (o momento do projeto; antes chamada fase): coluna de relatório, não entra no acesso nem na aprovação.
+create table erp.etapas (
   id    uuid primary key default gen_random_uuid(),
   nome  text not null unique,
   ordem int not null default 0,

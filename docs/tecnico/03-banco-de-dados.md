@@ -17,7 +17,7 @@ Onde está: branch `claude/project-thread-dknc98` deste repositório (commits `6
 
 | Arquivo | Conteúdo |
 | --- | --- |
-| `supabase/migrations/20261107000100_erp_cadastros.sql` | Esquema, usuários e papéis, auditoria, pessoas, empresas, participações, empreendimentos, atributos de BI, núcleos econômicos, centros de custo e o vínculo entre eles (`nucleo_centros`), fases, `codigos_externos`, árvore de naturezas (17 tabelas) |
+| `supabase/migrations/20261107000100_erp_cadastros.sql` | Esquema, usuários e papéis, auditoria, pessoas, empresas, participações, empreendimentos, atributos de BI, núcleos econômicos, centros de custo e o vínculo entre eles (`nucleo_centros`), etapas do empreendimento (`etapas`, antes fases), `codigos_externos`, árvore de naturezas (17 tabelas) |
 | `supabase/migrations/20261107000200_erp_pagar_livro.sql` | Compromissos, previsões, documentos fiscais e retenções, títulos, parcelas, pagamentos, quitações, caução, movimentos societários, contas e lotes bancários, orçamento, livro de lançamentos e visões (19 tabelas) |
 | `supabase/migrations/20261107000300_erp_reclassificacao.sql` | Fechamento de mês, níveis de aprovação, alçadas, pedidos de reclassificação, itens e votos (6 tabelas) |
 | `supabase/migrations/20261107000400_erp_carga.sql` | Carga inicial: árvore de naturezas v0 (11 grupos), linhas da DRE, naturezas do sistema, níveis e alçada padrão |

@@ -93,7 +93,7 @@ begin
     ('erp.tg_previsao()', 'erp_situacao'), ('erp.tg_pagamento()', 'erp_situacao'),
     ('erp.liberar_caucao(uuid, numeric, date, uuid, text)', 'erp_situacao'),
     ('erp.publicar_orcamento(uuid)', 'erp_situacao'),
-    -- alçada de pagamento: decidir grava a etapa; as conferências leem por baixo do RLS
+    -- alçada de pagamento: decidir grava a fase; as conferências leem por baixo do RLS
     ('erp.decidir_titulo(uuid, boolean, text, boolean, uuid)', 'erp_situacao'),
     ('erp.reenviar_titulo(uuid, text, date[], uuid[])', 'erp_situacao'),
     ('erp.em_revisao(uuid)', 'erp_conferencia'), ('erp.pode_ajustar(uuid)', 'erp_conferencia'),
@@ -101,7 +101,7 @@ begin
     ('erp._titulo_em_revisao_da_nota(uuid)', 'erp_conferencia'), ('erp.cadeia_titulo(uuid)', 'erp_conferencia'),
     ('erp._registrar_ajuste(uuid, text, jsonb, jsonb)', 'erp_situacao'),
     ('erp.conferir_ajuste(uuid, text, jsonb, jsonb)', 'erp_conferencia'),
-    ('erp.alcada_etapa(uuid)', 'erp_conferencia'), ('erp.alcada_pendente(uuid)', 'erp_conferencia'),
+    ('erp.alcada_fase(uuid)', 'erp_conferencia'), ('erp.alcada_pendente(uuid)', 'erp_conferencia'),
     ('erp.alcada_recusada(uuid)', 'erp_conferencia'), ('erp.titulos_do_acumulado(uuid)', 'erp_conferencia'),
     ('erp.checar_competencia(text, uuid, date, date)', 'erp_conferencia'),
     ('erp.tg_adiantamento_sem_pedido()', 'erp_conferencia'),
