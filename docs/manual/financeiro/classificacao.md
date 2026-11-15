@@ -45,6 +45,8 @@ Hoje a BKM usa no Sienge "centro de custo Marketing, natureza MKT Online, motivo
 
 A **etapa** (até 15/nov/2026 chamada "fase") é o momento do empreendimento: Terreno, Aprovação de projetos, Incorporação, Lançamento, Obra, Pós-obra e Corporativo. **É calculada sozinha**, a partir do núcleo e da data, e serve só para os relatórios. Ninguém a escolhe no lançamento, e ela não entra no acesso nem na aprovação (Moises, 15/nov/2026).
 
+🟡 Como o sistema sabe a etapa (em revisão, ainda não está na versão de desenvolvimento): o administrador marca, em cada núcleo, a etapa e a data em que ela começa. Por exemplo, Incorporação até março e Obra a partir de 1º de abril. Nos relatórios, cada lançamento aparece com a etapa que o núcleo tinha no mês de competência dele, mesmo que a etapa mude depois. Toda mudança de etapa fica registrada, com quem mudou e quando.
+
 ✅ **Divisão** é a subdivisão de um centro de custo, por exemplo Marketing › PDV, Online, Offline e Eventos. Decisões do Moises de 15/nov/2026 (no código a partir do PR #41):
 
 - O administrador só **pede** para criar, renomear ou desativar uma divisão. A mudança vale quando os aprovadores de acesso aprovam; o pedido do master vale na hora. Quem tem acesso ao centro não aprova. Divisão não se apaga.
