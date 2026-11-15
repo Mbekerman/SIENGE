@@ -220,7 +220,7 @@ select d.id as divisao_id, d.nome as divisao, d.centro_custo_id, c.nome as centr
        d.mae_id, d.raiz_id, d.nivel,
        n.nomes[1] as nivel1, n.nomes[2] as nivel2, n.nomes[3] as nivel3, n.nomes[4] as nivel4,
        array_to_string(n.nomes, ' > ') as caminho,
-       not exists (select 1 from erp.divisoes f where f.mae_id = d.id) as ultimo_nivel,
+       erp.divisao_folha(d.id) as ultimo_nivel,   -- sem subnível ativo: é onde se lança
        d.ativa, bi.data_sp(d.criado_em) as criado_data
 from erp.divisoes d
 join erp.centros_custo c on c.id = d.centro_custo_id
@@ -389,3 +389,5 @@ revoke all on all tables in schema bi from public;
 grant select on all tables in schema bi to authenticated;
 revoke execute on all functions in schema bi from public;
 grant execute on all functions in schema bi to authenticated;
+-- estender o calendário é só do sistema (o RLS já barra; sem EXECUTE, nem chega lá)
+revoke execute on function bi.estender_calendario(int) from authenticated;

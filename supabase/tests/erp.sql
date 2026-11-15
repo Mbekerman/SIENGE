@@ -5623,7 +5623,49 @@ select pg_temp.como(null);
 -- título com linha restrita sai das parcelas, dos pagamentos e das etapas (o livro guarda a soma)
 select count(*) as bi_parc_obra from bi.f_parcelas where natureza_id = pg_temp.nat('04.01') \gset
 select pg_temp.ok(:bi_parc_obra > 0, 'bi: (há parcelas de obra para o teste: ' || :bi_parc_obra || ')');
-update erp.naturezas set restrita = true where codigo = '04.01';
+-- rascunho não entra nas parcelas
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor)
+values ('c2000000-0000-0000-0000-0000000000b1', :'incorp', 'avulso', '10000000-0000-0000-0000-000000000007', '2031-01-05', '2031-01-01', 700);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('c2000000-0000-0000-0000-0000000000b1', 1, '2031-02-10', 700);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+values ('c2000000-0000-0000-0000-0000000000b1', :'ne_corp', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select pg_temp.ok(exists (select 1 from erp.parcelas where titulo_id = 'c2000000-0000-0000-0000-0000000000b1')
+                  and not exists (select 1 from bi.f_parcelas where titulo_id = 'c2000000-0000-0000-0000-0000000000b1'),
+  'bi: título em rascunho não entra nas parcelas');
+-- quem vê o título só por ter votado na alçada (sem perfil) não vê, nas parcelas, as linhas que não vê
+select t.id as bi_tit_alc, t.rodada as bi_rod, (select r.centro_custo_id from erp.titulo_rateios r where r.titulo_id = t.id limit 1) as bi_cc_alc
+  from erp.titulos t where t.situacao <> 'rascunho' and exists (select 1 from erp.parcelas p where p.titulo_id = t.id)
+   and exists (select 1 from erp.titulo_rateios r where r.titulo_id = t.id and r.centro_custo_id is not null)
+ order by t.criado_em limit 1 \gset
+set role erp_situacao;
+insert into erp.titulo_alcadas (id, titulo_id, rodada, centro_custo_id, fases, valor_no_centro, acumulado, titulos)
+values ('c3000000-0000-0000-0000-0000000000a1', :'bi_tit_alc', :bi_rod, :'bi_cc_alc', array['AF'], 1, 1, array[:'bi_tit_alc'::uuid]);
+reset role;
+select set_config('request.jwt.claim.sub', :'bi4', false);
+set role erp_situacao;
+insert into erp.titulo_aprovacoes (alcada_id, fase, lista, aprovado) values ('c3000000-0000-0000-0000-0000000000a1', 1, 'AF', true);
+select pg_temp.como(:'bi4');
+select pg_temp.ok(exists (select 1 from erp.parcelas where titulo_id = :'bi_tit_alc')
+                  and not exists (select 1 from bi.f_parcelas where titulo_id = :'bi_tit_alc'),
+  'bi: quem vê o título por ter votado não soma nas parcelas a linha de centro que não vê');
+select pg_temp.como(null);
+-- uma etiqueta num título pago, de natureza comum (o título pago tem linha que vai virar restrita)
+insert into erp.etiquetas (id, nome) values ('c4000000-0000-0000-0000-0000000000e1', 'Campanha BI');
+insert into erp.titulo_etiquetas (titulo_id, etiqueta_id)
+select p.titulo_id, 'c4000000-0000-0000-0000-0000000000e1' from erp.quitacoes q join erp.parcelas p on p.id = q.parcela_id limit 1;
+-- natureza restrita: torna restritas a obra e as naturezas de um título pago e de um com etiqueta
+select (select r.natureza_id from erp.titulo_rateios r join erp.parcelas p on p.titulo_id = r.titulo_id
+          join erp.quitacoes q on q.parcela_id = p.id limit 1) as bi_nat_pag,
+       (select r.natureza_id from erp.titulo_rateios r join erp.titulo_etiquetas te on te.titulo_id = r.titulo_id limit 1) as bi_nat_et \gset
+select pg_temp.ok(exists (select 1 from bi.f_pagamentos g where exists (select 1 from erp.titulo_rateios r where r.titulo_id = g.titulo_id and r.natureza_id = :'bi_nat_pag'))
+                  and exists (select 1 from bi.f_titulo_etiquetas g where exists (select 1 from erp.titulo_rateios r where r.titulo_id = g.titulo_id and r.natureza_id = :'bi_nat_et')),
+  'bi: (há título pago e título com etiqueta para o teste da natureza restrita)');
+update erp.naturezas set restrita = true where codigo = '04.01' or id in (:'bi_nat_pag', :'bi_nat_et');
+select pg_temp.ok(not exists (select 1 from bi.f_pagamentos g where exists (select 1 from erp.titulo_rateios r where r.titulo_id = g.titulo_id and erp.natureza_restrita(r.natureza_id)))
+                  and not exists (select 1 from bi.f_titulo_etiquetas g where exists (select 1 from erp.titulo_rateios r where r.titulo_id = g.titulo_id and erp.natureza_restrita(r.natureza_id)))
+                  and not exists (select 1 from bi.f_parcelas g where exists (select 1 from erp.titulo_rateios r where r.titulo_id = g.titulo_id and erp.natureza_restrita(r.natureza_id)))
+                  and not exists (select 1 from bi.f_titulo_eventos g where exists (select 1 from erp.titulo_rateios r where r.titulo_id = g.titulo_id and erp.natureza_restrita(r.natureza_id))),
+  'bi: título com qualquer linha restrita, mesmo misturada com linha comum, sai de parcelas, pagamentos, eventos e etiquetas (S-113)');
 select pg_temp.ok(not exists (select 1 from bi.f_parcelas where natureza_id = pg_temp.nat('04.01'))
                   and not exists (select 1 from bi.f_titulo_eventos e where exists (select 1 from erp.titulo_rateios r where r.titulo_id = e.titulo_id and r.natureza_id = pg_temp.nat('04.01')))
                   and not exists (select 1 from bi.f_pagamentos g where exists (select 1 from erp.titulo_rateios r where r.titulo_id = g.titulo_id and r.natureza_id = pg_temp.nat('04.01')))
