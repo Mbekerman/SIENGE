@@ -10,6 +10,7 @@
 - **Quem vê o quê é liberado no sistema, pessoa a pessoa.** Também dá para criar **grupos**: quem entra num grupo passa a ver o que o grupo vê.
 - **O acesso combina núcleo econômico e centro de custo** (Moises, 8/nov/2026; nomes trocados em 14/nov/2026): a pessoa vê o que está ao mesmo tempo nos núcleos e nos centros de custo liberados para ela, **com herança para baixo** (quem tem "São Paulo" vê todos os núcleos de São Paulo). ✅ Também se pode liberar ou bloquear cada pessoa para **lançar** em cada uma das três dimensões: núcleo, centro de custo e natureza (Moises, 14/nov/2026).
 - A **folha PJ** aparece só somada por núcleo econômico e mês.
+- 🟡 A soma da folha PJ por centro de custo só aparece para quem tem a natureza PJ liberada (Moises, 15/nov/2026; código no PR #54, ainda não juntado).
 - Datas e horas são gravadas e mostradas no **horário de São Paulo**. (Um pagamento às 22h do dia 31 fica no dia 31, não no mês seguinte.)
 - Todas as datas de um lançamento (competência, emissão, vencimento, pagamento) podem ser usadas nos relatórios; a competência é a data padrão. Também aparecem os dias de atraso (pagamento menos vencimento) e o prazo de pagamento (pagamento menos emissão).
 
@@ -46,6 +47,7 @@
 
 - O controle só vale para o que passar pelo pedido de pagamento, a partir da implantação. O Sienge não tem esse histórico, e da última etapa ele informa só o dia do pagamento, sem a hora.
 - ⏳ A definir: a antecedência mínima da postagem e a meta de cada etapa (proposta: em dias úteis, definidas pelo administrador); e se o relógio para quando a nota volta para correção.
+- 🟡 Nos relatórios, os dias úteis descontam os feriados nacionais bancários, inclusive Carnaval e Corpus Christi (código no PR #54, ainda não juntado).
 
 ## Um livro único para todos os números
 
