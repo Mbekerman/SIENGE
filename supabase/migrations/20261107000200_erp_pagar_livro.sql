@@ -1292,7 +1292,7 @@ end $$;
 do $$
 declare t record;
 begin
-  for t in select * from (values ('usuarios', 'id'), ('naturezas_sistema', 'chave'), ('nucleo_etapas', 'nucleo_economico_id'),
+  for t in select * from (values ('usuarios', 'id'), ('naturezas_sistema', 'chave'),
                                  ('contas_bancarias', 'id'), ('codigos_externos', 'registro_id')) v(tabela, chave) loop
     execute format('create trigger t_so_admin before insert or update or delete on erp.%I
                       for each row execute function erp.tg_so_admin()', t.tabela);
@@ -2777,5 +2777,5 @@ join erp.linhas_dre ld on ld.codigo = vn.linha_dre
 left join erp.orcamento_versoes ov on ov.id = l.orcamento_versao_id
 left join erp.nucleos_economicos ne on ne.id = l.nucleo_economico_id
 left join erp.empreendimentos em on em.id = ne.empreendimento_id
-left join erp.etapas f on f.id = coalesce(erp.etapa_do_nucleo(l.nucleo_economico_id, l.competencia), l.etapa_id)
+left join erp.etapas f on f.id = l.etapa_id
 left join erp.centros_custo cc on cc.id = l.centro_custo_id;

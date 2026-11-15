@@ -450,18 +450,6 @@ create table erp.etapas (
   ordem int not null default 0,
   ativa boolean not null default true
 );
--- Em que etapa cada núcleo está a partir de cada data (decisão do Moises, 08/11/2026: a etapa é
--- tirada do núcleo e da data, ninguém a escolhe no lançamento). Vale a de início mais recente até
--- a competência. Só o administrador grava, com auditoria.
-create table erp.nucleo_etapas (
-  nucleo_economico_id uuid not null references erp.nucleos_economicos,
-  inicio              date not null,
-  etapa_id            uuid not null references erp.etapas,
-  primary key (nucleo_economico_id, inicio)
-);
-create function erp.etapa_do_nucleo(p_nucleo uuid, p_data date) returns uuid language sql stable as $$
-  select etapa_id from erp.nucleo_etapas where nucleo_economico_id = p_nucleo and inicio <= p_data
-   order by inicio desc limit 1 $$;
 
 -- ---------------------------------------------------------------------
 -- Árvore de naturezas (dinâmica: o administrador cria, renomeia, move e desativa)
