@@ -5102,6 +5102,12 @@ select pg_temp.falha(format($$insert into erp.modelo_naturezas (modelo_id, natur
   'naturezas: a regra de acesso do modelo, sozinha, já recusa quem não pode');
 select pg_temp.como(null);
 alter table erp.modelo_naturezas enable trigger t_natureza_liberada_cfg;
+alter table erp.modelos_naturezas disable trigger t_natureza_liberada_cfg;
+select pg_temp.como(:'analista2');
+select pg_temp.falha($$insert into erp.modelos_naturezas (nome) values ('Outro modelo')$$,
+  'naturezas: a regra de acesso dos modelos, sozinha, já recusa quem não pode');
+select pg_temp.como(null);
+alter table erp.modelos_naturezas enable trigger t_natureza_liberada_cfg;
 -- natureza nova nasce desligada
 select pg_temp.como(:'ti');
 insert into erp.naturezas (codigo, mae_id, nome) values ('05.01.97', pg_temp.nat('05.01'), 'Natureza nova (teste)');
@@ -5186,6 +5192,30 @@ select pg_temp.sis(); update erp.compromissos set situacao = 'encerrado' where i
 delete from erp.naturezas_liberadas where divisao_id = :'dv_inf' and natureza_id = pg_temp.nat('04.01');
 select pg_temp.ok(not exists (select 1 from erp.naturezas_liberadas where divisao_id = :'dv_inf' and natureza_id = pg_temp.nat('04.01')),
   'naturezas: contrato encerrado não prende a natureza');
+select pg_temp.como(:'analista');
+select pg_temp.ok(not exists (select erp.compromissos_na_natureza(:'cc_mkt', :'dv_inf', pg_temp.nat('04.01'))),
+  'naturezas: contrato encerrado sai da lista dos que prendem');
+select pg_temp.ok(erp.natureza_ligada(null, null, pg_temp.nat('04.01')), 'naturezas: linha sem centro (movimentação) não depende da lista');
+-- reclassificação da natureza inteira: confere também os rateios de contrato e de nota, que mudam junto
+select pg_temp.como(:'ti');
+insert into erp.naturezas (codigo, mae_id, nome) values
+  ('05.01.96', pg_temp.nat('05.01'), 'Origem contrato (teste)'), ('05.01.95', pg_temp.nat('05.01'), 'Origem nota (teste)');
+insert into erp.naturezas_liberadas (centro_custo_id, divisao_id, natureza_id) values
+  (:'cc_mkt', :'dv_inf2', pg_temp.nat('05.01.96')), (:'cc_mkt', :'dv_inf2', pg_temp.nat('05.01.95'));
+select pg_temp.sis(); update erp.compromissos set situacao = 'ativo' where id = :'cmp_nl'; select pg_temp.volta();
+select pg_temp.como(:'analista');
+insert into erp.compromisso_rateios (compromisso_id, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, percentual)
+values (:'cmp_nl', :'ne_vm', :'cc_mkt', :'dv_inf2', pg_temp.nat('05.01.96'), 100);
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+values ('70000000-0000-0000-0000-0000000000c8', :'spe', '10000000-0000-0000-0000-000000000005', 'nfse', 'NL-2', '2026-10-02', '2026-10-01', 30);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, percentual)
+values ('70000000-0000-0000-0000-0000000000c8', :'ne_vm', :'cc_mkt', :'dv_inf2', pg_temp.nat('05.01.95'), 100);
+select pg_temp.erro_igual(format($$select erp.pedir_reclassificacao(%L, %L, 'x', '{}', true)$$, pg_temp.nat('05.01.96'), pg_temp.nat('05.01.04')),
+  'A natureza de destino não está liberada em "Marketing > Influencer 2": ligue-a lá ou filtre o pedido',
+  'naturezas: a reclassificação da natureza inteira confere os rateios de contrato');
+select pg_temp.erro_igual(format($$select erp.pedir_reclassificacao(%L, %L, 'x', '{}', true)$$, pg_temp.nat('05.01.95'), pg_temp.nat('05.01.04')),
+  'A natureza de destino não está liberada em "Marketing > Influencer 2": ligue-a lá ou filtre o pedido',
+  'naturezas: a reclassificação da natureza inteira confere os rateios de nota');
 select pg_temp.como(null);
 rollback;
 
