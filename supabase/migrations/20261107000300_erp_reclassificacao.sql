@@ -200,10 +200,10 @@ create function erp._peso(p_nivel text) returns int language sql stable as
 create function erp._reclass_destino_liberado(p_destino uuid, p_origem uuid, p_inteira boolean) returns void language plpgsql as $$
 declare v record;
 begin
-  select x.centro_custo_id, x.divisao_id into v from (
-    select l.centro_custo_id, l.divisao_id from erp.lancamentos l join _itens i on i.lancamento_id = l.id
-    union select centro_custo_id, divisao_id from erp.compromisso_rateios where p_inteira and natureza_id = p_origem
-    union select centro_custo_id, divisao_id from erp.documento_rateios where p_inteira and natureza_id = p_origem) x
+  select x.centro_custo_id, x.divisao_id into v from (   -- divisao_id aqui: o último nível da linha
+    select l.centro_custo_id, coalesce(l.subdivisao_id, l.divisao_id) as divisao_id from erp.lancamentos l join _itens i on i.lancamento_id = l.id
+    union select centro_custo_id, coalesce(subdivisao_id, divisao_id) from erp.compromisso_rateios where p_inteira and natureza_id = p_origem
+    union select centro_custo_id, coalesce(subdivisao_id, divisao_id) from erp.documento_rateios where p_inteira and natureza_id = p_origem) x
    where not erp.natureza_ligada(x.centro_custo_id, x.divisao_id, p_destino) limit 1;
   if found then
     raise exception 'A natureza de destino não está liberada em "%": ligue-a lá ou filtre o pedido',

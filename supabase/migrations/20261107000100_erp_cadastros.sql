@@ -387,8 +387,15 @@ create table erp.divisoes (
   nome            text not null check (length(trim(nome)) > 0),
   ativa           boolean not null default true,
   criado_em       timestamptz not null default clock_timestamp(),   -- "futura" = criada depois do escopo
-  unique (centro_custo_id, nome),
-  unique (id, centro_custo_id)
+  -- subníveis (Moises, 15/11/2026): até 4 níveis abaixo do centro; a divisão de primeiro nível
+  -- (sem mãe) é onde ficam o acesso e a alçada, e os subníveis só segmentam o lançamento
+  mae_id          uuid,
+  raiz_id         uuid,             -- a divisão de primeiro nível (ela mesma, no primeiro nível)
+  nivel           int not null default 1 check (nivel between 1 and 4),
+  unique nulls not distinct (centro_custo_id, mae_id, nome),
+  unique (id, centro_custo_id),
+  foreign key (mae_id, centro_custo_id) references erp.divisoes (id, centro_custo_id),
+  foreign key (raiz_id, centro_custo_id) references erp.divisoes (id, centro_custo_id)
 );
 -- Criar, renomear e desativar divisão: só por pedido aprovado, como o acesso (Moises, 15/11/2026,
 -- S-101), porque a divisão nova entra no acesso de quem tem as futuras e passa a ser exigida nas linhas.
@@ -398,9 +405,22 @@ begin
   if not (erp.agindo_como('erp_acesso') or erp.sistema()) then
     raise exception 'Divisão só se cria, renomeia ou desativa por pedido aprovado (erp.pedir_mudanca_acesso)';
   end if;
-  if tg_op = 'INSERT' then new.criado_em := clock_timestamp();
-  elsif new.centro_custo_id <> old.centro_custo_id or new.criado_em <> old.criado_em then
-    raise exception 'A divisão não muda de centro de custo nem de data de criação';
+  if tg_op = 'INSERT' then
+    new.criado_em := clock_timestamp();
+    if new.mae_id is null then
+      new.raiz_id := new.id; new.nivel := 1;
+    else
+      select coalesce(m.raiz_id, m.id), m.nivel + 1 into new.raiz_id, new.nivel from erp.divisoes m where m.id = new.mae_id;
+      if new.nivel > 4 then raise exception 'A divisão vai até 4 níveis abaixo do centro de custo'; end if;
+      if not (select ativa from erp.divisoes where id = new.mae_id) then raise exception 'O nível de cima está desativado'; end if;
+    end if;
+  elsif new.centro_custo_id <> old.centro_custo_id or new.criado_em <> old.criado_em
+        or new.mae_id is distinct from old.mae_id or new.raiz_id is distinct from old.raiz_id or new.nivel <> old.nivel then
+    raise exception 'A divisão não muda de centro de custo, de nível de cima nem de data de criação';
+  elsif old.ativa and not new.ativa and exists (select 1 from erp.divisoes where mae_id = new.id and ativa) then
+    raise exception 'Desative antes os subníveis desta divisão';
+  elsif new.ativa and not old.ativa and new.mae_id is not null and not (select ativa from erp.divisoes where id = new.mae_id) then
+    raise exception 'O nível de cima está desativado';
   end if;
   return new;
 end $$;
@@ -410,6 +430,17 @@ create trigger t_divisao_truncate before truncate on erp.divisoes
   for each statement execute function erp.tg_divisao();
 create trigger t_aud_divisoes after insert or update or delete on erp.divisoes
   for each row execute function erp.tg_auditoria('id');
+-- O último nível: a divisão sem subnível ativo, onde a linha é lançada.
+create function erp.divisao_folha(p_divisao uuid) returns boolean language sql stable as $$
+  select not exists (select 1 from erp.divisoes where mae_id = p_divisao and ativa) $$;
+-- A divisão de primeiro nível só (acesso, alçada, carimbo do pagamento e do adiantamento).
+create function erp.tg_divisao_primeiro_nivel() returns trigger language plpgsql as $$
+begin
+  if new.divisao_id is not null and (select nivel from erp.divisoes where id = new.divisao_id) <> 1 then
+    raise exception 'Aqui vale a divisão de primeiro nível; o subnível só entra no lançamento';
+  end if;
+  return new;
+end $$;
 
 -- Quais centros de custo estão ligados em cada núcleo (o Corporativo não tem Obra; uma loja
 -- não tem Incorporação). Sem linha = desligado. Ligar e desligar é configuração, com auditoria;
