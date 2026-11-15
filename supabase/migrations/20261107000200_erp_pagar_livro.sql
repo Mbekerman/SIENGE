@@ -2095,6 +2095,10 @@ returns uuid language plpgsql as $$
 declare t erp.titulos; v_saldo numeric; v_pag uuid; v_nucleo uuid; v_centro uuid;
 begin
   perform erp.exigir_editor();
+  -- S-091 (Moises, 15/11/2026): pagamento só pelo sistema (o adaptador do Sienge) e pelo financeiro
+  if not (erp.sistema() or erp.sou_master() or erp.estou_nas_listas(array['AF','AO','AD'])) then
+    raise exception 'Só o financeiro (AF, AO ou AD) registra pagamento';
+  end if;
   select t2.* into t from erp.titulos t2 join erp.parcelas p on p.titulo_id = t2.id where p.id = p_parcela;
   v_saldo := erp.parcela_saldo(p_parcela);
   if t.id is null or v_saldo is null then raise exception 'Parcela não encontrada'; end if;

@@ -95,6 +95,7 @@ set client_min_messages = notice;
 \set leitor   '00000000-0000-0000-0000-00000000000d'
 \set contador '00000000-0000-0000-0000-00000000000c'
 \set ti       '00000000-0000-0000-0000-000000000011'
+\set analista2 '00000000-0000-0000-0000-000000000013'
 
 -- no teste, o login de cada um é o próprio id em texto (pg_temp.como põe o login na sessão)
 insert into erp.usuarios (id, login_id, nome, papel, administrador, contador) values
@@ -104,8 +105,11 @@ insert into erp.usuarios (id, login_id, nome, papel, administrador, contador) va
   (:'gestor', :'gestor', 'Paula', 'gestor', false, false),
   (:'analista', :'analista', 'Rafael', 'analista', false, false),
   (:'leitor', :'leitor', 'Consulta', 'leitura', false, false),
-  (:'contador', :'contador', 'Contador', 'analista', false, true);
+  (:'contador', :'contador', 'Contador', 'analista', false, true),
+  (:'analista2', :'analista2', 'Analista sem lista', 'analista', false, false);
 insert into erp.master (user_id) values (:'diretor');   -- o master entra pelo sistema (implantação)
+-- quem registra pagamento é o financeiro (S-091): o analista dos testes está na AO
+insert into erp.listas_financeiro (lista, user_id) values ('AO', :'analista');
 
 -- ---------------------------------------------------------------------
 \echo '# raiz: empresas, sócios, empreendimento'
@@ -179,7 +183,7 @@ update erp.centros_custo set id = '45000000-0000-0000-0000-000000000002' where n
 insert into erp.perfis_modelo (id, nome) values (:'tudo', 'Tudo (testes)');
 insert into erp.perfil_centros select :'tudo', id, 'lancador' from erp.centros_custo;
 insert into erp.atribuicoes (user_id, perfil_id, escopo)
-select u, :'tudo', 'todos' from unnest(array[:'diretor2', :'gestor', :'analista', :'leitor', :'contador']::uuid[]) u;
+select u, :'tudo', 'todos' from unnest(array[:'diretor2', :'gestor', :'analista', :'leitor', :'contador', :'analista2']::uuid[]) u;
 select pg_temp.como(:'analista');
 select pg_temp.falha($$insert into erp.nucleo_centros (nucleo_economico_id, centro_custo_id)
   values ('40000000-0000-0000-0000-000000000001', '45000000-0000-0000-0000-000000000001')$$,
@@ -387,9 +391,13 @@ select pg_temp.falha($$insert into erp.pagamentos (empresa_id, conta_id, pessoa_
    '40000000-0000-0000-0000-000000000002', '45000000-0000-0000-0000-000000000002', '2026-03-01', 1)$$,
   'adiantamento não usa núcleo de outra empresa');
 begin;
+select pg_temp.como(:'analista2');   -- lança em todos os centros, mas não está no financeiro
 select pg_temp.falha(format($$insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, data, valor)
   select %L, %L, pessoa_id, '2026-03-01', 1 from erp.empresas where id = %L$$, :'spe', :'conta_spe', :'spe'),
   'pagamento sem núcleo e centro (transferência) não é de quem só lança no centro');
+select pg_temp.falha(format($$insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor)
+  select %L, %L, pessoa_id, %L, %L, '2026-03-01', 1 from erp.empresas where id = %L$$, :'spe', :'conta_spe', :'ne_vm', :'cc_obra', :'spe'),
+  'S-091: quem não está no financeiro não registra pagamento, nem no centro onde lança');
 select pg_temp.como(:'diretor');   -- o master (ou o financeiro: AF, AO, AD)
 insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, data, valor)
 select :'spe', :'conta_spe', pessoa_id, '2026-03-01', 1 from erp.empresas where id = :'spe';
@@ -616,6 +624,7 @@ select pg_temp.ok((select sum(valor) from erp.lancamentos where estagio = 'compr
 -- ---------------------------------------------------------------------
 \echo '# dinheiro entre sócios'
 select current_setting('request.jwt.claim.sub', true) as quem_antes \gset
+select pg_temp.como(:'analista2');
 select pg_temp.erro_igual($$select erp.registrar_movimento_societario('aporte', '20000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000003', 1, '2026-02-01')$$,
   'Movimento entre sócios só pela diretoria ou pelo financeiro', 'movimento entre sócios: quem só lança nos centros não registra');
 select pg_temp.como(:'diretor2');
@@ -3301,7 +3310,7 @@ insert into erp.atribuicoes (id, user_id, perfil_id, escopo) values
   ('a2000000-0000-0000-0000-000000000009', :'u9', 'a1000000-0000-0000-0000-000000000009', 'todos'),
   ('a2000000-0000-0000-0000-000000000010', :'u10', 'a1000000-0000-0000-0000-000000000009', 'todos');
 insert into erp.atribuicao_nucleos values ('a2000000-0000-0000-0000-000000000003', :'ne_vm', true);
-insert into erp.listas_financeiro (lista, user_id) values ('AD', :'u7');
+insert into erp.listas_financeiro (lista, user_id) values ('AD', :'u7'), ('AO', :'u4');   -- quem paga é o financeiro (S-091)
 insert into erp.centro_aprovadores values (:'cc_mkt', :'gestor') on conflict do nothing;
 insert into erp.pessoas (id, tipo, nome, documento) values ('10000000-0000-0000-0000-0000000000c1', 'juridica', 'Fornecedor V', '12121212000112');
 select pg_temp.volta();
@@ -3477,10 +3486,10 @@ values ('c4000000-0000-0000-0000-000000000001', :'ne_corp', :'cc_mkt', pg_temp.n
 insert into erp.previsoes (empresa_id, origem, pessoa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
 values (:'incorp', 'manual', '10000000-0000-0000-0000-0000000000c1', :'ne_corp', :'cc_mkt', pg_temp.nat('05.01.04'), '2027-09-01', '2027-09-30', 10);
 select pg_temp.ok(true, 'acesso: quem lança no centro lança orçamento e previsão');
-insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values
-  ('c2000000-0000-0000-0000-0000000000b1', :'incorp', :'conta_inc', '10000000-0000-0000-0000-0000000000c1', :'ne_corp', :'cc_mkt', '2027-10-10', 100);
-select pg_temp.falha(format($$insert into erp.quitacoes (pagamento_id, parcela_id, principal) values ('c2000000-0000-0000-0000-0000000000b1', %L, 100)$$, :'td'),
-  'acesso: o pagamento não quita título que quem paga não vê (PJ)');
+select pg_temp.erro_igual(format($$select erp.pagar_parcela(%L, %L, '2027-10-10')$$, :'tb', :'conta_inc'),
+  'Só o financeiro (AF, AO ou AD) registra pagamento', 'S-091: quem lança no centro, fora do financeiro, não paga a parcela');
+select pg_temp.falha(format($$insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values (%L, %L, '10000000-0000-0000-0000-0000000000c1', %L, %L, '2027-10-10', 100)$$,
+  :'incorp', :'conta_inc', :'ne_corp', :'cc_mkt'), 'S-091: nem registra o pagamento direto na tabela');
 select pg_temp.como(:'u7');
 insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values
   ('c2000000-0000-0000-0000-0000000000a7', :'incorp', :'conta_inc', '10000000-0000-0000-0000-0000000000c1', :'ne_corp', :'cc_mkt', '2027-10-10', 100);
@@ -3512,9 +3521,11 @@ select pg_temp.erro_igual($$update erp.pessoas set nome = 'Outro nome' where id 
   'Documento, nome, tipo e situação de pessoa já usada só o financeiro muda', 'S-089: nem o nome');
 select pg_temp.erro_igual($$update erp.pessoas set ativa = false where id = '10000000-0000-0000-0000-0000000000c1'$$,
   'Documento, nome, tipo e situação de pessoa já usada só o financeiro muda', 'S-089: nem desativa');
+select pg_temp.como(:'u7');
 insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values
   ('20000000-0000-0000-0000-000000000002', '50000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-0000000000c2',
    '40000000-0000-0000-0000-000000000002', '45000000-0000-0000-0000-000000000002', '2027-10-10', 50);
+select pg_temp.como(:'u9');
 select pg_temp.erro_igual($$update erp.pessoas set documento = '14141414000114' where id = '10000000-0000-0000-0000-0000000000c2'$$,
   'Documento, nome, tipo e situação de pessoa já usada só o financeiro muda', 'S-089: pessoa usada só num pagamento também conta como usada');
 select pg_temp.erro_igual($$delete from erp.pessoa_papeis where pessoa_id = '10000000-0000-0000-0000-0000000000c1' and papel = 'fornecedor'$$,
@@ -3532,10 +3543,26 @@ select pg_temp.ok((select count(*) = 2 from erp.auditoria where tabela = 'pessoa
                   and exists (select 1 from erp.auditoria where tabela = 'pessoa_papeis' and registro = '10000000-0000-0000-0000-0000000000c1'),
   'S-089: o financeiro troca o CNPJ, e pessoas e papéis ficam na auditoria');
 select pg_temp.volta();
+-- S-090 (Moises, 15/11: só o master por ora): o TI não muda a configuração de dinheiro e aprovação
+select pg_temp.como(:'ti');
+select pg_temp.falha($$update erp.regra_adiantamento set trava = false$$, 'S-090: o TI não desliga a trava do adiantamento');
+select pg_temp.falha($$update erp.alcadas_pagamento set etapas = '{AREA,AF}' where ate is null$$, 'S-090: o TI não tira o AD da alçada');
+select pg_temp.falha($$update erp.regra_alcada_pagamento set acumulado = 'nucleo_centro'$$, 'S-090: nem muda como se soma o acumulado');
+select pg_temp.falha(format($$insert into erp.contas_bancarias (empresa_id, banco, agencia, conta) values (%L, 'Itaú', '0001', '77777-7')$$, :'incorp'),
+  'S-090: o TI não cadastra conta bancária');
+select pg_temp.falha(format($$update erp.contas_bancarias set conta = '00000-0' where id = %L$$, :'conta_inc'), 'S-090: nem troca a conta');
+select pg_temp.falha(format($$insert into erp.codigos_externos (sistema, tabela, registro_id, codigo) values ('sienge', 'pessoas', '10000000-0000-0000-0000-0000000000c1', 'X1')$$),
+  'S-090: o TI não mexe nos códigos do Sienge');
+select pg_temp.falha($$update erp.regras_ajuste set permitido = permitido$$, 'S-090: nem nas regras de ajuste da revisão');
+select pg_temp.ok((select trava from erp.regra_adiantamento) and exists (select 1 from erp.alcadas_pagamento where ate is null and 'AD' = any(etapas)),
+  'S-090: a trava e o AD continuam');
+select pg_temp.como(:'diretor');
+update erp.alcadas_pagamento set etapas = etapas where ate is null;
+select pg_temp.ok(true, 'S-090: o master muda a alçada');
 -- quem lançou o pagamento continua vendo, mesmo sem o perfil
-select pg_temp.sis(); delete from erp.atribuicoes where user_id = :'u9'; select pg_temp.volta();
-select pg_temp.como(:'u9');
-select pg_temp.ok(exists (select 1 from erp.pagamentos where id = 'c2000000-0000-0000-0000-0000000000b1') and pg_temp.vejo_tits() = '',
+select pg_temp.sis(); delete from erp.atribuicoes where user_id = :'u4'; delete from erp.listas_financeiro where user_id = :'u4'; select pg_temp.volta();
+select pg_temp.como(:'u4');
+select pg_temp.ok(exists (select 1 from erp.pagamentos where id = 'c2000000-0000-0000-0000-0000000000d1') and pg_temp.vejo_tits() = '',
   'acesso: sem o perfil, quem lançou o pagamento ainda o vê, e não vê mais os títulos');
 select pg_temp.como(null);
 rollback;

@@ -167,8 +167,7 @@ create function erp.vejo_pagamento(p_id uuid) returns boolean language sql stabl
                         from erp.pagamentos g where g.id = p_id), false) $$;
 -- grava: o financeiro, ou quem lança no núcleo × centro do carimbo
 create function erp._lanco_pagamento(p_nucleo uuid, p_centro uuid, p_autor uuid) returns boolean language sql stable as $$
-  select erp.escrevo() and (erp.sou_master() or erp.financeiro()
-                            or (p_nucleo is not null and erp.lanco(p_nucleo, p_centro, null, p_autor))) $$;
+  select erp.escrevo() and (erp.sou_master() or erp.financeiro()) $$;
 
 create function erp.vejo_reclassificacao(p_id uuid) returns boolean language sql stable as $$
   select erp.membro() and exists (select 1 from erp.reclassificacoes r where r.id = p_id and (
@@ -271,20 +270,22 @@ begin
     ('atributos', 'erp.membro()', 'erp.sou_admin()'),
     ('atributo_opcoes', 'erp.membro()', 'erp.sou_admin()'),
     ('naturezas', 'erp.membro()', 'erp.sou_admin()'),
-    ('naturezas_sistema', 'erp.membro()', 'erp.sou_admin()'),
+    -- configuração que mexe em dinheiro e aprovação (S-090; Moises, 15/11/2026: "só o master por
+    -- ora", até essas mudanças do administrador passarem por aprovação): grava só o master
+    ('naturezas_sistema', 'erp.membro()', 'erp.sou_master()'),
     ('centros_custo', 'erp.membro()', 'erp.sou_admin()'),
     ('nucleos_economicos', 'erp.membro()', 'erp.sou_admin()'),
     ('nucleo_centros', 'erp.membro()', 'erp.sou_admin()'),
     ('fases', 'erp.membro()', 'erp.sou_admin()'),
     ('linhas_dre', 'erp.membro()', 'erp.sou_admin()'),
-    ('niveis_aprovacao', 'erp.membro()', 'erp.sou_admin()'),
-    ('alcadas_pagamento', 'erp.membro()', 'erp.sou_admin()'),
-    ('alcadas_reclassificacao', 'erp.membro()', 'erp.sou_admin()'),
-    ('regra_adiantamento', 'erp.membro()', 'erp.sou_admin()'),
-    ('regra_alcada_pagamento', 'erp.membro()', 'erp.sou_admin()'),
-    ('regras_ajuste', 'erp.membro()', 'erp.sou_admin()'),
-    ('contas_bancarias', 'erp.membro()', 'erp.sou_admin()'),
-    ('codigos_externos', 'erp.membro()', 'erp.sou_admin()'),
+    ('niveis_aprovacao', 'erp.membro()', 'erp.sou_master()'),
+    ('alcadas_pagamento', 'erp.membro()', 'erp.sou_master()'),
+    ('alcadas_reclassificacao', 'erp.membro()', 'erp.sou_master()'),
+    ('regra_adiantamento', 'erp.membro()', 'erp.sou_master()'),
+    ('regra_alcada_pagamento', 'erp.membro()', 'erp.sou_master()'),
+    ('regras_ajuste', 'erp.membro()', 'erp.sou_master()'),
+    ('contas_bancarias', 'erp.membro()', 'erp.sou_master()'),
+    ('codigos_externos', 'erp.membro()', 'erp.sou_master()'),
     ('meses_fechados', 'erp.membro()', null),
     ('tipos_nucleo', 'erp.membro()', null),
     -- quem é quem: todo membro vê os colegas; o só da sucessão vê a si mesmo
@@ -353,7 +354,7 @@ begin
     ('pagamentos', 'erp._vejo_pagamento(id, nucleo_economico_id, centro_custo_id, criado_por)',
                     'erp._lanco_pagamento(nucleo_economico_id, centro_custo_id, criado_por)'),
     ('quitacoes', 'erp.vejo_titulo((select pa.titulo_id from erp.parcelas pa where pa.id = parcela_id))',
-                  'erp.escrevo() and erp.vejo_pagamento(pagamento_id) and erp.vejo_titulo((select pa.titulo_id from erp.parcelas pa where pa.id = parcela_id))'),
+                  'erp.escrevo() and (erp.sou_master() or erp.financeiro()) and erp.vejo_pagamento(pagamento_id) and erp.vejo_titulo((select pa.titulo_id from erp.parcelas pa where pa.id = parcela_id))'),
     ('lotes_bancarios', 'erp.sou_master() or erp.financeiro()', null),
     -- reclassificação: só pelas funções dela; lê quem pediu, quem aprova e quem votou
     ('reclassificacoes', 'erp.vejo_reclassificacao(id)', null),
