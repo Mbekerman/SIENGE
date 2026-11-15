@@ -3709,6 +3709,21 @@ select pg_temp.como(:'diretor2');
 select erp.decidir_mudanca_config(:'m6', true) as d6 \gset
 select pg_temp.ok(:'d6' = 'aplicada' and (select ate from erp.alcadas_pagamento where id = :'faixa50') = 49000,
   'config: o segundo voto aplica');
+-- S-095: o voto de quem saiu da lista não conta
+select pg_temp.como(:'gestor');
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 48000), 'saiu') as m6b \gset
+select pg_temp.como(:'analista2');
+select erp.decidir_mudanca_config(:'m6b', true);
+select pg_temp.como(:'diretor');
+delete from erp.aprovadores_config where tabela = 'alcadas_pagamento' and user_id = :'analista2';
+insert into erp.aprovadores_config values ('alcadas_pagamento', :'contador');
+select pg_temp.como(:'diretor2');
+select erp.decidir_mudanca_config(:'m6b', true) as d6b \gset
+select pg_temp.ok(:'d6b' = 'pendente', 'S-095: o voto de quem saiu da lista de aprovadores não conta para o mínimo');
+select pg_temp.como(:'diretor');
+insert into erp.aprovadores_config values ('alcadas_pagamento', :'analista2');
+delete from erp.aprovadores_config where tabela = 'alcadas_pagamento' and user_id = :'contador';
+select pg_temp.como(:'gestor'); select erp.cancelar_mudanca_config(:'m6b'); select pg_temp.como(:'diretor2');
 -- quem pede sai da conta: com o AD pedindo, sobra um aprovador para 2 votos, e decide o master
 select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 51000), 'c') as m7 \gset
 select pg_temp.ok((select aprovacao = 'master' from erp.mudancas_config where id = :'m7'), 'config: sem aprovadores bastantes além de quem pede, decide o master');
@@ -3757,20 +3772,28 @@ select pg_temp.ok(exists (select 1 from erp.eventos where tipo = 'regra_config_a
   'config: a mudança direta do master também vira evento');
 select pg_temp.volta();
 
--- modo livre: até 10% do valor de 3 meses atrás (50 mil, o da carga)
+-- modo livre: até 10% de todo valor da faixa nos últimos 3 meses
+select pg_temp.sis();
+select pg_temp.ok(erp._valor_config_em('alcadas_pagamento', :'faixa50', 'ate', clock_timestamp() - interval '3 months') = 50000,
+  'config: o valor de 3 meses atrás vem da auditoria (o de antes da primeira mudança: 50 mil, o da carga)');
+-- as mudanças de até aqui ficam de mais de 3 meses atrás: a janela começa limpa, em 51 mil
+alter table erp.auditoria disable trigger t_auditoria_guarda;
+update erp.auditoria set em = em - interval '4 months' where tabela = 'alcadas_pagamento' and registro = :'faixa50';
+alter table erp.auditoria enable trigger t_auditoria_guarda;
+select pg_temp.volta();
 select pg_temp.como(:'gestor');
 select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 54000), 'livre') as l1 \gset
-select pg_temp.ok((select aprovacao = 'livre' and situacao = 'aplicada' and (referencia->>'valor_antes')::numeric = 50000 from erp.mudancas_config where id = :'l1')
+select pg_temp.ok((select aprovacao = 'livre' and situacao = 'aplicada' and (referencia->>'valor_antes')::numeric = 51000 from erp.mudancas_config where id = :'l1')
                   and (select ate from erp.alcadas_pagamento where id = :'faixa50') = 54000,
   'config: dentro de 10% do valor de 3 meses atrás, o pedido do AF vale na hora');
-select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 56000), 'mais um pouco') as l2 \gset
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 57000), 'mais um pouco') as l2 \gset
 select pg_temp.ok((select aprovacao = 'lista' and situacao = 'pendente' from erp.mudancas_config where id = :'l2'),
-  'config: 4% sobre o de hoje, mas 12% sobre o de 3 meses atrás: pede aprovação (não se fatia)');
+  'config: 6% sobre o de hoje, mas 12% sobre o de 3 meses atrás: pede aprovação (não se fatia)');
 select erp.cancelar_mudanca_config(:'l2');
-select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 45000), 'baixar') as l3 \gset
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 49000), 'baixar') as l3 \gset
 select pg_temp.ok((select aprovacao = 'livre' from erp.mudancas_config where id = :'l3'), 'config: baixar até 10% também é livre');
-select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 44000), 'baixar mais') as l4 \gset
-select pg_temp.ok((select aprovacao = 'lista' from erp.mudancas_config where id = :'l4'), 'config: 12% abaixo pede aprovação');
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 46000), 'baixar mais') as l4 \gset
+select pg_temp.ok((select aprovacao = 'lista' from erp.mudancas_config where id = :'l4'), 'config: abaixo de 10% de algum valor da janela pede aprovação');
 select erp.cancelar_mudanca_config(:'l4');
 select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa_topo', 'etapas', '{AREA,AF}'::text[]), 'tirar AD') as l5 \gset
 select pg_temp.ok((select aprovacao = 'lista' from erp.mudancas_config where id = :'l5') and exists (select 1 from erp.alcadas_pagamento where id = :'faixa_topo' and 'AD' = any(etapas)),
@@ -3782,7 +3805,7 @@ select pg_temp.ok((select aprovacao = 'lista' from erp.mudancas_config where id 
 select erp.pedir_mudanca_config('alcadas_pagamento', 'excluir', jsonb_build_object('id', :'faixa50'), 'tirar faixa') as l8 \gset
 select pg_temp.ok((select aprovacao = 'lista' from erp.mudancas_config where id = :'l8'), 'config: tirar faixa pede aprovação');
 select pg_temp.como(:'ti');
-select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 46000), 'TI') as l9 \gset
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 50000), 'TI') as l9 \gset
 select pg_temp.ok((select aprovacao = 'lista' from erp.mudancas_config where id = :'l9'), 'config: o pedido do TI nunca é livre');
 select pg_temp.como(:'diretor2');
 select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 53000), 'AD') as l10 \gset
@@ -3798,6 +3821,16 @@ select pg_temp.volta();
 select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 58000), 'janela nova') as l11 \gset
 select pg_temp.ok((select aprovacao = 'livre' and (referencia->>'valor_antes')::numeric = 53000 from erp.mudancas_config where id = :'l11'),
   'config: passados os 3 meses, a referência é o valor de 3 meses atrás (53 mil)');
+-- S-094: um aperto recente não se desfaz sem aprovação
+select pg_temp.como(:'diretor');
+update erp.alcadas_pagamento set ate = 20000 where id = :'faixa50';
+select pg_temp.como(:'gestor');
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 58000), 'desfazer') as l11b \gset
+select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', :'faixa50', 'ate', 21000), 'um pouco') as l11c \gset
+select pg_temp.ok((select bool_and(aprovacao = 'lista' and situacao = 'pendente') from erp.mudancas_config where id in (:'l11b', :'l11c'))
+                  and (select ate from erp.alcadas_pagamento where id = :'faixa50') = 20000,
+  'S-094: depois de o master apertar a faixa, o AF não a desfaz nem a mexe no modo livre (a até 10% de todo valor da janela)');
+select erp.cancelar_mudanca_config(:'l11b'); select erp.cancelar_mudanca_config(:'l11c');
 -- faixa que não existia há 3 meses: sem referência, pede aprovação
 select pg_temp.sis(); insert into erp.alcadas_pagamento (ate, etapas) values (10000, '{AREA}'); select pg_temp.volta();
 select erp.pedir_mudanca_config('alcadas_pagamento', 'alterar', jsonb_build_object('id', (select id from erp.alcadas_pagamento where ate = 10000), 'ate', 10500), 'nova') as l12 \gset

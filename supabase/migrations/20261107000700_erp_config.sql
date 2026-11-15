@@ -16,8 +16,9 @@
 --    Administrador não entra na lista (ele não aprova nada no ERP).
 -- 3. Modo de cada tabela: "aprovacao" (padrão, sempre com aprovação) ou "livre_ate": o pedido do AF
 --    ou do AD que só muda o valor (o "até") de uma faixa de alçada vale na hora se o valor novo fica
---    a até X% do valor que a faixa tinha N meses atrás. A conta é contra o valor de N meses atrás,
---    não contra o de hoje: várias mudanças pequenas seguidas não passam de X% na janela. Incluir ou
+--    a até X% de todo valor que a faixa teve nos últimos N meses (o de N meses atrás, os do meio e
+--    o atual): várias mudanças pequenas seguidas não passam de X% na janela, e um aperto recente
+--    não se desfaz sem aprovação (S-094). Incluir ou
 --    tirar faixa e mudar as etapas (tirar o AD, por exemplo) sempre pedem aprovação (ponto 2). Só as
 --    duas tabelas de faixas aceitam o modo livre; conta bancária e código do Sienge sempre pedem
 --    aprovação (ponto 3). O pedido do administrador sempre pede aprovação.
@@ -291,7 +292,7 @@ declare v_eu uuid := erp.eu(); v_master boolean := erp.sou_master();
         v_fin boolean := erp.estou_nas_listas('{AF,AD}');
         v_dados jsonb := coalesce(p_dados, '{}'); v_antes jsonb; v_regra erp.regras_mudanca_config;
         v_tipo text; v_min int := 0; v_ref numeric; v_novo numeric; v_referencia jsonb; v_aprov int; v_id uuid;
-        v_cols text[]; v_falta boolean := false;
+        v_cols text[]; v_falta boolean := false; v_janela numeric[];
 begin
   if v_eu is null then raise exception 'O pedido precisa de um usuário'; end if;
   if not (v_master or v_admin or v_fin) then
@@ -341,13 +342,23 @@ begin
     -- modo livre: o AF ou o AD, só o valor de uma faixa que já existe, a até X% do de N meses atrás
     if v_regra.modo = 'livre_ate' and v_fin and p_operacao = 'alterar'
        and (v_dados - 'ate') = (v_antes - 'ate') and v_antes->>'ate' is not null and v_dados->>'ate' is not null then
+      -- o valor novo fica a até X% de todo valor que a faixa teve na janela: o de N meses atrás,
+      -- os que vieram depois e o atual (S-094: o AF não desfaz sozinho um aperto aprovado)
       v_ref := erp._valor_config_em(p_tabela, (v_dados->>'id')::uuid, 'ate',
                                     clock_timestamp() - make_interval(months => v_regra.meses));
       v_novo := (v_dados->>'ate')::numeric;
-      if v_ref is not null and abs(v_novo - v_ref) <= v_ref * v_regra.percentual / 100 then
+      select array_agg(x) into v_janela from (
+        select v_ref as x
+        union all select (a.depois->>'ate')::numeric from erp.auditoria a
+         where a.tabela = p_tabela and a.registro = v_dados->>'id'
+           and a.em > clock_timestamp() - make_interval(months => v_regra.meses)
+        union all select (v_antes->>'ate')::numeric) j;
+      if v_ref is not null and not exists (select 1 from unnest(v_janela) x
+                                            where x is null or abs(v_novo - x) > x * v_regra.percentual / 100) then
         v_tipo := 'livre';
       end if;
-      v_referencia := jsonb_build_object('valor_antes', v_ref, 'meses', v_regra.meses, 'percentual', v_regra.percentual);
+      v_referencia := jsonb_build_object('valor_antes', v_ref, 'meses', v_regra.meses, 'percentual', v_regra.percentual,
+                                         'janela', to_jsonb(v_janela));
     end if;
     if v_tipo is null then
       select count(*) into v_aprov from erp.aprovadores_config a join erp.usuarios u on u.id = a.user_id and u.ativo
