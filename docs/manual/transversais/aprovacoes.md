@@ -267,6 +267,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 ## Quem muda a configuração
 
 - ✅ **Por ora, a configuração de dinheiro e aprovação só o master muda**; o administrador (TI) não muda. Inclui: alçadas de pagamento e de reclassificação, níveis de aprovação, regra do adiantamento e da alçada, regras de ajuste da revisão, naturezas do sistema, contas bancárias da empresa e códigos do Sienge (Moises, 15/nov/2026). Onde as linhas abaixo dizem "o master ou um administrador", vale agora só o master.
+- ✅ **Pedidos de mudança** (Moises, 15/nov/2026): a AF e a AD pedem mudança de alçada, de conta bancária e de código do Sienge, e o master escolhe quem aprova. Em Configurações, cada tabela fica **sempre com aprovação** ou **livre até X% de mudança em N meses** (comparado com o valor de N meses atrás). Tirar uma etapa da alçada sempre pede aprovação; conta bancária e código do Sienge também. Toda mudança de alçada avisa o Moises.
 - ✅ **Pagamento e baixa** só registram o financeiro (AF, AO, AD), o master e a ligação automática com o Sienge (Moises, 15/nov/2026).
 
 - ✅ **Listas AF e AO:** qualquer pessoa da AD pode mexer, menos numa lista da qual ela mesma faça parte. Toda mudança avisa o master e as outras pessoas da AD (Moises, 7/nov/2026).

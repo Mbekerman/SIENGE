@@ -26,7 +26,7 @@
 
 ### Quem vê e quem grava cada registro
 
-🟡 Regras do código (PR #34), à espera da revisão de segurança e do ok do Moises:
+✅ Regras no código desde 15/nov/2026 (PR #34, juntado na develop):
 
 1. Usuário inativo não vê nada. O usuário só da sucessão vê apenas o próprio cadastro e a sucessão. Sem cadastro ativo, ninguém grava.
 2. Título, nota e contrato: vê quem vê alguma linha do rateio pelo perfil (núcleo × centro × natureza). Se alguma linha é de natureza restrita (PJ) que a pessoa não vê, o registro some inteiro, e o pagamento que o baixa também.
