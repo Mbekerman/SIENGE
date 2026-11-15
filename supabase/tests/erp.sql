@@ -5449,6 +5449,11 @@ select pg_temp.sis(); insert into erp.listas_financeiro (lista, user_id) values 
 select pg_temp.como(:'analista2');
 insert into erp.etiquetas (id, nome) values (:'et_bf', 'Black Friday');
 select pg_temp.ok(exists (select 1 from erp.etiquetas where id = :'et_bf'), 'etiquetas: AF cria etiqueta');
+select pg_temp.sis(); insert into erp.listas_financeiro (lista, user_id) values ('AD', :'gestor'); select pg_temp.volta();
+select pg_temp.como(:'gestor');
+insert into erp.etiquetas (nome) values ('Dia das Mães');
+update erp.etiquetas set nome = 'Dia das Mães 2026' where nome = 'Dia das Mães';
+select pg_temp.ok(exists (select 1 from erp.etiquetas where nome = 'Dia das Mães 2026'), 'etiquetas: AD cria e renomeia etiqueta');
 select pg_temp.como(:'analista');
 select pg_temp.falha(format($$update erp.etiquetas set nome = 'Black Week' where id = %L$$, :'et_bf'), 'etiquetas: quem lança não renomeia etiqueta');
 select pg_temp.ok(pg_temp.erro_como_dono(format($$update erp.etiquetas set nome = 'Black Week' where id = %L$$, :'et_bf'))

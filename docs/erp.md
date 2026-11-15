@@ -4,7 +4,7 @@ Versão 0, de 7/nov/2026. Ela traduz em tabelas o desenho da sabatina, que está
 
 Nomes (Moises, 15/11/2026): **fase de aprovação** é cada passo de uma aprovação (gestor da área, AF, AD...); **divisão** é a subdivisão de um centro de custo. A etapa do empreendimento saiu do sistema (Moises, 15/11/2026: confundia-se com o centro de custo).
 
-O SQL está em `supabase/migrations/` e os testes em `supabase/tests/erp.sql` (1117 testes). Para rodar: `bash supabase/tests/run.sh`.
+O SQL está em `supabase/migrations/` e os testes em `supabase/tests/erp.sql` (1118 testes). Para rodar: `bash supabase/tests/run.sh`.
 
 Este documento cobre o contas a pagar, a raiz (empresas e sócios), a árvore de naturezas, o livro de lançamentos e a reclassificação. Contas a receber, bancos, aprovação geral e engenharia ficam para as próximas sessões.
 
