@@ -404,6 +404,7 @@ Assim, o realizado do sistema sempre bate com o dinheiro que saiu do banco.
 - Quem lançou o pagamento não aprova o abatimento dele, e quem lançou o título não libera o pagamento dele sem abater o adiantamento (regra geral: quem lança não aprova).
 - 🟡 Regra do código, a confirmar com o Moises: a liberação para pagar sem deduzir vale só para os adiantamentos que já existiam quando ela foi aprovada. Se sair um adiantamento novo para o fornecedor, o título precisa de nova liberação.
 - Quem criou o título ou o pagamento, e quando, o sistema grava sozinho; ninguém altera.
+- ✅ Pagamento e adiantamento também saem carimbados com a **divisão**, quando o centro tem divisões; o adiantamento só abate títulos da mesma divisão, e abater em outra divisão pede AF, AO ou AD, como em outro centro (Moises, 15/nov/2026).
 - ✅ O abatimento sem aprovação exige **o mesmo núcleo econômico e o mesmo centro de custo**; e, entre os adiantamentos que servem, **abate-se primeiro o mais antigo** (Moises, 14/nov/2026).
 - ✅ **Todo adiantamento começa por um pedido de adiantamento**, com fornecedor, valor, competência, um núcleo econômico e um centro de custo. O pedido passa pela mesma alçada de pagamento (gestor da área, AF e, acima de R$ 50 mil no mês, AD) (Moises, 14/nov/2026).
 - ✅ O dinheiro só sai **depois do pedido aprovado**, para o mesmo fornecedor, com o mesmo núcleo e centro, e sem passar do valor do pedido. Pedido recusado não paga. Pago por inteiro, o pedido se encerra.
