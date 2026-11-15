@@ -328,7 +328,8 @@ end $$;
 --   - os papéis (gestor da área, diretor da área, AF, AO e AD);
 --   - os tipos de núcleo;
 --   - a marca de natureza restrita e a mudança de galho que entra ou sai de um galho restrito;
---   - o tipo de um núcleo que já existe.
+--   - o tipo de um núcleo que já existe;
+--   - as divisões dos centros de custo: criar, renomear e desativar (S-101).
 -- Quem aplica é erp._aplicar_mudanca_acesso, definer de dono erp_acesso; os gatilhos das tabelas
 -- conferem erp.agindo_como('erp_acesso').
 
@@ -419,7 +420,8 @@ insert into erp.regras_mudanca_acesso (tabela, rotulo) values
   ('excecoes_centro', 'Exceções de centro'), ('excecoes_divisao', 'Exceções de divisão'), ('excecoes_natureza', 'Exceções de natureza'),
   ('tipos_nucleo', 'Tipos de núcleo'),
   ('aprovadores_acesso', 'Aprovadores de acesso'), ('regra_acesso', 'Mínimo de aprovações e prazo da sucessão'),
-  ('naturezas', 'Marca restrita e galho restrito de natureza'), ('nucleos_economicos', 'Tipo de um núcleo');
+  ('naturezas', 'Marca restrita e galho restrito de natureza'), ('nucleos_economicos', 'Tipo de um núcleo'),
+  ('divisoes', 'Divisões dos centros de custo (criar, renomear, desativar)');
 create function erp.tg_regras_mudanca_acesso() returns trigger language plpgsql as $$
 begin
   if erp.sistema() or erp.sou_master() then
@@ -683,6 +685,7 @@ begin
     when 'centro_aprovadores' then (select to_jsonb(t) from erp.centro_aprovadores t where centro_custo_id = (d->>'centro_custo_id')::uuid and user_id = (d->>'user_id')::uuid)
     when 'listas_financeiro' then (select to_jsonb(t) from erp.listas_financeiro t where lista = d->>'lista' and user_id = (d->>'user_id')::uuid)
     when 'tipos_nucleo' then (select to_jsonb(t) from erp.tipos_nucleo t where codigo = d->>'codigo')
+    when 'divisoes' then (select jsonb_build_object('id', id, 'centro_custo_id', centro_custo_id, 'nome', nome, 'ativa', ativa) from erp.divisoes where id = (d->>'id')::uuid)
     when 'aprovadores_acesso' then (select to_jsonb(t) from erp.aprovadores_acesso t where user_id = (d->>'user_id')::uuid)
     when 'regra_acesso' then (select to_jsonb(t) from erp.regra_acesso t)
     when 'naturezas' then (select jsonb_build_object('id', id, 'mae_id', mae_id, 'restrita', restrita) from erp.naturezas where id = (d->>'id')::uuid)
@@ -698,6 +701,8 @@ end $$;
 --   - modelo: quem está ligado a ele;
 --   - marca restrita e galho: quem tem acesso a algum centro (atribuição ou exceção de centro);
 --   - tipo de um núcleo: quem tem atribuição pelo tipo novo;
+--   - divisão: quem tem o centro dela num modelo atribuído ou numa exceção (a divisão nova entra
+--     no acesso de quem tem as futuras);
 --   - tipos de núcleo e regra da lista: ninguém além de quem pede.
 create function erp._beneficiarios_acesso(p_tabela text, d jsonb, a jsonb) returns uuid[] language plpgsql stable as $$
 begin
@@ -714,6 +719,11 @@ begin
   elsif p_tabela = 'naturezas' then
     return array(select user_id from erp.atribuicoes union select user_id from erp.excecoes_centro where nivel <> 'nenhum'
                  union select user_id from erp.excecoes_divisao where nivel <> 'nenhum');
+  elsif p_tabela = 'divisoes' then
+    return array(select a2.user_id from erp.atribuicoes a2 join erp.perfil_centros pc on pc.perfil_id = a2.perfil_id
+                  where pc.centro_custo_id = coalesce(d->>'centro_custo_id', a->>'centro_custo_id')::uuid
+                 union select user_id from erp.excecoes_centro
+                        where centro_custo_id = coalesce(d->>'centro_custo_id', a->>'centro_custo_id')::uuid and nivel <> 'nenhum');
   elsif p_tabela = 'nucleos_economicos' then
     return array(select a2.user_id from erp.atribuicoes a2 join erp.atribuicao_tipos t on t.atribuicao_id = a2.id
                   where t.tipo_nucleo = d->>'tipo');
@@ -747,6 +757,11 @@ begin
   if p_tabela in ('naturezas','nucleos_economicos','regra_acesso','usuarios') and p_operacao <> 'alterar' then
     raise exception 'Em % o pedido só altera', p_tabela;
   end if;
+  if p_tabela = 'divisoes' and p_operacao = 'excluir' then raise exception 'Divisão não se apaga; desative'; end if;
+  if p_tabela = 'divisoes' and exists (select 1 from jsonb_object_keys(p_dados) k
+                                        where k not in ('id','nome','ativa') and not (p_operacao = 'incluir' and k = 'centro_custo_id')) then
+    raise exception 'O pedido de divisão só cria (centro e nome), renomeia e desativa';
+  end if;
   if p_tabela = 'usuarios' and exists (select 1 from jsonb_object_keys(p_dados) k where k not in ('id','papel','contador','ativo')) then
     raise exception 'O pedido de usuário só muda o papel e o contador e ativa o usuário novo (login, desativar e marca de sucessor: só o master)';
   end if;
@@ -766,7 +781,7 @@ begin
     raise exception 'O pedido de núcleo só muda o tipo';
   end if;
   -- chaves geradas no pedido, para o pedido de uma atribuição nova já poder levar núcleos e tipos
-  if p_operacao = 'incluir' and p_tabela in ('perfis_modelo','atribuicoes','excecoes_natureza') and not (v_dados ? 'id') then
+  if p_operacao = 'incluir' and p_tabela in ('perfis_modelo','atribuicoes','excecoes_natureza','divisoes') and not (v_dados ? 'id') then
     v_dados := v_dados || jsonb_build_object('id', gen_random_uuid());
   end if;
   v_antes := erp._linha_acesso(p_tabela, v_dados);
@@ -869,6 +884,11 @@ begin
     if m.operacao = 'incluir' then insert into erp.perfil_centro_divisoes select * from jsonb_populate_record(null::erp.perfil_centro_divisoes, d);
     elsif m.operacao = 'alterar' then update erp.perfil_centro_divisoes t set incluir = r.incluir, nivel = r.nivel from jsonb_populate_record(null::erp.perfil_centro_divisoes, d) r where t.perfil_id = r.perfil_id and t.divisao_id = r.divisao_id;
     else delete from erp.perfil_centro_divisoes where perfil_id = (d->>'perfil_id')::uuid and divisao_id = (d->>'divisao_id')::uuid; end if;
+  when 'divisoes' then
+    if m.operacao = 'incluir' then
+      insert into erp.divisoes (id, centro_custo_id, nome, ativa)
+      values ((d->>'id')::uuid, (d->>'centro_custo_id')::uuid, d->>'nome', coalesce((d->>'ativa')::boolean, true));
+    else update erp.divisoes set nome = d->>'nome', ativa = (d->>'ativa')::boolean where id = (d->>'id')::uuid; end if;
   when 'perfil_naturezas' then
     if m.operacao = 'incluir' then insert into erp.perfil_naturezas select * from jsonb_populate_record(null::erp.perfil_naturezas, d);
     elsif m.operacao = 'excluir' then delete from erp.perfil_naturezas where perfil_id = (d->>'perfil_id')::uuid and natureza_id = (d->>'natureza_id')::uuid;

@@ -156,16 +156,16 @@ create function erp.vejo_previsao(p_id uuid) returns boolean language sql stable
 
 -- Pagamento: o financeiro (AF, AO, AD), quem lançou, ou quem vê o núcleo × centro dele ou um
 -- título que ele quita; nunca se ele quita um título que a pessoa não vê (folha PJ).
-create function erp._vejo_pagamento(p_id uuid, p_nucleo uuid, p_centro uuid, p_autor uuid) returns boolean language sql stable as $$
+create function erp._vejo_pagamento(p_id uuid, p_nucleo uuid, p_centro uuid, p_autor uuid, p_divisao uuid default null) returns boolean language sql stable as $$
   select erp.membro() and (
     erp.sou_master() or erp.financeiro() or p_autor = erp.eu()
-    or ((   (p_nucleo is not null and erp._ve(p_nucleo, p_centro, null, p_autor))
+    or ((   (p_nucleo is not null and erp._ve(p_nucleo, p_centro, null, p_autor, p_divisao))
          or exists (select 1 from erp.quitacoes q join erp.parcelas pa on pa.id = q.parcela_id
                      where q.pagamento_id = p_id and erp.vejo_titulo(pa.titulo_id)))
         and not exists (select 1 from erp.quitacoes q join erp.parcelas pa on pa.id = q.parcela_id
                          where q.pagamento_id = p_id and not erp.vejo_titulo(pa.titulo_id)))) $$;
 create function erp.vejo_pagamento(p_id uuid) returns boolean language sql stable as
-  $$ select coalesce((select erp._vejo_pagamento(g.id, g.nucleo_economico_id, g.centro_custo_id, g.criado_por)
+  $$ select coalesce((select erp._vejo_pagamento(g.id, g.nucleo_economico_id, g.centro_custo_id, g.criado_por, g.divisao_id)
                         from erp.pagamentos g where g.id = p_id), false) $$;
 -- grava: o financeiro, ou quem lança no núcleo × centro do carimbo
 create function erp._lanco_pagamento(p_nucleo uuid, p_centro uuid, p_autor uuid) returns boolean language sql stable as $$
@@ -202,7 +202,7 @@ begin
     'erp.vejo_compromisso(uuid)', 'erp.lanco_compromisso(uuid)', 'erp.vejo_previsao(uuid)', 'erp.vejo_pagamento(uuid)',
     'erp._vejo_titulo(uuid, uuid)', 'erp._lanco_titulo(uuid, uuid)', 'erp._vejo_documento(uuid, uuid)', 'erp._lanco_documento(uuid, uuid)',
     'erp._vejo_compromisso(uuid, uuid)', 'erp._lanco_compromisso(uuid, uuid)',
-    'erp._vejo_pagamento(uuid, uuid, uuid, uuid)', 'erp._lanco_pagamento(uuid, uuid, uuid)', 'erp.vejo_reclassificacao(uuid)', 'erp.vejo_sucessao()',
+    'erp._vejo_pagamento(uuid, uuid, uuid, uuid, uuid)', 'erp._lanco_pagamento(uuid, uuid, uuid)', 'erp.vejo_reclassificacao(uuid)', 'erp.vejo_sucessao()',
     'erp.previsao_saldo(uuid)', 'erp.parcela_saldo(uuid)', 'erp.pagamento_saldo(uuid)'] loop
     execute format('alter function %s security definer set search_path = erp, pg_catalog, pg_temp', f);
     execute format('alter function %s owner to erp_conferencia', f);
@@ -276,7 +276,7 @@ begin
     -- ora", até essas mudanças do administrador passarem por aprovação): grava só o master
     ('naturezas_sistema', 'erp.membro()', 'erp.sou_master()'),
     ('centros_custo', 'erp.membro()', 'erp.sou_admin()'),
-    ('divisoes', 'erp.membro()', 'erp.sou_admin()'),
+    ('divisoes', 'erp.membro()', null),                       -- só pelo pedido aprovado (S-101)
     ('nucleos_economicos', 'erp.membro()', 'erp.sou_admin()'),
     ('nucleo_centros', 'erp.membro()', 'erp.sou_admin()'),
     ('etapas', 'erp.membro()', 'erp.sou_admin()'),
@@ -356,7 +356,7 @@ begin
                             'erp.lanco_compromisso(compromisso_id) and erp.lanco(nucleo_economico_id, centro_custo_id, natureza_id, (select c.criado_por from erp.compromissos c where c.id = compromisso_id), divisao_id)'),
     ('caucao_movimentos', 'erp.vejo_compromisso(compromisso_id)', null),
     -- pagamento
-    ('pagamentos', 'erp._vejo_pagamento(id, nucleo_economico_id, centro_custo_id, criado_por)',
+    ('pagamentos', 'erp._vejo_pagamento(id, nucleo_economico_id, centro_custo_id, criado_por, divisao_id)',
                     'erp._lanco_pagamento(nucleo_economico_id, centro_custo_id, criado_por)'),
     ('quitacoes', 'erp.vejo_titulo((select pa.titulo_id from erp.parcelas pa where pa.id = parcela_id))',
                   'erp.escrevo() and (erp.sou_master() or erp.financeiro()) and erp.vejo_pagamento(pagamento_id) and erp.vejo_titulo((select pa.titulo_id from erp.parcelas pa where pa.id = parcela_id))'),
@@ -425,7 +425,7 @@ grant execute on function
   erp.vejo_compromisso(uuid), erp.lanco_compromisso(uuid), erp.vejo_previsao(uuid),
   erp.vejo_pagamento(uuid), erp._vejo_titulo(uuid, uuid), erp._lanco_titulo(uuid, uuid), erp._vejo_documento(uuid, uuid),
   erp._lanco_documento(uuid, uuid), erp._vejo_compromisso(uuid, uuid), erp._lanco_compromisso(uuid, uuid),
-  erp._vejo_pagamento(uuid, uuid, uuid, uuid), erp._lanco_pagamento(uuid, uuid, uuid), erp.vejo_reclassificacao(uuid), erp.vejo_sucessao(),
+  erp._vejo_pagamento(uuid, uuid, uuid, uuid, uuid), erp._lanco_pagamento(uuid, uuid, uuid), erp.vejo_reclassificacao(uuid), erp.vejo_sucessao(),
   -- saldos só do que a pessoa vê
   erp.previsao_saldo(uuid), erp.parcela_saldo(uuid), erp.pagamento_saldo(uuid),
   -- conferências das travas (chamadas pelos gatilhos invoker)

@@ -390,10 +390,14 @@ create table erp.divisoes (
   unique (centro_custo_id, nome),
   unique (id, centro_custo_id)
 );
+-- Criar, renomear e desativar divisão: só por pedido aprovado, como o acesso (Moises, 15/11/2026,
+-- S-101), porque a divisão nova entra no acesso de quem tem as futuras e passa a ser exigida nas linhas.
 create function erp.tg_divisao() returns trigger language plpgsql as $$
 begin
-  perform erp.exigir_admin();
   if tg_op in ('DELETE', 'TRUNCATE') then raise exception 'Divisão não se apaga; desative'; end if;
+  if not (erp.agindo_como('erp_acesso') or erp.sistema()) then
+    raise exception 'Divisão só se cria, renomeia ou desativa por pedido aprovado (erp.pedir_mudanca_acesso)';
+  end if;
   if tg_op = 'INSERT' then new.criado_em := clock_timestamp();
   elsif new.centro_custo_id <> old.centro_custo_id or new.criado_em <> old.criado_em then
     raise exception 'A divisão não muda de centro de custo nem de data de criação';

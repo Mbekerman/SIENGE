@@ -312,13 +312,17 @@ create table erp.pagamentos (
   -- obrigatórios salvo na transferência entre contas próprias (favorecido = a própria empresa)
   nucleo_economico_id uuid references erp.nucleos_economicos,
   centro_custo_id     uuid references erp.centros_custo,
+  -- e a divisão, quando o centro tem divisões (Moises, 15/11/2026)
+  divisao_id          uuid,
   lote_id        uuid references erp.lotes_bancarios,
   data           date not null,
   valor          numeric(15,2) not null check (valor > 0),
   forma          text not null default 'pix' check (forma in ('pix','ted','boleto','debito','cheque','dinheiro','outro')),
   descricao      text,
   criado_por     uuid,
-  criado_em      timestamptz not null default clock_timestamp()
+  criado_em      timestamptz not null default clock_timestamp(),
+  foreign key (divisao_id, centro_custo_id) references erp.divisoes (id, centro_custo_id),
+  check (divisao_id is null or centro_custo_id is not null)
 );
 create trigger t_autor before insert or update on erp.pagamentos
   for each row execute function erp.tg_autor();
@@ -498,7 +502,7 @@ end $$;
 do $$
 declare t text;
 begin
-  foreach t in array array['compromisso_rateios', 'documento_rateios', 'titulo_rateios', 'previsoes', 'orcamento_linhas'] loop
+  foreach t in array array['compromisso_rateios', 'documento_rateios', 'titulo_rateios', 'previsoes', 'orcamento_linhas', 'pagamentos'] loop
     execute format('create trigger t_divisao_linha before insert or update of centro_custo_id, divisao_id on erp.%I
                       for each row execute function erp.tg_divisao_linha()', t);
   end loop;
@@ -1090,7 +1094,7 @@ begin
   end if;
   if new.pessoa_id is distinct from (select pessoa_id from erp.empresas where id = new.empresa_id)
      and (new.nucleo_economico_id is null or new.centro_custo_id is null) then
-    raise exception 'Pagamento e adiantamento saem carimbados com núcleo econômico e centro de custo (só a transferência entre contas próprias dispensa)';
+    raise exception 'Pagamento e adiantamento saem carimbados com núcleo econômico e centro de custo (e a divisão, se o centro tiver; só a transferência entre contas próprias dispensa)';
   end if;
   if new.nucleo_economico_id is not null
      and (select empresa_id from erp.nucleos_economicos where id = new.nucleo_economico_id) <> new.empresa_id then
@@ -1098,8 +1102,8 @@ begin
   end if;
   perform erp.checar_centro(new.nucleo_economico_id, new.centro_custo_id, new.empresa_id);
   if new.adiantamento_id is not null then perform erp._pagar_pedido_adiantamento(new); end if;
-  insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_caixa, valor, pagamento_id)
-  values ('realizado', new.empresa_id, new.nucleo_economico_id, new.centro_custo_id, erp.natureza_sistema('adiantamentos'),
+  insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, competencia, data_caixa, valor, pagamento_id)
+  values ('realizado', new.empresa_id, new.nucleo_economico_id, new.centro_custo_id, new.divisao_id, erp.natureza_sistema('adiantamentos'),
           erp.mes(new.data), new.data, -new.valor, new.id);
   return new;
 end $$;
@@ -1742,7 +1746,7 @@ create function erp._cobrir_adiantamento(t erp.titulos) returns void language pl
 declare r record; a record; v_resto numeric; v_disp numeric; v_c numeric;
 begin
   if t.tipo not in ('fornecedor','avulso') then return; end if;
-  for r in select tr.id, tr.nucleo_economico_id, tr.centro_custo_id, round(t.valor * tr.percentual / 100, 2) as parte
+  for r in select tr.id, tr.nucleo_economico_id, tr.centro_custo_id, tr.divisao_id, round(t.valor * tr.percentual / 100, 2) as parte
              from erp.titulo_rateios tr where tr.titulo_id = t.id order by tr.id loop
     v_resto := r.parte;
     for a in select a0.id, a0.valor from erp.titulos a0 join erp.titulo_rateios ar on ar.titulo_id = a0.id
@@ -1750,6 +1754,7 @@ begin
                 and a0.situacao in ('aberto','quitado')   -- recusado nunca é pago, então não cobre
                 and ar.nucleo_economico_id is not distinct from r.nucleo_economico_id
                 and ar.centro_custo_id is not distinct from r.centro_custo_id
+                and ar.divisao_id is not distinct from r.divisao_id
               order by a0.emissao, a0.criado_em, a0.id for update of a0 loop
       exit when v_resto <= 0;
       -- só o que já saiu cobre: pedido aprovado e não pago não abate nada. Cada título já atendido
@@ -1786,8 +1791,9 @@ begin
   end if;
   if not exists (select 1 from erp.titulo_rateios where titulo_id = a.id
                   and nucleo_economico_id is not distinct from g.nucleo_economico_id
-                  and centro_custo_id is not distinct from g.centro_custo_id) then
-    raise exception 'O pagamento sai com o núcleo e o centro de custo do pedido de adiantamento';
+                  and centro_custo_id is not distinct from g.centro_custo_id
+                  and divisao_id is not distinct from g.divisao_id) then
+    raise exception 'O pagamento sai com o núcleo, o centro de custo e a divisão do pedido de adiantamento';
   end if;
   if erp.alcada_recusada(a.id) then raise exception 'O título foi recusado na alçada'; end if;
   if erp.alcada_pendente(a.id) is not null then
@@ -2311,9 +2317,10 @@ begin
     -- adiantamento só abate título do mesmo núcleo e centro do carimbo; em outro, só aprovado
     if g.nucleo_economico_id is not null
        and not exists (select 1 from erp.titulo_rateios tr where tr.titulo_id = t.id
-                       and tr.nucleo_economico_id = g.nucleo_economico_id and tr.centro_custo_id is not distinct from g.centro_custo_id)
+                       and tr.nucleo_economico_id = g.nucleo_economico_id and tr.centro_custo_id is not distinct from g.centro_custo_id
+                       and tr.divisao_id is not distinct from g.divisao_id)
        and not erp.abatimento_aprovado(g.id, t.id) then
-      raise exception 'Este pagamento é de outro núcleo ou centro de custo; abater aqui precisa de aprovação de %',
+      raise exception 'Este pagamento é de outro núcleo, centro de custo ou divisão; abater aqui precisa de aprovação de %',
         array_to_string((erp.regra_adiantamento_atual()).aprova_cruzado, ', ');
     end if;
     -- o título não é pago com dinheiro novo enquanto o fornecedor tiver adiantamento em aberto
@@ -2333,9 +2340,9 @@ begin
   v_comp := erp.mes(g.data);
 
   -- sai de Adiantamentos
-  insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_caixa, valor,
+  insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, competencia, data_caixa, valor,
                                pagamento_id, quitacao_id, titulo_id, parcela_id)
-  values ('realizado', t.empresa_id, g.nucleo_economico_id, g.centro_custo_id, erp.natureza_sistema('adiantamentos'), v_comp, g.data, v_total,
+  values ('realizado', t.empresa_id, g.nucleo_economico_id, g.centro_custo_id, g.divisao_id, erp.natureza_sistema('adiantamentos'), v_comp, g.data, v_total,
           g.id, new.id, t.id, pa.id);
   -- principal: realizado na natureza do título e estorno do comprometido
   for r in select * from erp.ratear('titulo', t.id, new.principal) loop
@@ -2376,7 +2383,7 @@ create trigger t_imutavel before update or delete on erp.quitacoes
 create function erp.pagar_parcela(p_parcela uuid, p_conta uuid, p_data date,
   p_juros numeric default 0, p_multa numeric default 0, p_desconto numeric default 0, p_lote uuid default null)
 returns uuid language plpgsql as $$
-declare t erp.titulos; v_saldo numeric; v_pag uuid; v_nucleo uuid; v_centro uuid;
+declare t erp.titulos; v_saldo numeric; v_pag uuid; v_nucleo uuid; v_centro uuid; v_div uuid;
 begin
   perform erp.exigir_editor();
   -- S-091 (Moises, 15/11/2026): pagamento só pelo sistema (o adaptador do Sienge) e pelo financeiro
@@ -2386,11 +2393,11 @@ begin
   select t2.* into t from erp.titulos t2 join erp.parcelas p on p.titulo_id = t2.id where p.id = p_parcela;
   v_saldo := erp.parcela_saldo(p_parcela);
   if t.id is null or v_saldo is null then raise exception 'Parcela não encontrada'; end if;
-  -- carimbo: o núcleo e o centro de maior peso no rateio do título
-  select nucleo_economico_id, centro_custo_id into v_nucleo, v_centro
+  -- carimbo: o núcleo, o centro e a divisão da linha de maior peso no rateio do título
+  select nucleo_economico_id, centro_custo_id, divisao_id into v_nucleo, v_centro, v_div
   from erp.titulo_rateios where titulo_id = t.id order by percentual desc, id limit 1;
-  insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, lote_id, data, valor)
-  values (t.empresa_id, p_conta, t.pessoa_id, v_nucleo, v_centro, p_lote, p_data, v_saldo + p_juros + p_multa - p_desconto)
+  insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, divisao_id, lote_id, data, valor)
+  values (t.empresa_id, p_conta, t.pessoa_id, v_nucleo, v_centro, v_div, p_lote, p_data, v_saldo + p_juros + p_multa - p_desconto)
   returning id into v_pag;
   insert into erp.quitacoes (pagamento_id, parcela_id, principal, juros, multa, desconto)
   values (v_pag, p_parcela, v_saldo, p_juros, p_multa, p_desconto);
@@ -2551,6 +2558,7 @@ cross join lateral (
 
 create view erp.v_adiantamentos with (security_invoker = true) as
 select g.id as pagamento_id, g.empresa_id, g.pessoa_id, g.compromisso_id, g.data, g.valor,
+       g.nucleo_economico_id, g.centro_custo_id, g.divisao_id,
        erp.pagamento_saldo(g.id) as saldo
 from erp.pagamentos g where erp.pagamento_saldo(g.id) > 0;
 
