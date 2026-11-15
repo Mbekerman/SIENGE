@@ -379,7 +379,7 @@ end $$;
 -- Toda tabela do esquema tem a sua linha acima (teste de catálogo confere): nenhuma fica aberta
 -- por esquecimento, nem fechada sem querer.
 grant usage on schema erp to authenticated;
-grant select on erp.v_naturezas, erp.v_parcelas, erp.v_adiantamentos, erp.v_caucao, erp.v_previsoes,
+grant select on erp.v_naturezas, erp.v_parcelas, erp.v_titulo_alcadas, erp.v_adiantamentos, erp.v_caucao, erp.v_previsoes,
                 erp.v_fluxo_caixa, erp.v_lancamentos_bi to authenticated;
 
 -- ---------------------------------------------------------------------------------------------
@@ -436,7 +436,7 @@ grant execute on function
   -- operações
   erp.confirmar_titulo(uuid), erp.lancar_documento(uuid, date[], uuid[]),
   erp.liberar_caucao(uuid, numeric, date, uuid, text), erp.publicar_orcamento(uuid),
-  erp.decidir_titulo(uuid, boolean, text, boolean), erp.reenviar_titulo(uuid, text, date[], uuid[]),
+  erp.decidir_titulo(uuid, boolean, text, boolean, uuid), erp.reenviar_titulo(uuid, text, date[], uuid[]),
   erp.registrar_movimento_societario(text, uuid, uuid, numeric, date, text),
   erp.fechar_mes(uuid, date), erp.reabrir_mes(uuid, date),
   erp.pedir_reclassificacao(uuid, uuid, text, jsonb, boolean), erp.decidir_reclassificacao(uuid, boolean, text),

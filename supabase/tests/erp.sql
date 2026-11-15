@@ -1830,7 +1830,7 @@ update erp.usuarios set ativo = true where id = :'gestor';
 select pg_temp.ok((select titulos = array['82000000-0000-0000-0000-000000000006', '82000000-0000-0000-0000-000000000007']::uuid[]
                    from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000007'),
   'alçada: guarda os títulos que formaram o acumulado (a lista de quem aprova é a mesma da soma)');
--- rateio em dois centros com gestor: vale o maior acumulado
+-- rateio em dois centros com gestor: uma alçada em cada centro, com o acumulado e a parte de cada um
 select pg_temp.sis(); insert into erp.centro_aprovadores values (:'cc_obra', :'diretor2'); select pg_temp.volta();
 select pg_temp.como(:'analista');
 insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
@@ -1845,9 +1845,10 @@ insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id,
 select erp.confirmar_titulo('82000000-0000-0000-0000-000000000008');
 select erp.confirmar_titulo('82000000-0000-0000-0000-000000000009');
 -- obra: 60000 + 500; o mesmo fornecedor soma a outra metade (500): 61000
-select pg_temp.ok((select centro_custo_id = :'cc_obra' and acumulado = 61000 and etapas = '{AREA,AF,AD}'
-                   from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000009'),
-  'alçada: rateio em dois centros com gestor usa o de maior acumulado');
+select pg_temp.ok((select acumulado = 61000 and valor_no_centro = 500 and etapas = '{AREA,AF,AD}'
+                   from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000009' and centro_custo_id = :'cc_obra')
+                  and (select count(*) from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000009') = 2,
+  'alçada: rateio em dois centros com gestor tem uma alçada em cada centro, com o acumulado e a parte de cada um');
 -- imposto retido não entra na alçada
 insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
 values ('70000000-0000-0000-0000-000000000650', :'spe', '10000000-0000-0000-0000-000000000007', 'nfse', '650', '2026-07-05', '2026-07-01', 1000);
@@ -4013,32 +4014,59 @@ select pg_temp.tit('84000000-0000-0000-0000-000000000006', :'cc_mkt', '05.01.04'
 select pg_temp.ok((select etapas = '{AREA,AF,AD}' and alcada_id = (select id from erp.alcadas_pagamento where centro_custo_id is null and ate is null)
                      from erp.titulo_alcadas where titulo_id = '84000000-0000-0000-0000-000000000006'),
   'alçada por centro: sem faixas próprias, o centro usa as gerais (acima de 50 mil no mês, com a AD)');
--- empate de vagas entre centros do rateio: vale o centro de maior acumulado
+-- rateio em vários centros (Moises, 15/11/2026): uma aprovação por centro, com o valor de cada um
+-- e o rito de cada um; o título só aprova quando todos os centros aprovaram
 select id as cc_a from erp.centros_custo where nome not in ('Obra', 'Marketing') order by nome limit 1 \gset
 select id as cc_b from erp.centros_custo where nome not in ('Obra', 'Marketing') order by nome offset 1 limit 1 \gset
 select pg_temp.como(:'diretor');
 insert into erp.nucleo_centros (nucleo_economico_id, centro_custo_id, ligado) values (:'ne_vm', :'cc_a', true), (:'ne_vm', :'cc_b', true)
   on conflict (nucleo_economico_id, centro_custo_id) do update set ligado = true;
 select pg_temp.sis();
-insert into erp.alcadas_pagamento (centro_custo_id, etapas) values (:'cc_a', '{AF}'), (:'cc_b', '{AF}');
+insert into erp.alcadas_pagamento (centro_custo_id, ate, ate_titulo, etapas) values
+  (:'cc_a', null, 1000, '{AF}'), (:'cc_a', null, null, array['AF', 'P:' || :'analista2']), (:'cc_b', null, null, '{AF}');
 select pg_temp.volta();
-create function pg_temp.tit2(p_id uuid, p_c1 uuid, p_c2 uuid, p_valor numeric) returns void language sql as $$
+create function pg_temp.tit2(p_id uuid, p_c1 uuid, p_c2 uuid, p_valor numeric, p_pct1 numeric) returns void language sql as $$
   insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
     (p_id, '20000000-0000-0000-0000-000000000003', 'avulso', '10000000-0000-0000-0000-000000000008', '2026-09-02', '2026-09-01', p_valor);
   insert into erp.parcelas (titulo_id, numero, vencimento, valor) values (p_id, 1, '2026-09-20', p_valor);
   insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
-  values (p_id, '40000000-0000-0000-0000-000000000001', p_c1, pg_temp.nat('05.01.04'), 50),
-         (p_id, '40000000-0000-0000-0000-000000000001', p_c2, pg_temp.nat('05.01.04'), 50);
+  values (p_id, '40000000-0000-0000-0000-000000000001', p_c1, pg_temp.nat('05.01.04'), p_pct1),
+         (p_id, '40000000-0000-0000-0000-000000000001', p_c2, pg_temp.nat('05.01.04'), 100 - p_pct1);
   select erp.confirmar_titulo(p_id); $$;
 select pg_temp.como(:'analista');
-select pg_temp.tit('84000000-0000-0000-0000-000000000021', :'cc_a', '05.01.04', 5000);
-select pg_temp.tit2('84000000-0000-0000-0000-000000000022', :'cc_a', :'cc_b', 1000);
-select pg_temp.ok((select centro_custo_id = :'cc_a' from erp.titulo_alcadas where titulo_id = '84000000-0000-0000-0000-000000000022'),
-  'alçada por centro: no empate de vagas, vale o centro de maior acumulado (o primeiro)');
-select pg_temp.tit('84000000-0000-0000-0000-000000000023', :'cc_b', '05.01.04', 20000);
-select pg_temp.tit2('84000000-0000-0000-0000-000000000024', :'cc_a', :'cc_b', 1000);
-select pg_temp.ok((select centro_custo_id = :'cc_b' from erp.titulo_alcadas where titulo_id = '84000000-0000-0000-0000-000000000024'),
-  'alçada por centro: no empate de vagas, vale o centro de maior acumulado (o segundo)');
+select pg_temp.tit2('84000000-0000-0000-0000-000000000022', :'cc_a', :'cc_b', 10000, 95);
+select pg_temp.ok((select count(*) = 2 from erp.titulo_alcadas where titulo_id = '84000000-0000-0000-0000-000000000022')
+                  and (select valor_no_centro = 9500 and cardinality(etapas) = 2 from erp.titulo_alcadas
+                        where titulo_id = '84000000-0000-0000-0000-000000000022' and centro_custo_id = :'cc_a')
+                  and (select valor_no_centro = 500 and etapas = '{AF}' from erp.titulo_alcadas
+                        where titulo_id = '84000000-0000-0000-0000-000000000022' and centro_custo_id = :'cc_b'),
+  'alçada por centro: rateio em dois centros tem uma alçada em cada um, com o valor do centro e a faixa dele');
+select pg_temp.tit2('84000000-0000-0000-0000-000000000023', :'cc_a', :'cc_b', 1800, 50);
+select pg_temp.ok((select etapas = '{AF}' and valor_no_centro = 900 from erp.titulo_alcadas
+                    where titulo_id = '84000000-0000-0000-0000-000000000023' and centro_custo_id = :'cc_a'),
+  'alçada por centro: o limite do título olha a parte do título no centro');
+-- quem tem vaga nos dois centros aprova nos dois
+select pg_temp.como(:'contador');
+select pg_temp.ok(erp.decidir_titulo('84000000-0000-0000-0000-000000000022', true) = 'pendente', 'alçada por centro: o AF aprova no primeiro centro');
+select pg_temp.ok(erp.decidir_titulo('84000000-0000-0000-0000-000000000022', true) = 'pendente', 'alçada por centro: e aprova também no segundo');
+select pg_temp.erro_igual($$select erp.decidir_titulo('84000000-0000-0000-0000-000000000022', true)$$,
+  'Você já aprovou uma etapa deste título', 'alçada por centro: dentro do centro, a mesma pessoa não aprova duas vagas');
+select pg_temp.como(:'analista');
+select pg_temp.ok((select situacao = 'pendente' and vagas_pendentes = array['P:' || :'analista2'] from erp.v_titulo_alcadas
+                    where titulo_id = '84000000-0000-0000-0000-000000000022' and centro_custo_id = :'cc_a')
+                  and (select situacao = 'aprovado' and vagas_pendentes = '{}' from erp.v_titulo_alcadas
+                        where titulo_id = '84000000-0000-0000-0000-000000000022' and centro_custo_id = :'cc_b'),
+  'alçada por centro: quem lançou acompanha quais centros e quais vagas faltam');
+select pg_temp.como(:'analista2');
+select pg_temp.erro_igual(format($$select erp.decidir_titulo('84000000-0000-0000-0000-000000000022', true, null, false, %L)$$, :'cc_b'),
+  'Este centro já aprovou o título', 'alçada por centro: o centro que já aprovou não decide de novo');
+select pg_temp.ok(erp.decidir_titulo('84000000-0000-0000-0000-000000000022', true) = 'aprovado',
+  'alçada por centro: aprovado em todos os centros, o título está aprovado');
+-- o master aprova todos os centros de uma vez
+select pg_temp.como(:'diretor');
+select erp.decidir_titulo('84000000-0000-0000-0000-000000000023', true) as r_mc \gset
+select pg_temp.ok(:'r_mc' = 'aprovado' and not exists (select 1 from erp.v_titulo_alcadas where titulo_id = '84000000-0000-0000-0000-000000000023' and situacao <> 'aprovado'),
+  'alçada por centro: o voto do master aprova todos os centros');
 -- modo livre também no limite do título
 select pg_temp.como(:'diretor');
 update erp.regras_mudanca_config set modo = 'livre_ate', percentual = 10, meses = 3 where tabela = 'alcadas_pagamento';
