@@ -105,6 +105,19 @@ Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depo
 
 ![Pedidos, ficha do pedido, Novo pedido, Adiantamento sem nota, Contas recorrentes, Nova conta (os dois tipos), No Sienge e Campanhas](../imagens/financeiro/contas-a-pagar-telas.png)
 
+#### O que muda nas telas com o piloto do Marketing
+
+> 🧪 Protótipo, versão de 15/nov/2026, ainda sem código e ainda não aprovado pelo Moises.
+
+- **Novo pedido:** tem o campo **divisão**. Ele é obrigatório quando o centro de custo tem divisões. O pedido pode ser **rateado** entre centros: cada centro aprova a sua parte, com a alçada dele, e o título só segue quando todos aprovarem. O pedido também pode **abater um adiantamento** em aberto. Se o adiantamento é de outra divisão do mesmo centro, o abatimento pede o gestor do centro ou AF, AO ou AD. Se é de outro centro, pede AF, AO ou AD.
+- **Para aprovar:** a ficha do pedido mostra um quadro por alçada, com cada vaga e quem já aprovou. Quando a divisão "passa pelo centro", uma aprovação vale para os dois. Quando faltam aprovadores, aparece o aviso de que o pedido foi ao master, com o motivo.
+- **Adiantamentos (aba nova em Pedidos):** os adiantamentos em aberto e os abatimentos para aprovar, com núcleo, centro e divisão de cada um.
+- **No Sienge:** o centro aparece com a divisão (por exemplo, Marketing › Online).
+
+![Início, Novo pedido com rateio e abatimento, Para aprovar com dois centros, pedido que foi ao master, Adiantamentos e No Sienge, no computador](../imagens/financeiro/piloto-marketing-desk.png)
+
+![As mesmas telas no celular](../imagens/financeiro/piloto-marketing-cel.png)
+
 O menu tem cinco itens: **Início**, **Pedidos**, **Aprovar**, **Conferir** e **Admin**. No celular, eles ficam numa barra embaixo.
 
 | Tela | O que mostra |
