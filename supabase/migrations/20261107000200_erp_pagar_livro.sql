@@ -1053,10 +1053,19 @@ create function erp.pagamento_saldo(p_id uuid) returns numeric language sql stab
 create table erp.listas_financeiro (            -- quem está em cada lista de aprovação do financeiro
   lista   text not null check (lista in ('AF','AO','AD')),
   user_id uuid not null references erp.usuarios,
+  -- quem está na AD pode, pessoa a pessoa, aprovar o próprio lançamento, com aviso (Moises, 7/nov/2026)
+  aprova_proprio boolean not null default false check (not aprova_proprio or lista = 'AD'),
+  avisa_proprio  boolean not null default true,
   primary key (lista, user_id)
 );
 create function erp.tg_so_admin() returns trigger language plpgsql as $$
-begin perform erp.exigir_admin(); return coalesce(new, old); end $$;
+begin
+  -- papéis de aprovação: também pelo pedido de acesso aprovado (erp_acesso, migration _erp_perfis)
+  if not (erp.agindo_como('erp_acesso') and tg_table_name in ('listas_financeiro', 'centro_aprovadores', 'usuarios')) then
+    perform erp.exigir_admin();
+  end if;
+  return coalesce(new, old);
+end $$;
 create trigger t_listas_financeiro before insert or update or delete on erp.listas_financeiro
   for each row execute function erp.tg_so_admin();
 create trigger t_aud_listas_financeiro after insert or update or delete on erp.listas_financeiro
@@ -1110,6 +1119,16 @@ create trigger t_aud_regra_adiantamento after update on erp.regra_adiantamento
 create function erp.estou_nas_listas(p_listas text[]) returns boolean language sql stable as $$
   select exists (select 1 from erp.listas_financeiro l join erp.usuarios u on u.id = l.user_id
                  where l.user_id = erp.eu() and u.ativo and l.lista = any(p_listas)) $$;
+
+-- Quem aprova o próprio lançamento: o master, sempre (Moises, 14/11/2026), e quem está na AD com a
+-- marca aprova_proprio, quando a AD está entre as listas da aprovação (Moises, 7/nov/2026).
+create function erp.aprova_proprio(p_listas text[]) returns boolean language plpgsql stable as $$
+begin
+  return erp.sou_master()
+      or ('AD' = any (p_listas)
+          and exists (select 1 from erp.listas_financeiro l join erp.usuarios u on u.id = l.user_id and u.ativo
+                       where l.lista = 'AD' and l.user_id = erp.eu() and l.aprova_proprio));
+end $$;
 
 -- A regra vigente (security definer na migration _erp_rls: a trava lê a regra por baixo do RLS).
 create function erp.regra_adiantamento_atual() returns erp.regra_adiantamento language sql stable as
@@ -1227,6 +1246,7 @@ create table erp.titulo_aprovacoes (
   primary key (titulo_id, rodada, etapa),
   -- decisao: quem decidiu é quem gravou; ajuste: quem ajustou na revisão (_aprovar_pelo_ajuste)
   origem        text not null default 'decisao' check (origem in ('decisao','ajuste')),
+  proprio       boolean not null default false,  -- quem aprovou lançou o título (master ou AD autorizada): sai o aviso
   check (aprovado or length(trim(coalesce(justificativa, ''))) > 0),
   check (origem = 'decisao' or (aprovado and lista in ('AREA','AF')))
 );
@@ -1467,11 +1487,12 @@ declare v_listas text[] := (select excecao_competencia from erp.regra_alcada_pag
 begin
   if tg_op <> 'INSERT' then raise exception 'Exceção de competência não se altera nem se apaga'; end if;
   perform erp.exigir_editor();
-  if not erp.estou_nas_listas(v_listas) then
+  if not erp.estou_nas_listas(v_listas) and not erp.sou_master() then      -- o master sempre aprova
     raise exception 'Só quem está em % aprova isto', array_to_string(v_listas, ', ');
   end if;
   if erp.eu() = coalesce(erp.autor_lancamento('documento', new.documento_id),
-                         erp.autor_lancamento('titulo', new.titulo_id)) then
+                         erp.autor_lancamento('titulo', new.titulo_id))
+     and not erp.aprova_proprio(v_listas) then
     raise exception 'Quem lançou não aprova o próprio lançamento';
   end if;
   new.competencia := coalesce((select competencia from erp.documentos_fiscais where id = new.documento_id),
@@ -1670,7 +1691,8 @@ end $$;
 create function erp.decidir_titulo(p_titulo uuid, p_aprovar boolean, p_justificativa text default null,
                                    p_revisao boolean default false)
 returns text language plpgsql as $$
-declare a erp.titulo_alcadas; v_etapa int; v_lista text; v_eu uuid := erp.eu();
+declare a erp.titulo_alcadas; v_etapa int; v_lista text; v_eu uuid := erp.eu(); v_master boolean := erp.sou_master();
+        v_proprio boolean; v_autor boolean;
 begin
   perform erp.exigir_editor();
   if v_eu is null then raise exception 'Usuário sem cadastro no ERP'; end if;
@@ -1682,21 +1704,26 @@ begin
   v_etapa := erp.alcada_etapa(p_titulo);
   if v_etapa is null then raise exception 'O título já foi aprovado em todas as etapas'; end if;
   v_lista := a.etapas[v_etapa];
-  if erp.autor_lancamento('titulo', p_titulo) = v_eu then raise exception 'Quem lançou não aprova o próprio lançamento'; end if;
+  -- quem lançou não aprova, salvo o master e a AD autorizada (na etapa da AD)
+  v_proprio := v_master or (v_lista = 'AD' and erp.aprova_proprio(array['AD']));
+  v_autor := erp.autor_lancamento('titulo', p_titulo) = v_eu
+             or exists (select 1 from erp.cadeia_titulo(p_titulo) c(id) where erp.autor_lancamento('titulo', c.id) = v_eu);
+  if coalesce(v_autor, false) and not v_proprio then raise exception 'Quem lançou não aprova o próprio lançamento'; end if;
   -- na nota relançada, quem lançou qualquer título da cadeia também não (S-075); e quem ajustou
   -- ou reenviou em alguma revisão da cadeia não aprova (S-071; quem ajusta já aprova a própria
   -- etapa no reenvio)
-  if exists (select 1 from erp.cadeia_titulo(p_titulo) c(id) where erp.autor_lancamento('titulo', c.id) = v_eu) then
-    raise exception 'Quem lançou não aprova o próprio lançamento';
-  end if;
-  if exists (select 1 from erp.titulo_revisoes r where r.titulo_id in (select erp.cadeia_titulo(p_titulo)) and r.reenviada_por = v_eu)
-     or exists (select 1 from erp.titulo_ajustes j where j.titulo_id in (select erp.cadeia_titulo(p_titulo)) and j.por = v_eu) then
+  if not v_master and (exists (select 1 from erp.titulo_revisoes r where r.titulo_id in (select erp.cadeia_titulo(p_titulo)) and r.reenviada_por = v_eu)
+     or exists (select 1 from erp.titulo_ajustes j where j.titulo_id in (select erp.cadeia_titulo(p_titulo)) and j.por = v_eu)) then
     raise exception 'Quem ajustou não aprova o ajuste';
   end if;
-  if exists (select 1 from erp.titulo_aprovacoes where titulo_id = p_titulo and rodada = a.rodada and por = v_eu) then
+  if not v_master and exists (select 1 from erp.titulo_aprovacoes where titulo_id = p_titulo and rodada = a.rodada and por = v_eu) then
     raise exception 'Você já aprovou uma etapa deste título';
   end if;
-  if v_lista = 'AREA' then
+  -- o master decide qualquer etapa; aprovando, a decisão dele vale por todas as que faltam
+  -- (Moises, 14/11/2026). Quem lançou ou ajustou continua não aprovando, nem o master.
+  if v_master then
+    null;
+  elsif v_lista = 'AREA' then
     if not exists (select 1 from erp.centro_aprovadores c join erp.usuarios u on u.id = c.user_id
                     where c.centro_custo_id = a.centro_custo_id and c.user_id = v_eu and u.ativo) then
       raise exception 'Esta etapa é do gestor da área';
@@ -1712,8 +1739,16 @@ begin
   if not p_aprovar and length(trim(coalesce(p_justificativa, ''))) = 0 then
     raise exception 'Recusar exige justificativa';
   end if;
-  insert into erp.titulo_aprovacoes (titulo_id, rodada, etapa, lista, aprovado, justificativa, por)
-  values (p_titulo, a.rodada, v_etapa, v_lista, p_aprovar, p_justificativa, v_eu);
+  if v_master and p_aprovar then
+    insert into erp.titulo_aprovacoes (titulo_id, rodada, etapa, lista, aprovado, justificativa, por, proprio)
+    select p_titulo, a.rodada, i, a.etapas[i], true, p_justificativa, v_eu, coalesce(v_autor, false)
+      from generate_subscripts(a.etapas, 1) i
+     where i >= v_etapa
+       and not exists (select 1 from erp.titulo_aprovacoes v where v.titulo_id = p_titulo and v.rodada = a.rodada and v.etapa = i);
+    return 'aprovado';
+  end if;
+  insert into erp.titulo_aprovacoes (titulo_id, rodada, etapa, lista, aprovado, justificativa, por, proprio)
+  values (p_titulo, a.rodada, v_etapa, v_lista, p_aprovar, p_justificativa, v_eu, coalesce(v_autor, false));
   if not p_aprovar then
     perform erp._cancelar_recusado(p_titulo);
     return 'recusado';
@@ -1874,10 +1909,10 @@ begin
     v_listas := (erp.regra_adiantamento_atual()).libera_sem_abater;
     v_lancou := erp.autor_lancamento('titulo', new.titulo_id);
   end if;
-  if not erp.estou_nas_listas(v_listas) then
+  if not erp.estou_nas_listas(v_listas) and not erp.sou_master() then      -- o master sempre aprova
     raise exception 'Só quem está em % aprova isto', array_to_string(v_listas, ', ');
   end if;
-  if v_lancou is not null and v_lancou = erp.eu() then
+  if v_lancou is not null and v_lancou = erp.eu() and not erp.aprova_proprio(v_listas) then
     raise exception 'Quem lançou não aprova o próprio lançamento';
   end if;
   new.aprovado_por := erp.eu();

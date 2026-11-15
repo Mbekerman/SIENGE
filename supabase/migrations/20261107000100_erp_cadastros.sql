@@ -16,7 +16,14 @@ create table erp.usuarios (
   contador      boolean not null default false, -- vota nas alçadas que pedem o contador
   administrador boolean not null default false, -- mexe na configuração (árvore, alçadas, listas)
   ativo         boolean not null default true,
-  criado_em     timestamptz not null default now()
+  -- só para a sucessão do master (Moises, 14/11/2026: pode ser de fora da empresa, um familiar):
+  -- nenhum outro acesso no ERP
+  so_sucessao   boolean not null default false,
+  ativado_em    timestamptz,                    -- primeira ativação (o usuário novo nasce inativo; S-086)
+  criado_em     timestamptz not null default now(),
+  check (not so_sucessao or (papel = 'leitura' and not administrador and not contador)),
+  -- o administrador é o TI: não aprova nada, nem pelo papel (S-085)
+  constraint usuarios_admin_sem_voto check (not administrador or (papel in ('analista','leitura') and not contador))
 );
 
 -- Portabilidade (regra do Moises, 14/11/2026): o ERP não chama auth.uid() nem aponta para
@@ -30,7 +37,7 @@ create function erp.login_atual() returns text language sql stable as $$
 -- Quem está agindo: o usuário do ERP com esse login (security definer na migration _erp_rls,
 -- para ler erp.usuarios por baixo do RLS).
 create function erp.eu() returns uuid language sql stable as
-  $$ select id from erp.usuarios where login_id = erp.login_atual() $$;
+  $$ select id from erp.usuarios where login_id = erp.login_atual() and ativo $$;   -- inativo não age (S-086)
 
 -- Rotina do sistema (S-033): sem login e só em dois casos, (1) o papel nosso `erp_sistema`
 -- (o servidor e o adaptador do Sienge recebem esse papel; a chave de serviço do Supabase
@@ -63,7 +70,8 @@ create function erp.agindo_como(p_papel text) returns boolean language sql stabl
 create function erp.exigir_admin() returns void language plpgsql stable as $$
 begin
   if erp.sistema() then return; end if;
-  if not coalesce((erp.meu_usuario()).administrador, false) then
+  -- o master faz qualquer coisa (Moises, 14/11/2026); erp.master entra na migration _erp_perfis
+  if not coalesce((erp.meu_usuario()).administrador, false) and not erp.sou_master() then
     raise exception 'Só o administrador pode mudar a configuração';
   end if;
 end $$;
@@ -301,7 +309,7 @@ insert into erp.tipos_nucleo (codigo, nome, exige_empreendimento) values
   ('outro', 'Outro', false);
 create function erp.tg_tipos_nucleo() returns trigger language plpgsql as $$
 begin
-  perform erp.exigir_admin();
+  if not erp.agindo_como('erp_acesso') then perform erp.exigir_admin(); end if;  -- pedido de acesso aprovado
   if tg_op in ('DELETE', 'TRUNCATE') then raise exception 'Não se apaga o tipo de núcleo; desative'; end if;
   if tg_op = 'UPDATE' and new.codigo <> old.codigo then raise exception 'O código do tipo de núcleo não muda'; end if;
   if tg_op = 'UPDATE' and new.exige_empreendimento <> old.exige_empreendimento
@@ -446,7 +454,7 @@ create function erp.natureza_em_uso(p_id uuid) returns boolean language sql stab
 create function erp.tg_natureza() returns trigger language plpgsql as $$
 declare m erp.naturezas; v_ciclo boolean;
 begin
-  perform erp.exigir_admin();
+  if not erp.agindo_como('erp_acesso') then perform erp.exigir_admin(); end if;  -- pedido de acesso aprovado
   if tg_op = 'DELETE' then
     if erp.natureza_em_uso(old.id) then
       raise exception 'A natureza "%" tem lançamentos: use a reclassificação para esvaziá-la antes de apagar', old.nome;

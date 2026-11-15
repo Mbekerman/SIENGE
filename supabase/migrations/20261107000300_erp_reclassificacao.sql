@@ -145,7 +145,7 @@ create index on erp.reclassificacao_itens (lancamento_id);
 create table erp.reclassificacao_votos (
   reclassificacao_id uuid not null references erp.reclassificacoes on delete cascade,
   user_id            uuid not null,
-  como               text not null check (como in ('gestor','diretor','contador')),
+  como               text not null check (como in ('gestor','diretor','contador','master')),
   aprovou            boolean not null,
   justificativa      text,
   em                 timestamptz not null default now(),
@@ -331,12 +331,14 @@ begin
   if r.situacao <> 'pendente' then raise exception 'O pedido não está pendente'; end if;
   select * into u from erp.meu_usuario();
   if u.id is null then raise exception 'Usuário sem cadastro no ERP'; end if;
-  if u.id = r.solicitante then raise exception 'Quem pediu a reclassificação não pode aprová-la'; end if;
+  if u.id = r.solicitante and not erp.sou_master() then raise exception 'Quem pediu a reclassificação não pode aprová-la'; end if;   -- o master aprova o dele
+  if u.administrador then raise exception 'Administrador não aprova nada no ERP'; end if;   -- S-085
   if exists (select 1 from erp.reclassificacao_votos where reclassificacao_id = r.id and user_id = u.id) then
     raise exception 'Você já votou neste pedido';
   end if;
 
   v_como := case
+    when erp.sou_master() then 'master'          -- o voto do master basta, em qualquer nível (Moises, 14/11/2026)
     when r.nivel = 'gestor' and u.papel in ('gestor','diretor') then u.papel
     when r.nivel = 'diretor' and u.papel = 'diretor' then 'diretor'
     when r.nivel = 'diretor_e_contador' and u.papel = 'diretor'
@@ -355,11 +357,11 @@ begin
     update erp.reclassificacoes set situacao = 'recusada' where id = r.id;
     return 'recusada';
   end if;
-  v_ok := case r.nivel
+  v_ok := case when v_como = 'master' then true else case r.nivel
     when 'diretor_e_contador' then
       exists (select 1 from erp.reclassificacao_votos where reclassificacao_id = r.id and como = 'diretor' and aprovou)
       and exists (select 1 from erp.reclassificacao_votos where reclassificacao_id = r.id and como = 'contador' and aprovou)
-    else true end;
+    else true end end;
   if not v_ok then return 'pendente'; end if;
   perform erp._aplicar_reclassificacao(r.id);
   return 'aprovada';
@@ -380,7 +382,8 @@ end $$;
 create or replace function erp.exigir_admin() returns void language plpgsql stable as $$
 begin
   if erp.sistema() or erp.agindo_como('erp_reclassificacao') then return; end if;
-  if not coalesce((erp.meu_usuario()).administrador, false) then
+  -- o master faz qualquer coisa (Moises, 14/11/2026); erp.sou_master entra na migration _erp_perfis
+  if not coalesce((erp.meu_usuario()).administrador, false) and not erp.sou_master() then
     raise exception 'Só o administrador pode mudar a configuração';
   end if;
 end $$;
