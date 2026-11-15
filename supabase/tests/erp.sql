@@ -83,6 +83,7 @@ create function pg_temp.natureza_liberada(u uuid, n uuid, c uuid, nat uuid) retu
 declare r text := pg_temp.dono_ini(); v boolean;
 begin v := erp.natureza_liberada(u, n, c, nat); perform set_config('role', r, false); return v; end $$;
 create function pg_temp.nat(c text) returns uuid language sql as $$ select id from erp.naturezas where codigo = c $$;
+create function pg_temp.folhas() returns jsonb language sql as $$ select jsonb_agg(id) from erp.naturezas n where erp.natureza_folha(n.id) $$;
 -- soma do livro por estágio, filtrando por título
 create function pg_temp.livro(p_estagio text, p_titulo uuid default null) returns numeric language sql as $$
   select coalesce(sum(valor), 0) from erp.lancamentos where estagio = p_estagio and (p_titulo is null or titulo_id = p_titulo) $$;
@@ -112,6 +113,38 @@ insert into erp.master (user_id) values (:'diretor');   -- o master entra pelo s
 insert into erp.listas_financeiro (lista, user_id) values ('AO', :'analista');
 
 -- ---------------------------------------------------------------------
+-- Naturezas liberadas por divisão: nos testes de antes da regra, toda natureza, centro e divisão
+-- novos nascem com tudo liberado (a seção própria desliga este atalho). Grava como o sistema e
+-- volta a quem estava.
+create function public.teste_libera_tudo() returns trigger language plpgsql as $$
+declare v_sub text := coalesce(current_setting('request.jwt.claim.sub', true), '');
+        v_role text := coalesce(nullif(current_setting('role', true), ''), 'none');
+begin
+  -- dentro de uma função definer do ERP (o pedido aprovado) já grava como ela
+  if current_user::text not like 'erp\_%' then
+    perform set_config('request.jwt.claim.sub', '', true), set_config('role', 'none', true);
+  end if;
+  if tg_table_name = 'naturezas' then
+    insert into erp.naturezas_liberadas (centro_custo_id, natureza_id) select id, new.id from erp.centros_custo on conflict do nothing;
+    insert into erp.naturezas_liberadas (centro_custo_id, divisao_id, natureza_id) select centro_custo_id, id, new.id from erp.divisoes on conflict do nothing;
+  elsif tg_table_name = 'centros_custo' then
+    insert into erp.naturezas_liberadas (centro_custo_id, natureza_id) select new.id, id from erp.naturezas on conflict do nothing;
+  else
+    insert into erp.naturezas_liberadas (centro_custo_id, divisao_id, natureza_id) select new.centro_custo_id, new.id, id from erp.naturezas on conflict do nothing;
+  end if;
+  if current_user::text not like 'erp\_%' then
+    perform set_config('request.jwt.claim.sub', v_sub, true), set_config('role', v_role, true);
+  end if;
+  return null;
+end $$;
+create trigger t_teste_libera after insert on erp.naturezas for each row execute function public.teste_libera_tudo();
+create trigger t_teste_libera after insert on erp.centros_custo for each row execute function public.teste_libera_tudo();
+create trigger t_teste_libera after insert on erp.divisoes for each row execute function public.teste_libera_tudo();
+select pg_temp.ok((select count(*) from erp.naturezas_liberadas) = (select count(*) from erp.centros_custo)
+                  * (select count(*) from erp.naturezas n where erp.natureza_folha(n.id)),
+  'carga: os centros nascem com todas as naturezas do último nível liberadas');
+delete from erp.naturezas_liberadas;   -- os testes trocam o id dos centros; libera de novo depois
+
 \echo '# raiz: empresas, sócios, empreendimento'
 insert into erp.pessoas (id, tipo, nome, documento) values
   ('10000000-0000-0000-0000-000000000001', 'juridica', 'Holding BKM', '11111111000111'),
@@ -177,6 +210,8 @@ update erp.centros_custo set id = '45000000-0000-0000-0000-000000000001' where n
 update erp.centros_custo set id = '45000000-0000-0000-0000-000000000002' where nome = 'Marketing';
 \set cc_obra '45000000-0000-0000-0000-000000000001'
 \set cc_mkt  '45000000-0000-0000-0000-000000000002'
+insert into erp.naturezas_liberadas (centro_custo_id, natureza_id)
+  select c.id, n.id from erp.centros_custo c cross join erp.naturezas n on conflict do nothing;
 -- Perfil amplo dos testes de regra: todos lançam em todos os centros de todos os núcleos (o
 -- master vê tudo). Os testes de quem vê e quem não vê tiram este perfil e montam os seus.
 \set tudo 'a0000000-0000-0000-0000-0000000000ff'
@@ -4223,12 +4258,12 @@ insert into erp.aprovadores_acesso values (:'apv');
 update erp.regra_acesso set minimo = 1;
 update erp.regras_mudanca_acesso set exige_aprovacao = true where tabela = 'divisoes';
 select pg_temp.como(:'ti');
-select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('id', :'dv_pdv', 'centro_custo_id', :'cc_mkt', 'nome', 'PDV'), 'PDV') as mdv \gset
+select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('id', :'dv_pdv', 'centro_custo_id', :'cc_mkt', 'nome', 'PDV', 'naturezas', pg_temp.folhas()), 'PDV') as mdv \gset
 select pg_temp.ok(not exists (select 1 from erp.divisoes where id = :'dv_pdv'), 'divisão: o pedido não vale antes da aprovação (S-101)');
 select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('divisoes', 'excluir', jsonb_build_object('id', %L), 'x')$$, :'dv_pdv'),
   'Divisão não se apaga; desative', 'divisão: o pedido não apaga divisão');
 select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('centro_custo_id', %L, 'nome', 'X', 'criado_em', '2000-01-01'), 'x')$$, :'cc_mkt'),
-  'O pedido de divisão só cria (centro e nome), renomeia e desativa', 'divisão: o pedido não escolhe a data de criação');
+  'O pedido de divisão só cria (centro, nome e naturezas), renomeia e desativa', 'divisão: o pedido não escolhe a data de criação');
 select pg_temp.como(:'apv');
 select erp.decidir_mudanca_acesso(:'mdv', true) as mdv_sit \gset
 select pg_temp.como(null);
@@ -4239,7 +4274,7 @@ select b as benef from unnest(erp._beneficiarios_acesso('divisoes', jsonb_build_
   join erp.usuarios u on u.id = b and u.ativo and not u.administrador and not u.so_sucessao order by b limit 1 \gset
 insert into erp.aprovadores_acesso values (:'benef');
 select pg_temp.como(:'ti');
-select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('centro_custo_id', :'cc_mkt', 'nome', 'Feiras'), 'Feiras') as mdv3 \gset
+select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('centro_custo_id', :'cc_mkt', 'nome', 'Feiras', 'naturezas', pg_temp.folhas()), 'Feiras') as mdv3 \gset
 select pg_temp.como(:'benef');
 select pg_temp.erro_igual(format($$select erp.decidir_mudanca_acesso(%L, true)$$, :'mdv3'),
   'Quem ganha acesso com a mudança não a aprova', 'divisão: quem tem acesso ao centro não aprova a divisão nova dele');
@@ -4247,12 +4282,12 @@ select pg_temp.como(null);
 delete from erp.aprovadores_acesso where user_id = :'benef';
 select pg_temp.como(:'ti');
 select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('divisoes', 'alterar', jsonb_build_object('id', %L, 'centro_custo_id', %L), 'x')$$, :'dv_pdv', :'cc_obra'),
-  'O pedido de divisão só cria (centro e nome), renomeia e desativa', 'divisão: o pedido não muda a divisão de centro');
+  'O pedido de divisão só cria (centro, nome e naturezas), renomeia e desativa', 'divisão: o pedido não muda a divisão de centro');
 select pg_temp.como(null);
 select user_id as mst from erp.master \gset
 select pg_temp.como(:'mst');
-select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('id', :'dv_onl', 'centro_custo_id', :'cc_mkt', 'nome', 'Online'), 'Online');
-select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('id', :'dv_obra', 'centro_custo_id', :'cc_obra', 'nome', 'Fundação'), 'Fundação');
+select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('id', :'dv_onl', 'centro_custo_id', :'cc_mkt', 'nome', 'Online', 'naturezas', pg_temp.folhas()), 'Online');
+select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('id', :'dv_obra', 'centro_custo_id', :'cc_obra', 'nome', 'Fundação', 'naturezas', pg_temp.folhas()), 'Fundação');
 select pg_temp.ok((select count(*) from erp.divisoes where id in (:'dv_onl', :'dv_obra')) = 2, 'divisão: o pedido do master vale na hora');
 select pg_temp.como(null);
 select pg_temp.ok((select count(*) from erp.auditoria where tabela = 'divisoes') = 3, 'divisão: criar divisão fica na auditoria');
@@ -4954,6 +4989,118 @@ select pg_temp.ok((select bool_and(etapa = case when competencia < '2026-04-01' 
                      from erp.v_lancamentos_bi where nucleo_economico_id = :'ne_vm')
                   and exists (select 1 from erp.v_lancamentos_bi where nucleo_economico_id = :'ne_vm'),
   'etapa: o BI mostra a etapa do núcleo na competência de cada linha');
+select pg_temp.como(null);
+rollback;
+
+\echo '# naturezas liberadas por divisão (e no centro sem divisão)'
+begin;
+alter table erp.divisoes disable trigger t_teste_libera;
+alter table erp.naturezas disable trigger t_teste_libera;
+\set dv_inf '87000000-0000-0000-0000-0000000000c1'
+\set tit_nl '88000000-0000-0000-0000-0000000000c2'
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('centro_custo_id', %L, 'nome', 'Sem naturezas'), 'x')$$, :'cc_mkt'),
+  'Diga as naturezas liberadas para lançamento na divisão nova', 'naturezas: a divisão nova nasce dizendo as naturezas liberadas');
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('centro_custo_id', %L, 'nome', 'Vazia', 'naturezas', '[]'::jsonb), 'x')$$, :'cc_mkt'),
+  'Diga as naturezas liberadas para lançamento na divisão nova', 'naturezas: lista vazia não cria divisão');
+select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('id', :'dv_inf', 'centro_custo_id', :'cc_mkt', 'nome', 'Influencer',
+  'naturezas', jsonb_build_array(pg_temp.nat('05.01.04'))), 'Influencer');
+select pg_temp.ok((select array_agg(natureza_id) from erp.naturezas_liberadas where divisao_id = :'dv_inf') = array[pg_temp.nat('05.01.04')]
+                  and (select centro_custo_id from erp.naturezas_liberadas where divisao_id = :'dv_inf') = :'cc_mkt',
+  'naturezas: a divisão criada pelo pedido já vem com as naturezas escolhidas, e só elas');
+-- quem lança só usa natureza liberada na divisão
+select pg_temp.como(:'analista');
+insert into erp.previsoes (empresa_id, origem, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, competencia, data_prevista, valor)
+values (:'spe', 'manual', :'ne_vm', :'cc_mkt', :'dv_inf', pg_temp.nat('05.01.04'), '2026-10-01', '2026-10-10', 70);
+select pg_temp.ok(exists (select 1 from erp.previsoes where divisao_id = :'dv_inf'), 'naturezas: lança na natureza liberada da divisão');
+select pg_temp.erro_igual(format($$insert into erp.previsoes (empresa_id, origem, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, competencia, data_prevista, valor)
+  values (%L, 'manual', %L, %L, %L, %L, '2026-10-01', '2026-10-10', 70)$$, :'spe', :'ne_vm', :'cc_mkt', :'dv_inf', pg_temp.nat('04.01')),
+  format('A natureza "%s" não está liberada para lançamento em "Marketing > Influencer"', (select nome from erp.naturezas where id = pg_temp.nat('04.01'))),
+  'naturezas: natureza não liberada na divisão é recusada');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  (:'tit_nl', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-10-02', '2026-10-01', 10);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, percentual)
+values (:'tit_nl', :'ne_vm', :'cc_mkt', :'dv_inf', pg_temp.nat('05.01.04'), 100);
+select pg_temp.falha(format($$update erp.titulo_rateios set natureza_id = %L where titulo_id = %L$$, pg_temp.nat('04.01'), :'tit_nl'),
+  'naturezas: não troca a linha para natureza não liberada');
+-- quem liga e desliga: master, administrador, AF, AO e AD, na hora
+select pg_temp.como(:'analista2');
+select pg_temp.falha(format($$insert into erp.naturezas_liberadas (centro_custo_id, divisao_id, natureza_id) values (%L, %L, %L)$$,
+  :'cc_mkt', :'dv_inf', pg_temp.nat('04.01')), 'naturezas: quem não é master, administrador nem financeiro não liga natureza');
+select pg_temp.ok((select count(*) from erp.naturezas_liberadas where divisao_id = :'dv_inf') = 1, 'naturezas: todo membro lê as naturezas liberadas');
+select pg_temp.como(:'leitor');
+select pg_temp.falha(format($$delete from erp.naturezas_liberadas where divisao_id = %L$$, :'dv_inf'), 'naturezas: leitura não desliga natureza');
+select pg_temp.como(null);
+alter table erp.naturezas_liberadas disable trigger t_natureza_liberada_cfg;
+select pg_temp.como(:'analista2');
+select pg_temp.falha(format($$insert into erp.naturezas_liberadas (centro_custo_id, divisao_id, natureza_id) values (%L, %L, %L)$$,
+  :'cc_mkt', :'dv_inf', pg_temp.nat('04.01')), 'naturezas: a regra de acesso da tabela, sozinha, já recusa quem não pode');
+select pg_temp.como(null);
+alter table erp.naturezas_liberadas enable trigger t_natureza_liberada_cfg;
+select pg_temp.como(:'analista2');
+select pg_temp.ok(pg_temp.erro_como_dono(format($$insert into erp.naturezas_liberadas (centro_custo_id, divisao_id, natureza_id) values (%L, %L, %L)$$,
+  :'cc_mkt', :'dv_inf', pg_temp.nat('04.01'))) = 'Só o master, o administrador e AF, AO ou AD ligam e desligam naturezas',
+  'naturezas: o gatilho também barra quem não pode, por baixo da API');
+select pg_temp.como(:'ti');
+insert into erp.naturezas_liberadas (centro_custo_id, divisao_id, natureza_id) values (:'cc_mkt', :'dv_inf', pg_temp.nat('04.01'));
+select pg_temp.como(null);
+select pg_temp.ok(exists (select 1 from erp.auditoria where tabela = 'naturezas_liberadas' and acao = 'insert' and registro = :'cc_mkt'
+                          and depois->>'divisao_id' = :'dv_inf' and depois->>'natureza_id' = pg_temp.nat('04.01')::text),
+  'naturezas: ligar fica na auditoria, com o centro, a divisão e a natureza');
+select pg_temp.como(:'analista');
+update erp.titulo_rateios set natureza_id = pg_temp.nat('04.01') where titulo_id = :'tit_nl';
+select pg_temp.ok((select natureza_id from erp.titulo_rateios where titulo_id = :'tit_nl') = pg_temp.nat('04.01'),
+  'naturezas: ligada pelo administrador, já se lança nela');
+update erp.titulo_rateios set natureza_id = pg_temp.nat('05.01.04') where titulo_id = :'tit_nl';
+select pg_temp.falha(format($$update erp.naturezas_liberadas set natureza_id = %L where divisao_id = %L and natureza_id = %L$$,
+  pg_temp.nat('04.02'), :'dv_inf', pg_temp.nat('04.01')), 'naturezas: linha liberada não se altera');
+-- desligar (o analista está na AF): o que já foi lançado segue; só não se lança de novo
+delete from erp.naturezas_liberadas where divisao_id = :'dv_inf' and natureza_id = pg_temp.nat('05.01.04');
+select pg_temp.ok(not exists (select 1 from erp.naturezas_liberadas where divisao_id = :'dv_inf' and natureza_id = pg_temp.nat('05.01.04')),
+  'naturezas: AF desliga na hora');
+select pg_temp.ok(array(select erp.titulos_abertos_na_natureza(:'cc_mkt', :'dv_inf', pg_temp.nat('05.01.04'))) = array[:'tit_nl'::uuid]
+                  and not exists (select erp.titulos_abertos_na_natureza(:'cc_mkt', :'dv_inf', pg_temp.nat('04.01'))),
+  'naturezas: quem desliga vê os títulos em aberto que ficaram na natureza');
+update erp.titulo_rateios set centro_custo_id = :'cc_mkt', divisao_id = :'dv_inf', percentual = 100 where titulo_id = :'tit_nl';
+update erp.titulos set valor = 20 where id = :'tit_nl';
+select pg_temp.ok((select valor from erp.titulos where id = :'tit_nl') = 20
+                  and exists (select 1 from erp.previsoes where divisao_id = :'dv_inf' and natureza_id = pg_temp.nat('05.01.04')),
+  'naturezas: o que já foi lançado na natureza desligada segue e se edita');
+select pg_temp.falha(format($$insert into erp.previsoes (empresa_id, origem, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, competencia, data_prevista, valor)
+  values (%L, 'manual', %L, %L, %L, %L, '2026-10-01', '2026-10-10', 70)$$, :'spe', :'ne_vm', :'cc_mkt', :'dv_inf', pg_temp.nat('05.01.04')),
+  'naturezas: na natureza desligada não se lança de novo');
+-- natureza nova nasce desligada
+select pg_temp.como(:'ti');
+insert into erp.naturezas (codigo, mae_id, nome) values ('05.01.97', pg_temp.nat('05.01'), 'Natureza nova (teste)');
+select pg_temp.ok(not exists (select 1 from erp.naturezas_liberadas where natureza_id = pg_temp.nat('05.01.97')),
+  'naturezas: natureza nova nasce desligada em todos os centros e divisões');
+-- centro sem divisão: vale a lista do próprio centro
+select id as cc_sd from erp.centros_custo c where not exists (select 1 from erp.divisoes d where d.centro_custo_id = c.id)
+  and nome not in ('Obra', 'Marketing') order by nome limit 1 \gset
+select pg_temp.como(:'diretor');
+insert into erp.nucleo_centros (nucleo_economico_id, centro_custo_id, ligado) values (:'ne_vm', :'cc_sd', true)
+  on conflict (nucleo_economico_id, centro_custo_id) do update set ligado = true;
+delete from erp.naturezas_liberadas where centro_custo_id = :'cc_sd' and natureza_id = pg_temp.nat('04.02');
+select pg_temp.como(:'analista');
+insert into erp.previsoes (empresa_id, origem, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+values (:'spe', 'manual', :'ne_vm', :'cc_sd', pg_temp.nat('04.01'), '2026-10-01', '2026-10-10', 5);
+select pg_temp.erro_igual(format($$insert into erp.previsoes (empresa_id, origem, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+  values (%L, 'manual', %L, %L, %L, '2026-10-01', '2026-10-10', 5)$$, :'spe', :'ne_vm', :'cc_sd', pg_temp.nat('04.02')),
+  format('A natureza "%s" não está liberada para lançamento em "%s"', (select nome from erp.naturezas where id = pg_temp.nat('04.02')),
+         (select nome from erp.centros_custo where id = :'cc_sd')),
+  'naturezas: no centro sem divisão vale a lista do próprio centro');
+-- a lista do centro não vale para as divisões dele
+select pg_temp.como(:'diretor');
+delete from erp.naturezas_liberadas where centro_custo_id = :'cc_mkt' and divisao_id is null and natureza_id = pg_temp.nat('04.01');
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format($$insert into erp.previsoes (empresa_id, origem, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, competencia, data_prevista, valor)
+  values (%L, 'manual', %L, %L, %L, %L, '2026-10-01', '2026-10-10', 70)$$, :'spe', :'ne_vm', :'cc_mkt', :'dv_inf', pg_temp.nat('04.02')),
+  format('A natureza "%s" não está liberada para lançamento em "Marketing > Influencer"', (select nome from erp.naturezas where id = pg_temp.nat('04.02'))),
+  'naturezas: com divisão, a natureza liberada no centro não basta');
+insert into erp.previsoes (empresa_id, origem, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, competencia, data_prevista, valor)
+values (:'spe', 'manual', :'ne_vm', :'cc_mkt', :'dv_inf', pg_temp.nat('04.01'), '2026-10-01', '2026-10-10', 9);
+select pg_temp.ok(exists (select 1 from erp.previsoes where divisao_id = :'dv_inf' and valor = 9),
+  'naturezas: com divisão, vale a lista da divisão mesmo com a natureza desligada no centro');
 select pg_temp.como(null);
 rollback;
 

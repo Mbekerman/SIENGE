@@ -90,6 +90,10 @@ insert into erp.etapas (nome, ordem) values
 insert into erp.centros_custo (nome) values
   ('Novos negócios'), ('Terreno'), ('Incorporação'), ('Projetos'), ('Obra'), ('Assistência técnica'),
   ('Comercial'), ('Marketing'), ('Financeiro'), ('Administrativo'), ('Jurídico'), ('Diretoria');
+-- Na carga, os centros (ainda sem divisão) nascem com todas as naturezas do último nível
+-- liberadas; o de-para do Sienge e o administrador ajustam depois.
+insert into erp.naturezas_liberadas (centro_custo_id, natureza_id)
+select c.id, n.id from erp.centros_custo c cross join erp.naturezas n where erp.natureza_folha(n.id);
 
 -- Atributos de BI do empreendimento (cidade e UF já são colunas do empreendimento).
 insert into erp.atributos (codigo, nome, tipo) values

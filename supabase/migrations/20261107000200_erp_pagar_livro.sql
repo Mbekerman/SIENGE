@@ -508,6 +508,74 @@ begin
   end loop;
 end $$;
 
+-- Naturezas liberadas para lançamento em cada divisão, ou no centro sem divisão (Moises,
+-- 15/11/2026). A escolha faz parte da criação da divisão; depois o master, o administrador e
+-- AF, AO e AD ligam e desligam na hora, com auditoria. Natureza nova nasce desligada. Num centro
+-- com divisões vale a lista de cada divisão. Desligar não mexe no que já foi lançado: só barra
+-- lançar de novo ou trocar para ela.
+create table erp.naturezas_liberadas (
+  centro_custo_id uuid not null references erp.centros_custo on delete cascade,
+  divisao_id      uuid,
+  natureza_id     uuid not null references erp.naturezas on delete cascade,   -- natureza nunca usada se apaga
+  foreign key (divisao_id, centro_custo_id) references erp.divisoes (id, centro_custo_id),
+  unique nulls not distinct (centro_custo_id, divisao_id, natureza_id)
+);
+create function erp.tg_natureza_liberada_cfg() returns trigger language plpgsql as $$
+begin
+  if tg_op = 'UPDATE' then raise exception 'Natureza liberada não se altera: desligue e ligue'; end if;
+  if erp.agindo_como('erp_acesso') or erp.sistema()
+     or (tg_op = 'DELETE' and erp.agindo_como('erp_reclassificacao')) then   -- a natureza esvaziada e apagada
+    return coalesce(new, old);
+  end if;
+  -- erp.sou_admin e erp.financeiro nascem na migration _erp_api
+  if not (erp.sou_admin() or erp.financeiro()) then
+    raise exception 'Só o master, o administrador e AF, AO ou AD ligam e desligam naturezas';
+  end if;
+  return coalesce(new, old);
+end $$;
+create trigger t_natureza_liberada_cfg before insert or update or delete on erp.naturezas_liberadas
+  for each row execute function erp.tg_natureza_liberada_cfg();
+create trigger t_aud_naturezas_liberadas after insert or delete on erp.naturezas_liberadas
+  for each row execute function erp.tg_auditoria('centro_custo_id');
+
+-- A linha que uma pessoa grava usa natureza liberada na divisão (ou no centro sem divisão).
+-- A cópia feita pelo sistema segue a origem, como a divisão. Invoker: precisa saber quem grava.
+create function erp.tg_natureza_liberada() returns trigger language plpgsql as $$
+begin
+  if new.centro_custo_id is null or erp.agindo_como('erp_situacao') or erp.sistema() then return new; end if;
+  if tg_op = 'UPDATE' and new.natureza_id is not distinct from old.natureza_id
+     and new.centro_custo_id is not distinct from old.centro_custo_id
+     and new.divisao_id is not distinct from old.divisao_id then
+    return new;
+  end if;
+  if not exists (select 1 from erp.naturezas_liberadas
+                  where centro_custo_id = new.centro_custo_id and divisao_id is not distinct from new.divisao_id
+                    and natureza_id = new.natureza_id) then
+    raise exception 'A natureza "%" não está liberada para lançamento em "%"',
+      (select nome from erp.naturezas where id = new.natureza_id),
+      coalesce((select c.nome || ' > ' || d.nome from erp.divisoes d join erp.centros_custo c on c.id = d.centro_custo_id
+                 where d.id = new.divisao_id),
+               (select nome from erp.centros_custo where id = new.centro_custo_id));
+  end if;
+  return new;
+end $$;
+do $$
+declare t text;
+begin
+  foreach t in array array['compromisso_rateios', 'documento_rateios', 'titulo_rateios', 'previsoes'] loop
+    execute format('create trigger t_natureza_liberada before insert or update of natureza_id, centro_custo_id, divisao_id on erp.%I
+                      for each row execute function erp.tg_natureza_liberada()', t);
+  end loop;
+end $$;
+
+-- Títulos em aberto (ou em rascunho) com linha na natureza, no centro e na divisão: o que
+-- quem desliga a natureza precisa ver. Invoker: cada um vê os títulos que já vê.
+create function erp.titulos_abertos_na_natureza(p_centro uuid, p_divisao uuid, p_natureza uuid)
+returns setof uuid language sql stable as $$
+  select distinct t.id from erp.titulos t join erp.titulo_rateios r on r.titulo_id = t.id
+   where t.situacao in ('rascunho','aberto') and r.centro_custo_id = p_centro
+     and r.divisao_id is not distinct from p_divisao and r.natureza_id = p_natureza $$;
+
 -- A empresa de um registro não muda depois de criado (S-056): o rateio, o livro e a caução
 -- foram conferidos contra ela.
 create function erp.tg_empresa_fixa() returns trigger language plpgsql as $$
