@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | De quem é o gasto? | Empresa e núcleo econômico | SPE Vila Maria / núcleo Vila Maria |
 | Onde ele é apropriado? | Centro de custo | Marketing |
-| Que gasto é? | Natureza | Comerciais › Marketing › Marketing online |
+| O que se comprou? | Natureza | Mídia paga › Google |
 | Quando? | Competência e data de caixa | competência out/2027, pago em nov/2027 |
 
 > ⚠️ **Nomes trocados em 14/nov/2026** (Moises). O que este manual chamava de **centro de custo** (a obra, o Corporativo) agora é **núcleo econômico**. O que chamava de **área** (Marketing, Comercial, Administrativo) agora é **centro de custo**. As regras não mudaram com a troca. No Sienge, "centro de custo" continua sendo a obra, ou seja, o nosso núcleo econômico. Cuidado na transição.
@@ -23,7 +23,7 @@ Hoje a BKM usa no Sienge "centro de custo Marketing, natureza MKT Online, motivo
 | --- | --- |
 | Centro de custo: a obra, ou uma obra fingida para a área administrativa | Núcleo econômico: a SPE ou a obra, o Corporativo, uma loja |
 | Centro de custo: Marketing (um por SPE) | Centro de custo: Marketing, da lista única, ligado no núcleo |
-| Natureza: MKT Online | Natureza: Comerciais › Marketing › **Marketing online** |
+| Natureza: MKT Online | Natureza: só o que se comprou, por exemplo **Mídia paga online**; quem gastou é o centro de custo e a divisão |
 | Motivo: verba de mídia Google | Mais um nível da natureza (… › Mídia Google) **ou** só a descrição do lançamento |
 
 **Regra para decidir se o "motivo" vira nível da natureza:** se você quer orçar e comparar por ele ("quanto previ e quanto gastei de Google no ano"), ele é um nível. Se só explica aquele gasto ("campanha de março"), ele vai na descrição.
@@ -36,7 +36,7 @@ Hoje a BKM usa no Sienge "centro de custo Marketing, natureza MKT Online, motivo
 
 - **Núcleo econômico:** de quem é o gasto. É **a SPE ou a obra**, o **Corporativo** (escritório central, holding, novos negócios antes de virar SPE) ou outro negócio, como uma **loja**. Os núcleos ficam numa árvore **estado › cidade › região › núcleo**, e **cada núcleo está num lugar só** da árvore (senão os relatórios somariam em dobro). O tipo de produto é um filtro do relatório, não um nível da árvore.
 - **Centro de custo:** onde a despesa é apropriada dentro do núcleo, por exemplo **Marketing, Terreno, Incorporação, Obra, Assistência técnica, Administrativo**. Todos os centros de custo ficam numa **lista única (raiz)** da empresa, e cada um é **ligado ou desligado em cada núcleo**: o Corporativo não tem Obra nem Pós-obra; uma loja não tem Incorporação. Cada centro de custo tem **aprovadores escolhidos pelo nome** e diz **quantos deles precisam aprovar**.
-- **Natureza:** o plano de contas, só o tipo de gasto (Marketing online, Vigilância, Energia...).
+- **Natureza:** o plano de contas, só o que se comprou (Mídia paga, Vigilância, Energia...). ✅ A natureza **não leva o nome da área**: quem gastou é dito pelo centro de custo e pela divisão (Moises, 15/nov/2026).
 
 **O centro de custo precisa estar ligado no núcleo**, senão o lançamento é recusado. 🟡 Quem liga e desliga: no banco já construído, só o administrador (regra técnica ainda sem confirmação do Moises).
 
@@ -69,7 +69,7 @@ Hoje a BKM usa no Sienge "centro de custo Marketing, natureza MKT Online, motivo
 **Mover um núcleo de lugar na árvore, ou ligar e desligar um centro de custo num núcleo, exige aprovação** e fica registrado, porque muda quem vê e quem aprova. (A aprovação de ligar e desligar é 🟡 proposta, por extensão da regra de 8/nov.)
 
 
-Hoje o Sienge tem 97 centros de custo, que misturam obra, tipo de gasto e momento. Eles viram cerca de 25 núcleos econômicos na árvore, mais a lista de centros de custo. ⏳ O de-para com o Sienge está em rascunho. Enquanto os títulos forem criados lá, cada combinação núcleo × centro de custo × natureza tem de apontar para exatamente uma conta e um centro de custo (obra) do Sienge, senão o título não sobe.
+Hoje o Sienge tem 97 centros de custo, que misturam obra, tipo de gasto e momento. Eles viram cerca de 25 núcleos econômicos na árvore, mais a lista de centros de custo. ⏳ O de-para com o Sienge está em rascunho. Enquanto os títulos forem criados lá, cada combinação núcleo × centro de custo × natureza tem de apontar para exatamente uma conta e um centro de custo (obra) do Sienge, senão o título não sobe. ✅ Na transição, quem lança escolhe a natureza no ERP, e o sistema sabe em que conta e em que centro de custo do Sienge lançar (Moises, 15/nov/2026). ✅ Todo o passado do Sienge entra no ERP (Moises, 15/nov/2026; a forma ainda está sendo desenhada).
 
 ## A árvore de naturezas
 
@@ -84,7 +84,7 @@ Hoje o Sienge tem 97 centros de custo, que misturam obra, tipo de gasto e moment
 🟡 **Propostas** ainda sem confirmação:
 
 - Só o administrador (ou o controller) cria naturezas, para não surgir "MKT Online", "Marketing online" e "Mkt digital" lado a lado.
-- Só se lança no último nível (não se lança em "Comerciais", só em "Marketing online").
+- Só se lança no último nível (não se lança em "Comerciais", só em "Mídia paga online").
 - A natureza nova herda as características da mãe (ver abaixo), e pode ser mudada.
 - Natureza com lançamentos não se apaga direto: primeiro se reclassifica (ver [Reclassificação](reclassificacao-e-fechamento.md)).
 - Natureza desativada não recebe lançamentos novos; os antigos continuam onde estão.
@@ -98,10 +98,12 @@ Hoje o Sienge tem 97 centros de custo, que misturam obra, tipo de gasto e moment
 
 | Característica | Valores |
 | --- | --- |
-| Tipo | operacional, não operacional, movimentação |
+| Tipo | despesa do período (cai na linha da DRE do centro de custo), receita, dedução, financeira, IR e CSLL, investimento (CAPEX, fora da DRE), movimentação (fora da DRE) ou custo do empreendimento (entra no POC) |
 | Linha da DRE | receita, dedução, custo, despesa comercial... |
 | Linha do fluxo de caixa | operacional, investimento, financiamento |
 | Redutora | sim ou não (devolução, estorno, desconto obtido) |
+
+✅ **Toda DRE é por POC** (percentual de obra concluída), e cada natureza tem um dos tipos acima (Moises, 15/nov/2026). Isso substitui a lista antiga de tipos (operacional, não operacional, movimentação).
 
 **Movimentação não é despesa:** transferência entre contas próprias, aplicação, resgate, aporte e distribuição entre sócios mexem no saldo do banco, mas ficam fora da DRE.
 
