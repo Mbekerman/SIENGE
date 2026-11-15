@@ -5242,6 +5242,7 @@ alter table erp.naturezas disable trigger t_teste_libera;
 \set t_pdv '88000000-0000-0000-0000-0000000000db'
 \set c_pdv '60000000-0000-0000-0000-0000000000de'
 \set et_bf '8c000000-0000-0000-0000-0000000000dc'
+\set c_met '60000000-0000-0000-0000-0000000000df'
 select pg_temp.como(:'diretor');
 select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('id', :'d_mid', 'centro_custo_id', :'cc_mkt', 'nome', 'Mídia',
   'naturezas', jsonb_build_array(pg_temp.nat('05.01.04'), pg_temp.nat('04.01'))), 'Mídia');
@@ -5319,11 +5320,32 @@ values (:'t_niv', :'ne_vm', :'cc_mkt', :'d_mid', :'d_gse', pg_temp.nat('04.01'),
        (:'t_niv', :'ne_vm', :'cc_mkt', :'d_mid', :'d_met', pg_temp.nat('05.01.04'), 40);
 select pg_temp.ok((select array_agg(subdivisao_id order by valor) from erp.ratear('titulo', :'t_niv', 100)) = array[:'d_met'::uuid, :'d_gse'::uuid],
   'níveis: o rateio divide o título entre níveis e leva o último nível adiante');
+-- trocar só o último nível também passa pelas travas
+select pg_temp.erro_igual(format($$update erp.titulo_rateios set subdivisao_id = %L where titulo_id = %L and subdivisao_id = %L$$, :'d_goo', :'t_niv', :'d_met'),
+  'Lance no último nível: "Google" tem subníveis', 'níveis: trocar só o subnível confere o último nível');
+select pg_temp.erro_igual(format($$update erp.titulo_rateios set subdivisao_id = %L where titulo_id = %L and subdivisao_id = %L$$, :'d_met', :'t_niv', :'d_gse'),
+  format('A natureza "%s" não está liberada para lançamento em "Marketing > Meta"', (select nome from erp.naturezas where id = pg_temp.nat('04.01'))),
+  'níveis: trocar só o subnível confere a natureza no novo nível');
+select pg_temp.ok(not exists (select erp.titulos_abertos_na_natureza(:'cc_mkt', :'d_met', pg_temp.nat('04.01')))
+                  and array(select erp.titulos_abertos_na_natureza(:'cc_mkt', :'d_gse', pg_temp.nat('04.01'))) = array[:'t_niv'::uuid],
+  'níveis: os títulos em aberto da natureza são os do próprio nível, não os da irmã');
+select pg_temp.erro_igual(format($$select erp.pedir_reclassificacao(%L, %L, 'x', jsonb_build_object('lancamentos',
+    (select jsonb_agg(id) from erp.lancamentos where subdivisao_id = %L and natureza_id = %L)))$$,
+    pg_temp.nat('05.01.04'), pg_temp.nat('04.01'), :'d_met', pg_temp.nat('05.01.04')),
+  'A natureza de destino não está liberada em "Marketing > Meta": ligue-a lá ou filtre o pedido',
+  'níveis: a reclassificação confere o destino no último nível da linha, não na soma');
 -- natureza presa no último nível
 insert into erp.compromissos (id, empresa_id, tipo, pessoa_id, numero, descricao, inicio, valor_total)
 values (:'c_niv', :'spe', 'contrato', '10000000-0000-0000-0000-000000000005', 'CT-NIV', 'Mídia', '2026-10-01', 1000);
 insert into erp.compromisso_rateios (compromisso_id, nucleo_economico_id, centro_custo_id, divisao_id, subdivisao_id, natureza_id, percentual)
 values (:'c_niv', :'ne_vm', :'cc_mkt', :'d_mid', :'d_gse', pg_temp.nat('04.01'), 100);
+-- um contrato da irmã (Meta) em natureza que não vale lá, gravado pelo sistema: não conta para o Google Search
+insert into erp.compromissos (id, empresa_id, tipo, pessoa_id, numero, descricao, inicio, valor_total)
+values (:'c_met', :'spe', 'pedido', '10000000-0000-0000-0000-000000000005', 'PC-MET', 'Meta', '2026-10-01', 500);
+select pg_temp.sis();
+insert into erp.compromisso_rateios (compromisso_id, nucleo_economico_id, centro_custo_id, divisao_id, subdivisao_id, natureza_id, percentual)
+values (:'c_met', :'ne_vm', :'cc_mkt', :'d_mid', :'d_met', pg_temp.nat('04.01'), 100);
+select pg_temp.volta();
 select pg_temp.ok(array(select erp.compromissos_na_natureza(:'cc_mkt', :'d_gse', pg_temp.nat('04.01'))) = array[:'c_niv'::uuid],
   'níveis: quem vai desligar vê o contrato do último nível');
 select pg_temp.como(:'ti');
@@ -5375,11 +5397,57 @@ select pg_temp.erro_igual(format($$insert into erp.titulo_rateios (titulo_id, nu
 select pg_temp.erro_igual(format($$insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, divisao_id, subdivisao_id, natureza_id, percentual)
   values (%L, %L, %L, %L, %L, %L, 1)$$, :'t_niv', :'ne_vm', :'cc_mkt', :'d_mid', :'d_pdv', pg_temp.nat('04.01')),
   'O subnível não fica dentro da divisão da linha', 'níveis: nível de outra divisão é recusado');
+-- nível desativado
+select pg_temp.como(:'diretor');
+select erp.pedir_mudanca_acesso('divisoes', 'alterar', jsonb_build_object('id', :'d_tik', 'nome', 'TikTok', 'ativa', false), 'TikTok saiu');
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format($$insert into erp.previsoes (empresa_id, origem, nucleo_economico_id, centro_custo_id, divisao_id, subdivisao_id, natureza_id, competencia, data_prevista, valor)
+  values (%L, 'manual', %L, %L, %L, %L, %L, '2026-10-01', '2026-10-10', 10)$$, :'spe', :'ne_vm', :'cc_mkt', :'d_mid', :'d_tik', pg_temp.nat('04.01')),
+  'O subnível está desativado', 'níveis: não se lança em nível desativado');
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('mae_id', %L, 'nome', 'Neta', 'naturezas', jsonb_build_array(%L)), 'x')$$,
+  :'d_tik', pg_temp.nat('04.01')),
+  'O nível de cima está desativado', 'níveis: não se cria abaixo de nível desativado');
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('mae_id', %L, 'nome', 'Kwai', 'copiar_de', %L), 'x')$$,
+  :'d_onl', :'d_tik'),
+  'Copie as naturezas de uma irmã ativa do nível novo (ou, no primeiro nível abaixo, do nível de cima)', 'níveis: não copia de irmã desativada');
+select pg_temp.como(:'ti');
+delete from erp.naturezas_liberadas where divisao_id = :'d_met';
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('mae_id', %L, 'nome', 'Kwai', 'copiar_de', %L), 'x')$$,
+  :'d_onl', :'d_met'),
+  'O nível de onde copiar não tem naturezas liberadas', 'níveis: não copia de quem não tem lista');
+-- filho desativado não conta: o de cima volta a ser último nível, e a lista do desativado sai da soma
+select erp.pedir_mudanca_acesso('divisoes', 'alterar', jsonb_build_object('id', :'d_gse', 'nome', 'Google Search', 'ativa', false), 'x');
+select pg_temp.ok(erp.divisao_folha(:'d_goo') and not erp.natureza_ligada(:'cc_mkt', :'d_goo', pg_temp.nat('04.01')),
+  'níveis: filho desativado não conta no último nível nem na soma');
+select erp.pedir_mudanca_acesso('divisoes', 'alterar', jsonb_build_object('id', :'d_goo', 'nome', 'Google', 'ativa', false), 'x');
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('divisoes', 'alterar', jsonb_build_object('id', %L, 'nome', 'Google Search', 'ativa', true), 'x')$$, :'d_gse'),
+  'O nível de cima está desativado', 'níveis: não se reativa abaixo de nível desativado');
+-- a árvore não muda de lugar (é o que impede ciclo)
+select pg_temp.sis();
+select pg_temp.erro_igual(format($$update erp.divisoes set mae_id = %L where id = %L$$, :'d_met', :'d_gse'),
+  'A divisão não muda de centro de custo, de nível de cima nem de data de criação', 'níveis: a mãe não muda');
+select pg_temp.erro_igual(format($$update erp.divisoes set raiz_id = %L where id = %L$$, :'d_eve', :'d_gse'),
+  'A divisão não muda de centro de custo, de nível de cima nem de data de criação', 'níveis: a raiz não muda');
+select pg_temp.volta();
+select pg_temp.como(:'analista');
 -- etiquetas livres
 insert into erp.etiquetas (id, nome) values (:'et_bf', 'Black Friday');
 select pg_temp.falha($$insert into erp.etiquetas (nome) values ('  black friday ')$$, 'etiquetas: o nome não se repete');
 insert into erp.titulo_etiquetas (titulo_id, etiqueta_id) values (:'t_niv', :'et_bf');
 select pg_temp.ok(exists (select 1 from erp.titulo_etiquetas where titulo_id = :'t_niv'), 'etiquetas: quem lança põe etiqueta no título');
+select pg_temp.erro_igual(format($$update erp.titulo_etiquetas set titulo_id = %L where titulo_id = %L$$, :'t_pdv', :'t_niv'),
+  'Etiqueta do título não se altera: tire e ponha', 'etiquetas: a etiqueta do título não se altera');
+-- quem não vê o título não vê nem põe etiqueta nele
+select pg_temp.sis(); delete from erp.atribuicoes where user_id = :'analista2'; select pg_temp.volta();
+select pg_temp.como(:'analista2');
+select pg_temp.ok(not exists (select 1 from erp.titulos where id = :'t_niv') and not exists (select 1 from erp.titulo_etiquetas where titulo_id = :'t_niv')
+                  and exists (select 1 from erp.etiquetas where id = :'et_bf'),
+  'etiquetas: quem não vê o título não vê as etiquetas dele (a lista de etiquetas, todos veem)');
+select pg_temp.falha(format($$insert into erp.titulo_etiquetas (titulo_id, etiqueta_id) values (%L, %L)$$, :'t_pdv', :'et_bf'),
+  'etiquetas: quem não lança no título não põe etiqueta nele');
+select pg_temp.como(:'analista');
 select pg_temp.erro_igual(format($$delete from erp.etiquetas where id = %L$$, :'et_bf'), 'Etiqueta não se apaga; desative', 'etiquetas: não se apaga');
 select pg_temp.como(:'leitor');
 select pg_temp.falha(format($$delete from erp.titulo_etiquetas where titulo_id = %L$$, :'t_niv'), 'etiquetas: leitura não tira etiqueta');
