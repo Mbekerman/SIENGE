@@ -62,7 +62,7 @@ Hoje a BKM usa no Sienge "centro de custo Marketing, natureza MKT Online, motivo
 
   ![Divisão em quatro níveis: o centro e os níveis com filhos mostram a soma; os últimos níveis têm naturezas próprias](../imagens/financeiro/divisao-niveis.png)
 
-✅ **Etiquetas** (Moises, 15/nov/2026; no código a partir do PR #48): etiquetas nos títulos, por exemplo o nome de uma campanha, servem para filtrar e para relatórios. Não entram em aprovação, alçada nem acesso. Quem lança põe no título uma das etiquetas que existem. 🟡 **Só a AF, a AD e o master** criam, renomeiam e desativam etiquetas; quem lança só escolhe entre as que existem e estão ativas (Moises, 15/nov/2026; código no PR #53, ainda não juntado). O nome não se repete. Etiqueta não se apaga, só se desativa.
+✅ **Etiquetas** (Moises, 15/nov/2026; no código a partir do PR #48): etiquetas nos títulos, por exemplo o nome de uma campanha, servem para filtrar e para relatórios. Não entram em aprovação, alçada nem acesso. Quem lança põe no título uma das etiquetas que existem. 🟡 **Só a AF, a AD e o master** criam, renomeiam e desativam etiquetas; quem lança só escolhe entre as que existem e estão ativas (Moises, 15/nov/2026; código no PR #53, ainda não juntado). Renomear muda o nome em todos os títulos. Etiqueta desativada sai da escolha, mas continua nos títulos que já a têm. 🧪 No protótipo, a tela **Etiquetas** fica no Admin, só para a AF, a AD e o master, e mostra quantos títulos usam cada etiqueta. O nome não se repete. Etiqueta não se apaga, só se desativa.
 
 ✅ Para não confundir: cada passo de uma aprovação (gestor, AF, AD) se chama **fase de aprovação** (Moises, 15/nov/2026).
 
