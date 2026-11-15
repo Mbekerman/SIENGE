@@ -3519,6 +3519,10 @@ select pg_temp.erro_igual($$update erp.pessoas set documento = '14141414000114' 
   'Documento, nome, tipo e situação de pessoa já usada só o financeiro muda', 'S-089: pessoa usada só num pagamento também conta como usada');
 select pg_temp.erro_igual($$delete from erp.pessoa_papeis where pessoa_id = '10000000-0000-0000-0000-0000000000c1' and papel = 'fornecedor'$$,
   'Só o financeiro tira o papel de fornecedor de pessoa já usada', 'S-089: nem tira o papel de fornecedor');
+select pg_temp.erro_igual($$update erp.pessoa_papeis set pessoa_id = '10000000-0000-0000-0000-0000000000c2' where pessoa_id = '10000000-0000-0000-0000-0000000000c1' and papel = 'fornecedor'$$,
+  'O papel da pessoa não se altera; tire e inclua', 'S-089: o papel de fornecedor não passa para outra pessoa');
+select pg_temp.erro_igual($$update erp.pessoa_papeis set pessoa_id = '10000000-0000-0000-0000-0000000000c2' where pessoa_id = '10000000-0000-0000-0000-000000000002'$$,
+  'O papel da pessoa não se altera; tire e inclua', 'S-089: nem sai da empresa do grupo');
 update erp.pessoas set email = 'contato@fornecedor.test' where id = '10000000-0000-0000-0000-0000000000c1';
 select pg_temp.ok(true, 'S-089: o analista muda o contato do fornecedor');
 select pg_temp.como(:'u7');

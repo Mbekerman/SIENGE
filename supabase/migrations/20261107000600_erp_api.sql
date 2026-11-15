@@ -217,6 +217,10 @@ create function erp.tg_pessoa_protegida() returns trigger language plpgsql
 security definer set search_path = erp, pg_catalog, pg_temp as $$
 declare v_id uuid; v_grupo boolean; v_usada boolean; v_muda boolean;
 begin
+  -- o papel não muda de pessoa nem de nome: tira um e põe outro (cada um passa pela trava)
+  if tg_table_name = 'pessoa_papeis' and tg_op = 'UPDATE' and not erp.sistema() then
+    raise exception 'O papel da pessoa não se altera; tire e inclua';
+  end if;
   if erp.sistema() or erp.sou_master() then return coalesce(new, old); end if;
   if tg_table_name = 'pessoas' then v_id := old.id; else v_id := coalesce(new.pessoa_id, old.pessoa_id); end if;
   v_grupo := exists (select 1 from erp.empresas where pessoa_id = v_id);
