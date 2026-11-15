@@ -3484,6 +3484,8 @@ select pg_temp.falha(format($$insert into erp.quitacoes (pagamento_id, parcela_i
 select pg_temp.como(:'u7');
 insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values
   ('c2000000-0000-0000-0000-0000000000a7', :'incorp', :'conta_inc', '10000000-0000-0000-0000-0000000000c1', :'ne_corp', :'cc_mkt', '2027-10-10', 100);
+-- sem o vejo_titulo na política, o gatilho da quitação também recusa ("O título não está aberto"):
+-- ele lê o título com o acesso de quem paga, e o título PJ não aparece
 select pg_temp.falha(format($$insert into erp.quitacoes (pagamento_id, parcela_id, principal) values ('c2000000-0000-0000-0000-0000000000a7', %L, 100)$$, :'td'),
   'acesso: nem o financeiro quita título que não vê (PJ)');
 -- papel leitura na AD: a lista não dá o direito de gravar
@@ -3492,15 +3494,29 @@ select pg_temp.como(:'u10');
 select pg_temp.falha(format($$insert into erp.liberacoes_sem_abater (titulo_id, justificativa) values (%L, 'x')$$, :'tb'),
   'acesso: papel leitura não libera título sem abater, nem estando na AD');
 -- S-089: cadastro de pessoas protegido e auditado
+select pg_temp.sis();
+insert into erp.pessoa_papeis values ('10000000-0000-0000-0000-000000000002', 'cliente');
+insert into erp.pessoas (id, tipo, nome, documento) values ('10000000-0000-0000-0000-0000000000c2', 'juridica', 'Só pagamento V', '13131313000113');
+select pg_temp.volta();
 select pg_temp.como(:'u9');
 insert into erp.pessoa_papeis values ('10000000-0000-0000-0000-0000000000c1', 'fornecedor');
-insert into erp.pessoa_papeis values ('10000000-0000-0000-0000-000000000002', 'cliente');
+select pg_temp.erro_igual($$insert into erp.pessoa_papeis values ('10000000-0000-0000-0000-000000000003', 'fornecedor')$$,
+  'O cadastro de empresa do grupo só o master muda', 'S-089: o analista não põe papel em empresa do grupo');
 select pg_temp.erro_igual($$update erp.pessoas set nome = 'Outra' where id = '10000000-0000-0000-0000-000000000001'$$,
   'O cadastro de empresa do grupo só o master muda', 'S-089: o analista não muda o cadastro de empresa do grupo');
 select pg_temp.erro_igual($$delete from erp.pessoa_papeis where pessoa_id = '10000000-0000-0000-0000-000000000002'$$,
   'O cadastro de empresa do grupo só o master muda', 'S-089: nem os papéis dela');
 select pg_temp.erro_igual($$update erp.pessoas set documento = '98989898000198' where id = '10000000-0000-0000-0000-0000000000c1'$$,
-  'Documento, nome e tipo de pessoa já usada só o financeiro muda', 'S-089: o analista não troca o CNPJ de fornecedor já usado');
+  'Documento, nome, tipo e situação de pessoa já usada só o financeiro muda', 'S-089: o analista não troca o CNPJ de fornecedor já usado');
+select pg_temp.erro_igual($$update erp.pessoas set nome = 'Outro nome' where id = '10000000-0000-0000-0000-0000000000c1'$$,
+  'Documento, nome, tipo e situação de pessoa já usada só o financeiro muda', 'S-089: nem o nome');
+select pg_temp.erro_igual($$update erp.pessoas set ativa = false where id = '10000000-0000-0000-0000-0000000000c1'$$,
+  'Documento, nome, tipo e situação de pessoa já usada só o financeiro muda', 'S-089: nem desativa');
+insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values
+  ('20000000-0000-0000-0000-000000000002', '50000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-0000000000c2',
+   '40000000-0000-0000-0000-000000000002', '45000000-0000-0000-0000-000000000002', '2027-10-10', 50);
+select pg_temp.erro_igual($$update erp.pessoas set documento = '14141414000114' where id = '10000000-0000-0000-0000-0000000000c2'$$,
+  'Documento, nome, tipo e situação de pessoa já usada só o financeiro muda', 'S-089: pessoa usada só num pagamento também conta como usada');
 select pg_temp.erro_igual($$delete from erp.pessoa_papeis where pessoa_id = '10000000-0000-0000-0000-0000000000c1' and papel = 'fornecedor'$$,
   'Só o financeiro tira o papel de fornecedor de pessoa já usada', 'S-089: nem tira o papel de fornecedor');
 update erp.pessoas set email = 'contato@fornecedor.test' where id = '10000000-0000-0000-0000-0000000000c1';

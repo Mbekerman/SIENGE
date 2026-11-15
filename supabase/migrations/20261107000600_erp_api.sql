@@ -210,15 +210,15 @@ end $$;
 
 -- ---------------------------------------------------------------------------------------------
 -- Cadastro de pessoas (S-089): com auditoria; a empresa do grupo só o master muda; de pessoa já
--- usada (título, nota, contrato, previsão, pagamento), documento, nome, tipo e o papel de
--- fornecedor só o financeiro ou o master. Definer: confere o uso por baixo do RLS.
+-- usada (título, nota, contrato, previsão, pagamento), documento, nome, tipo, a marca de ativa e o
+-- papel de fornecedor só o financeiro ou o master. Definer: confere o uso por baixo do RLS.
 -- ---------------------------------------------------------------------------------------------
 create function erp.tg_pessoa_protegida() returns trigger language plpgsql
 security definer set search_path = erp, pg_catalog, pg_temp as $$
 declare v_id uuid; v_grupo boolean; v_usada boolean; v_muda boolean;
 begin
   if erp.sistema() or erp.sou_master() then return coalesce(new, old); end if;
-  if tg_table_name = 'pessoas' then v_id := old.id; else v_id := old.pessoa_id; end if;
+  if tg_table_name = 'pessoas' then v_id := old.id; else v_id := coalesce(new.pessoa_id, old.pessoa_id); end if;
   v_grupo := exists (select 1 from erp.empresas where pessoa_id = v_id);
   v_usada := exists (select 1 from erp.titulos where pessoa_id = v_id)
           or exists (select 1 from erp.documentos_fiscais where emitente_id = v_id)
@@ -227,16 +227,16 @@ begin
           or exists (select 1 from erp.pagamentos where pessoa_id = v_id);
   if tg_table_name = 'pessoas' then
     v_muda := tg_op = 'DELETE' or new.documento is distinct from old.documento or new.nome is distinct from old.nome
-              or new.tipo is distinct from old.tipo;
+              or new.tipo is distinct from old.tipo or new.ativa is distinct from old.ativa;
     if v_grupo and (v_muda or new is distinct from old) then
       raise exception 'O cadastro de empresa do grupo só o master muda';
     end if;
     if v_usada and v_muda and not erp.financeiro() then
-      raise exception 'Documento, nome e tipo de pessoa já usada só o financeiro muda';
+      raise exception 'Documento, nome, tipo e situação de pessoa já usada só o financeiro muda';
     end if;
   else  -- pessoa_papeis
     if v_grupo then raise exception 'O cadastro de empresa do grupo só o master muda'; end if;
-    if v_usada and old.papel = 'fornecedor' and not erp.financeiro() then
+    if tg_op <> 'INSERT' and v_usada and old.papel = 'fornecedor' and not erp.financeiro() then
       raise exception 'Só o financeiro tira o papel de fornecedor de pessoa já usada';
     end if;
   end if;
@@ -245,7 +245,7 @@ end $$;
 alter function erp.tg_pessoa_protegida() owner to erp_conferencia;
 create trigger t_protegida before update or delete on erp.pessoas
   for each row execute function erp.tg_pessoa_protegida();
-create trigger t_protegida before update or delete on erp.pessoa_papeis
+create trigger t_protegida before insert or update or delete on erp.pessoa_papeis
   for each row execute function erp.tg_pessoa_protegida();
 create trigger t_aud_pessoas after insert or update or delete on erp.pessoas
   for each row execute function erp.tg_auditoria('id');
