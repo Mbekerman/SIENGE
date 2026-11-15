@@ -3,29 +3,85 @@
 \set QUIET on
 set client_min_messages = warning;
 
+-- Com login, a sessão age como o papel da API (authenticated), sob RLS e só com os grants dela;
+-- sem login (null), é o dono do esquema sem SET ROLE, isto é, o sistema.
 create function pg_temp.como(u text) returns void language sql as
-  $$ select set_config('request.jwt.claim.sub', coalesce(u, ''), false) $$;
+  $$ select set_config('request.jwt.claim.sub', coalesce(u, ''), false),
+            set_config('role', case when coalesce(u, '') = '' then 'none' else 'authenticated' end, false) $$;
+-- como o dono do esquema, com o login posto: sem RLS e com todos os privilégios, mas os gatilhos
+-- veem a pessoa (para testar a trava de tabela que a API nem alcança)
+create function pg_temp.como_dono(u text) returns void language sql as
+  $$ select set_config('request.jwt.claim.sub', coalesce(u, ''), false), set_config('role', 'none', false) $$;
 create function pg_temp.ok(cond boolean, msg text) returns void language plpgsql as $$
 begin if not coalesce(cond,false) then raise exception 'FALHOU: %', msg; end if; raise notice 'ok  %', msg; end $$;
+-- Barrado: dá erro, ou, num UPDATE ou DELETE, a RLS não deixa a linha ao alcance (nada muda).
 create function pg_temp.falha(sqlcmd text, msg text) returns void language plpgsql as $$
+declare n bigint;
 begin
-  begin execute sqlcmd; exception when others then raise notice 'ok  % (%)', msg, sqlerrm; return; end;
+  begin execute sqlcmd; get diagnostics n = row_count;
+  exception when others then raise notice 'ok  % (%)', msg, sqlerrm; return; end;
+  if n = 0 and lower(ltrim(sqlcmd)) ~ '^(update|delete)' then raise notice 'ok  % (nada mudou)', msg; return; end if;
   raise exception 'FALHOU: esperava erro em %', msg;
 end $$;
--- erro com a mensagem exata (o falha aceita qualquer erro)
-create function pg_temp.erro_igual(sqlcmd text, esperado text, msg text) returns void language plpgsql as $f$
+-- O mesmo comando como o dono do esquema com o login posto (sem o RLS e com todos os
+-- privilégios, como as operações do banco): devolve o erro, ou nulo se passou (e desfaz).
+-- Serve para testar o gatilho de tabela que a API nem alcança.
+create function pg_temp.erro_como_dono(sqlcmd text) returns text language plpgsql as $f$
+declare v_role text := current_setting('role'); v_err text;
 begin
-  begin execute sqlcmd; exception when others then
+  perform set_config('role', 'none', false);
+  begin
+    begin execute sqlcmd; exception when others then v_err := sqlerrm; end;
+    if v_err is null then raise exception 'passou_como_dono'; end if;
+  exception when others then if sqlerrm <> 'passou_como_dono' then raise; end if;
+  end;
+  perform set_config('role', v_role, false);
+  return v_err;
+end $f$;
+-- erro com a mensagem exata (o falha aceita qualquer erro). Se a API nem tem o privilégio, confere
+-- também o gatilho, pelo dono.
+create function pg_temp.erro_igual(sqlcmd text, esperado text, msg text) returns void language plpgsql as $f$
+declare v text; n bigint;
+begin
+  begin execute sqlcmd; get diagnostics n = row_count; exception when others then
     if sqlerrm = esperado then raise notice 'ok  %', msg; return; end if;
+    if sqlerrm like 'permission denied for %' then
+      v := pg_temp.erro_como_dono(sqlcmd);
+      if v = esperado then raise notice 'ok  % (a API não tem o privilégio; o gatilho também barra)', msg; return; end if;
+      raise exception 'FALHOU: % (sem privilégio pela API, mas pelo dono o erro foi: %)', msg, coalesce(v, 'passou');
+    end if;
     raise exception 'FALHOU: % (erro foi: %)', msg, sqlerrm;
   end;
+  -- UPDATE ou DELETE em linha que a RLS deixa fora do alcance: nada muda; confere o gatilho pelo dono
+  if n = 0 and lower(ltrim(sqlcmd)) ~ '^(update|delete)' then
+    v := pg_temp.erro_como_dono(sqlcmd);
+    if v = esperado then raise notice 'ok  % (a RLS deixa a linha fora do alcance; o gatilho também barra)', msg; return; end if;
+    raise exception 'FALHOU: % (nada mudou pela API, mas pelo dono o erro foi: %)', msg, coalesce(v, 'passou');
+  end if;
   raise exception 'FALHOU: % (passou)', msg;
 end $f$;
 -- tabelas de acesso só mudam por pedido aprovado; no preparo dos testes, grava como o sistema e volta
 create function pg_temp.sis() returns void language sql as
-  $$ select set_config('teste.antes', current_setting('request.jwt.claim.sub', true), false), set_config('request.jwt.claim.sub', '', false) $$;
+  $$ select set_config('teste.antes', coalesce(current_setting('request.jwt.claim.sub', true), ''), false),
+            set_config('request.jwt.claim.sub', '', false), set_config('role', 'none', false) $$;
 create function pg_temp.volta() returns void language sql as
-  $$ select set_config('request.jwt.claim.sub', coalesce(current_setting('teste.antes', true), ''), false) $$;
+  $$ select pg_temp.como(nullif(current_setting('teste.antes', true), '')) $$;
+-- As funções de acesso que recebem a pessoa não têm EXECUTE para a API (S-079); os testes delas
+-- chamam pelo dono e voltam ao papel de antes.
+create function pg_temp.dono_ini() returns text language plpgsql as
+  $$ declare r text := current_setting('role'); begin perform set_config('role', 'none', false); return r; end $$;
+create function pg_temp.acesso(u uuid, n uuid, c uuid, out ve_tudo boolean, out lanca boolean) language plpgsql as $$
+declare r text := pg_temp.dono_ini();
+begin select a.ve_tudo, a.lanca into ve_tudo, lanca from erp.acesso(u, n, c) a; perform set_config('role', r, false); end $$;
+create function pg_temp.ve_linha(u uuid, n uuid, c uuid, nat uuid, autor uuid) returns boolean language plpgsql as $$
+declare r text := pg_temp.dono_ini(); v boolean;
+begin v := erp.ve_linha(u, n, c, nat, autor); perform set_config('role', r, false); return v; end $$;
+create function pg_temp.lanca_linha(u uuid, n uuid, c uuid, nat uuid) returns boolean language plpgsql as $$
+declare r text := pg_temp.dono_ini(); v boolean;
+begin v := erp.lanca_linha(u, n, c, nat); perform set_config('role', r, false); return v; end $$;
+create function pg_temp.natureza_liberada(u uuid, n uuid, c uuid, nat uuid) returns boolean language plpgsql as $$
+declare r text := pg_temp.dono_ini(); v boolean;
+begin v := erp.natureza_liberada(u, n, c, nat); perform set_config('role', r, false); return v; end $$;
 create function pg_temp.nat(c text) returns uuid language sql as $$ select id from erp.naturezas where codigo = c $$;
 -- soma do livro por estágio, filtrando por título
 create function pg_temp.livro(p_estagio text, p_titulo uuid default null) returns numeric language sql as $$
@@ -39,6 +95,7 @@ set client_min_messages = notice;
 \set leitor   '00000000-0000-0000-0000-00000000000d'
 \set contador '00000000-0000-0000-0000-00000000000c'
 \set ti       '00000000-0000-0000-0000-000000000011'
+\set analista2 '00000000-0000-0000-0000-000000000013'
 
 -- no teste, o login de cada um é o próprio id em texto (pg_temp.como põe o login na sessão)
 insert into erp.usuarios (id, login_id, nome, papel, administrador, contador) values
@@ -48,8 +105,11 @@ insert into erp.usuarios (id, login_id, nome, papel, administrador, contador) va
   (:'gestor', :'gestor', 'Paula', 'gestor', false, false),
   (:'analista', :'analista', 'Rafael', 'analista', false, false),
   (:'leitor', :'leitor', 'Consulta', 'leitura', false, false),
-  (:'contador', :'contador', 'Contador', 'analista', false, true);
+  (:'contador', :'contador', 'Contador', 'analista', false, true),
+  (:'analista2', :'analista2', 'Analista sem lista', 'analista', false, false);
 insert into erp.master (user_id) values (:'diretor');   -- o master entra pelo sistema (implantação)
+-- quem registra pagamento é o financeiro (S-091): o analista dos testes está na AO
+insert into erp.listas_financeiro (lista, user_id) values ('AO', :'analista');
 
 -- ---------------------------------------------------------------------
 \echo '# raiz: empresas, sócios, empreendimento'
@@ -117,6 +177,13 @@ update erp.centros_custo set id = '45000000-0000-0000-0000-000000000001' where n
 update erp.centros_custo set id = '45000000-0000-0000-0000-000000000002' where nome = 'Marketing';
 \set cc_obra '45000000-0000-0000-0000-000000000001'
 \set cc_mkt  '45000000-0000-0000-0000-000000000002'
+-- Perfil amplo dos testes de regra: todos lançam em todos os centros de todos os núcleos (o
+-- master vê tudo). Os testes de quem vê e quem não vê tiram este perfil e montam os seus.
+\set tudo 'a0000000-0000-0000-0000-0000000000ff'
+insert into erp.perfis_modelo (id, nome) values (:'tudo', 'Tudo (testes)');
+insert into erp.perfil_centros select :'tudo', id, 'lancador' from erp.centros_custo;
+insert into erp.atribuicoes (user_id, perfil_id, escopo)
+select u, :'tudo', 'todos' from unnest(array[:'diretor2', :'gestor', :'analista', :'leitor', :'contador', :'analista2']::uuid[]) u;
 select pg_temp.como(:'analista');
 select pg_temp.falha($$insert into erp.nucleo_centros (nucleo_economico_id, centro_custo_id)
   values ('40000000-0000-0000-0000-000000000001', '45000000-0000-0000-0000-000000000001')$$,
@@ -324,6 +391,14 @@ select pg_temp.falha($$insert into erp.pagamentos (empresa_id, conta_id, pessoa_
    '40000000-0000-0000-0000-000000000002', '45000000-0000-0000-0000-000000000002', '2026-03-01', 1)$$,
   'adiantamento não usa núcleo de outra empresa');
 begin;
+select pg_temp.como(:'analista2');   -- lança em todos os centros, mas não está no financeiro
+select pg_temp.falha(format($$insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, data, valor)
+  select %L, %L, pessoa_id, '2026-03-01', 1 from erp.empresas where id = %L$$, :'spe', :'conta_spe', :'spe'),
+  'pagamento sem núcleo e centro (transferência) não é de quem só lança no centro');
+select pg_temp.falha(format($$insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor)
+  select %L, %L, pessoa_id, %L, %L, '2026-03-01', 1 from erp.empresas where id = %L$$, :'spe', :'conta_spe', :'ne_vm', :'cc_obra', :'spe'),
+  'S-091: quem não está no financeiro não registra pagamento, nem no centro onde lança');
+select pg_temp.como(:'diretor');   -- o master (ou o financeiro: AF, AO, AD)
 insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, data, valor)
 select :'spe', :'conta_spe', pessoa_id, '2026-03-01', 1 from erp.empresas where id = :'spe';
 select pg_temp.ok(true, 'transferência entre contas próprias dispensa o carimbo');
@@ -548,11 +623,17 @@ select pg_temp.ok((select sum(valor) from erp.lancamentos where estagio = 'compr
 
 -- ---------------------------------------------------------------------
 \echo '# dinheiro entre sócios'
+select current_setting('request.jwt.claim.sub', true) as quem_antes \gset
+select pg_temp.como(:'analista2');
+select pg_temp.erro_igual($$select erp.registrar_movimento_societario('aporte', '20000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000003', 1, '2026-02-01')$$,
+  'Movimento entre sócios só pela diretoria ou pelo financeiro', 'movimento entre sócios: quem só lança nos centros não registra');
+select pg_temp.como(:'diretor2');
 select erp.registrar_movimento_societario('aporte', :'incorp', :'spe', 50000, '2026-02-01', 'Aporte inicial') as ms \gset
 select pg_temp.ok((select count(*) from erp.titulos t join erp.movimentos_societarios m on t.id in (m.titulo_pagar_id, m.titulo_receber_id) where m.id = :'ms') = 2,
   'aporte vira par ligado: a pagar na incorporadora, a receber na SPE');
 select pg_temp.ok((select sum(l.valor) from erp.lancamentos l join erp.movimentos_societarios m on l.titulo_id in (m.titulo_pagar_id, m.titulo_receber_id) where m.id = :'ms') = 0,
   'no consolidado do grupo o par se anula');
+select pg_temp.como(nullif(:'quem_antes', ''));
 
 -- ---------------------------------------------------------------------
 \echo '# orçamento'
@@ -712,9 +793,18 @@ set role anon;
 select pg_temp.falha($$select erp.fechar_mes('20000000-0000-0000-0000-000000000002', '2026-04-01')$$, 'chamada anônima não executa função do ERP');
 select pg_temp.falha($$select count(*) from erp.lancamentos$$, 'chamada anônima não lê o livro');
 reset role;
-set role authenticated;
-select pg_temp.falha($$select count(*) from erp.pessoas$$, 'usuário logado também não lê enquanto não houver permissões por papel');
-reset role;
+-- S-045: login do Auth comum sem cadastro no ERP (outro sistema) lê zero linhas e não grava
+select pg_temp.como('login-sem-cadastro');
+select pg_temp.ok((select count(*) from erp.pessoas) = 0 and (select count(*) from erp.titulos) = 0
+                  and (select count(*) from erp.usuarios) = 0 and (select count(*) from erp.lancamentos) = 0
+                  and (select count(*) from erp.naturezas) = 0,
+  'S-045: logado sem cadastro no ERP lê zero linhas');
+select pg_temp.falha($$insert into erp.pessoas (tipo, nome, documento) values ('juridica', 'Intruso', '99999999000199')$$,
+  'S-045: logado sem cadastro no ERP não cadastra');
+select pg_temp.falha($$insert into erp.titulos (empresa_id, tipo, pessoa_id, emissao, competencia, valor)
+  values ('20000000-0000-0000-0000-000000000003', 'avulso', '10000000-0000-0000-0000-000000000005', '2026-03-01', '2026-03-01', 10)$$,
+  'S-045: logado sem cadastro no ERP não lança título');
+select pg_temp.como(null);
 -- mesmo que alguém dê acesso por engano, sem usuário a API não passa nas checagens de papel
 grant usage on schema erp to anon;
 grant execute on function erp.exigir_diretor(), erp.sistema(), erp.eu(), erp.meu_papel(), erp.login_atual() to anon;
@@ -776,20 +866,90 @@ select pg_temp.ok(erp.eu() = '00000000-0000-0000-0000-0000000000a1', 'erp.eu() t
 select set_config('request.jwt.claims', '', false);
 rollback;
 
--- catálogo: nenhum privilégio de public, anon, authenticated ou service_role em nada do esquema (pega migration futura).
+-- catálogo: nenhum privilégio de public, anon ou service_role em nada do esquema (pega migration futura).
 -- service_role fica de fora (S-015): o projeto Supabase é compartilhado e a chave de serviço do monitor passaria como sistema.
 select pg_temp.ok(not exists (
-  select 1 from unnest(array['public','anon','authenticated','service_role']) r(papel)
+  select 1 from unnest(array['public','anon','service_role']) r(papel)
   where (r.papel <> 'public' and has_schema_privilege(r.papel, 'erp', 'USAGE'))
      or exists (select 1 from information_schema.role_table_grants g
-                where g.table_schema = 'erp' and g.grantee in ('PUBLIC', 'anon', 'authenticated', 'service_role'))
+                where g.table_schema = 'erp' and g.grantee in ('PUBLIC', 'anon', 'service_role'))
      or exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace,
                        lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
                 where n.nspname = 'erp' and a.privilege_type = 'EXECUTE'
-                  and (a.grantee = 0 or a.grantee in (select oid from pg_roles where rolname in ('anon','authenticated','service_role'))))
+                  and (a.grantee = 0 or a.grantee in (select oid from pg_roles where rolname in ('anon','service_role'))))
      or exists (select 1 from pg_namespace n, lateral aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
                 where n.nspname = 'erp' and a.grantee = 0)),
-  'catálogo: o esquema `erp` não dá nenhum privilégio a public, anon, authenticated ou service_role');
+  'catálogo: o esquema `erp` não dá nenhum privilégio a public, anon ou service_role');
+-- primeiro grant: authenticated só tem o que a migration _erp_api dá
+select pg_temp.ok(not exists (select 1 from information_schema.role_table_grants g
+                               where g.table_schema = 'erp' and g.grantee = 'authenticated'
+                                 and g.privilege_type not in ('SELECT','INSERT','UPDATE','DELETE')),
+  'catálogo: authenticated não tem TRUNCATE, REFERENCES nem TRIGGER em nada');
+select pg_temp.ok(not exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+                               where n.nspname = 'erp' and c.relkind in ('r','p')
+                                 and has_table_privilege('authenticated', c.oid, 'INSERT,UPDATE,DELETE')
+                                 and not exists (select 1 from pg_policies p where p.schemaname = 'erp' and p.tablename = c.relname
+                                                  and p.policyname = 'perfil_inclui' and 'authenticated' = any(p.roles))),
+  'catálogo: authenticated só grava em tabela com política de gravação por perfil');
+select pg_temp.ok(not exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+                               where n.nspname = 'erp' and c.relkind in ('r','p') and c.relname <> 'avisos_sucessao'
+                                 and not exists (select 1 from pg_policies p where p.schemaname = 'erp' and p.tablename = c.relname
+                                                  and p.policyname = 'perfil_le' and 'authenticated' = any(p.roles))),
+  'catálogo: toda tabela tem a política de leitura por perfil (só os avisos da sucessão ficam só do sistema)');
+select pg_temp.ok(not has_table_privilege('authenticated', 'erp.lancamentos', 'INSERT,UPDATE,DELETE')
+                  and not has_table_privilege('authenticated', 'erp.auditoria', 'INSERT,UPDATE,DELETE')
+                  and not has_table_privilege('authenticated', 'erp.caucao_movimentos', 'INSERT,UPDATE,DELETE')
+                  and not has_table_privilege('authenticated', 'erp.avisos_sucessao', 'SELECT,INSERT,UPDATE,DELETE')
+                  and not has_table_privilege('authenticated', 'erp.mudancas_acesso', 'INSERT,UPDATE,DELETE')
+                  and not has_table_privilege('authenticated', 'erp.atribuicoes', 'INSERT,UPDATE,DELETE'),
+  'catálogo: livro, auditoria, caução e acesso não têm gravação direta pela API');
+-- EXECUTE: as invoker (rodam com o RLS de quem chama) e, das definer, só a lista abaixo
+select pg_temp.ok(not exists (
+  select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'erp' and p.prosecdef and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+     and p.proname not in (
+       'eu','autor','meu_usuario','meu_papel','sou_master','membro','sou_admin','escrevo','financeiro','gere_acesso',
+       'exigir_editor','exigir_diretor','estou_nas_listas','natureza_restrita','galhos_acima','natureza_em_uso',
+       'vejo','lanco','aprovo_titulo','vejo_titulo','lanco_titulo','vejo_documento','lanco_documento','vejo_compromisso',
+       'lanco_compromisso','vejo_previsao','vejo_pagamento','vejo_reclassificacao','vejo_sucessao',
+       '_vejo_titulo','_lanco_titulo','_vejo_documento','_lanco_documento','_vejo_compromisso','_lanco_compromisso',
+       '_vejo_pagamento','_lanco_pagamento',
+       'previsao_saldo','parcela_saldo','pagamento_saldo',
+       'regra_adiantamento_atual','autor_lancamento','abatimento_aprovado','adiantamento_anterior_em_aberto','centro_ligado',
+       'checar_natureza','checar_centro','em_revisao','pode_ajustar','_ajustavel','_nota_ajustavel','_titulo_em_revisao_da_nota',
+       'cadeia_titulo','conferir_ajuste','alcada_etapa','alcada_pendente','alcada_recusada','titulos_do_acumulado',
+       'checar_competencia','_registrar_ajuste','recusar_so_sucessao','recusar_admin_aprovador','_beneficiarios_acesso',
+       'confirmar_titulo','lancar_documento','liberar_caucao','publicar_orcamento','decidir_titulo','reenviar_titulo',
+       'registrar_movimento_societario','fechar_mes','reabrir_mes','pedir_reclassificacao','decidir_reclassificacao',
+       'cancelar_reclassificacao','pedir_mudanca_acesso','decidir_mudanca_acesso','cancelar_mudanca_acesso','passar_master',
+       'pedir_sucessao_master','decidir_sucessao_master','vetar_sucessao_master','efetivar_sucessao_master')),
+  'catálogo: das funções security definer, authenticated só executa as da lista (RPCs e conferências de quem está logado)');
+select pg_temp.ok(not has_function_privilege('authenticated', 'erp._aplicar_mudanca_acesso(uuid)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp.gerar_avisos_sucessao()', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp.vetar_sucessao_por_link(text)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp._pagamento_saldo(uuid)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp._criar_titulo(uuid, text, text, uuid, uuid, uuid, date, date, numeric, date[], text, uuid, text)', 'EXECUTE'),
+  'catálogo: o que aplica sem conferir, os saldos internos e as rotinas do servidor ficam sem EXECUTE para a API');
+-- S-079: nenhuma função que recebe a pessoa (p_user) é executável pela API
+select pg_temp.ok(not exists (
+  select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'erp' and 'p_user' = any(p.proargnames) and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+     -- estas só recusam (erro) o administrador e o só da sucessão, o que todo membro já lê em usuarios
+     and p.proname not in ('recusar_admin_aprovador', 'recusar_so_sucessao')),
+  'S-079: nenhuma função que devolve o acesso de uma pessoa dada tem EXECUTE para a API');
+select pg_temp.ok((select bool_and(p.prosecdef and pg_get_userbyid(p.proowner) = 'erp_conferencia')
+                     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                    where n.nspname = 'erp' and p.proname in ('acesso','ve_linha','lanca_linha','natureza_liberada','atribuicoes_no_nucleo')),
+  'S-079: as funções de acesso que recebem a pessoa são definer de erp_conferencia');
+-- nenhum papel da API é membro de papel nosso (senão o login viraria sistema ou dono das operações)
+select pg_temp.ok(not exists (
+  select 1 from pg_auth_members m join pg_roles r on r.oid = m.roleid join pg_roles u on u.oid = m.member
+   where r.rolname like 'erp\_%' and u.rolname in ('anon','authenticated','authenticator','service_role')),
+  'catálogo: anon, authenticated, authenticator e service_role não são membros de nenhum papel erp_*');
+select pg_temp.ok(not exists (
+  select 1 from pg_auth_members m join pg_roles r on r.oid = m.roleid join pg_roles u on u.oid = m.member
+   where r.rolname in ('anon','authenticated','authenticator','service_role') and u.rolname like 'erp\_%'),
+  'catálogo: nenhum papel erp_* é membro de papel da API');
 
 -- S-003: RLS ligado e forçado em toda tabela, nenhuma política que libere tudo.
 select pg_temp.ok(not exists (
@@ -840,7 +1000,10 @@ do $$ begin
   update erp.lancamentos set natureza_id = natureza_id where id = (select id from erp.lancamentos limit 1);
   raise exception 'passou';
 exception when others then
-  if sqlerrm <> 'O livro não muda; a natureza só muda pela reclassificação' then raise exception 'livro: %', sqlerrm; end if;
+  -- pela API nem chega ao gatilho: o livro não tem UPDATE para authenticated
+  if sqlerrm not in ('O livro não muda; a natureza só muda pela reclassificação', 'permission denied for table lancamentos') then
+    raise exception 'livro: %', sqlerrm;
+  end if;
 end $$;
 select pg_temp.ok(true, 'S-035: SET erp.reclassificando não deixa mudar o livro');
 do $$ begin
@@ -884,6 +1047,10 @@ select pg_temp.ok((select situacao from erp.reclassificacoes where id = current_
 select pg_temp.como(:'diretor');
 select pg_temp.falha($$update erp.reclassificacoes set situacao = 'aprovada' where id = current_setting('teste.rc37')::uuid$$,
   'S-037: pedido não se aprova por UPDATE direto');
+-- pela API, a reclassificação nem tem gravação direta; daqui em diante, o gatilho, pelo dono
+select pg_temp.como_dono(:'diretor');
+select pg_temp.falha($$update erp.reclassificacoes set situacao = 'aprovada' where id = current_setting('teste.rc37')::uuid$$,
+  'S-037: pedido não se aprova por UPDATE direto (nem pelo gatilho)');
 select pg_temp.ok((select situacao from erp.reclassificacoes where id = current_setting('teste.rc37')::uuid) = 'pendente', 'S-037: continua pendente');
 do $$ begin
   update erp.reclassificacoes set nivel = 'gestor' where id = current_setting('teste.rc37')::uuid;
@@ -943,6 +1110,9 @@ select pg_temp.ok((select count(*) from erp.reclassificacao_itens i join erp.lan
                    where i.reclassificacao_id = current_setting('teste.rc')::uuid and l.natureza_id = pg_temp.nat('04.02')) > 0,
   'S-035: o pedido pendente tem linhas do livro na origem');
 select pg_temp.como(:'diretor');
+select pg_temp.falha($$select erp._aplicar_reclassificacao(current_setting('teste.rc')::uuid)$$,
+  'a função interna que aplica a reclassificação não tem EXECUTE para a API');
+select pg_temp.como_dono(:'diretor');   -- e mesmo por dentro, sem o voto, a trava do livro barra
 do $$ begin
   perform erp._aplicar_reclassificacao(current_setting('teste.rc')::uuid);
   raise exception 'passou';
@@ -1047,8 +1217,9 @@ select pg_temp.ok(not exists (
     union all
     select a.grantee from pg_namespace n, lateral aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a where n.nspname = 'erp')
   select 1 from acl where grantee not in (select nspowner from dono)
-    and (grantee = 0 or (select rolname from pg_roles where oid = grantee) not like 'erp\_%')),
-  'catálogo: nenhum privilégio no `erp` para papel que não seja o dono ou erp_*');
+    and (grantee = 0 or (select rolname from pg_roles where oid = grantee) not like 'erp\_%')
+    and (select rolname from pg_roles where oid = grantee) is distinct from 'authenticated'),
+  'catálogo: nenhum privilégio no `erp` para papel que não seja o dono, erp_* ou authenticated (o usuário logado, sob RLS)');
 -- catálogo: todo security definer do `erp` tem search_path fixo e é do erp_conferencia (não do superusuário)
 select pg_temp.ok(not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -1072,8 +1243,8 @@ select pg_temp.ok(not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace,
          lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
   where n.nspname = 'erp' and p.prosecdef and a.privilege_type = 'EXECUTE'
-    and (a.grantee = 0 or a.grantee in (select oid from pg_roles where rolname in ('anon', 'authenticated', 'authenticator', 'service_role')))),
-  'catálogo: saldos e demais funções definer fora do EXECUTE de anon, authenticated, authenticator e service_role');
+    and (a.grantee = 0 or a.grantee in (select oid from pg_roles where rolname in ('anon', 'authenticator', 'service_role')))),
+  'catálogo: funções definer fora do EXECUTE de anon, authenticator e service_role (authenticated: só a lista)');
 -- S-035: nenhuma variável de sessão serve de passe
 select pg_temp.ok(not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -1085,8 +1256,9 @@ select pg_temp.ok(not exists (
   select 1 from pg_policies where schemaname = 'erp' and policyname <> 'sistema'
     and not (policyname = 'conferencia' and cmd = 'SELECT' and roles = '{erp_conferencia}')
     and not (policyname = 'operacao' and cmd = 'ALL' and roles::text[] @> '{erp_situacao,erp_reclassificacao,erp_acesso}' and cardinality(roles) = 3)
-    and not (policyname = 'auditoria_grava' and tablename = 'auditoria' and cmd = 'INSERT' and roles = '{erp_auditoria}')),
-  'catálogo: no `erp` só há as políticas sistema, conferencia e operacao (as de perfil entram com o grant a authenticated)');
+    and not (policyname = 'auditoria_grava' and tablename = 'auditoria' and cmd = 'INSERT' and roles = '{erp_auditoria}')
+    and not (policyname in ('perfil_le', 'perfil_inclui', 'perfil_altera', 'perfil_apaga') and roles = '{authenticated}')),
+  'catálogo: no `erp` só há as políticas sistema, conferencia, operacao e as de perfil, estas só para authenticated');
 
 -- S-051, S-052: caução, livro e auditoria só crescem, e só pelas operações do banco
 begin;
@@ -2413,6 +2585,7 @@ rollback;
 -- ---------------------------------------------------------------------
 \echo '# perfis de acesso: tipos de núcleo, modelos, atribuições, exceções'
 begin;
+delete from erp.atribuicoes where perfil_id = :'tudo';   -- aqui o acesso de cada um é o do teste
 select pg_temp.como(:'analista');
 select pg_temp.erro_igual($$insert into erp.tipos_nucleo (codigo, nome) values ('stand', 'Stand de vendas')$$,
   'Mudança de acesso só por pedido aprovado (erp.pedir_mudanca_acesso)', 'tipos de núcleo: ninguém cria tipo direto na tabela');
@@ -2467,17 +2640,17 @@ insert into erp.atribuicoes (id, user_id, perfil_id, escopo) values ('a1000000-0
 insert into erp.atribuicao_nucleos values ('a1000000-0000-0000-0000-000000000001', :'ne_vm', true);
 select pg_temp.ok(exists (select 1 from erp.auditoria where tabela = 'atribuicoes' and registro = 'a1000000-0000-0000-0000-000000000001'),
   'perfis: atribuição entra na auditoria');
-select pg_temp.ok((select not ve_tudo and lanca from erp.acesso(:'analista', :'ne_vm', :'cc_mkt')),
+select pg_temp.ok((select not ve_tudo and lanca from pg_temp.acesso(:'analista', :'ne_vm', :'cc_mkt')),
   'perfis: lançador restrito lança e não vê tudo do centro');
-select pg_temp.ok(erp.ve_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.01'), :'analista')
-                  and not erp.ve_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.01'), :'gestor'),
+select pg_temp.ok(pg_temp.ve_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.01'), :'analista')
+                  and not pg_temp.ve_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.01'), :'gestor'),
   'perfis: lançador restrito vê o que lançou e não vê o lançamento de outro');
-select pg_temp.ok((select not ve_tudo and not lanca from erp.acesso(:'analista', :'ne_corp', :'cc_mkt'))
-                  and (select not ve_tudo and not lanca from erp.acesso(:'analista', :'ne_vm', :'cc_obra')),
+select pg_temp.ok((select not ve_tudo and not lanca from pg_temp.acesso(:'analista', :'ne_corp', :'cc_mkt'))
+                  and (select not ve_tudo and not lanca from pg_temp.acesso(:'analista', :'ne_vm', :'cc_obra')),
   'perfis: fora da lista ou fora dos centros do modelo, nada');
-select pg_temp.ok(erp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.01'))
-                  and not erp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'))
-                  and not erp.ve_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), :'analista'),
+select pg_temp.ok(pg_temp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.01'))
+                  and not pg_temp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'))
+                  and not pg_temp.ve_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), :'analista'),
   'perfis: natureza restrita fica fechada mesmo dentro do centro, até liberação');
 select pg_temp.erro_igual($$insert into erp.atribuicao_tipos values ('a1000000-0000-0000-0000-000000000099', 'loja')$$,
   'insert or update on table "atribuicao_tipos" violates foreign key constraint "atribuicao_tipos_atribuicao_id_fkey"', 'perfis: tipo só em atribuição que existe');
@@ -2503,63 +2676,63 @@ select pg_temp.erro_igual(format($$update erp.nucleos_economicos set tipo = 'out
 select pg_temp.como(null);
 \set ne_loja2 '40000000-0000-0000-0000-000000000032'
 \set ne_outro2 '40000000-0000-0000-0000-000000000033'
-select pg_temp.ok((select ve_tudo and not lanca from erp.acesso(:'analista', :'ne_vm', :'cc_obra'))
-                  and (select ve_tudo from erp.acesso(:'analista', :'ne_loja2', :'cc_obra'))
-                  and (select not ve_tudo from erp.acesso(:'analista', :'ne_corp', :'cc_obra')),
+select pg_temp.ok((select ve_tudo and not lanca from pg_temp.acesso(:'analista', :'ne_vm', :'cc_obra'))
+                  and (select ve_tudo from pg_temp.acesso(:'analista', :'ne_loja2', :'cc_obra'))
+                  and (select not ve_tudo from pg_temp.acesso(:'analista', :'ne_corp', :'cc_obra')),
   'perfis: todos, inclusive os futuros, exceto os marcados');
 
 -- sobreposição: Leitor de Marketing nos empreendimentos (tipo) soma com o lançador restrito
 insert into erp.atribuicoes (id, user_id, perfil_id, escopo) values ('a1000000-0000-0000-0000-000000000003', :'analista', 'a0000000-0000-0000-0000-000000000003', 'tipos');
 insert into erp.atribuicao_tipos values ('a1000000-0000-0000-0000-000000000003', 'empreendimento');
-select pg_temp.ok((select ve_tudo and lanca from erp.acesso(:'analista', :'ne_vm', :'cc_mkt'))
-                  and erp.ve_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.01'), :'gestor'),
+select pg_temp.ok((select ve_tudo and lanca from pg_temp.acesso(:'analista', :'ne_vm', :'cc_mkt'))
+                  and pg_temp.ve_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.01'), :'gestor'),
   'perfis: atribuições que se sobrepõem valem pelo maior (leitor + lançador restrito = lançador)');
-select pg_temp.ok((select not ve_tudo from erp.acesso(:'analista', :'ne_loja', :'cc_mkt')),
+select pg_temp.ok((select not ve_tudo from pg_temp.acesso(:'analista', :'ne_loja', :'cc_mkt')),
   'perfis: escopo por tipo não pega núcleo de outro tipo');
 insert into erp.atribuicao_nucleos values ('a1000000-0000-0000-0000-000000000003', :'ne_vm', false);
-select pg_temp.ok((select not ve_tudo and lanca from erp.acesso(:'analista', :'ne_vm', :'cc_mkt')),
+select pg_temp.ok((select not ve_tudo and lanca from pg_temp.acesso(:'analista', :'ne_vm', :'cc_mkt')),
   'perfis: escopo por tipo exceto os marcados');
 
 -- exceção da pessoa vence o modelo
 insert into erp.excecoes_centro values (:'analista', :'ne_vm', :'cc_mkt', 'nenhum', null);
-select pg_temp.ok((select not ve_tudo and not lanca from erp.acesso(:'analista', :'ne_vm', :'cc_mkt')),
+select pg_temp.ok((select not ve_tudo and not lanca from pg_temp.acesso(:'analista', :'ne_vm', :'cc_mkt')),
   'perfis: exceção nenhum tira o acesso que o modelo dá');
 update erp.excecoes_centro set nivel = 'leitor' where user_id = :'analista';
-select pg_temp.ok((select ve_tudo and not lanca from erp.acesso(:'analista', :'ne_vm', :'cc_mkt')),
+select pg_temp.ok((select ve_tudo and not lanca from pg_temp.acesso(:'analista', :'ne_vm', :'cc_mkt')),
   'perfis: exceção troca o nível do modelo');
 update erp.excecoes_centro set fim = current_date - 1 where user_id = :'analista';
-select pg_temp.ok((select not ve_tudo and lanca from erp.acesso(:'analista', :'ne_vm', :'cc_mkt')),
+select pg_temp.ok((select not ve_tudo and lanca from pg_temp.acesso(:'analista', :'ne_vm', :'cc_mkt')),
   'perfis: exceção vencida deixa de valer');
 
 -- naturezas: liberação e bloqueio da pessoa
 insert into erp.excecoes_natureza (user_id, natureza_id, centro_custo_id, efeito) values (:'analista', pg_temp.nat('05.01.04'), :'cc_mkt', 'liberar');
-select pg_temp.ok(erp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'))
-                  and not erp.ve_linha(:'analista', :'ne_vm', :'cc_obra', pg_temp.nat('05.01.04'), :'gestor'),
+select pg_temp.ok(pg_temp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'))
+                  and not pg_temp.ve_linha(:'analista', :'ne_vm', :'cc_obra', pg_temp.nat('05.01.04'), :'gestor'),
   'perfis: natureza restrita liberada só no centro da liberação');
 insert into erp.excecoes_natureza (user_id, natureza_id, centro_custo_id, efeito) values (:'analista', pg_temp.nat('05.01'), null, 'bloquear');
-select pg_temp.ok(not erp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.01'))
-                  and not erp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04')),
+select pg_temp.ok(not pg_temp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.01'))
+                  and not pg_temp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04')),
   'perfis: bloqueio do galho vence a liberação e vale nas naturezas de baixo');
 
 -- modelo que libera natureza restrita: só nos centros do modelo
 insert into erp.atribuicoes (id, user_id, perfil_id, escopo) values ('a1000000-0000-0000-0000-000000000004', :'leitor', 'a0000000-0000-0000-0000-000000000004', 'lista');
 insert into erp.atribuicao_nucleos values ('a1000000-0000-0000-0000-000000000004', :'ne_vm', true);
-select pg_temp.ok(erp.lanca_linha(:'leitor', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'))
-                  and not erp.natureza_liberada(:'leitor', :'ne_vm', :'cc_obra', pg_temp.nat('05.01.04')),
+select pg_temp.ok(pg_temp.lanca_linha(:'leitor', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'))
+                  and not pg_temp.natureza_liberada(:'leitor', :'ne_vm', :'cc_obra', pg_temp.nat('05.01.04')),
   'perfis: o modelo libera a natureza restrita só nos centros dele');
 
 -- lista com os marcados agora + os futuros dos tipos escolhidos (foto na hora)
 insert into erp.atribuicoes (id, user_id, perfil_id, escopo) values ('a1000000-0000-0000-0000-000000000005', :'gestor', 'a0000000-0000-0000-0000-000000000003', 'lista');
 insert into erp.atribuicao_nucleos values ('a1000000-0000-0000-0000-000000000005', :'ne_corp', true);
 insert into erp.atribuicao_tipos values ('a1000000-0000-0000-0000-000000000005', 'loja');
-select pg_temp.ok((select ve_tudo from erp.acesso(:'gestor', :'ne_corp', :'cc_mkt'))
-                  and (select not ve_tudo from erp.acesso(:'gestor', :'ne_loja', :'cc_mkt'))
-                  and (select ve_tudo from erp.acesso(:'gestor', :'ne_loja2', :'cc_mkt'))
-                  and (select not ve_tudo from erp.acesso(:'gestor', :'ne_outro2', :'cc_mkt'))
-                  and (select not ve_tudo from erp.acesso(:'gestor', :'ne_vm', :'cc_mkt')),
+select pg_temp.ok((select ve_tudo from pg_temp.acesso(:'gestor', :'ne_corp', :'cc_mkt'))
+                  and (select not ve_tudo from pg_temp.acesso(:'gestor', :'ne_loja', :'cc_mkt'))
+                  and (select ve_tudo from pg_temp.acesso(:'gestor', :'ne_loja2', :'cc_mkt'))
+                  and (select not ve_tudo from pg_temp.acesso(:'gestor', :'ne_outro2', :'cc_mkt'))
+                  and (select not ve_tudo from pg_temp.acesso(:'gestor', :'ne_vm', :'cc_mkt')),
   'perfis: lista = os marcados na hora + os núcleos criados depois nos tipos escolhidos');
 insert into erp.atribuicao_nucleos values ('a1000000-0000-0000-0000-000000000005', :'ne_loja2', false);
-select pg_temp.ok((select not ve_tudo from erp.acesso(:'gestor', :'ne_loja2', :'cc_mkt')),
+select pg_temp.ok((select not ve_tudo from pg_temp.acesso(:'gestor', :'ne_loja2', :'cc_mkt')),
   'perfis: o futuro do tipo também se exclui');
 select pg_temp.erro_igual($$update erp.atribuicoes set escopo = 'todos' where id = 'a1000000-0000-0000-0000-000000000005'$$,
   'Tire os tipos e núcleos incluídos que não valem no escopo novo antes de trocar', 'perfis: troca de escopo não deixa marca que não vale');
@@ -2570,15 +2743,15 @@ select pg_temp.erro_igual(format($$update erp.nucleos_economicos set criado_em =
 
 -- validade e modelo desativado
 update erp.atribuicoes set inicio = current_date - 10, fim = current_date - 1 where id = 'a1000000-0000-0000-0000-000000000005';
-select pg_temp.ok((select not ve_tudo from erp.acesso(:'gestor', :'ne_corp', :'cc_mkt')), 'perfis: atribuição vencida deixa de valer');
+select pg_temp.ok((select not ve_tudo from pg_temp.acesso(:'gestor', :'ne_corp', :'cc_mkt')), 'perfis: atribuição vencida deixa de valer');
 update erp.atribuicoes set inicio = current_date + 1, fim = null where id = 'a1000000-0000-0000-0000-000000000005';
-select pg_temp.ok((select not ve_tudo from erp.acesso(:'gestor', :'ne_corp', :'cc_mkt')), 'perfis: atribuição que ainda não começou não vale');
+select pg_temp.ok((select not ve_tudo from pg_temp.acesso(:'gestor', :'ne_corp', :'cc_mkt')), 'perfis: atribuição que ainda não começou não vale');
 update erp.atribuicoes set inicio = current_date where id = 'a1000000-0000-0000-0000-000000000005';
 update erp.perfis_modelo set ativo = false where id = 'a0000000-0000-0000-0000-000000000003';
-select pg_temp.ok((select not ve_tudo from erp.acesso(:'gestor', :'ne_corp', :'cc_mkt')), 'perfis: modelo desativado não dá acesso');
+select pg_temp.ok((select not ve_tudo from pg_temp.acesso(:'gestor', :'ne_corp', :'cc_mkt')), 'perfis: modelo desativado não dá acesso');
 update erp.perfis_modelo set ativo = true where id = 'a0000000-0000-0000-0000-000000000003';
 update erp.perfil_centros set nivel = 'lancador' where perfil_id = 'a0000000-0000-0000-0000-000000000003';
-select pg_temp.ok((select lanca from erp.acesso(:'gestor', :'ne_corp', :'cc_mkt')), 'perfis: mudar o modelo muda quem está ligado a ele');
+select pg_temp.ok((select lanca from pg_temp.acesso(:'gestor', :'ne_corp', :'cc_mkt')), 'perfis: mudar o modelo muda quem está ligado a ele');
 insert into erp.atribuicoes (id, user_id, perfil_id, escopo) values
   ('a1000000-0000-0000-0000-000000000006', :'contador', 'a0000000-0000-0000-0000-000000000003', 'lista');
 select pg_temp.erro_igual(format($$update erp.atribuicoes set user_id = %L where id = 'a1000000-0000-0000-0000-000000000006'$$, :'leitor'),
@@ -2589,16 +2762,16 @@ select pg_temp.erro_igual($$update erp.tipos_nucleo set codigo = 'stand2' where 
 
 -- exceção lançador restrito: lança e não vê tudo
 insert into erp.excecoes_centro values (:'contador', :'ne_corp', :'cc_obra', 'lancador_restrito', null);
-select pg_temp.ok((select not ve_tudo and lanca from erp.acesso(:'contador', :'ne_corp', :'cc_obra')),
+select pg_temp.ok((select not ve_tudo and lanca from pg_temp.acesso(:'contador', :'ne_corp', :'cc_obra')),
   'perfis: exceção lançador restrito lança e não vê tudo');
 
 -- exceção de natureza vencida deixa de valer (bloquear e liberar)
 update erp.excecoes_natureza set fim = current_date - 1 where user_id = :'analista' and efeito = 'bloquear';
-select pg_temp.ok(erp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.01'))
-                  and erp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04')),
+select pg_temp.ok(pg_temp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.01'))
+                  and pg_temp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04')),
   'perfis: bloqueio de natureza vencido deixa de valer');
 update erp.excecoes_natureza set fim = current_date - 1 where user_id = :'analista' and efeito = 'liberar';
-select pg_temp.ok(not erp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04')),
+select pg_temp.ok(not pg_temp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04')),
   'perfis: liberação de natureza vencida deixa de valer');
 
 -- mudança de acesso com aprovação (S-078): lista de aprovadores, master, sucessão
@@ -2632,9 +2805,11 @@ select pg_temp.erro_igual(format($$select erp.decidir_mudanca_acesso(%L, true)$$
   'O pedido de acesso já está aplicada', 'acesso: pedido decidido não se decide de novo');
 select pg_temp.como(:'leitor');
 select erp.decidir_mudanca_acesso(:'m_nuc', true);
-select pg_temp.ok((select ve_tudo and lanca from erp.acesso(:'contador', :'ne_corp', :'cc_mkt')), 'acesso: atribuição aprovada dá o acesso');
+select pg_temp.ok((select ve_tudo and lanca from pg_temp.acesso(:'contador', :'ne_corp', :'cc_mkt')), 'acesso: atribuição aprovada dá o acesso');
+select pg_temp.sis();   -- a auditoria só o administrador e o master leem
 select pg_temp.ok(exists (select 1 from erp.auditoria where tabela = 'atribuicoes' and registro = :'atr_nova' and por = :'diretor2'::uuid),
   'acesso: a auditoria registra quem aprovou');
+select pg_temp.volta();
 
 -- quem pediu e quem ganha acesso não aprovam; recusa precisa de justificativa
 select pg_temp.como(null);
@@ -2989,7 +3164,9 @@ select pg_temp.ok((select unanime_em is null and vale_em is null
                    from erp.sucessoes_master where id = :'suc1'),
   'master: todo o grupo aprova (menos o master e o novo master), sem prazo correndo antes da unanimidade');
 select pg_temp.como(null); select erp.gerar_avisos_sucessao(); select pg_temp.como(:'leitor');
+select pg_temp.sis();  -- os avisos da sucessão só o sistema lê
 select pg_temp.ok(not exists (select 1 from erp.avisos_sucessao where sucessao_id = :'suc1'), 'master: sem unanimidade, nenhum aviso ainda');
+select pg_temp.volta();
 select pg_temp.como(:'analista'); select erp.decidir_sucessao_master(:'suc1', true);
 select pg_temp.erro_igual(format($$select erp.efetivar_sucessao_master(%L)$$, :'suc1'),
   'A sucessão precisa da aprovação de todo o grupo de sucessão', 'master: sem o grupo inteiro, não há sucessão');
@@ -2997,24 +3174,33 @@ select pg_temp.como('00000000-0000-0000-0000-000000000099');
 select erp.decidir_sucessao_master(:'suc1', true);
 select pg_temp.ok((select unanime_em is not null and vale_em is null from erp.sucessoes_master where id = :'suc1'),
   'S-083: a unanimidade não começa o prazo; ele espera o primeiro aviso enviado');
+select pg_temp.sis();  -- os avisos da sucessão só o sistema lê
 select pg_temp.ok((select count(*) = 2 and bool_and(para = :'diretor'::uuid) from erp.avisos_sucessao where sucessao_id = :'suc1'),
   'master: a unanimidade já gera o aviso ao master (e-mail e WhatsApp)');
-select erp.gerar_avisos_sucessao();
+select pg_temp.volta();
+select pg_temp.falha($$select erp.gerar_avisos_sucessao()$$, 'master: gerar os avisos é rotina do servidor, sem EXECUTE para a API');
+select pg_temp.sis(); select erp.gerar_avisos_sucessao(); select pg_temp.volta();
+select pg_temp.sis();  -- os avisos da sucessão só o sistema lê
 select pg_temp.ok((select count(*) = 2 from erp.avisos_sucessao where sucessao_id = :'suc1'), 'master: um aviso por turno e canal, sem repetir');
+select pg_temp.volta();
 select pg_temp.erro_igual(format($$select erp.efetivar_sucessao_master(%L)$$, :'suc1'),
   'O prazo da sucessão só corre depois do primeiro aviso enviado ao master', 'S-083: sem aviso enviado, a sucessão não vale');
 select pg_temp.erro_igual(format($$select erp.vetar_sucessao_master(%L)$$, :'suc1'),
   'Só o master veta a sucessão', 'master: só o master veta');
 -- veto de um clique pelo link do aviso (o servidor chama, sem login)
 select pg_temp.como(null);
+select pg_temp.sis();  -- os avisos da sucessão só o sistema lê
 \set tok 'b1e3c0a5d9f84e27a6c4b8d2e0f1a3c5b7d9e1f3a5c7e9b1'
 select dia as av_dia, turno as av_turno from erp.avisos_sucessao where sucessao_id = :'suc1' and canal = 'whatsapp' \gset
+select pg_temp.volta();
 select pg_temp.erro_igual(format($$select erp.registrar_envio_aviso(%L, %L, %L, 'whatsapp', 'curto')$$, :'suc1', :'av_dia', :'av_turno'),
   'O token do link precisa ter pelo menos 32 caracteres', 'master: o token do link é longo');
 select erp.registrar_envio_aviso(:'suc1', :'av_dia', :'av_turno', 'whatsapp', :'tok');
+select pg_temp.sis();  -- os avisos da sucessão só o sistema lê
 select pg_temp.ok((select enviado_em is not null and token_hash = erp.hash_token(:'tok') and token_hash <> :'tok'
                    from erp.avisos_sucessao where sucessao_id = :'suc1' and canal = 'whatsapp'),
   'master: o envio fica registrado e o banco guarda só o hash do token');
+select pg_temp.volta();
 select pg_temp.ok((select vale_em::date = current_date + 7 from erp.sucessoes_master where id = :'suc1'),
   'S-083: o primeiro aviso enviado começa os 7 dias');
 select vale_em as vale1 from erp.sucessoes_master where id = :'suc1' \gset
@@ -3077,6 +3263,327 @@ select pg_temp.ok((select count(*) = 1 from pg_proc p join pg_namespace n on n.o
                   and not exists (select 1 from information_schema.role_table_grants
                                   where grantee = 'erp_auditoria' and table_schema = 'erp' and table_name <> 'auditoria'),
   'catálogo: erp_auditoria só é dono do tg_auditoria e só insere na auditoria');
+
+-- ---------------------------------------------------------------------
+\echo '# quem vê e quem não vê: perfis por núcleo × centro × natureza, PJ isolado'
+begin;
+select pg_temp.sis();
+delete from erp.atribuicao_nucleos; delete from erp.atribuicao_tipos; delete from erp.atribuicoes;   -- só o acesso montado aqui
+\set u1 'b0000000-0000-0000-0000-000000000001'
+\set u2 'b0000000-0000-0000-0000-000000000002'
+\set u3 'b0000000-0000-0000-0000-000000000003'
+\set u4 'b0000000-0000-0000-0000-000000000004'
+\set u5 'b0000000-0000-0000-0000-000000000005'
+\set u6 'b0000000-0000-0000-0000-000000000006'
+\set u7 'b0000000-0000-0000-0000-000000000007'
+\set u8 'b0000000-0000-0000-0000-000000000008'
+\set u9 'b0000000-0000-0000-0000-000000000009'
+\set u10 'b0000000-0000-0000-0000-000000000010'
+insert into erp.usuarios (id, login_id, nome, papel, ativo, so_sucessao) values
+  (:'u1', :'u1', 'Leitor Mkt', 'analista', true, false),
+  (:'u2', :'u2', 'Restrito Mkt', 'analista', true, false),
+  (:'u3', :'u3', 'Obra VM', 'analista', true, false),
+  (:'u4', :'u4', 'Mkt com PJ', 'analista', true, false),
+  (:'u5', :'u5', 'Sem perfil', 'analista', true, false),
+  (:'u6', :'u6', 'Inativo', 'analista', false, false),
+  (:'u7', :'u7', 'AD sem perfil', 'analista', true, false),
+  (:'u8', :'u8', 'Só sucessão', 'leitura', true, true),
+  (:'u9', :'u9', 'Mkt sem PJ', 'analista', true, false),
+  (:'u10', :'u10', 'Leitura com perfil', 'leitura', true, false);
+update erp.usuarios set ativo = true where id in (:'u1', :'u2', :'u3', :'u4', :'u5', :'u7', :'u8', :'u9', :'u10');
+update erp.usuarios set ativo = false where id = :'u6';
+insert into erp.naturezas (codigo, mae_id, nome, restrita) values ('06.07', pg_temp.nat('06'), 'Folha PJ (teste)', true);
+insert into erp.perfis_modelo (id, nome) values
+  ('a1000000-0000-0000-0000-000000000001', 'V leitor Mkt'), ('a1000000-0000-0000-0000-000000000002', 'V restrito Mkt'),
+  ('a1000000-0000-0000-0000-000000000003', 'V obra'), ('a1000000-0000-0000-0000-000000000004', 'V Mkt com PJ'),
+  ('a1000000-0000-0000-0000-000000000009', 'V Mkt');
+insert into erp.perfil_centros values
+  ('a1000000-0000-0000-0000-000000000001', :'cc_mkt', 'leitor'), ('a1000000-0000-0000-0000-000000000002', :'cc_mkt', 'lancador_restrito'),
+  ('a1000000-0000-0000-0000-000000000003', :'cc_obra', 'lancador'), ('a1000000-0000-0000-0000-000000000004', :'cc_mkt', 'lancador'),
+  ('a1000000-0000-0000-0000-000000000009', :'cc_mkt', 'lancador');
+insert into erp.perfil_naturezas values ('a1000000-0000-0000-0000-000000000004', pg_temp.nat('06.07'));
+insert into erp.atribuicoes (id, user_id, perfil_id, escopo) values
+  ('a2000000-0000-0000-0000-000000000001', :'u1', 'a1000000-0000-0000-0000-000000000001', 'todos'),
+  ('a2000000-0000-0000-0000-000000000002', :'u2', 'a1000000-0000-0000-0000-000000000002', 'todos'),
+  ('a2000000-0000-0000-0000-000000000003', :'u3', 'a1000000-0000-0000-0000-000000000003', 'lista'),
+  ('a2000000-0000-0000-0000-000000000004', :'u4', 'a1000000-0000-0000-0000-000000000004', 'todos'),
+  ('a2000000-0000-0000-0000-000000000009', :'u9', 'a1000000-0000-0000-0000-000000000009', 'todos'),
+  ('a2000000-0000-0000-0000-000000000010', :'u10', 'a1000000-0000-0000-0000-000000000009', 'todos');
+insert into erp.atribuicao_nucleos values ('a2000000-0000-0000-0000-000000000003', :'ne_vm', true);
+insert into erp.listas_financeiro (lista, user_id) values ('AD', :'u7'), ('AO', :'u4');   -- quem paga é o financeiro (S-091)
+insert into erp.centro_aprovadores values (:'cc_mkt', :'gestor') on conflict do nothing;
+insert into erp.pessoas (id, tipo, nome, documento) values ('10000000-0000-0000-0000-0000000000c1', 'juridica', 'Fornecedor V', '12121212000112');
+select pg_temp.volta();
+
+-- títulos, cada um lançado por quem tem o acesso
+\set ta 'c1000000-0000-0000-0000-0000000000a1'
+\set tb 'c1000000-0000-0000-0000-0000000000b1'
+\set tc 'c1000000-0000-0000-0000-0000000000c1'
+\set td 'c1000000-0000-0000-0000-0000000000d1'
+\set te 'c1000000-0000-0000-0000-0000000000e1'
+create function pg_temp.tit(u uuid, t uuid, emp uuid, val numeric, linhas jsonb) returns void language plpgsql as $f$
+declare l jsonb;
+begin
+  perform pg_temp.como(u::text);
+  insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor)
+  values (t, emp, 'avulso', '10000000-0000-0000-0000-0000000000c1', '2027-09-05', '2027-09-01', val);
+  insert into erp.parcelas (id, titulo_id, numero, vencimento, valor) values (t, t, 1, '2027-10-10', val);
+  for l in select * from jsonb_array_elements(linhas) loop
+    insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+    values (t, (l->>'n')::uuid, (l->>'c')::uuid, pg_temp.nat(l->>'nat'), (l->>'p')::numeric);
+  end loop;
+end $f$;
+select pg_temp.tit(:'u2', :'ta', :'incorp', 1000, jsonb_build_array(jsonb_build_object('n', :'ne_corp', 'c', :'cc_mkt', 'nat', '05.01.04', 'p', 100)));
+select pg_temp.tit(:'u9', :'tb', :'incorp', 40000, jsonb_build_array(jsonb_build_object('n', :'ne_corp', 'c', :'cc_mkt', 'nat', '05.01.04', 'p', 100)));
+select pg_temp.tit(:'u3', :'tc', :'spe', 3000, jsonb_build_array(jsonb_build_object('n', :'ne_vm', 'c', :'cc_obra', 'nat', '04.01', 'p', 100)));
+select pg_temp.tit(:'u4', :'td', :'incorp', 20000, jsonb_build_array(jsonb_build_object('n', :'ne_corp', 'c', :'cc_mkt', 'nat', '06.07', 'p', 100)));
+select pg_temp.tit(:'u4', :'te', :'incorp', 2000, jsonb_build_array(
+  jsonb_build_object('n', :'ne_corp', 'c', :'cc_mkt', 'nat', '05.01.04', 'p', 50), jsonb_build_object('n', :'ne_corp', 'c', :'cc_mkt', 'nat', '06.07', 'p', 50)));
+select pg_temp.ok(true, 'acesso: cada um lança o título nas linhas em que lança');
+
+create function pg_temp.vejo_tits() returns text language sql as $$
+  select coalesce(string_agg(upper(substr(id::text, 35, 1)), '' order by id::text), '')
+    from erp.titulos where id::text like 'c1000000-%' $$;
+select pg_temp.como(:'u1'); select pg_temp.ok(pg_temp.vejo_tits() = 'AB', 'acesso: o leitor do Marketing vê os títulos do Marketing, sem o que tem linha PJ (vê ' || pg_temp.vejo_tits() || ')');
+select pg_temp.como(:'u2'); select pg_temp.ok(pg_temp.vejo_tits() = 'A', 'acesso: o lançador restrito vê só o que ele lançou (vê ' || pg_temp.vejo_tits() || ')');
+select pg_temp.como(:'u3'); select pg_temp.ok(pg_temp.vejo_tits() = 'C', 'acesso: quem tem a Obra da Vila Maria não vê o Marketing (vê ' || pg_temp.vejo_tits() || ')');
+select pg_temp.como(:'u4'); select pg_temp.ok(pg_temp.vejo_tits() = 'ABDE', 'acesso: com a natureza PJ liberada, vê o PJ do centro (vê ' || pg_temp.vejo_tits() || ')');
+select pg_temp.como(:'u9'); select pg_temp.ok(pg_temp.vejo_tits() = 'AB', 'acesso: lançador do Marketing sem PJ não vê o título PJ nem o que mistura PJ (vê ' || pg_temp.vejo_tits() || ')');
+select pg_temp.como(:'u5'); select pg_temp.ok(pg_temp.vejo_tits() = '' and not exists (select 1 from erp.lancamentos) and not exists (select 1 from erp.parcelas),
+  'acesso: sem perfil, não vê título, parcela nem livro');
+select pg_temp.como(:'u1');
+select pg_temp.ok(not exists (select 1 from erp.parcelas where titulo_id = :'tc') and not exists (select 1 from erp.titulo_rateios where titulo_id in (:'tc', :'td', :'te')),
+  'acesso: as parcelas e o rateio seguem o título');
+select pg_temp.ok(erp.parcela_saldo(:'tc') is null, 'acesso: o saldo da parcela que não vê volta vazio');
+select pg_temp.falha(format($$select * from erp.acesso(%L, %L, %L)$$, :'u3', :'ne_vm', :'cc_obra'), 'acesso: o usuário não consulta o acesso de outra pessoa');
+select pg_temp.ok(not exists (select 1 from erp.auditoria), 'acesso: a auditoria é só do administrador');
+select pg_temp.ok((select count(*) = 1 from erp.atribuicoes) and (select user_id = :'u1'::uuid from erp.atribuicoes),
+  'acesso: cada um vê só a própria atribuição');
+
+-- gravar: só onde lança
+select pg_temp.falha(format($$insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values (%L, %L, %L, %L, 10)$$,
+  :'ta', :'ne_corp', :'cc_mkt', pg_temp.nat('05.01.04')), 'acesso: o leitor não lança no rateio');
+select pg_temp.como(:'u3');
+select pg_temp.falha(format($$update erp.titulo_rateios set centro_custo_id = %L, natureza_id = %L where titulo_id = %L$$, :'cc_mkt', pg_temp.nat('05.01.04'), :'tc'),
+  'acesso: não leva a linha para um centro onde não lança');
+select pg_temp.falha(format($$update erp.titulo_rateios set percentual = 100 where titulo_id = %L$$, :'ta'), 'acesso: não mexe no rateio de título que não vê');
+select pg_temp.falha(format($$select erp.confirmar_titulo(%L)$$, :'ta'), 'acesso: não confirma título que não vê');
+select pg_temp.como(:'u2');
+select pg_temp.falha(format($$update erp.titulo_rateios set percentual = 100 where titulo_id = %L$$, :'tb'),
+  'acesso: o lançador restrito não mexe no rateio que outra pessoa lançou, mesmo no centro dele');
+select pg_temp.erro_igual(format($$select erp.confirmar_titulo(%L)$$, :'tb'), 'Você não lança em todas as linhas deste título',
+  'acesso: o lançador restrito não confirma o título que outra pessoa lançou');
+select pg_temp.como(:'u10');
+select pg_temp.falha($$insert into erp.titulos (empresa_id, tipo, pessoa_id, emissao, competencia, valor)
+  values ('20000000-0000-0000-0000-000000000002', 'avulso', '10000000-0000-0000-0000-0000000000c1', '2027-09-05', '2027-09-01', 10)$$,
+  'acesso: papel leitura não grava, mesmo com perfil de lançador');
+select pg_temp.como(:'u9');
+select pg_temp.erro_igual(format($$select erp.confirmar_titulo(%L)$$, :'te'), 'Você não lança em todas as linhas deste título',
+  'acesso: não confirma título com linha onde não lança (mesmo vendo pelo definer)');
+select pg_temp.como(:'u6');
+select pg_temp.ok(pg_temp.vejo_tits() = '' and not exists (select 1 from erp.pessoas), 'S-087: usuário inativo não lê nada');
+select pg_temp.erro_igual($$insert into erp.titulos (empresa_id, tipo, pessoa_id, emissao, competencia, valor)
+  values ('20000000-0000-0000-0000-000000000002', 'avulso', '10000000-0000-0000-0000-0000000000c1', '2027-09-05', '2027-09-01', 10)$$,
+  'Só quem tem cadastro ativo no ERP grava', 'S-087: usuário inativo não grava');
+select pg_temp.como(:'u8');
+select pg_temp.ok((select count(*) = 1 from erp.usuarios) and not exists (select 1 from erp.pessoas) and pg_temp.vejo_tits() = '',
+  'acesso: quem está só para a sucessão vê o próprio cadastro e nada mais');
+
+-- confirma na ordem: o acumulado do Marketing no mês passa dos 50 mil no título B
+select pg_temp.como(:'u2'); select erp.confirmar_titulo(:'ta');
+select pg_temp.como(:'u4'); select erp.confirmar_titulo(:'td');
+select pg_temp.como(:'u9'); select erp.confirmar_titulo(:'tb');
+select pg_temp.como(:'u3'); select erp.confirmar_titulo(:'tc');
+select pg_temp.como(:'u1');
+select pg_temp.ok(exists (select 1 from erp.lancamentos where titulo_id = :'ta') and not exists (select 1 from erp.lancamentos where titulo_id in (:'tc', :'td')),
+  'acesso: no livro, o leitor vê o Marketing e não vê a Obra nem o PJ');
+select pg_temp.como(:'u4');
+select pg_temp.ok(exists (select 1 from erp.lancamentos where titulo_id = :'td'), 'acesso: com o PJ liberado, vê o PJ no livro');
+select pg_temp.como(:'u7');
+select pg_temp.ok(pg_temp.vejo_tits() = 'B', 'acesso: quem aprova na AD vê o título da alçada dele, e só ele (vê ' || pg_temp.vejo_tits() || ')');
+select pg_temp.ok((select count(*) = 2 and count(*) filter (where titulo_id = :'tb') = 1
+                     and bool_or(titulo_id is null and pessoa = 'Outros 2 títulos (sem acesso)' and valor_no_centro = 21000 and empresa_id is null)
+                   from erp.titulos_do_acumulado(:'tb')),
+  'S-062: no acumulado, quem aprova vê em detalhe o que vê e o resto numa linha só, com a soma');
+select pg_temp.como(:'u3');
+select pg_temp.erro_igual(format($$select erp.pedir_reclassificacao(%L, %L, 'x')$$, pg_temp.nat('05.01.04'), pg_temp.nat('05.01.02')),
+  'O pedido leva lançamentos fora do seu acesso (núcleo, centro ou natureza); filtre pelo que você lança',
+  'acesso: a reclassificação não leva lançamento fora do acesso de quem pede');
+select pg_temp.erro_igual(format($$select erp._registrar_ajuste(%L, 'titulo_rateios', null, null)$$, :'tc'), 'O ajuste só se registra pela mudança na tabela',
+  'acesso: o rastro do ajuste não se forja chamando a função direto');
+-- S-073: o gestor da área pede revisão do B, mas não lança no Marketing: não ajusta
+select pg_temp.como(:'gestor');
+select pg_temp.ok(erp.decidir_titulo(:'tb', false, 'conferir a natureza', true) = 'revisao', 'S-073: o gestor da área pede a revisão');
+select pg_temp.ok(not erp.pode_ajustar(:'tb'), 'S-073: o gestor da área que não lança nas linhas do título não ajusta');
+select pg_temp.erro_igual(format($$update erp.titulos set descricao = 'x' where id = %L$$, :'tb'), 'Título confirmado não se edita',
+  'S-073: nem pela tabela');
+select pg_temp.como(:'u9');
+select pg_temp.ok(erp.pode_ajustar(:'tb'), 'S-073: quem lançou e lança nas linhas ajusta');
+-- sucessão: quem está fora do grupo não vê nem efetiva
+select pg_temp.sis();
+insert into erp.grupo_sucessao (user_id) values (:'u5');
+select pg_temp.como(:'u5');
+select erp.pedir_sucessao_master(:'diretor2', 'teste de acesso') as suc_v \gset
+select pg_temp.como(:'u1');
+select pg_temp.ok(not exists (select 1 from erp.grupo_sucessao) and not exists (select 1 from erp.sucessoes_master),
+  'acesso: quem está fora do grupo de sucessão não vê o grupo nem os pedidos');
+select pg_temp.erro_igual(format($$select erp.efetivar_sucessao_master(%L)$$, :'suc_v'),
+  'Só o grupo de sucessão ou o indicado efetivam a sucessão', 'acesso: quem está fora do grupo não efetiva a sucessão');
+-- pagamento carimbado no Marketing que quita o título PJ: some para quem não vê o PJ
+select pg_temp.como(:'gestor'); select erp.decidir_titulo(:'td', true);
+select pg_temp.sis(); insert into erp.listas_financeiro (lista, user_id) values ('AF', :'contador') on conflict do nothing; select pg_temp.volta();
+select pg_temp.como(:'contador'); select erp.decidir_titulo(:'td', true);
+select pg_temp.como(:'u4');
+insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values
+  ('c2000000-0000-0000-0000-0000000000d1', :'incorp', :'conta_inc', '10000000-0000-0000-0000-0000000000c1', :'ne_corp', :'cc_mkt', '2027-10-10', 20000);
+insert into erp.quitacoes (pagamento_id, parcela_id, principal) values ('c2000000-0000-0000-0000-0000000000d1', :'td', 20000);
+select pg_temp.ok(exists (select 1 from erp.pagamentos where id = 'c2000000-0000-0000-0000-0000000000d1'), 'acesso: quem tem o PJ vê o pagamento do PJ');
+select pg_temp.como(:'u9');
+select pg_temp.ok(not exists (select 1 from erp.pagamentos where id = 'c2000000-0000-0000-0000-0000000000d1')
+                  and not exists (select 1 from erp.quitacoes where pagamento_id = 'c2000000-0000-0000-0000-0000000000d1'),
+  'acesso: o pagamento que quita título PJ some para quem vê o centro mas não o PJ');
+-- S-093: cada trava das políticas com o seu teste
+select pg_temp.como(:'u7');
+select pg_temp.ok(not erp.vejo(null, null, pg_temp.nat('06.07'), null) and erp.vejo(null, null, pg_temp.nat('05.01.04'), null),
+  'acesso: linha sem núcleo e centro de natureza restrita fica fechada até para o financeiro, sem liberação');
+select pg_temp.como(:'u5');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor)
+values ('c1000000-0000-0000-0000-0000000000f1', :'incorp', 'avulso', '10000000-0000-0000-0000-0000000000c1', '2027-09-05', '2027-09-01', 10);
+select pg_temp.ok(exists (select 1 from erp.titulos where id = 'c1000000-0000-0000-0000-0000000000f1'), 'acesso: quem lançou vê o título ainda sem rateio');
+select pg_temp.sis();
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+values ('c1000000-0000-0000-0000-0000000000f1', :'ne_corp', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select pg_temp.volta();
+select pg_temp.ok(not exists (select 1 from erp.titulos where id = 'c1000000-0000-0000-0000-0000000000f1'),
+  'acesso: com o rateio num centro que ele não vê, quem lançou deixa de ver o título');
+select pg_temp.como(:'u4');
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+values ('c3000000-0000-0000-0000-000000000001', :'incorp', '10000000-0000-0000-0000-0000000000c1', 'nfse', 'V1', '2027-09-05', '2027-09-01', 100);
+select pg_temp.como(:'u9');
+select pg_temp.falha(format($$insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values ('c3000000-0000-0000-0000-000000000001', %L, %L, %L, 100)$$,
+  :'ne_corp', :'cc_mkt', pg_temp.nat('05.01.04')), 'acesso: na nota sem rateio de outra pessoa, fora da revisão, ninguém mais lança');
+select pg_temp.como(:'u4');
+select erp.pedir_reclassificacao(pg_temp.nat('05.01.04'), pg_temp.nat('05.01.02'), 'teste de acesso', jsonb_build_object('de', '2027-09-01', 'ate', '2027-09-01'));
+select pg_temp.sis();
+insert into erp.excecoes_natureza (user_id, natureza_id, centro_custo_id, efeito) values (:'u4', pg_temp.nat('05.01.03'), :'cc_mkt', 'bloquear');
+insert into erp.lotes_bancarios (conta_id) values (:'conta_inc');
+insert into erp.mudancas_acesso (tabela, operacao, dados, motivo, pedida_por, minimo) values ('excecoes_natureza', 'incluir', '{}', 'teste', :'ti', 1);
+insert into erp.orcamento_versoes (id, empresa_id, tipo, nome, data_base) values ('c4000000-0000-0000-0000-000000000001', :'incorp', 'viabilidade', 'V', '2027-09-01');
+select pg_temp.volta();
+select pg_temp.como(:'u1');
+select pg_temp.ok(not exists (select 1 from erp.reclassificacoes) and not exists (select 1 from erp.reclassificacao_itens),
+  'acesso: o pedido de reclassificação de outra pessoa não aparece para quem não pediu, não vota nem é da diretoria');
+select pg_temp.ok(not exists (select 1 from erp.excecoes_natureza), 'acesso: a exceção de natureza de outra pessoa não aparece');
+select pg_temp.ok(not exists (select 1 from erp.mudancas_acesso), 'acesso: o pedido de mudança de acesso não aparece para quem não pediu, não aprova nem ganha com ele');
+select pg_temp.ok(not exists (select 1 from erp.lotes_bancarios), 'acesso: o lote bancário só o financeiro vê');
+select pg_temp.falha(format($$insert into erp.orcamento_linhas (versao_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, valor) values ('c4000000-0000-0000-0000-000000000001', %L, %L, %L, '2027-09-01', -10)$$,
+  :'ne_corp', :'cc_mkt', pg_temp.nat('05.01.04')), 'acesso: quem só lê o centro não lança linha de orçamento');
+select pg_temp.falha(format($$insert into erp.previsoes (empresa_id, origem, pessoa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor) values (%L, 'manual', '10000000-0000-0000-0000-0000000000c1', %L, %L, %L, '2027-09-01', '2027-09-30', 10)$$,
+  :'incorp', :'ne_corp', :'cc_mkt', pg_temp.nat('05.01.04')), 'acesso: quem só lê o centro não lança previsão');
+select pg_temp.como(:'u9');
+insert into erp.orcamento_linhas (versao_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, valor)
+values ('c4000000-0000-0000-0000-000000000001', :'ne_corp', :'cc_mkt', pg_temp.nat('05.01.04'), '2027-09-01', -10);
+insert into erp.previsoes (empresa_id, origem, pessoa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+values (:'incorp', 'manual', '10000000-0000-0000-0000-0000000000c1', :'ne_corp', :'cc_mkt', pg_temp.nat('05.01.04'), '2027-09-01', '2027-09-30', 10);
+select pg_temp.ok(true, 'acesso: quem lança no centro lança orçamento e previsão');
+select pg_temp.erro_igual(format($$select erp.pagar_parcela(%L, %L, '2027-10-10')$$, :'tb', :'conta_inc'),
+  'Só o financeiro (AF, AO ou AD) registra pagamento', 'S-091: quem lança no centro, fora do financeiro, não paga a parcela');
+select pg_temp.falha(format($$insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values (%L, %L, '10000000-0000-0000-0000-0000000000c1', %L, %L, '2027-10-10', 100)$$,
+  :'incorp', :'conta_inc', :'ne_corp', :'cc_mkt'), 'S-091: nem registra o pagamento direto na tabela');
+select pg_temp.como(:'u7');
+insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values
+  ('c2000000-0000-0000-0000-0000000000a7', :'incorp', :'conta_inc', '10000000-0000-0000-0000-0000000000c1', :'ne_corp', :'cc_mkt', '2027-10-10', 100);
+-- sem o vejo_titulo na política, o gatilho da quitação também recusa ("O título não está aberto"):
+-- ele lê o título com o acesso de quem paga, e o título PJ não aparece
+select pg_temp.falha(format($$insert into erp.quitacoes (pagamento_id, parcela_id, principal) values ('c2000000-0000-0000-0000-0000000000a7', %L, 100)$$, :'td'),
+  'acesso: nem o financeiro quita título que não vê (PJ)');
+-- S-091: quem vê o adiantamento (o pagamento de 100 no Marketing) e o título, mas não é do
+-- financeiro, não abate o adiantamento com uma quitação direta
+select pg_temp.como(:'gestor'); select erp.decidir_titulo(:'ta', true);
+select pg_temp.como(:'contador'); select erp.decidir_titulo(:'ta', true);
+select pg_temp.como(:'u9');
+select pg_temp.ok(exists (select 1 from erp.pagamentos where id = 'c2000000-0000-0000-0000-0000000000a7') and pg_temp.vejo_tits() like '%A%',
+  'S-091: o lançador do Marketing vê o adiantamento e o título aprovado');
+select pg_temp.falha(format($$insert into erp.quitacoes (pagamento_id, parcela_id, principal) values ('c2000000-0000-0000-0000-0000000000a7', %L, 100)$$, :'ta'),
+  'S-091: quem não é do financeiro não abate adiantamento com quitação direta');
+select pg_temp.como(:'diretor2');
+select pg_temp.sis(); delete from erp.listas_financeiro where user_id = :'diretor2'; select pg_temp.volta();
+select pg_temp.erro_igual(format($$select erp.pagar_parcela(%L, %L, '2027-10-10')$$, :'ta', :'conta_inc'),
+  'Só o financeiro (AF, AO ou AD) registra pagamento', 'S-091: diretor fora das listas do financeiro não paga a parcela');
+-- papel leitura na AD: a lista não dá o direito de gravar
+select pg_temp.sis(); insert into erp.listas_financeiro (lista, user_id) values ('AD', :'u10'); select pg_temp.volta();
+select pg_temp.como(:'u10');
+select pg_temp.falha(format($$insert into erp.liberacoes_sem_abater (titulo_id, justificativa) values (%L, 'x')$$, :'tb'),
+  'acesso: papel leitura não libera título sem abater, nem estando na AD');
+-- S-089: cadastro de pessoas protegido e auditado
+select pg_temp.sis();
+insert into erp.pessoa_papeis values ('10000000-0000-0000-0000-000000000002', 'cliente');
+insert into erp.pessoas (id, tipo, nome, documento) values ('10000000-0000-0000-0000-0000000000c2', 'juridica', 'Só pagamento V', '13131313000113');
+select pg_temp.volta();
+select pg_temp.como(:'u9');
+insert into erp.pessoa_papeis values ('10000000-0000-0000-0000-0000000000c1', 'fornecedor');
+select pg_temp.erro_igual($$insert into erp.pessoa_papeis values ('10000000-0000-0000-0000-000000000003', 'fornecedor')$$,
+  'O cadastro de empresa do grupo só o master muda', 'S-089: o analista não põe papel em empresa do grupo');
+select pg_temp.erro_igual($$update erp.pessoas set nome = 'Outra' where id = '10000000-0000-0000-0000-000000000001'$$,
+  'O cadastro de empresa do grupo só o master muda', 'S-089: o analista não muda o cadastro de empresa do grupo');
+select pg_temp.erro_igual($$delete from erp.pessoa_papeis where pessoa_id = '10000000-0000-0000-0000-000000000002'$$,
+  'O cadastro de empresa do grupo só o master muda', 'S-089: nem os papéis dela');
+select pg_temp.erro_igual($$update erp.pessoas set documento = '98989898000198' where id = '10000000-0000-0000-0000-0000000000c1'$$,
+  'Documento, nome, tipo e situação de pessoa já usada só o financeiro muda', 'S-089: o analista não troca o CNPJ de fornecedor já usado');
+select pg_temp.erro_igual($$update erp.pessoas set nome = 'Outro nome' where id = '10000000-0000-0000-0000-0000000000c1'$$,
+  'Documento, nome, tipo e situação de pessoa já usada só o financeiro muda', 'S-089: nem o nome');
+select pg_temp.erro_igual($$update erp.pessoas set ativa = false where id = '10000000-0000-0000-0000-0000000000c1'$$,
+  'Documento, nome, tipo e situação de pessoa já usada só o financeiro muda', 'S-089: nem desativa');
+select pg_temp.como(:'u7');
+insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values
+  ('20000000-0000-0000-0000-000000000002', '50000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-0000000000c2',
+   '40000000-0000-0000-0000-000000000002', '45000000-0000-0000-0000-000000000002', '2027-10-10', 50);
+select pg_temp.como(:'u9');
+select pg_temp.erro_igual($$update erp.pessoas set documento = '14141414000114' where id = '10000000-0000-0000-0000-0000000000c2'$$,
+  'Documento, nome, tipo e situação de pessoa já usada só o financeiro muda', 'S-089: pessoa usada só num pagamento também conta como usada');
+select pg_temp.erro_igual($$delete from erp.pessoa_papeis where pessoa_id = '10000000-0000-0000-0000-0000000000c1' and papel = 'fornecedor'$$,
+  'Só o financeiro tira o papel de fornecedor de pessoa já usada', 'S-089: nem tira o papel de fornecedor');
+select pg_temp.erro_igual($$update erp.pessoa_papeis set pessoa_id = '10000000-0000-0000-0000-0000000000c2' where pessoa_id = '10000000-0000-0000-0000-0000000000c1' and papel = 'fornecedor'$$,
+  'O papel da pessoa não se altera; tire e inclua', 'S-089: o papel de fornecedor não passa para outra pessoa');
+select pg_temp.erro_igual($$update erp.pessoa_papeis set pessoa_id = '10000000-0000-0000-0000-0000000000c2' where pessoa_id = '10000000-0000-0000-0000-000000000002'$$,
+  'O papel da pessoa não se altera; tire e inclua', 'S-089: nem sai da empresa do grupo');
+update erp.pessoas set email = 'contato@fornecedor.test' where id = '10000000-0000-0000-0000-0000000000c1';
+select pg_temp.ok(true, 'S-089: o analista muda o contato do fornecedor');
+select pg_temp.como(:'u7');
+update erp.pessoas set documento = '98989898000198' where id = '10000000-0000-0000-0000-0000000000c1';
+select pg_temp.sis();
+select pg_temp.ok((select count(*) = 2 from erp.auditoria where tabela = 'pessoas' and registro = '10000000-0000-0000-0000-0000000000c1' and acao = 'update')
+                  and exists (select 1 from erp.auditoria where tabela = 'pessoa_papeis' and registro = '10000000-0000-0000-0000-0000000000c1'),
+  'S-089: o financeiro troca o CNPJ, e pessoas e papéis ficam na auditoria');
+select pg_temp.volta();
+-- S-090 (Moises, 15/11: só o master por ora): o TI não muda a configuração de dinheiro e aprovação
+select pg_temp.como(:'ti');
+select pg_temp.falha($$update erp.regra_adiantamento set trava = false$$, 'S-090: o TI não desliga a trava do adiantamento');
+select pg_temp.falha($$update erp.alcadas_pagamento set etapas = '{AREA,AF}' where ate is null$$, 'S-090: o TI não tira o AD da alçada');
+select pg_temp.falha($$update erp.regra_alcada_pagamento set acumulado = 'nucleo_centro'$$, 'S-090: nem muda como se soma o acumulado');
+select pg_temp.falha(format($$insert into erp.contas_bancarias (empresa_id, banco, agencia, conta) values (%L, 'Itaú', '0001', '77777-7')$$, :'incorp'),
+  'S-090: o TI não cadastra conta bancária');
+select pg_temp.falha(format($$update erp.contas_bancarias set conta = '00000-0' where id = %L$$, :'conta_inc'), 'S-090: nem troca a conta');
+select pg_temp.falha(format($$insert into erp.codigos_externos (sistema, tabela, registro_id, codigo) values ('sienge', 'pessoas', '10000000-0000-0000-0000-0000000000c1', 'X1')$$),
+  'S-090: o TI não mexe nos códigos do Sienge');
+select pg_temp.falha($$update erp.regras_ajuste set permitido = permitido$$, 'S-090: nem nas regras de ajuste da revisão');
+select pg_temp.falha($$update erp.niveis_aprovacao set nome = nome || ' ' where codigo = 'gestor'$$, 'S-090: nem nos níveis de aprovação');
+select pg_temp.falha($$insert into erp.alcadas_reclassificacao (criterio, faixa, ate, nivel) values ('acumulado_mes', null, 99999, 'gestor')$$,
+  'S-090: nem na alçada da reclassificação');
+select pg_temp.falha($$update erp.naturezas_sistema set natureza_id = (select id from erp.naturezas where codigo = '05.01.02') where chave = 'descontos_obtidos'$$,
+  'S-090: nem nas naturezas do sistema');
+select pg_temp.ok((select trava from erp.regra_adiantamento) and exists (select 1 from erp.alcadas_pagamento where ate is null and 'AD' = any(etapas)),
+  'S-090: a trava e o AD continuam');
+select pg_temp.como(:'diretor');
+update erp.alcadas_pagamento set etapas = etapas where ate is null;
+select pg_temp.ok(true, 'S-090: o master muda a alçada');
+-- quem lançou o pagamento continua vendo, mesmo sem o perfil
+select pg_temp.sis(); delete from erp.atribuicoes where user_id = :'u4'; delete from erp.listas_financeiro where user_id = :'u4'; select pg_temp.volta();
+select pg_temp.como(:'u4');
+select pg_temp.ok(exists (select 1 from erp.pagamentos where id = 'c2000000-0000-0000-0000-0000000000d1') and pg_temp.vejo_tits() = '',
+  'acesso: sem o perfil, quem lançou o pagamento ainda o vê, e não vê mais os títulos');
+select pg_temp.como(null);
+rollback;
 
 \echo '# fim'
 do $$ begin raise notice 'TODOS OS TESTES PASSARAM'; end $$;

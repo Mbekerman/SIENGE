@@ -23,7 +23,7 @@ begin
     raise exception 'O mês só fecha e reabre pela diretoria';
   end if;
   if tg_op = 'INSERT' then
-    new.fechado_por := erp.eu();
+    new.fechado_por := erp.autor();
     new.fechado_em := clock_timestamp();
   end if;
   return coalesce(new, old);
@@ -235,6 +235,12 @@ begin
 
   select count(*) into v_n from _itens;
   if v_n = 0 and not p_apagar_origem then raise exception 'Nenhum lançamento encontrado com esse filtro'; end if;
+  -- por dentro a função vê o livro todo: o pedido só leva o que quem pede vê na origem e lança no destino
+  if not erp.sistema() and exists (select 1 from erp.lancamentos l join _itens i on i.lancamento_id = l.id
+                                    where not (erp.vejo(l.nucleo_economico_id, l.centro_custo_id, l.natureza_id, null)
+                                               and erp.lanco(l.nucleo_economico_id, l.centro_custo_id, p_destino, null))) then
+    raise exception 'O pedido leva lançamentos fora do seu acesso (núcleo, centro ou natureza); filtre pelo que você lança';
+  end if;
 
   select coalesce(max(s), 0) into v_valor from (
     select greatest(coalesce(sum(l.valor) filter (where l.valor > 0), 0), coalesce(-sum(l.valor) filter (where l.valor < 0), 0)) as s

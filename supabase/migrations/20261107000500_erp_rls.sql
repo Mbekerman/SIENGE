@@ -76,12 +76,12 @@ begin
     ('erp.estou_nas_listas(text[])', 'erp_conferencia'), ('erp.regra_adiantamento_atual()', 'erp_conferencia'),
     ('erp.autor_lancamento(text, uuid)', 'erp_conferencia'), ('erp.abatimento_aprovado(uuid, uuid)', 'erp_conferencia'),
     ('erp.adiantamento_anterior_em_aberto(uuid, uuid)', 'erp_conferencia'),
-    ('erp.previsao_saldo(uuid)', 'erp_conferencia'), ('erp.parcela_saldo(uuid)', 'erp_conferencia'),
-    ('erp.pagamento_saldo(uuid)', 'erp_conferencia'), ('erp.centro_ligado(uuid, uuid)', 'erp_conferencia'),
+    ('erp._previsao_saldo(uuid)', 'erp_conferencia'), ('erp._parcela_saldo(uuid)', 'erp_conferencia'),
+    ('erp._pagamento_saldo(uuid)', 'erp_conferencia'), ('erp.centro_ligado(uuid, uuid)', 'erp_conferencia'),
     ('erp.checar_natureza(uuid, uuid, uuid, boolean)', 'erp_conferencia'), ('erp.checar_centro(uuid, uuid, uuid)', 'erp_conferencia'),
     ('erp.tg_nucleo_economico()', 'erp_conferencia'),
     -- operações que mudam situação (S-035)
-    ('erp.confirmar_titulo(uuid)', 'erp_situacao'), ('erp.tg_quitacao()', 'erp_situacao'),
+    ('erp.confirmar_titulo(uuid)', 'erp_situacao'), ('erp._confirmar_titulo(uuid)', 'erp_situacao'), ('erp.tg_quitacao()', 'erp_situacao'),
     ('erp.tg_titulo_previsao()', 'erp_situacao'),
     -- reclassificação aprovada (S-035); os votos também são lidos por baixo do RLS
     ('erp.decidir_reclassificacao(uuid, boolean, text)', 'erp_reclassificacao'),
