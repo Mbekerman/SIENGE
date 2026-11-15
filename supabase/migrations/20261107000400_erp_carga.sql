@@ -82,7 +82,7 @@ union all select 'juros_multas', id from erp.naturezas where codigo = '08.01.02'
 union all select 'descontos_obtidos', id from erp.naturezas where codigo = '08.02.02'
 union all select 'entre_socios', id from erp.naturezas where codigo = '11.04';
 
-insert into erp.fases (nome, ordem) values
+insert into erp.etapas (nome, ordem) values
   ('Terreno', 1), ('Aprovação de projetos', 2), ('Incorporação', 3), ('Lançamento', 4),
   ('Obra', 5), ('Pós-obra', 6), ('Corporativo', 9);
 

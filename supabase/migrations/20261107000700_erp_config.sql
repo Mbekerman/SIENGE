@@ -19,7 +19,7 @@
 --    a até X% de todo valor que a faixa teve nos últimos N meses (o de N meses atrás, os do meio e
 --    o atual): várias mudanças pequenas seguidas não passam de X% na janela, e um aperto recente
 --    não se desfaz sem aprovação (S-094). Incluir ou
---    tirar faixa e mudar as etapas (tirar o AD, por exemplo) sempre pedem aprovação (ponto 2). Só as
+--    tirar faixa e mudar as fases (tirar o AD, por exemplo) sempre pedem aprovação (ponto 2). Só as
 --    duas tabelas de faixas aceitam o modo livre; conta bancária e código do Sienge sempre pedem
 --    aprovação (ponto 3). O pedido do administrador sempre pede aprovação.
 -- 4. Aviso: toda mudança nessas tabelas, por pedido ou direta do master ou do sistema, vira um
@@ -485,7 +485,9 @@ begin
   if tg_op <> 'DELETE' then v_new := to_jsonb(new); end if;
   perform erp.registrar_evento(v_tipo, tg_table_name,
     (select string_agg(coalesce(v_new, v_old)->>k, '|') from unnest(erp._chave_config(tg_table_name)) k),
-    null, null,
+    -- a faixa da alçada leva o centro dela (o novo; no delete, o antigo), para o aviso ir a quem
+    -- cuida do centro (S-100); a faixa geral e as outras tabelas ficam sem centro
+    null, case when tg_table_name = 'alcadas_pagamento' then (coalesce(v_new, v_old)->>'centro_custo_id')::uuid end,
     jsonb_build_object('acao', lower(tg_op), 'antes', v_old, 'depois', v_new)
       || coalesce(erp._contexto_mudanca_config(tg_table_name), '{}'));
   return null;

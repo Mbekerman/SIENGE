@@ -407,7 +407,7 @@ revoke execute on all functions in schema erp from public;
 grant execute on all functions in schema erp to erp_sistema, erp_conferencia, erp_situacao, erp_reclassificacao, erp_acesso, erp_config;
 grant execute on function erp.tg_evento_controle() to erp_eventos;
 grant execute on function erp.eu(), erp.login_atual(), erp.agindo_como(text), erp.sistema(), erp._ve_evento(uuid, uuid, uuid),
-  erp.ve_linha(uuid, uuid, uuid, uuid, uuid)
+  erp.ve_linha(uuid, uuid, uuid, uuid, uuid, uuid)
   to erp_notificacoes;
 grant execute on function erp.marcar_notificacoes_lidas(bigint[]) to authenticated;
 

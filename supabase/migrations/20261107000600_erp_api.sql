@@ -54,28 +54,31 @@ create function erp.gere_acesso() returns boolean language sql stable as
 
 -- Vê a linha pelo perfil. Linha sem núcleo e sem centro (movimento entre sócios) não entra em
 -- perfil nenhum: vê a diretoria e o financeiro, e a de natureza restrita só com liberação.
-create function erp._ve(p_nucleo uuid, p_centro uuid, p_natureza uuid, p_autor uuid) returns boolean language sql stable as $$
+create function erp._ve(p_nucleo uuid, p_centro uuid, p_natureza uuid, p_autor uuid, p_divisao uuid default null)
+returns boolean language sql stable as $$
   select case when p_nucleo is null and p_centro is null
               then (coalesce(erp.meu_papel(), '') = 'diretor' or erp.financeiro())
                    and (p_natureza is null or not erp.natureza_restrita(p_natureza)
                         or erp.natureza_liberada(erp.eu(), null, null, p_natureza))
-              else erp.ve_linha(erp.eu(), p_nucleo, p_centro, p_natureza, p_autor) end $$;
+              else erp.ve_linha(erp.eu(), p_nucleo, p_centro, p_natureza, p_autor, p_divisao) end $$;
 
 -- A linha classificada: vê e lança pelo perfil de quem está logado; o master vê e lança tudo.
-create function erp.vejo(p_nucleo uuid, p_centro uuid, p_natureza uuid, p_autor uuid) returns boolean language sql stable as
-  $$ select erp.membro() and (erp.sou_master() or erp._ve(p_nucleo, p_centro, p_natureza, p_autor)) $$;
+create function erp.vejo(p_nucleo uuid, p_centro uuid, p_natureza uuid, p_autor uuid, p_divisao uuid default null)
+returns boolean language sql stable as
+  $$ select erp.membro() and (erp.sou_master() or erp._ve(p_nucleo, p_centro, p_natureza, p_autor, p_divisao)) $$;
 -- lança: tem o nível de lançar e vê a linha (o lançador restrito só mexe no que ele lançou)
-create function erp.lanco(p_nucleo uuid, p_centro uuid, p_natureza uuid, p_autor uuid) returns boolean language sql stable as
-  $$ select erp.escrevo() and (erp.sou_master() or (erp.lanca_linha(erp.eu(), p_nucleo, p_centro, p_natureza)
-                                                   and erp._ve(p_nucleo, p_centro, p_natureza, p_autor))) $$;
+create function erp.lanco(p_nucleo uuid, p_centro uuid, p_natureza uuid, p_autor uuid, p_divisao uuid default null)
+returns boolean language sql stable as
+  $$ select erp.escrevo() and (erp.sou_master() or (erp.lanca_linha(erp.eu(), p_nucleo, p_centro, p_natureza, p_divisao)
+                                                   and erp._ve(p_nucleo, p_centro, p_natureza, p_autor, p_divisao))) $$;
 
--- Quem aprova o título na rodada atual (lista da etapa, diretoria, gestor do centro) ou já decidiu.
+-- Quem aprova o título na rodada atual (lista da fase, diretoria, gestor do centro) ou já decidiu.
 create function erp.aprovo_titulo(p_titulo uuid) returns boolean language sql stable as $$
   select erp.membro() and (
     exists (select 1 from erp.titulo_alcadas a join erp.titulos t on t.id = a.titulo_id and t.rodada = a.rodada
              where a.titulo_id = p_titulo
-               and (erp.estou_nas_listas(a.etapas) or coalesce(erp.meu_papel(), '') = 'diretor'
-                    or exists (select 1 from unnest(a.etapas) e where erp._ocupa_vaga(e, a.centro_custo_id, erp.eu()))))
+               and (erp.estou_nas_listas(a.fases) or coalesce(erp.meu_papel(), '') = 'diretor'
+                    or exists (select 1 from unnest(a.fases) e where erp._ocupa_vaga(e, a.centro_custo_id, erp.eu()))))
     or exists (select 1 from erp.titulo_aprovacoes x where x.titulo_id = p_titulo and x.por = erp.eu())) $$;
 
 -- Título: vê quem vê alguma linha do rateio e nenhuma linha restrita fica escondida dele; sem
@@ -87,9 +90,9 @@ create function erp._vejo_titulo(p_id uuid, p_autor uuid) returns boolean langua
     erp.sou_master() or erp.aprovo_titulo(p_id)
     or (p_autor = erp.eu() and not exists (select 1 from erp.titulo_rateios r where r.titulo_id = p_id))
     or (exists (select 1 from erp.titulo_rateios r where r.titulo_id = p_id
-                 and erp._ve(r.nucleo_economico_id, r.centro_custo_id, r.natureza_id, p_autor))
+                 and erp._ve(r.nucleo_economico_id, r.centro_custo_id, r.natureza_id, p_autor, r.divisao_id))
         and not exists (select 1 from erp.titulo_rateios r where r.titulo_id = p_id and erp.natureza_restrita(r.natureza_id)
-                         and not erp._ve(r.nucleo_economico_id, r.centro_custo_id, r.natureza_id, p_autor)))) $$;
+                         and not erp._ve(r.nucleo_economico_id, r.centro_custo_id, r.natureza_id, p_autor, r.divisao_id)))) $$;
 create function erp.vejo_titulo(p_id uuid) returns boolean language sql stable as
   $$ select coalesce((select erp._vejo_titulo(t.id, t.criado_por) from erp.titulos t where t.id = p_id), false) $$;
 -- grava no título quem lança em todas as linhas (sem rateio ainda, quem lançou)
@@ -101,7 +104,7 @@ create function erp._lanco_titulo(p_id uuid, p_autor uuid) returns boolean langu
         and (p_autor = erp.eu() or (erp.em_revisao(p_id) and erp.pode_ajustar(p_id))))
     or (exists (select 1 from erp.titulo_rateios r where r.titulo_id = p_id)
         and not exists (select 1 from erp.titulo_rateios r where r.titulo_id = p_id
-                         and not erp.lanco(r.nucleo_economico_id, r.centro_custo_id, r.natureza_id, p_autor)))) $$;
+                         and not erp.lanco(r.nucleo_economico_id, r.centro_custo_id, r.natureza_id, p_autor, r.divisao_id)))) $$;
 create function erp.lanco_titulo(p_id uuid) returns boolean language sql stable as
   $$ select coalesce((select erp._lanco_titulo(t.id, t.criado_por) from erp.titulos t where t.id = p_id), false) $$;
 
@@ -111,9 +114,9 @@ create function erp._vejo_documento(p_id uuid, p_autor uuid) returns boolean lan
     or exists (select 1 from erp.titulos t where t.documento_id = p_id and erp.aprovo_titulo(t.id))
     or (p_autor = erp.eu() and not exists (select 1 from erp.documento_rateios r where r.documento_id = p_id))
     or (exists (select 1 from erp.documento_rateios r where r.documento_id = p_id
-                 and erp._ve(r.nucleo_economico_id, r.centro_custo_id, r.natureza_id, p_autor))
+                 and erp._ve(r.nucleo_economico_id, r.centro_custo_id, r.natureza_id, p_autor, r.divisao_id))
         and not exists (select 1 from erp.documento_rateios r where r.documento_id = p_id and erp.natureza_restrita(r.natureza_id)
-                         and not erp._ve(r.nucleo_economico_id, r.centro_custo_id, r.natureza_id, p_autor)))) $$;
+                         and not erp._ve(r.nucleo_economico_id, r.centro_custo_id, r.natureza_id, p_autor, r.divisao_id)))) $$;
 create function erp.vejo_documento(p_id uuid) returns boolean language sql stable as
   $$ select coalesce((select erp._vejo_documento(d.id, d.criado_por) from erp.documentos_fiscais d where d.id = p_id), false) $$;
 create function erp._lanco_documento(p_id uuid, p_autor uuid) returns boolean language sql stable as $$
@@ -123,7 +126,7 @@ create function erp._lanco_documento(p_id uuid, p_autor uuid) returns boolean la
         and (p_autor = erp.eu() or coalesce(erp.pode_ajustar(erp._titulo_em_revisao_da_nota(p_id)), false)))
     or (exists (select 1 from erp.documento_rateios r where r.documento_id = p_id)
         and not exists (select 1 from erp.documento_rateios r where r.documento_id = p_id
-                         and not erp.lanco(r.nucleo_economico_id, r.centro_custo_id, r.natureza_id, p_autor)))) $$;
+                         and not erp.lanco(r.nucleo_economico_id, r.centro_custo_id, r.natureza_id, p_autor, r.divisao_id)))) $$;
 create function erp.lanco_documento(p_id uuid) returns boolean language sql stable as
   $$ select coalesce((select erp._lanco_documento(d.id, d.criado_por) from erp.documentos_fiscais d where d.id = p_id), false) $$;
 
@@ -132,9 +135,9 @@ create function erp._vejo_compromisso(p_id uuid, p_autor uuid) returns boolean l
     erp.sou_master()
     or (p_autor = erp.eu() and not exists (select 1 from erp.compromisso_rateios r where r.compromisso_id = p_id))
     or (exists (select 1 from erp.compromisso_rateios r where r.compromisso_id = p_id
-                 and erp._ve(r.nucleo_economico_id, r.centro_custo_id, r.natureza_id, p_autor))
+                 and erp._ve(r.nucleo_economico_id, r.centro_custo_id, r.natureza_id, p_autor, r.divisao_id))
         and not exists (select 1 from erp.compromisso_rateios r where r.compromisso_id = p_id and erp.natureza_restrita(r.natureza_id)
-                         and not erp._ve(r.nucleo_economico_id, r.centro_custo_id, r.natureza_id, p_autor)))) $$;
+                         and not erp._ve(r.nucleo_economico_id, r.centro_custo_id, r.natureza_id, p_autor, r.divisao_id)))) $$;
 create function erp.vejo_compromisso(p_id uuid) returns boolean language sql stable as
   $$ select coalesce((select erp._vejo_compromisso(c.id, c.criado_por) from erp.compromissos c where c.id = p_id), false) $$;
 create function erp._lanco_compromisso(p_id uuid, p_autor uuid) returns boolean language sql stable as $$
@@ -143,26 +146,26 @@ create function erp._lanco_compromisso(p_id uuid, p_autor uuid) returns boolean 
     or (p_autor = erp.eu() and not exists (select 1 from erp.compromisso_rateios r where r.compromisso_id = p_id))
     or (exists (select 1 from erp.compromisso_rateios r where r.compromisso_id = p_id)
         and not exists (select 1 from erp.compromisso_rateios r where r.compromisso_id = p_id
-                         and not erp.lanco(r.nucleo_economico_id, r.centro_custo_id, r.natureza_id, p_autor)))) $$;
+                         and not erp.lanco(r.nucleo_economico_id, r.centro_custo_id, r.natureza_id, p_autor, r.divisao_id)))) $$;
 create function erp.lanco_compromisso(p_id uuid) returns boolean language sql stable as
   $$ select coalesce((select erp._lanco_compromisso(c.id, c.criado_por) from erp.compromissos c where c.id = p_id), false) $$;
 
 create function erp.vejo_previsao(p_id uuid) returns boolean language sql stable as $$
   select exists (select 1 from erp.previsoes p where p.id = p_id
-                  and erp.vejo(p.nucleo_economico_id, p.centro_custo_id, p.natureza_id, p.criada_por)) $$;
+                  and erp.vejo(p.nucleo_economico_id, p.centro_custo_id, p.natureza_id, p.criada_por, p.divisao_id)) $$;
 
 -- Pagamento: o financeiro (AF, AO, AD), quem lançou, ou quem vê o núcleo × centro dele ou um
 -- título que ele quita; nunca se ele quita um título que a pessoa não vê (folha PJ).
-create function erp._vejo_pagamento(p_id uuid, p_nucleo uuid, p_centro uuid, p_autor uuid) returns boolean language sql stable as $$
+create function erp._vejo_pagamento(p_id uuid, p_nucleo uuid, p_centro uuid, p_autor uuid, p_divisao uuid default null) returns boolean language sql stable as $$
   select erp.membro() and (
     erp.sou_master() or erp.financeiro() or p_autor = erp.eu()
-    or ((   (p_nucleo is not null and erp._ve(p_nucleo, p_centro, null, p_autor))
+    or ((   (p_nucleo is not null and erp._ve(p_nucleo, p_centro, null, p_autor, p_divisao))
          or exists (select 1 from erp.quitacoes q join erp.parcelas pa on pa.id = q.parcela_id
                      where q.pagamento_id = p_id and erp.vejo_titulo(pa.titulo_id)))
         and not exists (select 1 from erp.quitacoes q join erp.parcelas pa on pa.id = q.parcela_id
                          where q.pagamento_id = p_id and not erp.vejo_titulo(pa.titulo_id)))) $$;
 create function erp.vejo_pagamento(p_id uuid) returns boolean language sql stable as
-  $$ select coalesce((select erp._vejo_pagamento(g.id, g.nucleo_economico_id, g.centro_custo_id, g.criado_por)
+  $$ select coalesce((select erp._vejo_pagamento(g.id, g.nucleo_economico_id, g.centro_custo_id, g.criado_por, g.divisao_id)
                         from erp.pagamentos g where g.id = p_id), false) $$;
 -- grava: o financeiro, ou quem lança no núcleo × centro do carimbo
 create function erp._lanco_pagamento(p_nucleo uuid, p_centro uuid, p_autor uuid) returns boolean language sql stable as $$
@@ -184,8 +187,8 @@ do $$
 declare f text;
 begin
   foreach f in array array[
-    'erp.acesso(uuid, uuid, uuid)', 'erp.ve_linha(uuid, uuid, uuid, uuid, uuid)', 'erp.lanca_linha(uuid, uuid, uuid, uuid)',
-    'erp.natureza_liberada(uuid, uuid, uuid, uuid)', 'erp.atribuicoes_no_nucleo(uuid, uuid)',
+    'erp.acesso(uuid, uuid, uuid, uuid)', 'erp.ve_linha(uuid, uuid, uuid, uuid, uuid, uuid)', 'erp.lanca_linha(uuid, uuid, uuid, uuid, uuid)',
+    'erp.natureza_liberada(uuid, uuid, uuid, uuid, uuid)', 'erp.atribuicoes_no_nucleo(uuid, uuid)',
     'erp.natureza_restrita(uuid)', 'erp.galhos_acima(uuid)',
     -- trava que lê o uso da natureza em todo o livro: por baixo do RLS, senão quem não vê os
     -- lançamentos acharia a natureza sem uso
@@ -193,13 +196,13 @@ begin
     -- a classificação lê a empresa do registro pai: por baixo do RLS, senão quem não vê o pai
     -- recebe "núcleo de outra empresa" no lugar da recusa da política
     'erp.tg_classificacao()',
-    'erp._ve(uuid, uuid, uuid, uuid)', 'erp.membro()', 'erp.sou_admin()', 'erp.escrevo()', 'erp.financeiro()', 'erp.gere_acesso()',
-    'erp.vejo(uuid, uuid, uuid, uuid)', 'erp.lanco(uuid, uuid, uuid, uuid)', 'erp.aprovo_titulo(uuid)',
+    'erp._ve(uuid, uuid, uuid, uuid, uuid)', 'erp.membro()', 'erp.sou_admin()', 'erp.escrevo()', 'erp.financeiro()', 'erp.gere_acesso()',
+    'erp.vejo(uuid, uuid, uuid, uuid, uuid)', 'erp.lanco(uuid, uuid, uuid, uuid, uuid)', 'erp.aprovo_titulo(uuid)',
     'erp.vejo_titulo(uuid)', 'erp.lanco_titulo(uuid)', 'erp.vejo_documento(uuid)', 'erp.lanco_documento(uuid)',
     'erp.vejo_compromisso(uuid)', 'erp.lanco_compromisso(uuid)', 'erp.vejo_previsao(uuid)', 'erp.vejo_pagamento(uuid)',
     'erp._vejo_titulo(uuid, uuid)', 'erp._lanco_titulo(uuid, uuid)', 'erp._vejo_documento(uuid, uuid)', 'erp._lanco_documento(uuid, uuid)',
     'erp._vejo_compromisso(uuid, uuid)', 'erp._lanco_compromisso(uuid, uuid)',
-    'erp._vejo_pagamento(uuid, uuid, uuid, uuid)', 'erp._lanco_pagamento(uuid, uuid, uuid)', 'erp.vejo_reclassificacao(uuid)', 'erp.vejo_sucessao()',
+    'erp._vejo_pagamento(uuid, uuid, uuid, uuid, uuid)', 'erp._lanco_pagamento(uuid, uuid, uuid)', 'erp.vejo_reclassificacao(uuid)', 'erp.vejo_sucessao()',
     'erp.previsao_saldo(uuid)', 'erp.parcela_saldo(uuid)', 'erp.pagamento_saldo(uuid)'] loop
     execute format('alter function %s security definer set search_path = erp, pg_catalog, pg_temp', f);
     execute format('alter function %s owner to erp_conferencia', f);
@@ -273,9 +276,10 @@ begin
     -- ora", até essas mudanças do administrador passarem por aprovação): grava só o master
     ('naturezas_sistema', 'erp.membro()', 'erp.sou_master()'),
     ('centros_custo', 'erp.membro()', 'erp.sou_admin()'),
+    ('divisoes', 'erp.membro()', null),                       -- só pelo pedido aprovado (S-101)
     ('nucleos_economicos', 'erp.membro()', 'erp.sou_admin()'),
     ('nucleo_centros', 'erp.membro()', 'erp.sou_admin()'),
-    ('fases', 'erp.membro()', 'erp.sou_admin()'),
+    ('etapas', 'erp.membro()', 'erp.sou_admin()'),
     ('linhas_dre', 'erp.membro()', 'erp.sou_admin()'),
     ('niveis_aprovacao', 'erp.membro()', 'erp.sou_master()'),
     ('alcadas_pagamento', 'erp.membro()', 'erp.sou_master()'),
@@ -295,6 +299,7 @@ begin
     ('centro_diretores', 'erp.membro()', null),
     ('perfis_modelo', 'erp.membro()', null),
     ('perfil_centros', 'erp.membro()', null),
+    ('perfil_centro_divisoes', 'erp.membro()', null),
     ('perfil_naturezas', 'erp.membro()', null),
     ('aprovadores_acesso', 'erp.membro()', null),
     ('regra_acesso', 'erp.membro()', null),
@@ -306,6 +311,7 @@ begin
     ('atribuicao_tipos', 'exists (select 1 from erp.atribuicoes a where a.id = atribuicao_id)', null),
     ('atribuicao_nucleos', 'exists (select 1 from erp.atribuicoes a where a.id = atribuicao_id)', null),
     ('excecoes_centro', 'user_id = erp.eu() or erp.gere_acesso()', null),
+    ('excecoes_divisao', 'user_id = erp.eu() or erp.gere_acesso()', null),
     ('excecoes_natureza', 'user_id = erp.eu() or erp.gere_acesso()', null),
     ('mudancas_acesso', 'erp.gere_acesso() or (erp.membro() and (pedida_por = erp.eu() or erp.eu() = any(beneficiarios)))', null),
     ('mudanca_acesso_votos', 'exists (select 1 from erp.mudancas_acesso m where m.id = mudanca_id)', null),
@@ -317,16 +323,16 @@ begin
     ('pessoas', 'erp.membro()', 'erp.escrevo()'),
     ('pessoa_papeis', 'erp.membro()', 'erp.escrevo()'),
     -- linhas classificadas
-    ('lancamentos', 'erp.vejo(nucleo_economico_id, centro_custo_id, natureza_id, null)', null),
-    ('previsoes', 'erp.vejo(nucleo_economico_id, centro_custo_id, natureza_id, criada_por)',
-                  'erp.lanco(nucleo_economico_id, centro_custo_id, natureza_id, criada_por)'),
+    ('lancamentos', 'erp.vejo(nucleo_economico_id, centro_custo_id, natureza_id, null, divisao_id)', null),
+    ('previsoes', 'erp.vejo(nucleo_economico_id, centro_custo_id, natureza_id, criada_por, divisao_id)',
+                  'erp.lanco(nucleo_economico_id, centro_custo_id, natureza_id, criada_por, divisao_id)'),
     ('orcamento_versoes', 'erp.membro()', 'erp.escrevo()'),
-    ('orcamento_linhas', 'erp.vejo(nucleo_economico_id, centro_custo_id, natureza_id, null)',
-                         'erp.lanco(nucleo_economico_id, centro_custo_id, natureza_id, null)'),
+    ('orcamento_linhas', 'erp.vejo(nucleo_economico_id, centro_custo_id, natureza_id, null, divisao_id)',
+                         'erp.lanco(nucleo_economico_id, centro_custo_id, natureza_id, null, divisao_id)'),
     -- título e filhos
     ('titulos', 'erp._vejo_titulo(id, criado_por)', 'erp._lanco_titulo(id, criado_por)'),
     ('titulo_rateios', 'erp.vejo_titulo(titulo_id)',
-                       'erp.lanco_titulo(titulo_id) and erp.lanco(nucleo_economico_id, centro_custo_id, natureza_id, (select t.criado_por from erp.titulos t where t.id = titulo_id))'),
+                       'erp.lanco_titulo(titulo_id) and erp.lanco(nucleo_economico_id, centro_custo_id, natureza_id, (select t.criado_por from erp.titulos t where t.id = titulo_id), divisao_id)'),
     ('parcelas', 'erp.vejo_titulo(titulo_id)', 'erp.lanco_titulo(titulo_id)'),
     ('titulo_alcadas', 'erp.vejo_titulo(titulo_id)', null),
     ('titulo_aprovacoes', 'erp.vejo_titulo(titulo_id)', null),
@@ -342,15 +348,15 @@ begin
     -- nota e filhos
     ('documentos_fiscais', 'erp._vejo_documento(id, criado_por)', 'erp._lanco_documento(id, criado_por)'),
     ('documento_rateios', 'erp.vejo_documento(documento_id)',
-                          'erp.lanco_documento(documento_id) and erp.lanco(nucleo_economico_id, centro_custo_id, natureza_id, (select d.criado_por from erp.documentos_fiscais d where d.id = documento_id))'),
+                          'erp.lanco_documento(documento_id) and erp.lanco(nucleo_economico_id, centro_custo_id, natureza_id, (select d.criado_por from erp.documentos_fiscais d where d.id = documento_id), divisao_id)'),
     ('documento_retencoes', 'erp.vejo_documento(documento_id)', 'erp.lanco_documento(documento_id)'),
     -- contrato e filhos
     ('compromissos', 'erp._vejo_compromisso(id, criado_por)', 'erp._lanco_compromisso(id, criado_por)'),
     ('compromisso_rateios', 'erp.vejo_compromisso(compromisso_id)',
-                            'erp.lanco_compromisso(compromisso_id) and erp.lanco(nucleo_economico_id, centro_custo_id, natureza_id, (select c.criado_por from erp.compromissos c where c.id = compromisso_id))'),
+                            'erp.lanco_compromisso(compromisso_id) and erp.lanco(nucleo_economico_id, centro_custo_id, natureza_id, (select c.criado_por from erp.compromissos c where c.id = compromisso_id), divisao_id)'),
     ('caucao_movimentos', 'erp.vejo_compromisso(compromisso_id)', null),
     -- pagamento
-    ('pagamentos', 'erp._vejo_pagamento(id, nucleo_economico_id, centro_custo_id, criado_por)',
+    ('pagamentos', 'erp._vejo_pagamento(id, nucleo_economico_id, centro_custo_id, criado_por, divisao_id)',
                     'erp._lanco_pagamento(nucleo_economico_id, centro_custo_id, criado_por)'),
     ('quitacoes', 'erp.vejo_titulo((select pa.titulo_id from erp.parcelas pa where pa.id = parcela_id))',
                   'erp.escrevo() and (erp.sou_master() or erp.financeiro()) and erp.vejo_pagamento(pagamento_id) and erp.vejo_titulo((select pa.titulo_id from erp.parcelas pa where pa.id = parcela_id))'),
@@ -414,21 +420,21 @@ grant execute on function
   erp.exigir_editor(), erp.exigir_diretor(), erp.estou_nas_listas(text[]),
   erp.natureza_restrita(uuid), erp.galhos_acima(uuid), erp.natureza_em_uso(uuid),
   -- visibilidade de quem está logado
-  erp.vejo(uuid, uuid, uuid, uuid), erp.lanco(uuid, uuid, uuid, uuid), erp.aprovo_titulo(uuid),
+  erp.vejo(uuid, uuid, uuid, uuid, uuid), erp.lanco(uuid, uuid, uuid, uuid, uuid), erp.aprovo_titulo(uuid),
   erp.vejo_titulo(uuid), erp.lanco_titulo(uuid), erp.vejo_documento(uuid), erp.lanco_documento(uuid),
   erp.vejo_compromisso(uuid), erp.lanco_compromisso(uuid), erp.vejo_previsao(uuid),
   erp.vejo_pagamento(uuid), erp._vejo_titulo(uuid, uuid), erp._lanco_titulo(uuid, uuid), erp._vejo_documento(uuid, uuid),
   erp._lanco_documento(uuid, uuid), erp._vejo_compromisso(uuid, uuid), erp._lanco_compromisso(uuid, uuid),
-  erp._vejo_pagamento(uuid, uuid, uuid, uuid), erp._lanco_pagamento(uuid, uuid, uuid), erp.vejo_reclassificacao(uuid), erp.vejo_sucessao(),
+  erp._vejo_pagamento(uuid, uuid, uuid, uuid, uuid), erp._lanco_pagamento(uuid, uuid, uuid), erp.vejo_reclassificacao(uuid), erp.vejo_sucessao(),
   -- saldos só do que a pessoa vê
   erp.previsao_saldo(uuid), erp.parcela_saldo(uuid), erp.pagamento_saldo(uuid),
   -- conferências das travas (chamadas pelos gatilhos invoker)
-  erp.regra_adiantamento_atual(), erp.autor_lancamento(text, uuid), erp.abatimento_aprovado(uuid, uuid),
+  erp.regra_adiantamento_atual(), erp.autor_lancamento(text, uuid), erp.abatimento_aprovado(uuid, uuid), erp.gestor_abate_divisao(uuid, uuid),
   erp.adiantamento_anterior_em_aberto(uuid, uuid), erp.centro_ligado(uuid, uuid),
   erp.checar_natureza(uuid, uuid, uuid, boolean), erp.checar_centro(uuid, uuid, uuid),
   erp.em_revisao(uuid), erp.pode_ajustar(uuid), erp._ajustavel(uuid), erp._nota_ajustavel(uuid),
   erp._titulo_em_revisao_da_nota(uuid), erp.cadeia_titulo(uuid), erp.conferir_ajuste(uuid, text, jsonb, jsonb),
-  erp.alcada_etapa(uuid), erp.alcada_pendente(uuid), erp.alcada_recusada(uuid), erp.titulos_do_acumulado(uuid),
+  erp.alcada_fase(uuid), erp.alcada_pendente(uuid), erp.alcada_recusada(uuid), erp.titulos_do_acumulado(uuid),
   erp.checar_competencia(text, uuid, date, date),
   -- chamada pelos gatilhos do ajuste; recusa chamada direta (fora de gatilho) e quem não ajusta
   erp._registrar_ajuste(uuid, text, jsonb, jsonb),
@@ -436,7 +442,7 @@ grant execute on function
   -- operações
   erp.confirmar_titulo(uuid), erp.lancar_documento(uuid, date[], uuid[]),
   erp.liberar_caucao(uuid, numeric, date, uuid, text), erp.publicar_orcamento(uuid),
-  erp.decidir_titulo(uuid, boolean, text, boolean, uuid), erp.reenviar_titulo(uuid, text, date[], uuid[]),
+  erp.decidir_titulo(uuid, boolean, text, boolean, uuid, uuid), erp.reenviar_titulo(uuid, text, date[], uuid[]),
   erp.registrar_movimento_societario(text, uuid, uuid, numeric, date, text),
   erp.fechar_mes(uuid, date), erp.reabrir_mes(uuid, date),
   erp.pedir_reclassificacao(uuid, uuid, text, jsonb, boolean), erp.decidir_reclassificacao(uuid, boolean, text),

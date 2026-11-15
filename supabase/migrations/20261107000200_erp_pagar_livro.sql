@@ -5,7 +5,7 @@
 -- Sinal no livro: entrada positiva, saída negativa. Nas tabelas de origem, valores positivos.
 
 -- ---------------------------------------------------------------------
--- Classificação comum (núcleo econômico, centro de custo, natureza, fase) e o rateio
+-- Classificação comum (núcleo econômico, centro de custo, natureza, etapa) e o rateio
 -- ---------------------------------------------------------------------
 -- Natureza usada em movimento: precisa ser do último nível e ativa.
 create function erp.checar_natureza(p_natureza uuid, p_nucleo uuid, p_centro uuid, p_orcado boolean default false)
@@ -97,9 +97,13 @@ create table erp.compromisso_rateios (
   compromisso_id  uuid not null references erp.compromissos on delete cascade,
   nucleo_economico_id       uuid references erp.nucleos_economicos,
   natureza_id     uuid not null references erp.naturezas,
-  fase_id         uuid references erp.fases,
+  etapa_id         uuid references erp.etapas,
   centro_custo_id uuid references erp.centros_custo,
-  percentual      numeric(7,4) not null check (percentual > 0 and percentual <= 100)
+  divisao_id      uuid,
+  percentual      numeric(7,4) not null check (percentual > 0 and percentual <= 100),
+  -- a divisão é do centro da linha
+  foreign key (divisao_id, centro_custo_id) references erp.divisoes (id, centro_custo_id),
+  check (divisao_id is null or centro_custo_id is not null)
 );
 
 -- ---------------------------------------------------------------------
@@ -122,11 +126,15 @@ create table erp.orcamento_linhas (
   versao_id       uuid not null references erp.orcamento_versoes on delete cascade,
   nucleo_economico_id       uuid references erp.nucleos_economicos,
   natureza_id     uuid not null references erp.naturezas,
-  fase_id         uuid references erp.fases,
+  etapa_id         uuid references erp.etapas,
   centro_custo_id uuid references erp.centros_custo,
+  divisao_id      uuid,
   competencia     date not null check (extract(day from competencia) = 1),
   data_caixa      date,
-  valor           numeric(15,2) not null check (valor <> 0)   -- com sinal: receita +, gasto −
+  valor           numeric(15,2) not null check (valor <> 0),  -- com sinal: receita +, gasto −
+  -- a divisão é do centro da linha
+  foreign key (divisao_id, centro_custo_id) references erp.divisoes (id, centro_custo_id),
+  check (divisao_id is null or centro_custo_id is not null)
 );
 
 -- ---------------------------------------------------------------------
@@ -141,15 +149,19 @@ create table erp.previsoes (
   pessoa_id       uuid references erp.pessoas,
   nucleo_economico_id       uuid references erp.nucleos_economicos,
   natureza_id     uuid not null references erp.naturezas,
-  fase_id         uuid references erp.fases,
+  etapa_id         uuid references erp.etapas,
   centro_custo_id uuid references erp.centros_custo,
+  divisao_id      uuid,
   competencia     date not null check (extract(day from competencia) = 1),
   data_prevista   date not null,
   valor           numeric(15,2) not null check (valor > 0),
   descricao       text,
   situacao        text not null default 'aberta' check (situacao in ('aberta','consumida','cancelada')),
   criada_por      uuid,                         -- quem lançou; vazio quando o sistema gera
-  criada_em       timestamptz not null default now()
+  criada_em       timestamptz not null default now(),
+  -- a divisão é do centro da linha
+  foreign key (divisao_id, centro_custo_id) references erp.divisoes (id, centro_custo_id),
+  check (divisao_id is null or centro_custo_id is not null)
 );
 create index on erp.previsoes (compromisso_id) where situacao = 'aberta';
 
@@ -193,9 +205,13 @@ create table erp.documento_rateios (
   documento_id    uuid not null references erp.documentos_fiscais on delete cascade,
   nucleo_economico_id       uuid references erp.nucleos_economicos,
   natureza_id     uuid not null references erp.naturezas,
-  fase_id         uuid references erp.fases,
+  etapa_id         uuid references erp.etapas,
   centro_custo_id uuid references erp.centros_custo,
-  percentual      numeric(7,4) not null check (percentual > 0 and percentual <= 100)
+  divisao_id      uuid,
+  percentual      numeric(7,4) not null check (percentual > 0 and percentual <= 100),
+  -- a divisão é do centro da linha
+  foreign key (divisao_id, centro_custo_id) references erp.divisoes (id, centro_custo_id),
+  check (divisao_id is null or centro_custo_id is not null)
 );
 
 -- ---------------------------------------------------------------------
@@ -256,9 +272,13 @@ create table erp.titulo_rateios (
   titulo_id       uuid not null references erp.titulos on delete cascade,
   nucleo_economico_id       uuid references erp.nucleos_economicos,
   natureza_id     uuid not null references erp.naturezas,
-  fase_id         uuid references erp.fases,
+  etapa_id         uuid references erp.etapas,
   centro_custo_id uuid references erp.centros_custo,
-  percentual      numeric(7,4) not null check (percentual > 0 and percentual <= 100)
+  divisao_id      uuid,
+  percentual      numeric(7,4) not null check (percentual > 0 and percentual <= 100),
+  -- a divisão é do centro da linha
+  foreign key (divisao_id, centro_custo_id) references erp.divisoes (id, centro_custo_id),
+  check (divisao_id is null or centro_custo_id is not null)
 );
 
 create table erp.parcelas (
@@ -292,13 +312,17 @@ create table erp.pagamentos (
   -- obrigatórios salvo na transferência entre contas próprias (favorecido = a própria empresa)
   nucleo_economico_id uuid references erp.nucleos_economicos,
   centro_custo_id     uuid references erp.centros_custo,
+  -- e a divisão, quando o centro tem divisões (Moises, 15/11/2026)
+  divisao_id          uuid,
   lote_id        uuid references erp.lotes_bancarios,
   data           date not null,
   valor          numeric(15,2) not null check (valor > 0),
   forma          text not null default 'pix' check (forma in ('pix','ted','boleto','debito','cheque','dinheiro','outro')),
   descricao      text,
   criado_por     uuid,
-  criado_em      timestamptz not null default clock_timestamp()
+  criado_em      timestamptz not null default clock_timestamp(),
+  foreign key (divisao_id, centro_custo_id) references erp.divisoes (id, centro_custo_id),
+  check (divisao_id is null or centro_custo_id is not null)
 );
 create trigger t_autor before insert or update on erp.pagamentos
   for each row execute function erp.tg_autor();
@@ -363,8 +387,9 @@ create table erp.lancamentos (
   empresa_id          uuid not null references erp.empresas,
   nucleo_economico_id           uuid references erp.nucleos_economicos,
   natureza_id         uuid not null references erp.naturezas,
-  fase_id             uuid references erp.fases,
+  etapa_id             uuid references erp.etapas,
   centro_custo_id     uuid references erp.centros_custo,
+  divisao_id          uuid,
   competencia         date not null check (extract(day from competencia) = 1),
   data_caixa          date,             -- nula = sem data (caução retida)
   valor               numeric(15,2) not null check (valor <> 0),
@@ -377,7 +402,10 @@ create table erp.lancamentos (
   pagamento_id        uuid references erp.pagamentos,
   caucao_movimento_id uuid references erp.caucao_movimentos,
   criado_em           timestamptz not null default clock_timestamp(),
-  check ((estagio = 'orcado') = (orcamento_versao_id is not null))
+  check ((estagio = 'orcado') = (orcamento_versao_id is not null)),
+  -- a divisão é do centro da linha
+  foreign key (divisao_id, centro_custo_id) references erp.divisoes (id, centro_custo_id),
+  check (divisao_id is null or centro_custo_id is not null)
 );
 create index on erp.lancamentos (natureza_id);
 create index on erp.lancamentos (empresa_id, competencia);
@@ -450,6 +478,36 @@ create trigger t_class before insert or update of natureza_id, nucleo_economico_
 create trigger t_class before insert or update of natureza_id, nucleo_economico_id, centro_custo_id, versao_id on erp.orcamento_linhas
   for each row execute function erp.tg_classificacao();
 
+-- A divisão (Moises, 15/11/2026): a da linha está ativa, e o centro com divisão ativa exige a
+-- divisão em cada linha que uma pessoa grava. A linha que o sistema copia (título da nota,
+-- previsão da assinatura) segue a de origem, para a rotina não parar quando o centro ganha
+-- divisões depois. Que a divisão é do centro, a chave estrangeira composta garante.
+-- Invoker de propósito: precisa saber quem grava (erp.agindo_como).
+create function erp.tg_divisao_linha() returns trigger language plpgsql as $$
+begin
+  if new.divisao_id is not null and tg_op = 'UPDATE' and new.divisao_id is not distinct from old.divisao_id then
+    return new;
+  end if;
+  if new.divisao_id is not null then
+    if not (select ativa from erp.divisoes where id = new.divisao_id) then
+      raise exception 'A divisão está desativada';
+    end if;
+  elsif new.centro_custo_id is not null and not (erp.agindo_como('erp_situacao') or erp.sistema())
+        and exists (select 1 from erp.divisoes where centro_custo_id = new.centro_custo_id and ativa) then
+    raise exception 'O centro de custo "%" tem divisões: diga a divisão da linha',
+      (select nome from erp.centros_custo where id = new.centro_custo_id);
+  end if;
+  return new;
+end $$;
+do $$
+declare t text;
+begin
+  foreach t in array array['compromisso_rateios', 'documento_rateios', 'titulo_rateios', 'previsoes', 'orcamento_linhas', 'pagamentos'] loop
+    execute format('create trigger t_divisao_linha before insert or update of centro_custo_id, divisao_id on erp.%I
+                      for each row execute function erp.tg_divisao_linha()', t);
+  end loop;
+end $$;
+
 -- A empresa de um registro não muda depois de criado (S-056): o rateio, o livro e a caução
 -- foram conferidos contra ela.
 create function erp.tg_empresa_fixa() returns trigger language plpgsql as $$
@@ -469,23 +527,23 @@ end $$;
 -- Rateio de um registro (compromisso, documento ou título) dividindo um total em centavos exatos:
 -- cada parte = arredondamento do acumulado menos o do acumulado anterior, então a soma fecha.
 create function erp.ratear(p_origem text, p_id uuid, p_total numeric)
-returns table (nucleo_economico_id uuid, natureza_id uuid, fase_id uuid, centro_custo_id uuid, valor numeric)
+returns table (nucleo_economico_id uuid, natureza_id uuid, etapa_id uuid, centro_custo_id uuid, divisao_id uuid, valor numeric)
 language sql stable as $$
   with r as (
-    select nucleo_economico_id, natureza_id, fase_id, centro_custo_id, percentual, id from erp.compromisso_rateios
+    select nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id, percentual, id from erp.compromisso_rateios
       where p_origem = 'compromisso' and compromisso_id = p_id
     union all
-    select nucleo_economico_id, natureza_id, fase_id, centro_custo_id, percentual, id from erp.documento_rateios
+    select nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id, percentual, id from erp.documento_rateios
       where p_origem = 'documento' and documento_id = p_id
     union all
-    select nucleo_economico_id, natureza_id, fase_id, centro_custo_id, percentual, id from erp.titulo_rateios
+    select nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id, percentual, id from erp.titulo_rateios
       where p_origem = 'titulo' and titulo_id = p_id
   ), a as (
     select r.*, sum(percentual) over (order by percentual desc, id) as acum,
            sum(percentual) over () as total_pct
     from r
   )
-  select nucleo_economico_id, natureza_id, fase_id, centro_custo_id,
+  select nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id,
          round(p_total * acum / total_pct, 2) - round(p_total * (acum - percentual) / total_pct, 2)
   from a
 $$;
@@ -552,7 +610,7 @@ declare v erp.orcamento_versoes;
 begin
   perform erp.exigir_editor();
   if not erp.sistema() and exists (select 1 from erp.orcamento_linhas l where l.versao_id = p_versao
-                                     and not erp.lanco(l.nucleo_economico_id, l.centro_custo_id, l.natureza_id, null)) then
+                                     and not erp.lanco(l.nucleo_economico_id, l.centro_custo_id, l.natureza_id, null, l.divisao_id)) then
     raise exception 'Você não lança em todas as linhas deste orçamento';
   end if;
   select * into v from erp.orcamento_versoes where id = p_versao for update;
@@ -560,9 +618,9 @@ begin
   update erp.orcamento_versoes set situacao = 'substituida'
    where empresa_id = v.empresa_id and empreendimento_id is not distinct from v.empreendimento_id
      and tipo = v.tipo and situacao = 'vigente' and tipo <> 'reprojecao';
-  insert into erp.lancamentos (estagio, orcamento_versao_id, empresa_id, nucleo_economico_id, natureza_id, fase_id,
-                                  centro_custo_id, competencia, data_caixa, valor, orcamento_linha_id)
-  select 'orcado', v.id, v.empresa_id, l.nucleo_economico_id, l.natureza_id, l.fase_id, l.centro_custo_id,
+  insert into erp.lancamentos (estagio, orcamento_versao_id, empresa_id, nucleo_economico_id, natureza_id, etapa_id,
+                                  centro_custo_id, divisao_id, competencia, data_caixa, valor, orcamento_linha_id)
+  select 'orcado', v.id, v.empresa_id, l.nucleo_economico_id, l.natureza_id, l.etapa_id, l.centro_custo_id, l.divisao_id,
          l.competencia, l.data_caixa, l.valor, l.id
   from erp.orcamento_linhas l where l.versao_id = v.id;
   update erp.orcamento_versoes set situacao = 'vigente' where id = v.id;
@@ -603,18 +661,18 @@ create function erp.tg_previsao() returns trigger language plpgsql as $$
 declare v_saldo numeric;
 begin
   if tg_op = 'INSERT' then
-    insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, fase_id, centro_custo_id,
+    insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id,
                                     competencia, data_caixa, valor, previsao_id)
-    values ('previsto', new.empresa_id, new.nucleo_economico_id, new.natureza_id, new.fase_id, new.centro_custo_id,
+    values ('previsto', new.empresa_id, new.nucleo_economico_id, new.natureza_id, new.etapa_id, new.centro_custo_id, new.divisao_id,
             new.competencia, new.data_prevista, erp.sinal(new.sentido) * new.valor, new.id);
     return new;
   end if;
   if new.situacao = 'cancelada' and old.situacao = 'aberta' then
     v_saldo := erp._previsao_saldo(new.id);
     if v_saldo > 0 then
-      insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, fase_id, centro_custo_id,
+      insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id,
                                       competencia, data_caixa, valor, previsao_id)
-      values ('previsto', new.empresa_id, new.nucleo_economico_id, new.natureza_id, new.fase_id, new.centro_custo_id,
+      values ('previsto', new.empresa_id, new.nucleo_economico_id, new.natureza_id, new.etapa_id, new.centro_custo_id, new.divisao_id,
               new.competencia, new.data_prevista, -erp.sinal(new.sentido) * v_saldo, new.id);
     end if;
   end if;
@@ -653,9 +711,9 @@ begin
   v_saldo := p.valor - coalesce((select sum(tp.valor) from erp.titulo_previsoes tp join erp.titulos t on t.id = tp.titulo_id
                                  where tp.previsao_id = p.id and tp.titulo_id <> new.titulo_id and t.situacao <> 'cancelado'), 0);
   if new.valor > v_saldo then raise exception 'O consumo (%) passa do saldo da previsão (%)', new.valor, v_saldo; end if;
-  insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, fase_id, centro_custo_id,
+  insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id,
                                   competencia, data_caixa, valor, previsao_id, titulo_id)
-  values ('previsto', p.empresa_id, p.nucleo_economico_id, p.natureza_id, p.fase_id, p.centro_custo_id,
+  values ('previsto', p.empresa_id, p.nucleo_economico_id, p.natureza_id, p.etapa_id, p.centro_custo_id, p.divisao_id,
           p.competencia, p.data_prevista, -erp.sinal(p.sentido) * new.valor, p.id, new.titulo_id);
   if new.valor = v_saldo then
     update erp.previsoes set situacao = 'consumida' where id = p.id;   -- definer erp_situacao (_erp_rls)
@@ -684,9 +742,9 @@ begin
   while d <= least(p_ate, coalesce(c.fim, p_ate)) loop
     if not exists (select 1 from erp.previsoes where compromisso_id = c.id and competencia = d and situacao <> 'cancelada') then
       for r in select * from erp.ratear('compromisso', c.id, c.valor_periodo) loop
-        insert into erp.previsoes (empresa_id, origem, compromisso_id, pessoa_id, nucleo_economico_id, natureza_id, fase_id,
-                                      centro_custo_id, competencia, data_prevista, valor, descricao)
-        values (c.empresa_id, 'assinatura', c.id, c.pessoa_id, r.nucleo_economico_id, r.natureza_id, r.fase_id, r.centro_custo_id,
+        insert into erp.previsoes (empresa_id, origem, compromisso_id, pessoa_id, nucleo_economico_id, natureza_id, etapa_id,
+                                      centro_custo_id, divisao_id, competencia, data_prevista, valor, descricao)
+        values (c.empresa_id, 'assinatura', c.id, c.pessoa_id, r.nucleo_economico_id, r.natureza_id, r.etapa_id, r.centro_custo_id, r.divisao_id,
                 d, least(d + (coalesce(c.dia_vencimento, 1) - 1), (d + interval '1 month - 1 day')::date),
                 r.valor, c.descricao);
       end loop;
@@ -819,9 +877,9 @@ declare p record; r record;
 begin
   for p in select * from erp.parcelas where titulo_id = t.id and t.tipo <> 'adiantamento' order by numero loop
     for r in select * from erp.ratear('titulo', t.id, p.valor) loop
-      insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, fase_id, centro_custo_id,
+      insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id,
                                       competencia, data_caixa, valor, titulo_id, parcela_id)
-      values ('comprometido', t.empresa_id, r.nucleo_economico_id, r.natureza_id, r.fase_id, r.centro_custo_id,
+      values ('comprometido', t.empresa_id, r.nucleo_economico_id, r.natureza_id, r.etapa_id, r.centro_custo_id, r.divisao_id,
               t.competencia, p.vencimento, erp.sinal(t.sentido) * r.valor, t.id, p.id);
     end loop;
   end loop;
@@ -830,13 +888,13 @@ end $$;
 -- combinação). p_estagio nulo estorna tudo; 'comprometido', só o comprometido.
 create function erp._estornar_titulo(p_titulo uuid, p_estagio text) returns void language plpgsql as $$
 begin
-  insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, fase_id, centro_custo_id,
+  insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id,
                                competencia, data_caixa, valor, titulo_id, parcela_id, previsao_id)
-  select estagio, empresa_id, nucleo_economico_id, natureza_id, fase_id, centro_custo_id,
+  select estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id,
          competencia, data_caixa, -sum(valor), p_titulo, parcela_id, previsao_id
     from erp.lancamentos
    where titulo_id = p_titulo and (p_estagio is null or estagio = p_estagio)
-   group by estagio, empresa_id, nucleo_economico_id, natureza_id, fase_id, centro_custo_id,
+   group by estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id,
             competencia, data_caixa, parcela_id, previsao_id
   having sum(valor) <> 0;
 end $$;
@@ -886,12 +944,12 @@ begin
     insert into erp.parcelas (titulo_id, numero, vencimento, valor) values (v_id, i, p_vencimentos[i], v_parc);
   end loop;
   if p_rateio_origem is not null then
-    insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, natureza_id, fase_id, centro_custo_id, percentual)
-    select v_id, nucleo_economico_id, natureza_id, fase_id, centro_custo_id, percentual from (
-      select nucleo_economico_id, natureza_id, fase_id, centro_custo_id, percentual from erp.compromisso_rateios
+    insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id, percentual)
+    select v_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id, percentual from (
+      select nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id, percentual from erp.compromisso_rateios
         where p_rateio_origem = 'compromisso' and compromisso_id = p_rateio_id
       union all
-      select nucleo_economico_id, natureza_id, fase_id, centro_custo_id, percentual from erp.documento_rateios
+      select nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id, percentual from erp.documento_rateios
         where p_rateio_origem = 'documento' and documento_id = p_rateio_id) r;
   end if;
   return v_id;
@@ -1036,7 +1094,7 @@ begin
   end if;
   if new.pessoa_id is distinct from (select pessoa_id from erp.empresas where id = new.empresa_id)
      and (new.nucleo_economico_id is null or new.centro_custo_id is null) then
-    raise exception 'Pagamento e adiantamento saem carimbados com núcleo econômico e centro de custo (só a transferência entre contas próprias dispensa)';
+    raise exception 'Pagamento e adiantamento saem carimbados com núcleo econômico e centro de custo (e a divisão, se o centro tiver; só a transferência entre contas próprias dispensa)';
   end if;
   if new.nucleo_economico_id is not null
      and (select empresa_id from erp.nucleos_economicos where id = new.nucleo_economico_id) <> new.empresa_id then
@@ -1044,8 +1102,8 @@ begin
   end if;
   perform erp.checar_centro(new.nucleo_economico_id, new.centro_custo_id, new.empresa_id);
   if new.adiantamento_id is not null then perform erp._pagar_pedido_adiantamento(new); end if;
-  insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_caixa, valor, pagamento_id)
-  values ('realizado', new.empresa_id, new.nucleo_economico_id, new.centro_custo_id, erp.natureza_sistema('adiantamentos'),
+  insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, competencia, data_caixa, valor, pagamento_id)
+  values ('realizado', new.empresa_id, new.nucleo_economico_id, new.centro_custo_id, new.divisao_id, erp.natureza_sistema('adiantamentos'),
           erp.mes(new.data), new.data, -new.valor, new.id);
   return new;
 end $$;
@@ -1211,9 +1269,9 @@ create table erp.liberacoes_sem_abater (
 -- Alçada de pagamento (decisão do Moises, 14/11/2026; piloto no Marketing)
 -- Vale para o título a pagar com rateio num centro de custo que tem gestor aprovador cadastrado.
 -- Pelo acumulado do mês do centro (somando o próprio título): até 50 mil, gestor da área e
--- depois AF; acima, gestor da área, AF e AD. Faixas, etapas e como se soma o acumulado são
+-- depois AF; acima, gestor da área, AF e AD. Faixas, fases e como se soma o acumulado são
 -- configuração do administrador, com auditoria. A alçada é fixada quando o título é confirmado;
--- as etapas são em sequência, quem lançou não aprova, e cada pessoa aprova uma etapa só.
+-- as fases são em sequência, quem lançou não aprova, e cada pessoa aprova uma fase só.
 -- O título não é quitado sem a alçada completa.
 -- ---------------------------------------------------------------------
 create table erp.centro_aprovadores (          -- gestor da área (aprovador nominal do centro)
@@ -1238,11 +1296,10 @@ begin
      and exists (select 1 from erp.titulo_alcadas a join erp.titulos t on t.id = a.titulo_id
                   where a.centro_custo_id = old.centro_custo_id and t.situacao = 'aberto' and t.rodada = a.rodada
                     and not erp.alcada_recusada(a.titulo_id)
-                    and exists (select 1 from generate_subscripts(a.etapas, 1) i
-                                 where a.etapas[i] = v_vaga
-                                   and not exists (select 1 from erp.titulo_aprovacoes v where v.titulo_id = a.titulo_id
-                                                    and v.rodada = a.rodada and v.centro_custo_id = a.centro_custo_id
-                                                    and v.etapa = i and v.aprovado))) then
+                    and exists (select 1 from generate_subscripts(a.fases, 1) i
+                                 where a.fases[i] = v_vaga
+                                   and not exists (select 1 from erp.titulo_aprovacoes v where v.alcada_id = a.id
+                                                    and v.fase = i and v.aprovado))) then
     if v_vaga = 'AREA' then raise exception 'O centro tem títulos esperando o gestor da área; cadastre outro gestor antes'; end if;
     raise exception 'O centro tem títulos esperando o diretor da área; cadastre outro diretor antes';
   end if;
@@ -1254,25 +1311,33 @@ create trigger t_centro_aprovador before update or delete on erp.centro_aprovado
 -- Faixas por centro de custo (Moises, 15/11/2026): o centro com faixas próprias usa as dele; os
 -- outros, as gerais (centro nulo). Cada faixa tem dois limites, o acumulado do mês no centro e o
 -- valor do título; o título cai na faixa mais exigente das duas contas. Cada faixa tem as vagas de
--- aprovação (etapas): um papel (AREA = gestor da área, DIRETOR_AREA = diretor da área, AF, AO, AD)
+-- aprovação (fases): um papel (AREA = gestor da área, DIRETOR_AREA = diretor da área, AF, AO, AD)
 -- ou uma pessoa pelo nome ('P:' e o id do usuário), que não precisa ter cargo. O número de
 -- aprovadores é o número de vagas; a mesma pessoa não ocupa duas. Em sequência (padrão) ou em
 -- paralelo. Sem gente qualificada para preencher as vagas, o título vai ao master, com o motivo.
+-- Faixas da divisão (Moises, 15/11/2026): a divisão com faixas próprias tem a alçada dela, com o
+-- acumulado do mês só da divisão; a faixa diz se a linha também passa pela alçada do centro
+-- (passa_pelo_centro), que soma o centro inteiro. Divisão sem faixas próprias segue o centro.
 create table erp.alcadas_pagamento (
   id              uuid primary key default gen_random_uuid(),
   centro_custo_id uuid references erp.centros_custo,   -- nulo: as faixas gerais
+  divisao_id      uuid,                                   -- nulo: faixa do centro (ou geral)
   ate             numeric(15,2) check (ate > 0),          -- acumulado do mês até este valor; nulo = sem limite
   ate_titulo      numeric(15,2) check (ate_titulo > 0),   -- valor do título até este valor; nulo = sem limite
-  etapas          text[] not null check (cardinality(etapas) > 0),
+  fases          text[] not null check (cardinality(fases) > 0),
   paralelo        boolean not null default false,
-  unique nulls not distinct (centro_custo_id, ate, ate_titulo)
+  passa_pelo_centro boolean not null default false,       -- só na faixa da divisão
+  unique nulls not distinct (centro_custo_id, divisao_id, ate, ate_titulo),
+  foreign key (divisao_id, centro_custo_id) references erp.divisoes (id, centro_custo_id),
+  check (divisao_id is null or centro_custo_id is not null),
+  check (divisao_id is not null or not passa_pelo_centro)
 );
 -- a vaga: um papel ou uma pessoa ativa que pode aprovar (nem administrador, nem só da sucessão)
 create function erp.tg_alcada_vagas() returns trigger language plpgsql as $$
 declare e text; v_user uuid;
 begin
   if tg_op = 'DELETE' then return old; end if;
-  foreach e in array new.etapas loop
+  foreach e in array new.fases loop
     if e in ('AREA','DIRETOR_AREA','AF','AO','AD') then continue; end if;
     if e !~ '^P:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
       raise exception 'Vaga de aprovação inválida: % (use AREA, DIRETOR_AREA, AF, AO, AD ou P: e o usuário)', e;
@@ -1282,12 +1347,12 @@ begin
     perform erp.recusar_admin_aprovador(v_user);
     perform erp.recusar_so_sucessao(v_user);
   end loop;
-  if (select count(*) from unnest(new.etapas) x where x like 'P:%') <> (select count(distinct x) from unnest(new.etapas) x where x like 'P:%') then
+  if (select count(*) from unnest(new.fases) x where x like 'P:%') <> (select count(distinct x) from unnest(new.fases) x where x like 'P:%') then
     raise exception 'A mesma pessoa não ocupa duas vagas da faixa';
   end if;
   return new;
 end $$;
-insert into erp.alcadas_pagamento (ate, etapas) values (50000, '{AREA,AF}'), (null, '{AREA,AF,AD}');
+insert into erp.alcadas_pagamento (ate, fases) values (50000, '{AREA,AF}'), (null, '{AREA,AF,AD}');
 create trigger t_so_admin before insert or update or delete on erp.alcadas_pagamento
   for each row execute function erp.tg_so_admin();
 create trigger t_alcada_vagas before insert or update on erp.alcadas_pagamento
@@ -1324,14 +1389,17 @@ create trigger t_aud_regra_alcada after update on erp.regra_alcada_pagamento
 -- A alçada fixada na confirmação, uma por centro de custo do rateio (Moises, 15/11/2026): cada
 -- centro tem a sua aprovação, com o valor do título no centro, o acumulado do centro e o rito
 -- (as vagas) da faixa do centro. O título só está aprovado quando todos os centros aprovaram; a
--- mesma pessoa que ocupa vaga em dois centros aprova nos dois.
+-- mesma pessoa que ocupa vaga em dois centros aprova nos dois. A divisão com faixas próprias tem
+-- a alçada dela (divisao_id), além da do centro quando a faixa manda passar pelo centro.
 create table erp.titulo_alcadas (
+  id              uuid primary key default gen_random_uuid(),
   titulo_id       uuid not null references erp.titulos,
   rodada          int not null default 1,       -- a volta da alçada (titulos.rodada)
   centro_custo_id uuid not null references erp.centros_custo,
-  etapas          text[] not null,
+  divisao_id      uuid references erp.divisoes, -- nulo: a alçada do centro
+  fases          text[] not null,
   paralelo        boolean not null default false,
-  valor_no_centro numeric(15,2) not null,       -- a parte do título no centro (o limite do título olha o título inteiro)
+  valor_no_centro numeric(15,2) not null,       -- a parte do título no centro ou na divisão (o limite do título olha o título inteiro)
   acumulado       numeric(15,2) not null,
   titulos         uuid[] not null,              -- os títulos que formaram o acumulado (S-064)
   alcada_id       uuid,                         -- a faixa que decidiu
@@ -1340,25 +1408,30 @@ create table erp.titulo_alcadas (
   falta_aprovadores boolean not null default false,
   vagas_sem_gente   text[] not null default '{}',
   definida_em     timestamptz not null default clock_timestamp(),
-  primary key (titulo_id, rodada, centro_custo_id)
+  unique nulls not distinct (titulo_id, rodada, centro_custo_id, divisao_id)
 );
 create table erp.titulo_aprovacoes (
-  titulo_id     uuid not null references erp.titulos,
+  alcada_id     uuid not null references erp.titulo_alcadas,   -- a alçada (centro ou divisão) em que a fase está
+  titulo_id     uuid not null references erp.titulos,           -- titulo_id, rodada, centro e divisão: copiados da alçada
   rodada        int not null default 1,
-  centro_custo_id uuid not null,                 -- a alçada do centro em que a etapa está
-  etapa         int not null,                    -- posição em titulo_alcadas.etapas, de 1
+  centro_custo_id uuid not null,
+  divisao_id    uuid,
+  fase         int not null,                    -- posição em titulo_alcadas.fases, de 1
   lista         text not null,
   aprovado      boolean not null,
   justificativa text,
   por           uuid not null,
   em            timestamptz not null default clock_timestamp(),
-  primary key (titulo_id, rodada, centro_custo_id, etapa),
-  foreign key (titulo_id, rodada, centro_custo_id) references erp.titulo_alcadas,
-  -- decisao: quem decidiu é quem gravou; ajuste: quem ajustou na revisão (_aprovar_pelo_ajuste)
-  origem        text not null default 'decisao' check (origem in ('decisao','ajuste')),
+  primary key (alcada_id, fase),
+  -- decisao: quem decidiu é quem gravou; ajuste: quem ajustou na revisão (_aprovar_pelo_ajuste);
+  -- outra_alcada: a aprovação da mesma pessoa na divisão vale no centro, e vice-versa (vale_de)
+  origem        text not null default 'decisao' check (origem in ('decisao','ajuste','outra_alcada')),
+  vale_de       uuid references erp.titulo_alcadas,
+  check ((origem = 'outra_alcada') = (vale_de is not null)),
   proprio       boolean not null default false,  -- quem aprovou lançou o título (master ou AD autorizada): sai o aviso
   check (aprovado or length(trim(coalesce(justificativa, ''))) > 0),
-  check (origem = 'decisao' or (aprovado and lista in ('AREA','AF')))
+  check (origem <> 'ajuste' or (aprovado and lista in ('AREA','AF'))),
+  check (origem <> 'outra_alcada' or aprovado)
 );
 -- só pelas operações do banco (confirmar_titulo e decidir_titulo), e não mudam
 create function erp.tg_alcada_titulo() returns trigger language plpgsql as $$
@@ -1369,7 +1442,17 @@ begin
   end if;
   if tg_table_name = 'titulo_aprovacoes' then
     if new.origem = 'decisao' then new.por := erp.autor(); end if;
+    if new.origem = 'outra_alcada' and not exists (
+         select 1 from erp.titulo_aprovacoes v join erp.titulo_alcadas a1 on a1.id = v.alcada_id
+           join erp.titulo_alcadas a2 on a2.id = new.alcada_id
+          where v.alcada_id = new.vale_de and v.por = new.por and v.aprovado and v.origem = 'decisao'
+            and a1.titulo_id = a2.titulo_id and a1.rodada = a2.rodada and a1.centro_custo_id = a2.centro_custo_id
+            and a1.id <> a2.id and (a1.divisao_id is null or a2.divisao_id is null)) then
+      raise exception 'A aprovação na outra alçada precisa ser da mesma pessoa, no mesmo centro do título';
+    end if;
     new.em := clock_timestamp();
+    select a.titulo_id, a.rodada, a.centro_custo_id, a.divisao_id into new.titulo_id, new.rodada, new.centro_custo_id, new.divisao_id
+      from erp.titulo_alcadas a where a.id = new.alcada_id;
   end if;
   return new;
 end $$;
@@ -1378,7 +1461,7 @@ create trigger t_alcada_titulo before insert or update or delete on erp.titulo_a
 create trigger t_alcada_titulo before insert or update or delete on erp.titulo_aprovacoes
   for each row execute function erp.tg_alcada_titulo();
 
--- Pedido de revisão (decisões do Moises, 14/11/2026): o aprovador da etapa pede um ajuste com
+-- Pedido de revisão (decisões do Moises, 14/11/2026): o aprovador da fase pede um ajuste com
 -- motivo; o título fica aberto e no livro, não é aprovado nem pago enquanto a revisão está
 -- aberta. Quem lançou, o gestor da área e o AF ajustam qualquer coisa (o título avulso direto; o
 -- de nota, pela nota) e reenviam; a alçada recomeça do zero, numa volta nova.
@@ -1386,8 +1469,9 @@ create table erp.titulo_revisoes (
   id            uuid primary key default gen_random_uuid(),
   titulo_id     uuid not null references erp.titulos,
   rodada        int not null,
-  centro_custo_id uuid,                          -- o centro da etapa que pediu
-  etapa         int not null,
+  centro_custo_id uuid,                          -- o centro da fase que pediu
+  alcada_id     uuid references erp.titulo_alcadas,  -- a alçada (centro ou divisão) da fase que pediu
+  fase         int not null,
   motivo        text not null check (length(trim(motivo)) > 0),
   pedida_por    uuid not null,
   pedida_em     timestamptz not null default clock_timestamp(),
@@ -1430,7 +1514,7 @@ create function erp.pode_ajustar(p_titulo uuid) returns boolean language plpgsql
 begin return (erp.eu() is not null
     and (erp.sou_master() or not exists (select 1 from erp.titulo_rateios r join erp.titulos t on t.id = r.titulo_id
                                           where r.titulo_id = p_titulo
-                                            and not erp.lanco(r.nucleo_economico_id, r.centro_custo_id, r.natureza_id, t.criado_por)))
+                                            and not erp.lanco(r.nucleo_economico_id, r.centro_custo_id, r.natureza_id, t.criado_por, r.divisao_id)))
     and (
          erp.autor_lancamento('titulo', p_titulo) = erp.eu()
       or erp.estou_nas_listas(array['AF'])
@@ -1475,7 +1559,8 @@ select c.campo, q.quem, c.rotulo, c.tipo from (values
   ('titulo_rateios.linhas', 'as linhas do rateio (incluir ou tirar)', 'outro'),
   ('titulo_rateios.nucleo_economico_id', 'o núcleo econômico do rateio', 'outro'),
   ('titulo_rateios.centro_custo_id', 'o centro de custo do rateio', 'outro'),
-  ('titulo_rateios.natureza_id', 'a natureza do rateio', 'outro'), ('titulo_rateios.fase_id', 'a fase do rateio', 'outro'),
+  ('titulo_rateios.natureza_id', 'a natureza do rateio', 'outro'), ('titulo_rateios.etapa_id', 'a etapa do rateio', 'outro'),
+  ('titulo_rateios.divisao_id', 'a divisão do rateio', 'outro'),
   ('titulo_rateios.percentual', 'o percentual do rateio', 'outro'),
   ('documentos_fiscais.emitente_id', 'o emitente da nota', 'outro'), ('documentos_fiscais.tipo', 'o tipo da nota', 'outro'),
   ('documentos_fiscais.numero', 'o número da nota', 'outro'), ('documentos_fiscais.serie', 'a série da nota', 'outro'),
@@ -1485,7 +1570,8 @@ select c.campo, q.quem, c.rotulo, c.tipo from (values
   ('documento_rateios.nucleo_economico_id', 'o núcleo econômico do rateio da nota', 'outro'),
   ('documento_rateios.centro_custo_id', 'o centro de custo do rateio da nota', 'outro'),
   ('documento_rateios.natureza_id', 'a natureza do rateio da nota', 'outro'),
-  ('documento_rateios.fase_id', 'a fase do rateio da nota', 'outro'),
+  ('documento_rateios.etapa_id', 'a etapa do rateio da nota', 'outro'),
+  ('documento_rateios.divisao_id', 'a divisão do rateio da nota', 'outro'),
   ('documento_rateios.percentual', 'o percentual do rateio da nota', 'outro'),
   ('documento_retencoes.linhas', 'as retenções da nota (incluir ou tirar)', 'outro'),
   ('documento_retencoes.imposto', 'o imposto retido', 'outro'), ('documento_retencoes.orgao_id', 'o órgão da retenção', 'outro'),
@@ -1672,7 +1758,7 @@ create function erp._cobrir_adiantamento(t erp.titulos) returns void language pl
 declare r record; a record; v_resto numeric; v_disp numeric; v_c numeric;
 begin
   if t.tipo not in ('fornecedor','avulso') then return; end if;
-  for r in select tr.id, tr.nucleo_economico_id, tr.centro_custo_id, round(t.valor * tr.percentual / 100, 2) as parte
+  for r in select tr.id, tr.nucleo_economico_id, tr.centro_custo_id, tr.divisao_id, round(t.valor * tr.percentual / 100, 2) as parte
              from erp.titulo_rateios tr where tr.titulo_id = t.id order by tr.id loop
     v_resto := r.parte;
     for a in select a0.id, a0.valor from erp.titulos a0 join erp.titulo_rateios ar on ar.titulo_id = a0.id
@@ -1680,6 +1766,7 @@ begin
                 and a0.situacao in ('aberto','quitado')   -- recusado nunca é pago, então não cobre
                 and ar.nucleo_economico_id is not distinct from r.nucleo_economico_id
                 and ar.centro_custo_id is not distinct from r.centro_custo_id
+                and ar.divisao_id is not distinct from r.divisao_id
               order by a0.emissao, a0.criado_em, a0.id for update of a0 loop
       exit when v_resto <= 0;
       -- só o que já saiu cobre: pedido aprovado e não pago não abate nada. Cada título já atendido
@@ -1716,8 +1803,9 @@ begin
   end if;
   if not exists (select 1 from erp.titulo_rateios where titulo_id = a.id
                   and nucleo_economico_id is not distinct from g.nucleo_economico_id
-                  and centro_custo_id is not distinct from g.centro_custo_id) then
-    raise exception 'O pagamento sai com o núcleo e o centro de custo do pedido de adiantamento';
+                  and centro_custo_id is not distinct from g.centro_custo_id
+                  and divisao_id is not distinct from g.divisao_id) then
+    raise exception 'O pagamento sai com o núcleo, o centro de custo e a divisão do pedido de adiantamento';
   end if;
   if erp.alcada_recusada(a.id) then raise exception 'O título foi recusado na alçada'; end if;
   if erp.alcada_pendente(a.id) is not null then
@@ -1733,10 +1821,7 @@ end $$;
 -- Fixa a alçada do título na confirmação (chamada pelo confirmar_titulo, que é definer).
 -- O título de imposto retido e o movimento entre sócios seguem a nota e o aporte; não entram.
 create function erp._definir_alcada(p_titulo uuid) returns void language plpgsql as $$
-declare t erp.titulos; v_modo text := (select acumulado from erp.regra_alcada_pagamento);
-        v_forn boolean := (select soma_fornecedor from erp.regra_alcada_pagamento);
-        cc record; r record; v_soma numeric; v_ids uuid[]; v_acum numeric; v_titulos uuid[]; v_valor numeric;
-        f erp.alcadas_pagamento; v_falta text[];
+declare t erp.titulos; cc record; dv record; f erp.alcadas_pagamento; v_centro boolean;
 begin
   select * into t from erp.titulos where id = p_titulo;
   if t.sentido <> 'pagar' or t.tipo in ('imposto','societario') then return; end if;
@@ -1746,62 +1831,97 @@ begin
    where c.id in (select tr.centro_custo_id from erp.titulo_rateios tr where tr.titulo_id = t.id)
    order by c.id for update;
   perform erp._cobrir_adiantamento(t);
-  -- uma alçada por centro do rateio que tem gestor aprovador ou faixas próprias, com a parte do
-  -- título no centro e o acumulado do centro (no modo por núcleo, o maior dos núcleos do rateio)
   for cc in select distinct tr.centro_custo_id from erp.titulo_rateios tr
-            where tr.titulo_id = t.id
-              and (exists (select 1 from erp.centro_aprovadores a where a.centro_custo_id = tr.centro_custo_id)
-                   or exists (select 1 from erp.alcadas_pagamento ap where ap.centro_custo_id = tr.centro_custo_id))
-            order by tr.centro_custo_id loop
-    v_acum := null; v_titulos := null;
-    for r in select distinct tr.centro_custo_id, tr.nucleo_economico_id from erp.titulo_rateios tr
-              where tr.titulo_id = t.id and tr.centro_custo_id = cc.centro_custo_id loop
-      -- a parte de cada título no centro; com soma_fornecedor, o mesmo fornecedor conta inteiro
-      select round(coalesce(sum(t2.valor * r2.percentual / 100 - erp.cobertura(r2.id)), 0), 2), array_agg(distinct t2.id) into v_soma, v_ids
-        from erp.titulos t2 join erp.titulo_rateios r2 on r2.titulo_id = t2.id
-       where (r2.centro_custo_id = r.centro_custo_id or (v_forn and t2.pessoa_id = t.pessoa_id))
-         and t2.sentido = 'pagar' and t2.tipo not in ('imposto','societario')
-         and (t2.situacao in ('aberto','quitado') or t2.id = t.id)
-         and erp.mes(t2.competencia) = erp.mes(t.competencia)
-         and (v_modo = 'centro' or t2.empresa_id = t.empresa_id)
-         and (v_modo <> 'nucleo_centro' or r2.centro_custo_id <> r.centro_custo_id
-              or r2.nucleo_economico_id is not distinct from r.nucleo_economico_id);
-      if v_acum is null or v_soma > v_acum then v_acum := v_soma; v_titulos := v_ids; end if;
+            where tr.titulo_id = t.id and tr.centro_custo_id is not null order by tr.centro_custo_id loop
+    -- a alçada da divisão com faixas próprias; a faixa diz se a linha passa também pelo centro
+    v_centro := false;
+    for dv in select distinct tr.divisao_id from erp.titulo_rateios tr
+               where tr.titulo_id = t.id and tr.centro_custo_id = cc.centro_custo_id
+                 and exists (select 1 from erp.alcadas_pagamento ap where ap.divisao_id = tr.divisao_id)
+               order by tr.divisao_id loop
+      f := erp._fixar_alcada(t, cc.centro_custo_id, dv.divisao_id);
+      v_centro := v_centro or f.passa_pelo_centro;
     end loop;
-    select round(coalesce(sum(t.valor * tr.percentual / 100 - erp.cobertura(tr.id)), 0), 2) into v_valor
-      from erp.titulo_rateios tr where tr.titulo_id = t.id and tr.centro_custo_id = cc.centro_custo_id;
-    -- o limite do título olha o título inteiro em cada centro: dividir no rateio não baixa a faixa
-    -- (S-098, Moises, 15/11/2026); o acumulado do mês é o do centro
-    f := erp._faixa_alcada(cc.centro_custo_id, v_acum, t.valor);
-    if f.id is null then raise exception 'Não há alçada de pagamento configurada para %', v_acum; end if;
-    v_falta := erp._vagas_sem_gente(f.etapas, cc.centro_custo_id, t.criado_por);
-    insert into erp.titulo_alcadas (titulo_id, rodada, centro_custo_id, etapas, paralelo, valor_no_centro, acumulado, titulos,
-                                    alcada_id, falta_aprovadores, vagas_sem_gente)
-    values (t.id, t.rodada, cc.centro_custo_id, f.etapas, f.paralelo, v_valor, v_acum, v_titulos, f.id,
-            cardinality(v_falta) > 0, v_falta);
-    if cardinality(v_falta) > 0 then
-      perform erp.registrar_evento('alcada_falta_aprovadores', 'titulos', t.id::text, null, cc.centro_custo_id,
-        jsonb_build_object('titulo_id', t.id, 'rodada', t.rodada, 'etapas', f.etapas, 'vagas_sem_gente', v_falta,
-                           'acumulado', v_acum, 'valor_no_centro', v_valor, 'valor', t.valor,
-                           'motivo', 'Faltam aprovadores qualificados: o título vai ao master'));
+    -- a alçada do centro: as linhas sem divisão com faixas próprias, ou a faixa da divisão que
+    -- manda passar pelo centro; centro sem gestor e sem faixas próprias fica fora, como antes
+    if v_centro
+       or (exists (select 1 from erp.titulo_rateios tr
+                    where tr.titulo_id = t.id and tr.centro_custo_id = cc.centro_custo_id
+                      and not exists (select 1 from erp.alcadas_pagamento ap where ap.divisao_id = tr.divisao_id))
+           and (exists (select 1 from erp.centro_aprovadores a where a.centro_custo_id = cc.centro_custo_id)
+                or exists (select 1 from erp.alcadas_pagamento ap where ap.centro_custo_id = cc.centro_custo_id and ap.divisao_id is null))) then
+      perform erp._fixar_alcada(t, cc.centro_custo_id, null);
     end if;
   end loop;
 end $$;
 
--- A faixa do título no centro: as do centro, se ele tem, senão as gerais. A faixa pelo acumulado
--- e a faixa pelo valor do título; vale a mais alta (a mais exigente).
-create function erp._faixa_alcada(p_centro uuid, p_acumulado numeric, p_valor numeric) returns erp.alcadas_pagamento
+-- Uma alçada do título: a do centro (p_divisao nulo), com a parte do título no centro inteiro e o
+-- acumulado do centro, ou a da divisão, com a parte e o acumulado só da divisão (no modo por
+-- núcleo, o maior dos núcleos do rateio). Devolve a faixa que decidiu.
+create function erp._fixar_alcada(t erp.titulos, p_centro uuid, p_divisao uuid) returns erp.alcadas_pagamento
+language plpgsql as $$
+declare v_modo text := (select acumulado from erp.regra_alcada_pagamento);
+        v_forn boolean := (select soma_fornecedor from erp.regra_alcada_pagamento);
+        r record; v_soma numeric; v_ids uuid[]; v_acum numeric; v_titulos uuid[]; v_valor numeric;
+        f erp.alcadas_pagamento; v_falta text[];
+begin
+  for r in select distinct tr.nucleo_economico_id from erp.titulo_rateios tr
+            where tr.titulo_id = t.id and tr.centro_custo_id = p_centro
+              and (p_divisao is null or tr.divisao_id = p_divisao) loop
+    -- a parte de cada título no centro (ou na divisão); com soma_fornecedor, o mesmo fornecedor conta inteiro
+    select round(coalesce(sum(t2.valor * r2.percentual / 100 - erp.cobertura(r2.id)), 0), 2), array_agg(distinct t2.id) into v_soma, v_ids
+      from erp.titulos t2 join erp.titulo_rateios r2 on r2.titulo_id = t2.id
+     where ((r2.centro_custo_id = p_centro and (p_divisao is null or r2.divisao_id = p_divisao))
+            or (v_forn and t2.pessoa_id = t.pessoa_id))
+       and t2.sentido = 'pagar' and t2.tipo not in ('imposto','societario')
+       and (t2.situacao in ('aberto','quitado') or t2.id = t.id)
+       and erp.mes(t2.competencia) = erp.mes(t.competencia)
+       and (v_modo = 'centro' or t2.empresa_id = t.empresa_id)
+       and (v_modo <> 'nucleo_centro' or r2.centro_custo_id <> p_centro
+            or (p_divisao is not null and r2.divisao_id is distinct from p_divisao)
+            or r2.nucleo_economico_id is not distinct from r.nucleo_economico_id);
+    if v_acum is null or v_soma > v_acum then v_acum := v_soma; v_titulos := v_ids; end if;
+  end loop;
+  select round(coalesce(sum(t.valor * tr.percentual / 100 - erp.cobertura(tr.id)), 0), 2) into v_valor
+    from erp.titulo_rateios tr where tr.titulo_id = t.id and tr.centro_custo_id = p_centro
+                                 and (p_divisao is null or tr.divisao_id = p_divisao);
+  -- o limite do título olha o título inteiro em cada centro: dividir no rateio não baixa a faixa
+  -- (S-098, Moises, 15/11/2026); o acumulado do mês é o do centro (ou o da divisão)
+  f := erp._faixa_alcada(p_centro, p_divisao, v_acum, t.valor);
+  if f.id is null then raise exception 'Não há alçada de pagamento configurada para %', v_acum; end if;
+  v_falta := erp._vagas_sem_gente(f.fases, p_centro, t.criado_por);
+  insert into erp.titulo_alcadas (titulo_id, rodada, centro_custo_id, divisao_id, fases, paralelo, valor_no_centro, acumulado, titulos,
+                                  alcada_id, falta_aprovadores, vagas_sem_gente)
+  values (t.id, t.rodada, p_centro, p_divisao, f.fases, f.paralelo, v_valor, v_acum, v_titulos, f.id,
+          cardinality(v_falta) > 0, v_falta);
+  if cardinality(v_falta) > 0 then
+    perform erp.registrar_evento('alcada_falta_aprovadores', 'titulos', t.id::text, null, p_centro,
+      jsonb_build_object('titulo_id', t.id, 'rodada', t.rodada, 'divisao_id', p_divisao, 'fases', f.fases, 'vagas_sem_gente', v_falta,
+                         'acumulado', v_acum, 'valor_no_centro', v_valor, 'valor', t.valor,
+                         'motivo', 'Faltam aprovadores qualificados: o título vai ao master'));
+  end if;
+  return f;
+end $$;
+
+-- A faixa do título: as da divisão, quando pedida (só se chama para divisão com faixas); no
+-- centro, as dele, se ele tem, senão as gerais. A faixa pelo acumulado e a faixa pelo valor do
+-- título; vale a mais alta (a mais exigente).
+create function erp._faixa_alcada(p_centro uuid, p_divisao uuid, p_acumulado numeric, p_valor numeric) returns erp.alcadas_pagamento
 language plpgsql stable as $$
 declare v_centro uuid; v_ia int; v_it int; v erp.alcadas_pagamento;
 begin
-  v_centro := case when exists (select 1 from erp.alcadas_pagamento where centro_custo_id = p_centro) then p_centro end;
+  v_centro := case when p_divisao is not null
+                     or exists (select 1 from erp.alcadas_pagamento where centro_custo_id = p_centro and divisao_id is null)
+                   then p_centro end;
   with f as (select a.*, row_number() over (order by a.ate nulls last, a.ate_titulo nulls last) n
-               from erp.alcadas_pagamento a where a.centro_custo_id is not distinct from v_centro)
+               from erp.alcadas_pagamento a where a.centro_custo_id is not distinct from v_centro
+                                              and a.divisao_id is not distinct from p_divisao)
   select min(n) filter (where ate is null or p_acumulado <= ate),
          min(n) filter (where ate_titulo is null or p_valor <= ate_titulo) into v_ia, v_it from f;
   if v_ia is null or v_it is null then return null; end if;
   select a.* into v from (select a0.*, row_number() over (order by a0.ate nulls last, a0.ate_titulo nulls last) n
-                            from erp.alcadas_pagamento a0 where a0.centro_custo_id is not distinct from v_centro) a
+                            from erp.alcadas_pagamento a0 where a0.centro_custo_id is not distinct from v_centro
+                                                            and a0.divisao_id is not distinct from p_divisao) a
    where a.n = greatest(v_ia, v_it);
   return v;
 end $$;
@@ -1820,12 +1940,12 @@ end $$;
 
 -- As vagas que não têm quem as ocupe: cada pessoa numa vaga só, e quem lançou fora (menos a AD
 -- que aprova o próprio). Preenche primeiro as vagas com menos candidatos.
-create function erp._vagas_sem_gente(p_etapas text[], p_centro uuid, p_autor uuid) returns text[] language plpgsql stable as $$
+create function erp._vagas_sem_gente(p_fases text[], p_centro uuid, p_autor uuid) returns text[] language plpgsql stable as $$
 declare r record; v_usados uuid[] := '{}'; v_quem uuid; v_falta text[] := '{}';
 begin
-  for r in select i, p_etapas[i] as vaga,
-                  (select count(*) from erp.usuarios u where erp._ocupa_vaga(p_etapas[i], p_centro, u.id)) as n
-             from generate_subscripts(p_etapas, 1) i order by 3, 1 loop
+  for r in select i, p_fases[i] as vaga,
+                  (select count(*) from erp.usuarios u where erp._ocupa_vaga(p_fases[i], p_centro, u.id)) as n
+             from generate_subscripts(p_fases, 1) i order by 3, 1 loop
     select u.id into v_quem from erp.usuarios u
      where erp._ocupa_vaga(r.vaga, p_centro, u.id) and u.id <> all (v_usados)
        and (u.id is distinct from p_autor
@@ -1836,31 +1956,30 @@ begin
   return v_falta;
 end $$;
 
--- Etapa da vez de um centro: a primeira sem aprovação; nula quando o centro aprovou todas.
+-- Fase da vez de uma alçada (centro ou divisão): a primeira sem aprovação; nula quando ela aprovou todas.
 -- Tudo da alçada vale na volta atual do título (titulos.rodada); as anteriores ficam no histórico.
-create function erp._etapa_do_centro(a erp.titulo_alcadas) returns int language sql stable as $$
-  select min(i) from generate_subscripts(a.etapas, 1) i
-   where not exists (select 1 from erp.titulo_aprovacoes v where v.titulo_id = a.titulo_id and v.rodada = a.rodada
-                      and v.centro_custo_id = a.centro_custo_id and v.etapa = i and v.aprovado) $$;
--- O título: a etapa da vez do primeiro centro que falta aprovar; nula quando todos os centros
--- aprovaram (ou sem alçada).
-create function erp.alcada_etapa(p_titulo uuid) returns int language sql stable as $$
-  select erp._etapa_do_centro(a) from erp.titulo_alcadas a join erp.titulos t on t.id = a.titulo_id and t.rodada = a.rodada
-   where a.titulo_id = p_titulo and erp._etapa_do_centro(a) is not null
-   order by a.centro_custo_id limit 1 $$;
+create function erp._fase_da_alcada(a erp.titulo_alcadas) returns int language sql stable as $$
+  select min(i) from generate_subscripts(a.fases, 1) i
+   where not exists (select 1 from erp.titulo_aprovacoes v where v.alcada_id = a.id and v.fase = i and v.aprovado) $$;
+-- O título: a fase da vez da primeira alçada que falta aprovar (por centro, a do centro antes
+-- das divisões); nula quando todas aprovaram (ou sem alçada).
+create function erp.alcada_fase(p_titulo uuid) returns int language sql stable as $$
+  select erp._fase_da_alcada(a) from erp.titulo_alcadas a join erp.titulos t on t.id = a.titulo_id and t.rodada = a.rodada
+   where a.titulo_id = p_titulo and erp._fase_da_alcada(a) is not null
+   order by a.centro_custo_id, a.divisao_id nulls first limit 1 $$;
 create function erp.alcada_pendente(p_titulo uuid) returns text language sql stable as $$
-  select a.etapas[erp._etapa_do_centro(a)] from erp.titulo_alcadas a join erp.titulos t on t.id = a.titulo_id and t.rodada = a.rodada
-   where a.titulo_id = p_titulo and erp._etapa_do_centro(a) is not null
-   order by a.centro_custo_id limit 1 $$;
+  select a.fases[erp._fase_da_alcada(a)] from erp.titulo_alcadas a join erp.titulos t on t.id = a.titulo_id and t.rodada = a.rodada
+   where a.titulo_id = p_titulo and erp._fase_da_alcada(a) is not null
+   order by a.centro_custo_id, a.divisao_id nulls first limit 1 $$;
 create function erp.alcada_recusada(p_titulo uuid) returns boolean language sql stable as $$
   select exists (select 1 from erp.titulo_aprovacoes v join erp.titulos t on t.id = v.titulo_id and t.rodada = v.rodada
                   where v.titulo_id = p_titulo and not v.aprovado) $$;
 
 -- Os títulos do mês que formaram o acumulado do centro até este título (só consulta), para quem
--- aprova o título: o gestor da área, quem está numa lista das etapas dele, ou a diretoria.
+-- aprova o título: o gestor da área, quem está numa lista das fases dele, ou a diretoria.
 create function erp.titulos_do_acumulado(p_titulo uuid)
 returns table (titulo_id uuid, empresa_id uuid, pessoa text, competencia date, valor_no_centro numeric,
-               valor_total numeric, situacao text, centro_custo_id uuid)
+               valor_total numeric, situacao text, centro_custo_id uuid, divisao_id uuid)
 language plpgsql stable as $$
 declare a erp.titulo_alcadas; v_algum boolean := false;
 begin
@@ -1870,9 +1989,9 @@ begin
   end if;
   -- cada centro do título: o acumulado dele, para quem aprova naquele centro
   for a in select a0.* from erp.titulo_alcadas a0 join erp.titulos t0 on t0.id = a0.titulo_id and t0.rodada = a0.rodada
-            where a0.titulo_id = p_titulo order by a0.centro_custo_id loop
-    continue when not (erp.estou_nas_listas(a.etapas) or coalesce(erp.meu_papel(), '') = 'diretor' or erp.sou_master()
-                       or exists (select 1 from unnest(a.etapas) e where erp._ocupa_vaga(e, a.centro_custo_id, erp.eu())));
+            where a0.titulo_id = p_titulo order by a0.centro_custo_id, a0.divisao_id nulls first loop
+    continue when not (erp.estou_nas_listas(a.fases) or coalesce(erp.meu_papel(), '') = 'diretor' or erp.sou_master()
+                       or exists (select 1 from unnest(a.fases) e where erp._ocupa_vaga(e, a.centro_custo_id, erp.eu())));
     v_algum := true;
     -- exatamente os títulos que entraram na soma, com a parte deles no centro. S-062: em detalhe só
     -- os que quem pergunta vê; os outros numa linha só, com a soma no centro (fecha o acumulado
@@ -1880,12 +1999,13 @@ begin
     return query
       with t as (
         select t2.id, t2.empresa_id, p.nome, t2.competencia, t2.valor, t2.situacao, t2.criado_em, erp.vejo_titulo(t2.id) as ve,
-               round(coalesce(sum(t2.valor * r2.percentual / 100 - erp.cobertura(r2.id)) filter (where r2.centro_custo_id = a.centro_custo_id), 0), 2) as no_centro
+               round(coalesce(sum(t2.valor * r2.percentual / 100 - erp.cobertura(r2.id)) filter (where r2.centro_custo_id = a.centro_custo_id
+                                                                                    and (a.divisao_id is null or r2.divisao_id = a.divisao_id)), 0), 2) as no_centro
           from erp.titulos t2 join erp.titulo_rateios r2 on r2.titulo_id = t2.id
           join erp.pessoas p on p.id = t2.pessoa_id
          where t2.id = any(a.titulos)
          group by t2.id, t2.empresa_id, p.nome, t2.competencia, t2.valor, t2.situacao, t2.criado_em)
-      select x.id, x.empresa_id, x.nome, x.competencia, x.no_centro, x.valor, x.situacao, a.centro_custo_id from (
+      select x.id, x.empresa_id, x.nome, x.competencia, x.no_centro, x.valor, x.situacao, a.centro_custo_id, a.divisao_id from (
         select t.id, t.empresa_id, t.nome, t.competencia, t.no_centro, t.valor, t.situacao from t where t.ve
         union all
         select null::uuid, null::uuid, format('Outros %s títulos (sem acesso)', count(*)), null::date, sum(t.no_centro), null::numeric, null::text
@@ -1895,13 +2015,48 @@ begin
   if not v_algum then raise exception 'Só quem aprova o título vê o acumulado'; end if;
 end $$;
 
--- Aprovar ou recusar a etapa da vez. Recusar exige justificativa e trava o título.
+-- Uma aprovação vale pela divisão e pelo centro (Moises, 15/11/2026): quem aprovou na alçada da
+-- divisão e ocupa uma vaga pendente na alçada do centro (ou o contrário) fica aprovado lá também,
+-- na vaga que ocupa, quando ela é a da vez (em paralelo, qualquer uma). Roda depois de cada
+-- aprovação, porque em sequência a vaga pode só chegar depois. Não vale entre duas divisões, nem a
+-- aprovação de quem lançou (master ou AD autorizada), nem a que veio pelo ajuste da revisão.
+create function erp._aprovacao_vale_nas_duas(p_titulo uuid) returns void language plpgsql as $$
+declare r record; v_n int;
+begin
+  loop
+    v_n := 0;
+    for r in select a2.id as alcada, i as fase, a2.fases[i] as vaga, v.por, v.alcada_id as de
+               from erp.titulos t
+               join erp.titulo_alcadas a2 on a2.titulo_id = t.id and a2.rodada = t.rodada
+               join erp.titulo_alcadas a1 on a1.titulo_id = t.id and a1.rodada = t.rodada and a1.id <> a2.id
+                                         and a1.centro_custo_id = a2.centro_custo_id and (a1.divisao_id is null or a2.divisao_id is null)
+               join erp.titulo_aprovacoes v on v.alcada_id = a1.id and v.aprovado and v.origem = 'decisao' and not v.proprio
+               cross join lateral generate_subscripts(a2.fases, 1) i
+              where t.id = p_titulo
+                and (a2.paralelo or i = erp._fase_da_alcada(a2))
+                and erp._ocupa_vaga(a2.fases[i], a2.centro_custo_id, v.por)
+              order by a2.centro_custo_id, a2.divisao_id nulls first, i loop
+      continue when exists (select 1 from erp.titulo_aprovacoes x where x.alcada_id = r.alcada and (x.fase = r.fase or x.por = r.por));
+      continue when not exists (select 1 from erp.titulo_alcadas a where a.id = r.alcada
+                                  and (a.paralelo or r.fase = erp._fase_da_alcada(a)));
+      insert into erp.titulo_aprovacoes (alcada_id, titulo_id, rodada, centro_custo_id, fase, lista, aprovado, justificativa, por, origem, vale_de)
+      select r.alcada, a.titulo_id, a.rodada, a.centro_custo_id, r.fase, r.vaga, true, 'Vale a aprovação na outra alçada do centro', r.por,
+             'outra_alcada', r.de
+        from erp.titulo_alcadas a where a.id = r.alcada;
+      v_n := v_n + 1;
+    end loop;
+    exit when v_n = 0;
+  end loop;
+end $$;
+
+-- Aprovar ou recusar a fase da vez. Recusar exige justificativa e trava o título.
 -- p_revisao: em vez de decidir, pede o ajuste (p_aprovar é ignorado; o motivo vai em p_justificativa).
 -- Recusar cancela o título (e a nota dele) com estorno no livro.
 create function erp.decidir_titulo(p_titulo uuid, p_aprovar boolean, p_justificativa text default null,
-                                   p_revisao boolean default false, p_centro uuid default null)
+                                   p_revisao boolean default false, p_centro uuid default null,
+                                   p_divisao uuid default null)
 returns text language plpgsql as $$
-declare a erp.titulo_alcadas; v_etapa int; v_lista text; v_eu uuid := erp.eu(); v_master boolean := erp.sou_master();
+declare a erp.titulo_alcadas; v_fase int; v_lista text; v_eu uuid := erp.eu(); v_master boolean := erp.sou_master();
         v_proprio boolean; v_autor boolean; v_rodada int;
 begin
   perform erp.exigir_editor();
@@ -1912,95 +2067,101 @@ begin
   end if;
   if erp.alcada_recusada(p_titulo) then raise exception 'O título foi recusado na alçada'; end if;
   if erp.em_revisao(p_titulo) then raise exception 'O título está em revisão; aguarde o ajuste de quem lançou'; end if;
-  if erp.alcada_etapa(p_titulo) is null then raise exception 'O título já foi aprovado em todas as etapas'; end if;
-  -- o centro: o pedido, senão o primeiro que falta aprovar em que a pessoa tem a vaga da vez (em
-  -- paralelo, qualquer vaga pendente) e ainda não aprovou; senão o primeiro que falta aprovar
+  if erp.alcada_fase(p_titulo) is null then raise exception 'O título já foi aprovado em todas as fases de aprovação'; end if;
+  -- a alçada (centro ou divisão): a pedida, senão a primeira que falta aprovar em que a pessoa
+  -- tem a vaga da vez (em paralelo, qualquer vaga pendente) e ainda não aprovou; senão a
+  -- primeira que falta aprovar
   if p_centro is not null then
-    select * into a from erp.titulo_alcadas where titulo_id = p_titulo and rodada = v_rodada and centro_custo_id = p_centro;
-    if a.titulo_id is null then raise exception 'Este centro não está na alçada do título'; end if;
-    if erp._etapa_do_centro(a) is null then raise exception 'Este centro já aprovou o título'; end if;
+    select * into a from erp.titulo_alcadas where titulo_id = p_titulo and rodada = v_rodada and centro_custo_id = p_centro
+                                              and divisao_id is not distinct from p_divisao;
+    if a.titulo_id is null then
+      if p_divisao is null then raise exception 'Este centro não está na alçada do título'; end if;
+      raise exception 'Esta divisão não tem alçada própria neste título';
+    end if;
+    if erp._fase_da_alcada(a) is null then
+      if p_divisao is null then raise exception 'Este centro já aprovou o título'; end if;
+      raise exception 'Esta divisão já aprovou o título';
+    end if;
+  elsif p_divisao is not null then
+    raise exception 'Diga o centro de custo da divisão';
   else
     select a0.* into a from erp.titulo_alcadas a0
-     where a0.titulo_id = p_titulo and a0.rodada = v_rodada and erp._etapa_do_centro(a0) is not null
-     order by (not v_master and not exists (select 1 from erp.titulo_aprovacoes v where v.titulo_id = a0.titulo_id and v.rodada = a0.rodada
-                                             and v.centro_custo_id = a0.centro_custo_id and v.por = v_eu)
-                and exists (select 1 from generate_subscripts(a0.etapas, 1) i
-                             where (a0.paralelo or i = erp._etapa_do_centro(a0))
-                               and erp._ocupa_vaga(a0.etapas[i], a0.centro_custo_id, v_eu)
-                               and not exists (select 1 from erp.titulo_aprovacoes v where v.titulo_id = a0.titulo_id and v.rodada = a0.rodada
-                                                and v.centro_custo_id = a0.centro_custo_id and v.etapa = i and v.aprovado))) desc,
-              -- sem a vez em nenhum: o centro em que a pessoa já aprovou (a recusa diz isso), depois o primeiro
-              exists (select 1 from erp.titulo_aprovacoes v where v.titulo_id = a0.titulo_id and v.rodada = a0.rodada
-                       and v.centro_custo_id = a0.centro_custo_id and v.por = v_eu) desc,
-              a0.centro_custo_id
+     where a0.titulo_id = p_titulo and a0.rodada = v_rodada and erp._fase_da_alcada(a0) is not null
+     order by (not v_master and not exists (select 1 from erp.titulo_aprovacoes v where v.alcada_id = a0.id and v.por = v_eu)
+                and exists (select 1 from generate_subscripts(a0.fases, 1) i
+                             where (a0.paralelo or i = erp._fase_da_alcada(a0))
+                               and erp._ocupa_vaga(a0.fases[i], a0.centro_custo_id, v_eu)
+                               and not exists (select 1 from erp.titulo_aprovacoes v where v.alcada_id = a0.id and v.fase = i and v.aprovado))) desc,
+              -- sem a vez em nenhuma: a alçada em que a pessoa já aprovou (a recusa diz isso), depois a primeira
+              exists (select 1 from erp.titulo_aprovacoes v where v.alcada_id = a0.id and v.por = v_eu) desc,
+              a0.centro_custo_id, a0.divisao_id nulls first
      limit 1;
   end if;
   -- em sequência, a vaga da vez; em paralelo, a primeira vaga pendente que a pessoa ocupa
-  v_etapa := erp._etapa_do_centro(a);
+  v_fase := erp._fase_da_alcada(a);
   if a.paralelo and not v_master then
-    v_etapa := coalesce((select min(i) from generate_subscripts(a.etapas, 1) i
-                          where erp._ocupa_vaga(a.etapas[i], a.centro_custo_id, v_eu)
-                            and not exists (select 1 from erp.titulo_aprovacoes v where v.titulo_id = p_titulo and v.rodada = a.rodada
-                                             and v.centro_custo_id = a.centro_custo_id and v.etapa = i and v.aprovado)), v_etapa);
+    v_fase := coalesce((select min(i) from generate_subscripts(a.fases, 1) i
+                          where erp._ocupa_vaga(a.fases[i], a.centro_custo_id, v_eu)
+                            and not exists (select 1 from erp.titulo_aprovacoes v where v.alcada_id = a.id and v.fase = i and v.aprovado)), v_fase);
   end if;
-  v_lista := a.etapas[v_etapa];
-  -- quem lançou não aprova, salvo o master e a AD autorizada (na etapa da AD)
+  v_lista := a.fases[v_fase];
+  -- quem lançou não aprova, salvo o master e a AD autorizada (na fase da AD)
   v_proprio := v_master or (v_lista = 'AD' and erp.aprova_proprio(array['AD']));
   v_autor := erp.autor_lancamento('titulo', p_titulo) = v_eu
              or exists (select 1 from erp.cadeia_titulo(p_titulo) c(id) where erp.autor_lancamento('titulo', c.id) = v_eu);
   if coalesce(v_autor, false) and not v_proprio then raise exception 'Quem lançou não aprova o próprio lançamento'; end if;
   -- na nota relançada, quem lançou qualquer título da cadeia também não (S-075); e quem ajustou
   -- ou reenviou em alguma revisão da cadeia não aprova (S-071; quem ajusta já aprova a própria
-  -- etapa no reenvio)
+  -- fase no reenvio)
   if not v_master and (exists (select 1 from erp.titulo_revisoes r where r.titulo_id in (select erp.cadeia_titulo(p_titulo)) and r.reenviada_por = v_eu)
      or exists (select 1 from erp.titulo_ajustes j where j.titulo_id in (select erp.cadeia_titulo(p_titulo)) and j.por = v_eu)) then
     raise exception 'Quem ajustou não aprova o ajuste';
   end if;
-  -- uma etapa por pessoa em cada centro; quem tem vaga em dois centros aprova nos dois
-  if not v_master and exists (select 1 from erp.titulo_aprovacoes where titulo_id = p_titulo and rodada = a.rodada
-                                 and centro_custo_id = a.centro_custo_id and por = v_eu) then
-    raise exception 'Você já aprovou uma etapa deste título';
+  -- uma fase por pessoa em cada alçada; quem tem vaga em dois centros aprova nos dois; na divisão
+  -- e no centro, a aprovação vale pelas duas (_aprovacao_vale_nas_duas)
+  if not v_master and exists (select 1 from erp.titulo_aprovacoes where alcada_id = a.id and por = v_eu) then
+    raise exception 'Você já aprovou uma fase de aprovação deste título';
   end if;
-  -- o master decide qualquer etapa; aprovando, a decisão dele vale por todas as que faltam, em
-  -- todos os centros (Moises, 14/11/2026). Quem lançou ou ajustou continua não aprovando, nem o master.
+  -- o master decide qualquer fase; aprovando, a decisão dele vale por todas as que faltam, em
+  -- todas as alçadas (Moises, 14/11/2026). Quem lançou ou ajustou continua não aprovando, nem o master.
   if v_master then
     null;
   elsif v_lista = 'AREA' then
     if not exists (select 1 from erp.centro_aprovadores c join erp.usuarios u on u.id = c.user_id
                     where c.centro_custo_id = a.centro_custo_id and c.user_id = v_eu and u.ativo) then
-      raise exception 'Esta etapa é do gestor da área';
+      raise exception 'Esta fase de aprovação é do gestor da área';
     end if;
   elsif v_lista = 'DIRETOR_AREA' then
-    if not erp._ocupa_vaga(v_lista, a.centro_custo_id, v_eu) then raise exception 'Esta etapa é do diretor da área'; end if;
+    if not erp._ocupa_vaga(v_lista, a.centro_custo_id, v_eu) then raise exception 'Esta fase de aprovação é do diretor da área'; end if;
   elsif v_lista like 'P:%' then
-    if not erp._ocupa_vaga(v_lista, a.centro_custo_id, v_eu) then raise exception 'Esta etapa é de outra pessoa'; end if;
+    if not erp._ocupa_vaga(v_lista, a.centro_custo_id, v_eu) then raise exception 'Esta fase de aprovação é de outra pessoa'; end if;
   elsif not erp.estou_nas_listas(array[v_lista]) then
-    raise exception 'Esta etapa é de quem está em %', v_lista;
+    raise exception 'Esta fase de aprovação é de quem está em %', v_lista;
   end if;
   if p_revisao then
     if length(trim(coalesce(p_justificativa, ''))) = 0 then raise exception 'Pedir revisão exige o motivo'; end if;
-    insert into erp.titulo_revisoes (titulo_id, rodada, centro_custo_id, etapa, motivo, pedida_por)
-    values (p_titulo, a.rodada, a.centro_custo_id, v_etapa, p_justificativa, v_eu);
+    insert into erp.titulo_revisoes (titulo_id, rodada, centro_custo_id, alcada_id, fase, motivo, pedida_por)
+    values (p_titulo, a.rodada, a.centro_custo_id, a.id, v_fase, p_justificativa, v_eu);
     return 'revisao';
   end if;
   if not p_aprovar and length(trim(coalesce(p_justificativa, ''))) = 0 then
     raise exception 'Recusar exige justificativa';
   end if;
   if v_master and p_aprovar then
-    insert into erp.titulo_aprovacoes (titulo_id, rodada, centro_custo_id, etapa, lista, aprovado, justificativa, por, proprio)
-    select p_titulo, a2.rodada, a2.centro_custo_id, i, a2.etapas[i], true, p_justificativa, v_eu, coalesce(v_autor, false)
-      from erp.titulo_alcadas a2, generate_subscripts(a2.etapas, 1) i
+    insert into erp.titulo_aprovacoes (alcada_id, titulo_id, rodada, centro_custo_id, fase, lista, aprovado, justificativa, por, proprio)
+    select a2.id, p_titulo, a2.rodada, a2.centro_custo_id, i, a2.fases[i], true, p_justificativa, v_eu, coalesce(v_autor, false)
+      from erp.titulo_alcadas a2, generate_subscripts(a2.fases, 1) i
      where a2.titulo_id = p_titulo and a2.rodada = v_rodada
-       and not exists (select 1 from erp.titulo_aprovacoes v where v.titulo_id = p_titulo and v.rodada = a2.rodada
-                        and v.centro_custo_id = a2.centro_custo_id and v.etapa = i);
+       and not exists (select 1 from erp.titulo_aprovacoes v where v.alcada_id = a2.id and v.fase = i);
     return 'aprovado';
   end if;
-  insert into erp.titulo_aprovacoes (titulo_id, rodada, centro_custo_id, etapa, lista, aprovado, justificativa, por, proprio)
-  values (p_titulo, a.rodada, a.centro_custo_id, v_etapa, v_lista, p_aprovar, p_justificativa, v_eu, coalesce(v_autor, false));
+  insert into erp.titulo_aprovacoes (alcada_id, titulo_id, rodada, centro_custo_id, fase, lista, aprovado, justificativa, por, proprio)
+  values (a.id, p_titulo, a.rodada, a.centro_custo_id, v_fase, v_lista, p_aprovar, p_justificativa, v_eu, coalesce(v_autor, false));
   if not p_aprovar then
     perform erp._cancelar_recusado(p_titulo);
     return 'recusado';
   end if;
+  perform erp._aprovacao_vale_nas_duas(p_titulo);
   return case when erp.alcada_pendente(p_titulo) is null then 'aprovado' else 'pendente' end;
 end $$;
 
@@ -2097,18 +2258,18 @@ begin
   return t.id;
 end $$;
 
--- Quem ajustou ou reenviou na revisão já aprova a própria etapa na volta nova (decisões do Moises,
--- 14/11): a gestora da área, a etapa da área; o AF, a etapa do AF. As outras etapas seguem a ordem.
--- Cada pessoa cobre uma etapa só, e quem lançou algum título da cadeia nunca aprova.
+-- Quem ajustou ou reenviou na revisão já aprova a própria fase na volta nova (decisões do Moises,
+-- 14/11): a gestora da área, a fase da área; o AF, a fase do AF. As outras fases seguem a ordem.
+-- Cada pessoa cobre uma fase só, e quem lançou algum título da cadeia nunca aprova.
 create function erp._aprovar_pelo_ajuste(p_titulo uuid, p_revisao uuid) returns void language plpgsql as $$
 declare a erp.titulo_alcadas; i int; v_quem uuid; v_usados uuid[];
 begin
-  -- em cada centro do título; quem tem a vaga em dois centros aprova nos dois
+  -- em cada alçada do título (centro ou divisão); quem tem a vaga em duas aprova nas duas
   for a in select a0.* from erp.titulo_alcadas a0 join erp.titulos t0 on t0.id = a0.titulo_id and t0.rodada = a0.rodada
-            where a0.titulo_id = p_titulo order by a0.centro_custo_id loop
+            where a0.titulo_id = p_titulo order by a0.centro_custo_id, a0.divisao_id nulls first loop
     v_usados := '{}';
-    for i in select generate_subscripts(a.etapas, 1) loop
-      continue when a.etapas[i] not in ('AREA','AF');
+    for i in select generate_subscripts(a.fases, 1) loop
+      continue when a.fases[i] not in ('AREA','AF');
       select q.por into v_quem from (
           select reenviada_por as por, reenviada_em as em from erp.titulo_revisoes where id = p_revisao
           union all select por, em from erp.titulo_ajustes where revisao_id = p_revisao) q
@@ -2118,13 +2279,13 @@ begin
          -- da nota têm como autor técnico quem reenviou
          and q.por is distinct from (select erp.autor_lancamento('titulo', c.id) from erp.cadeia_titulo(p_titulo) c(id)
                                       join erp.titulos t on t.id = c.id where t.substitui_id is null)
-         and case a.etapas[i]
+         and case a.fases[i]
                when 'AREA' then exists (select 1 from erp.centro_aprovadores c where c.user_id = q.por and c.centro_custo_id = a.centro_custo_id)
                else exists (select 1 from erp.listas_financeiro l where l.user_id = q.por and l.lista = 'AF') end
        order by q.em limit 1;
       continue when v_quem is null;
-      insert into erp.titulo_aprovacoes (titulo_id, rodada, centro_custo_id, etapa, lista, aprovado, justificativa, por, origem)
-      values (p_titulo, a.rodada, a.centro_custo_id, i, a.etapas[i], true, 'Aprovado pelo ajuste na revisão', v_quem, 'ajuste');
+      insert into erp.titulo_aprovacoes (alcada_id, titulo_id, rodada, centro_custo_id, fase, lista, aprovado, justificativa, por, origem)
+      values (a.id, p_titulo, a.rodada, a.centro_custo_id, i, a.fases[i], true, 'Aprovado pelo ajuste na revisão', v_quem, 'ajuste');
       v_usados := v_usados || v_quem;
     end loop;
   end loop;
@@ -2139,6 +2300,17 @@ create function erp.autor_lancamento(p_tipo text, p_id uuid) returns uuid langua
                      when 'documento' then (select criado_por from erp.documentos_fiscais where id = p_id) end $$;
 create function erp.abatimento_aprovado(p_pagamento uuid, p_titulo uuid) returns boolean language sql stable as $$
   select exists (select 1 from erp.abatimentos_cruzados where pagamento_id = p_pagamento and titulo_id = p_titulo) $$;
+-- O título está todo no núcleo e no centro do pagamento (com alguma linha em outra divisão) e quem
+-- aprova é gestor do centro (Moises, 15/11/2026: o gestor geral do centro aprova abater em outra
+-- divisão dele; S-103: com linha em outro centro, só o financeiro).
+create function erp.gestor_abate_divisao(p_pagamento uuid, p_titulo uuid) returns boolean language sql stable as $$
+  select exists (select 1 from erp.pagamentos g
+                   join erp.centro_aprovadores c on c.centro_custo_id = g.centro_custo_id and c.user_id = erp.eu()
+                  where g.id = p_pagamento and g.centro_custo_id is not null
+                    and exists (select 1 from erp.titulo_rateios tr where tr.titulo_id = p_titulo)
+                    and not exists (select 1 from erp.titulo_rateios tr where tr.titulo_id = p_titulo
+                                     and not (tr.nucleo_economico_id is not distinct from g.nucleo_economico_id
+                                              and tr.centro_custo_id = g.centro_custo_id))) $$;
 -- Há adiantamento mais antigo do mesmo fornecedor, na mesma empresa, com saldo, sem liberação do
 -- título feita depois dele?
 create function erp.adiantamento_anterior_em_aberto(p_pagamento uuid, p_titulo uuid) returns boolean language sql stable as $$
@@ -2149,17 +2321,19 @@ create function erp.adiantamento_anterior_em_aberto(p_pagamento uuid, p_titulo u
                                    where l.titulo_id = p_titulo and l.aprovado_em >= g2.criado_em)) $$;
 
 create function erp.tg_aprovacao_adiantamento() returns trigger language plpgsql as $$
-declare v_listas text[]; v_lancou uuid;
+declare v_listas text[]; v_lancou uuid; v_gestor boolean := false;
 begin
   if tg_op <> 'INSERT' then raise exception 'Aprovação não se altera nem se apaga'; end if;
   if tg_table_name = 'abatimentos_cruzados' then
     v_listas := (erp.regra_adiantamento_atual()).aprova_cruzado;
     v_lancou := erp.autor_lancamento('pagamento', new.pagamento_id);
+    v_gestor := erp.gestor_abate_divisao(new.pagamento_id, new.titulo_id);
   else
     v_listas := (erp.regra_adiantamento_atual()).libera_sem_abater;
     v_lancou := erp.autor_lancamento('titulo', new.titulo_id);
   end if;
-  if not erp.estou_nas_listas(v_listas) and not erp.sou_master() then      -- o master sempre aprova
+  if not erp.estou_nas_listas(v_listas) and not erp.sou_master()           -- o master sempre aprova
+     and not v_gestor then
     raise exception 'Só quem está em % aprova isto', array_to_string(v_listas, ', ');
   end if;
   if v_lancou is not null and v_lancou = erp.eu() and not erp.aprova_proprio(v_listas) then
@@ -2184,7 +2358,7 @@ create trigger t_sem_truncate before truncate on erp.titulo_ajustes
 
 create function erp.tg_quitacao() returns trigger language plpgsql as $$
 declare g erp.pagamentos; pa erp.parcelas; t erp.titulos; r record; v_total numeric;
-        v_nucleo uuid; v_fase uuid; v_dep uuid; v_comp date;
+        v_nucleo uuid; v_etapa uuid; v_dep uuid; v_div uuid; v_comp date;
 begin
   select * into g from erp.pagamentos where id = new.pagamento_id for update;
   select * into pa from erp.parcelas where id = new.parcela_id for update;
@@ -2201,10 +2375,20 @@ begin
   end if;
   if (erp.regra_adiantamento_atual()).trava then
     -- adiantamento só abate título do mesmo núcleo e centro do carimbo; em outro, só aprovado
+    -- S-103 (Moises, 15/11/2026): sem aprovação, só abate o título que está inteiro no carimbo;
+    -- com uma linha fora dele, o título todo pede a aprovação
     if g.nucleo_economico_id is not null
-       and not exists (select 1 from erp.titulo_rateios tr where tr.titulo_id = t.id
-                       and tr.nucleo_economico_id = g.nucleo_economico_id and tr.centro_custo_id is not distinct from g.centro_custo_id)
+       and exists (select 1 from erp.titulo_rateios tr where tr.titulo_id = t.id
+                    and not (tr.nucleo_economico_id is not distinct from g.nucleo_economico_id
+                             and tr.centro_custo_id is not distinct from g.centro_custo_id
+                             and tr.divisao_id is not distinct from g.divisao_id))
        and not erp.abatimento_aprovado(g.id, t.id) then
+      if not exists (select 1 from erp.titulo_rateios tr where tr.titulo_id = t.id
+                      and not (tr.nucleo_economico_id is not distinct from g.nucleo_economico_id
+                               and tr.centro_custo_id is not distinct from g.centro_custo_id)) then
+        raise exception 'Este pagamento é de outra divisão do mesmo centro; abater aqui precisa de aprovação do gestor do centro ou de %',
+          array_to_string((erp.regra_adiantamento_atual()).aprova_cruzado, ', ');
+      end if;
       raise exception 'Este pagamento é de outro núcleo ou centro de custo; abater aqui precisa de aprovação de %',
         array_to_string((erp.regra_adiantamento_atual()).aprova_cruzado, ', ');
     end if;
@@ -2225,32 +2409,32 @@ begin
   v_comp := erp.mes(g.data);
 
   -- sai de Adiantamentos
-  insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_caixa, valor,
+  insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, competencia, data_caixa, valor,
                                pagamento_id, quitacao_id, titulo_id, parcela_id)
-  values ('realizado', t.empresa_id, g.nucleo_economico_id, g.centro_custo_id, erp.natureza_sistema('adiantamentos'), v_comp, g.data, v_total,
+  values ('realizado', t.empresa_id, g.nucleo_economico_id, g.centro_custo_id, g.divisao_id, erp.natureza_sistema('adiantamentos'), v_comp, g.data, v_total,
           g.id, new.id, t.id, pa.id);
   -- principal: realizado na natureza do título e estorno do comprometido
   for r in select * from erp.ratear('titulo', t.id, new.principal) loop
-    insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, fase_id, centro_custo_id,
+    insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id,
                                     competencia, data_caixa, valor, titulo_id, parcela_id, quitacao_id, pagamento_id)
-    values ('realizado', t.empresa_id, r.nucleo_economico_id, r.natureza_id, r.fase_id, r.centro_custo_id,
+    values ('realizado', t.empresa_id, r.nucleo_economico_id, r.natureza_id, r.etapa_id, r.centro_custo_id, r.divisao_id,
             t.competencia, g.data, -r.valor, t.id, pa.id, new.id, g.id),
-           ('comprometido', t.empresa_id, r.nucleo_economico_id, r.natureza_id, r.fase_id, r.centro_custo_id,
+           ('comprometido', t.empresa_id, r.nucleo_economico_id, r.natureza_id, r.etapa_id, r.centro_custo_id, r.divisao_id,
             t.competencia, pa.vencimento, r.valor, t.id, pa.id, new.id, g.id);
   end loop;
   -- juros, multa e desconto: no centro de maior peso do rateio, competência do pagamento
-  select nucleo_economico_id, fase_id, centro_custo_id into v_nucleo, v_fase, v_dep
+  select nucleo_economico_id, etapa_id, centro_custo_id, divisao_id into v_nucleo, v_etapa, v_dep, v_div
   from erp.titulo_rateios where titulo_id = t.id order by percentual desc, id limit 1;
   if new.juros + new.multa > 0 then
-    insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, fase_id, centro_custo_id,
+    insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id,
                                     competencia, data_caixa, valor, titulo_id, parcela_id, quitacao_id, pagamento_id)
-    values ('realizado', t.empresa_id, v_nucleo, erp.natureza_sistema('juros_multas'), v_fase, v_dep,
+    values ('realizado', t.empresa_id, v_nucleo, erp.natureza_sistema('juros_multas'), v_etapa, v_dep, v_div,
             v_comp, g.data, -(new.juros + new.multa), t.id, pa.id, new.id, g.id);
   end if;
   if new.desconto > 0 then
-    insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, fase_id, centro_custo_id,
+    insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id,
                                     competencia, data_caixa, valor, titulo_id, parcela_id, quitacao_id, pagamento_id)
-    values ('realizado', t.empresa_id, v_nucleo, erp.natureza_sistema('descontos_obtidos'), v_fase, v_dep,
+    values ('realizado', t.empresa_id, v_nucleo, erp.natureza_sistema('descontos_obtidos'), v_etapa, v_dep, v_div,
             v_comp, g.data, new.desconto, t.id, pa.id, new.id, g.id);
   end if;
   -- título sem saldo vira quitado
@@ -2268,7 +2452,7 @@ create trigger t_imutavel before update or delete on erp.quitacoes
 create function erp.pagar_parcela(p_parcela uuid, p_conta uuid, p_data date,
   p_juros numeric default 0, p_multa numeric default 0, p_desconto numeric default 0, p_lote uuid default null)
 returns uuid language plpgsql as $$
-declare t erp.titulos; v_saldo numeric; v_pag uuid; v_nucleo uuid; v_centro uuid;
+declare t erp.titulos; v_saldo numeric; v_pag uuid; v_nucleo uuid; v_centro uuid; v_div uuid;
 begin
   perform erp.exigir_editor();
   -- S-091 (Moises, 15/11/2026): pagamento só pelo sistema (o adaptador do Sienge) e pelo financeiro
@@ -2278,11 +2462,11 @@ begin
   select t2.* into t from erp.titulos t2 join erp.parcelas p on p.titulo_id = t2.id where p.id = p_parcela;
   v_saldo := erp.parcela_saldo(p_parcela);
   if t.id is null or v_saldo is null then raise exception 'Parcela não encontrada'; end if;
-  -- carimbo: o núcleo e o centro de maior peso no rateio do título
-  select nucleo_economico_id, centro_custo_id into v_nucleo, v_centro
+  -- carimbo: o núcleo, o centro e a divisão da linha de maior peso no rateio do título
+  select nucleo_economico_id, centro_custo_id, divisao_id into v_nucleo, v_centro, v_div
   from erp.titulo_rateios where titulo_id = t.id order by percentual desc, id limit 1;
-  insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, lote_id, data, valor)
-  values (t.empresa_id, p_conta, t.pessoa_id, v_nucleo, v_centro, p_lote, p_data, v_saldo + p_juros + p_multa - p_desconto)
+  insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, divisao_id, lote_id, data, valor)
+  values (t.empresa_id, p_conta, t.pessoa_id, v_nucleo, v_centro, v_div, p_lote, p_data, v_saldo + p_juros + p_multa - p_desconto)
   returning id into v_pag;
   insert into erp.quitacoes (pagamento_id, parcela_id, principal, juros, multa, desconto)
   values (v_pag, p_parcela, v_saldo, p_juros, p_multa, p_desconto);
@@ -2325,9 +2509,9 @@ begin
   end if;
   v_sinal := case new.tipo when 'retencao' then -1 else 1 end;
   for r in select * from erp.ratear('compromisso', c.id, new.valor) loop
-    insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, fase_id, centro_custo_id,
+    insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, etapa_id, centro_custo_id, divisao_id,
                                     competencia, data_caixa, valor, caucao_movimento_id)
-    values ('comprometido', c.empresa_id, r.nucleo_economico_id, r.natureza_id, r.fase_id, r.centro_custo_id,
+    values ('comprometido', c.empresa_id, r.nucleo_economico_id, r.natureza_id, r.etapa_id, r.centro_custo_id, r.divisao_id,
             erp.mes(new.em::date), null, v_sinal * r.valor, new.id);
   end loop;
   return new;
@@ -2424,25 +2608,26 @@ left join (select parcela_id, sum(principal) as pago from erp.quitacoes group by
 where t.situacao <> 'rascunho';
 
 -- Acompanhamento da alçada do título por centro de custo (Moises, 15/11/2026): para quem lançou
--- e quem aprova, cada centro com a situação, o valor no centro e as vagas que faltam aprovar; o
--- título está aprovado quando todos os centros estão aprovados. Só a volta atual.
+-- e quem aprova, cada centro (e cada divisão com alçada própria) com a situação, o valor nele e
+-- as vagas que faltam aprovar; o título está aprovado quando todas estão aprovadas. Só a volta atual.
 create view erp.v_titulo_alcadas with (security_invoker = true) as
-select a.titulo_id, a.rodada, a.centro_custo_id, c.nome as centro, a.valor_no_centro, a.acumulado, a.etapas, a.paralelo,
-       case when exists (select 1 from erp.titulo_aprovacoes v where v.titulo_id = a.titulo_id and v.rodada = a.rodada
-                          and v.centro_custo_id = a.centro_custo_id and not v.aprovado) then 'recusado'
+select a.id as alcada_id, a.titulo_id, a.rodada, a.centro_custo_id, c.nome as centro, a.divisao_id, d.nome as divisao,
+       a.valor_no_centro, a.acumulado, a.fases, a.paralelo,
+       case when exists (select 1 from erp.titulo_aprovacoes v where v.alcada_id = a.id and not v.aprovado) then 'recusado'
             when cardinality(p.pendentes) = 0 then 'aprovado' else 'pendente' end as situacao,
        p.pendentes as vagas_pendentes,
        a.falta_aprovadores, a.vagas_sem_gente
 from erp.titulo_alcadas a
 join erp.titulos t on t.id = a.titulo_id and t.rodada = a.rodada
 join erp.centros_custo c on c.id = a.centro_custo_id
+left join erp.divisoes d on d.id = a.divisao_id
 cross join lateral (
-  select coalesce(array_agg(a.etapas[i] order by i), '{}') as pendentes from generate_subscripts(a.etapas, 1) i
-   where not exists (select 1 from erp.titulo_aprovacoes v where v.titulo_id = a.titulo_id and v.rodada = a.rodada
-                      and v.centro_custo_id = a.centro_custo_id and v.etapa = i and v.aprovado)) p;
+  select coalesce(array_agg(a.fases[i] order by i), '{}') as pendentes from generate_subscripts(a.fases, 1) i
+   where not exists (select 1 from erp.titulo_aprovacoes v where v.alcada_id = a.id and v.fase = i and v.aprovado)) p;
 
 create view erp.v_adiantamentos with (security_invoker = true) as
 select g.id as pagamento_id, g.empresa_id, g.pessoa_id, g.compromisso_id, g.data, g.valor,
+       g.nucleo_economico_id, g.centro_custo_id, g.divisao_id,
        erp.pagamento_saldo(g.id) as saldo
 from erp.pagamentos g where erp.pagamento_saldo(g.id) > 0;
 
@@ -2483,7 +2668,7 @@ select l.id, l.estagio, ov.tipo as orcamento_tipo, ov.nome as orcamento_versao,
        em.codigo as empreendimento_codigo, em.nome as empreendimento, em.municipio, em.uf,
        vn.caminho as natureza, vn.nivel1, vn.nivel2, vn.nivel3, vn.nivel4,
        vn.tipo as natureza_tipo, ld.nome as linha_dre, vn.linha_dfc,
-       f.nome as fase,
+       f.nome as etapa,
        (select jsonb_object_agg(a.codigo, ea.valor)
           from erp.empreendimento_atributos ea join erp.atributos a on a.id = ea.atributo_id
          where ea.empreendimento_id = em.id
@@ -2498,5 +2683,5 @@ join erp.linhas_dre ld on ld.codigo = vn.linha_dre
 left join erp.orcamento_versoes ov on ov.id = l.orcamento_versao_id
 left join erp.nucleos_economicos ne on ne.id = l.nucleo_economico_id
 left join erp.empreendimentos em on em.id = ne.empreendimento_id
-left join erp.fases f on f.id = l.fase_id
+left join erp.etapas f on f.id = l.etapa_id
 left join erp.centros_custo cc on cc.id = l.centro_custo_id;
