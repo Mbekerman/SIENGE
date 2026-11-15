@@ -194,6 +194,24 @@ create trigger t_sem_truncate before truncate on erp.reclassificacao_itens
 create function erp._peso(p_nivel text) returns int language sql stable as
   $$ select peso from erp.niveis_aprovacao where codigo = p_nivel $$;
 
+-- O destino da reclassificação está liberado em cada centro e divisão das linhas que mudam
+-- (Moises, 15/11/2026): as do livro em _itens e, na natureza inteira, os rateios de contrato e de
+-- nota que também mudam. Roda dentro das funções definer da reclassificação.
+create function erp._reclass_destino_liberado(p_destino uuid, p_origem uuid, p_inteira boolean) returns void language plpgsql as $$
+declare v record;
+begin
+  select x.centro_custo_id, x.divisao_id into v from (
+    select l.centro_custo_id, l.divisao_id from erp.lancamentos l join _itens i on i.lancamento_id = l.id
+    union select centro_custo_id, divisao_id from erp.compromisso_rateios where p_inteira and natureza_id = p_origem
+    union select centro_custo_id, divisao_id from erp.documento_rateios where p_inteira and natureza_id = p_origem) x
+   where not erp.natureza_ligada(x.centro_custo_id, x.divisao_id, p_destino) limit 1;
+  if found then
+    raise exception 'A natureza de destino não está liberada em "%": ligue-a lá ou filtre o pedido',
+      coalesce((select c.nome || ' > ' || d.nome from erp.divisoes d join erp.centros_custo c on c.id = d.centro_custo_id where d.id = v.divisao_id),
+               (select nome from erp.centros_custo where id = v.centro_custo_id));
+  end if;
+end $$;
+
 -- Pede a reclassificação. O filtro escolhe as linhas da natureza de origem (empresa, centro,
 -- competência de/até, estágios ou ids); as linhas do mesmo título ou previsão vão juntas,
 -- para o título não ficar com parte numa natureza e parte noutra.
@@ -244,6 +262,7 @@ begin
                                                and erp.lanco(l.nucleo_economico_id, l.centro_custo_id, p_destino, null, l.divisao_id))) then
     raise exception 'O pedido leva lançamentos fora do seu acesso (núcleo, centro ou natureza); filtre pelo que você lança';
   end if;
+  perform erp._reclass_destino_liberado(p_destino, p_origem, p_filtro = '{}');
 
   select coalesce(max(s), 0) into v_valor from (
     select greatest(coalesce(sum(l.valor) filter (where l.valor > 0), 0), coalesce(-sum(l.valor) filter (where l.valor < 0), 0)) as s
@@ -300,6 +319,11 @@ create function erp._aplicar_reclassificacao(p_id uuid) returns void language pl
 declare r erp.reclassificacoes;
 begin
   select * into r from erp.reclassificacoes where id = p_id;
+  -- a natureza de destino pode ter sido desligada depois do pedido
+  create temp table if not exists _itens (lancamento_id bigint primary key) on commit drop;
+  truncate _itens;
+  insert into _itens select lancamento_id from erp.reclassificacao_itens where reclassificacao_id = r.id;
+  perform erp._reclass_destino_liberado(r.natureza_destino_id, r.natureza_origem_id, r.filtro = '{}');
   -- linhas do livro (só as que ainda estão na origem)
   update erp.lancamentos l set natureza_id = r.natureza_destino_id
     from erp.reclassificacao_itens i

@@ -82,14 +82,14 @@ union all select 'juros_multas', id from erp.naturezas where codigo = '08.01.02'
 union all select 'descontos_obtidos', id from erp.naturezas where codigo = '08.02.02'
 union all select 'entre_socios', id from erp.naturezas where codigo = '11.04';
 
-insert into erp.etapas (nome, ordem) values
-  ('Terreno', 1), ('Aprovação de projetos', 2), ('Incorporação', 3), ('Lançamento', 4),
-  ('Obra', 5), ('Pós-obra', 6), ('Corporativo', 9);
-
 -- Centros de custo (áreas de apropriação), lista raiz única; cada núcleo liga os seus.
 insert into erp.centros_custo (nome) values
   ('Novos negócios'), ('Terreno'), ('Incorporação'), ('Projetos'), ('Obra'), ('Assistência técnica'),
   ('Comercial'), ('Marketing'), ('Financeiro'), ('Administrativo'), ('Jurídico'), ('Diretoria');
+-- Na carga, os centros (ainda sem divisão) nascem com todas as naturezas do último nível
+-- liberadas; o de-para do Sienge e o administrador ajustam depois.
+insert into erp.naturezas_liberadas (centro_custo_id, natureza_id)
+select c.id, n.id from erp.centros_custo c cross join erp.naturezas n where erp.natureza_folha(n.id);
 
 -- Atributos de BI do empreendimento (cidade e UF já são colunas do empreendimento).
 insert into erp.atributos (codigo, nome, tipo) values

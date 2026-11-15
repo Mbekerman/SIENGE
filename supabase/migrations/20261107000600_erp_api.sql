@@ -279,7 +279,10 @@ begin
     ('divisoes', 'erp.membro()', null),                       -- só pelo pedido aprovado (S-101)
     ('nucleos_economicos', 'erp.membro()', 'erp.sou_admin()'),
     ('nucleo_centros', 'erp.membro()', 'erp.sou_admin()'),
-    ('etapas', 'erp.membro()', 'erp.sou_admin()'),
+    -- naturezas liberadas por divisão: o master, o administrador e AF, AO, AD, na hora (Moises, 15/11/2026)
+    ('naturezas_liberadas', 'erp.membro()', 'erp.sou_admin() or erp.financeiro()'),
+    ('modelos_naturezas', 'erp.membro()', 'erp.sou_admin() or erp.financeiro()'),
+    ('modelo_naturezas', 'erp.membro()', 'erp.sou_admin() or erp.financeiro()'),
     ('linhas_dre', 'erp.membro()', 'erp.sou_admin()'),
     ('niveis_aprovacao', 'erp.membro()', 'erp.sou_master()'),
     ('alcadas_pagamento', 'erp.membro()', 'erp.sou_master()'),
@@ -430,7 +433,7 @@ grant execute on function
   erp.previsao_saldo(uuid), erp.parcela_saldo(uuid), erp.pagamento_saldo(uuid),
   -- conferências das travas (chamadas pelos gatilhos invoker)
   erp.regra_adiantamento_atual(), erp.autor_lancamento(text, uuid), erp.abatimento_aprovado(uuid, uuid), erp.gestor_abate_divisao(uuid, uuid),
-  erp.adiantamento_anterior_em_aberto(uuid, uuid), erp.centro_ligado(uuid, uuid),
+  erp.adiantamento_anterior_em_aberto(uuid, uuid), erp.centro_ligado(uuid, uuid), erp.natureza_presa(uuid, uuid, uuid),
   erp.checar_natureza(uuid, uuid, uuid, boolean), erp.checar_centro(uuid, uuid, uuid),
   erp.em_revisao(uuid), erp.pode_ajustar(uuid), erp._ajustavel(uuid), erp._nota_ajustavel(uuid),
   erp._titulo_em_revisao_da_nota(uuid), erp.cadeia_titulo(uuid), erp.conferir_ajuste(uuid, text, jsonb, jsonb),

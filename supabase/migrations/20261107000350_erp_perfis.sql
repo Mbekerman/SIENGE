@@ -759,8 +759,13 @@ begin
   end if;
   if p_tabela = 'divisoes' and p_operacao = 'excluir' then raise exception 'Divisão não se apaga; desative'; end if;
   if p_tabela = 'divisoes' and exists (select 1 from jsonb_object_keys(p_dados) k
-                                        where k not in ('id','nome','ativa') and not (p_operacao = 'incluir' and k = 'centro_custo_id')) then
-    raise exception 'O pedido de divisão só cria (centro e nome), renomeia e desativa';
+                                        where k not in ('id','nome','ativa') and not (p_operacao = 'incluir' and k in ('centro_custo_id','naturezas'))) then
+    raise exception 'O pedido de divisão só cria (centro, nome e naturezas), renomeia e desativa';
+  end if;
+  -- as naturezas liberadas fazem parte da criação da divisão (Moises, 15/11/2026)
+  if p_tabela = 'divisoes' and p_operacao = 'incluir'
+     and (jsonb_typeof(p_dados->'naturezas') is distinct from 'array' or jsonb_array_length(p_dados->'naturezas') = 0) then
+    raise exception 'Diga as naturezas liberadas para lançamento na divisão nova';
   end if;
   if p_tabela = 'usuarios' and exists (select 1 from jsonb_object_keys(p_dados) k where k not in ('id','papel','contador','ativo')) then
     raise exception 'O pedido de usuário só muda o papel e o contador e ativa o usuário novo (login, desativar e marca de sucessor: só o master)';
@@ -888,6 +893,9 @@ begin
     if m.operacao = 'incluir' then
       insert into erp.divisoes (id, centro_custo_id, nome, ativa)
       values ((d->>'id')::uuid, (d->>'centro_custo_id')::uuid, d->>'nome', coalesce((d->>'ativa')::boolean, true));
+      insert into erp.naturezas_liberadas (centro_custo_id, divisao_id, natureza_id)
+      select distinct (d->>'centro_custo_id')::uuid, (d->>'id')::uuid, n::uuid from jsonb_array_elements_text(d->'naturezas') n
+      on conflict do nothing;
     else update erp.divisoes set nome = d->>'nome', ativa = (d->>'ativa')::boolean where id = (d->>'id')::uuid; end if;
   when 'perfil_naturezas' then
     if m.operacao = 'incluir' then insert into erp.perfil_naturezas select * from jsonb_populate_record(null::erp.perfil_naturezas, d);
