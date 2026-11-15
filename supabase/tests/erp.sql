@@ -4352,6 +4352,22 @@ select pg_temp.erro_igual($$insert into erp.quitacoes (pagamento_id, parcela_id,
   select '8a000000-0000-0000-0000-0000000000b1', id, 60 from erp.parcelas where titulo_id = '8a000000-0000-0000-0000-0000000000a7'$$,
   'Este pagamento é de outra divisão do mesmo centro; abater aqui precisa de aprovação do gestor do centro ou de AF, AO, AD',
   'S-103: título metade em outra divisão também pede a aprovação');
+-- S-104: todo no mesmo centro e divisão, mas com uma linha em outro núcleo: pede o financeiro
+select pg_temp.sis();
+insert into erp.nucleos_economicos (id, empresa_id, tipo, nome) values ('40000000-0000-0000-0000-0000000000d1', '20000000-0000-0000-0000-000000000003', 'outro', 'Loja D');
+insert into erp.nucleo_centros (nucleo_economico_id, centro_custo_id, ligado) values ('40000000-0000-0000-0000-0000000000d1', :'cc_mkt', true);
+select pg_temp.volta();
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('8a000000-0000-0000-0000-0000000000a8', '20000000-0000-0000-0000-000000000003', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-09-02', '2026-09-01', 60);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('8a000000-0000-0000-0000-0000000000a8', 1, '2026-09-20', 60);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, percentual) values
+  ('8a000000-0000-0000-0000-0000000000a8', :'ne1', :'cc_mkt', :'dv_pdv', pg_temp.nat('05.01.04'), 99),
+  ('8a000000-0000-0000-0000-0000000000a8', '40000000-0000-0000-0000-0000000000d1', :'cc_mkt', :'dv_pdv', pg_temp.nat('05.01.04'), 1);
+select erp.confirmar_titulo('8a000000-0000-0000-0000-0000000000a8');
+select pg_temp.erro_igual($$insert into erp.quitacoes (pagamento_id, parcela_id, principal)
+  select '8a000000-0000-0000-0000-0000000000b1', id, 60 from erp.parcelas where titulo_id = '8a000000-0000-0000-0000-0000000000a8'$$,
+  'Este pagamento é de outro núcleo ou centro de custo; abater aqui precisa de aprovação de AF, AO, AD',
+  'S-104: com uma linha em outro núcleo, mesmo no mesmo centro, o abatimento pede AF, AO ou AD');
 select pg_temp.sis(); insert into erp.centro_aprovadores values (:'cc_mkt', :'gst'); select pg_temp.volta();
 insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
   ('8a000000-0000-0000-0000-0000000000a5', '20000000-0000-0000-0000-000000000003', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-09-02', '2026-09-01', 40);
@@ -4370,6 +4386,9 @@ select pg_temp.como(:'gst');
 select pg_temp.ok(pg_temp.erro_como_dono($$insert into erp.abatimentos_cruzados (pagamento_id, titulo_id, justificativa)
   values ('8a000000-0000-0000-0000-0000000000b1', '8a000000-0000-0000-0000-0000000000a6', 'x')$$) = 'Só quem está em AF, AO, AD aprova isto',
   'S-103: com linha em outro centro, o gestor do centro não aprova');
+select pg_temp.ok(pg_temp.erro_como_dono($$insert into erp.abatimentos_cruzados (pagamento_id, titulo_id, justificativa)
+  values ('8a000000-0000-0000-0000-0000000000b1', '8a000000-0000-0000-0000-0000000000a8', 'x')$$) = 'Só quem está em AF, AO, AD aprova isto',
+  'S-104: com linha em outro núcleo, o gestor do centro não aprova');
 select pg_temp.ok(pg_temp.erro_como_dono($$insert into erp.abatimentos_cruzados (pagamento_id, titulo_id, justificativa)
   values ('8a000000-0000-0000-0000-0000000000b1', '8a000000-0000-0000-0000-0000000000a7', 'x')$$) is null,
   'S-103: com tudo no centro dele, o gestor aprova');
