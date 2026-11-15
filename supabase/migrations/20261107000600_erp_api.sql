@@ -192,6 +192,9 @@ begin
     -- trava que lê o uso da natureza em todo o livro: por baixo do RLS, senão quem não vê os
     -- lançamentos acharia a natureza sem uso
     'erp.natureza_em_uso(uuid)',
+    -- a classificação lê a empresa do registro pai: por baixo do RLS, senão quem não vê o pai
+    -- recebe "núcleo de outra empresa" no lugar da recusa da política
+    'erp.tg_classificacao()',
     'erp._ve(uuid, uuid, uuid, uuid)', 'erp.membro()', 'erp.sou_admin()', 'erp.escrevo()', 'erp.financeiro()', 'erp.gere_acesso()',
     'erp.vejo(uuid, uuid, uuid, uuid)', 'erp.lanco(uuid, uuid, uuid, uuid)', 'erp.aprovo_titulo(uuid)',
     'erp.vejo_titulo(uuid)', 'erp.lanco_titulo(uuid)', 'erp.vejo_documento(uuid)', 'erp.lanco_documento(uuid)',

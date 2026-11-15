@@ -3433,6 +3433,69 @@ select pg_temp.como(:'u9');
 select pg_temp.ok(not exists (select 1 from erp.pagamentos where id = 'c2000000-0000-0000-0000-0000000000d1')
                   and not exists (select 1 from erp.quitacoes where pagamento_id = 'c2000000-0000-0000-0000-0000000000d1'),
   'acesso: o pagamento que quita título PJ some para quem vê o centro mas não o PJ');
+-- S-093: cada trava das políticas com o seu teste
+select pg_temp.como(:'u7');
+select pg_temp.ok(not erp.vejo(null, null, pg_temp.nat('06.07'), null) and erp.vejo(null, null, pg_temp.nat('05.01.04'), null),
+  'acesso: linha sem núcleo e centro de natureza restrita fica fechada até para o financeiro, sem liberação');
+select pg_temp.como(:'u5');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor)
+values ('c1000000-0000-0000-0000-0000000000f1', :'incorp', 'avulso', '10000000-0000-0000-0000-0000000000c1', '2027-09-05', '2027-09-01', 10);
+select pg_temp.ok(exists (select 1 from erp.titulos where id = 'c1000000-0000-0000-0000-0000000000f1'), 'acesso: quem lançou vê o título ainda sem rateio');
+select pg_temp.sis();
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+values ('c1000000-0000-0000-0000-0000000000f1', :'ne_corp', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select pg_temp.volta();
+select pg_temp.ok(not exists (select 1 from erp.titulos where id = 'c1000000-0000-0000-0000-0000000000f1'),
+  'acesso: com o rateio num centro que ele não vê, quem lançou deixa de ver o título');
+select pg_temp.como(:'u4');
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+values ('c3000000-0000-0000-0000-000000000001', :'incorp', '10000000-0000-0000-0000-0000000000c1', 'nfse', 'V1', '2027-09-05', '2027-09-01', 100);
+select pg_temp.como(:'u9');
+select pg_temp.falha(format($$insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values ('c3000000-0000-0000-0000-000000000001', %L, %L, %L, 100)$$,
+  :'ne_corp', :'cc_mkt', pg_temp.nat('05.01.04')), 'acesso: na nota sem rateio de outra pessoa, fora da revisão, ninguém mais lança');
+select pg_temp.como(:'u4');
+select erp.pedir_reclassificacao(pg_temp.nat('05.01.04'), pg_temp.nat('05.01.02'), 'teste de acesso', jsonb_build_object('de', '2027-09-01', 'ate', '2027-09-01'));
+select pg_temp.sis();
+insert into erp.excecoes_natureza (user_id, natureza_id, centro_custo_id, efeito) values (:'u4', pg_temp.nat('05.01.03'), :'cc_mkt', 'bloquear');
+insert into erp.lotes_bancarios (conta_id) values (:'conta_inc');
+insert into erp.mudancas_acesso (tabela, operacao, dados, motivo, pedida_por, minimo) values ('excecoes_natureza', 'incluir', '{}', 'teste', :'ti', 1);
+insert into erp.orcamento_versoes (id, empresa_id, tipo, nome, data_base) values ('c4000000-0000-0000-0000-000000000001', :'incorp', 'viabilidade', 'V', '2027-09-01');
+select pg_temp.volta();
+select pg_temp.como(:'u1');
+select pg_temp.ok(not exists (select 1 from erp.reclassificacoes) and not exists (select 1 from erp.reclassificacao_itens),
+  'acesso: o pedido de reclassificação de outra pessoa não aparece para quem não pediu, não vota nem é da diretoria');
+select pg_temp.ok(not exists (select 1 from erp.excecoes_natureza), 'acesso: a exceção de natureza de outra pessoa não aparece');
+select pg_temp.ok(not exists (select 1 from erp.mudancas_acesso), 'acesso: o pedido de mudança de acesso não aparece para quem não pediu, não aprova nem ganha com ele');
+select pg_temp.ok(not exists (select 1 from erp.lotes_bancarios), 'acesso: o lote bancário só o financeiro vê');
+select pg_temp.falha(format($$insert into erp.orcamento_linhas (versao_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, valor) values ('c4000000-0000-0000-0000-000000000001', %L, %L, %L, '2027-09-01', -10)$$,
+  :'ne_corp', :'cc_mkt', pg_temp.nat('05.01.04')), 'acesso: quem só lê o centro não lança linha de orçamento');
+select pg_temp.falha(format($$insert into erp.previsoes (empresa_id, origem, pessoa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor) values (%L, 'manual', '10000000-0000-0000-0000-0000000000c1', %L, %L, %L, '2027-09-01', '2027-09-30', 10)$$,
+  :'incorp', :'ne_corp', :'cc_mkt', pg_temp.nat('05.01.04')), 'acesso: quem só lê o centro não lança previsão');
+select pg_temp.como(:'u9');
+insert into erp.orcamento_linhas (versao_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, valor)
+values ('c4000000-0000-0000-0000-000000000001', :'ne_corp', :'cc_mkt', pg_temp.nat('05.01.04'), '2027-09-01', -10);
+insert into erp.previsoes (empresa_id, origem, pessoa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+values (:'incorp', 'manual', '10000000-0000-0000-0000-0000000000c1', :'ne_corp', :'cc_mkt', pg_temp.nat('05.01.04'), '2027-09-01', '2027-09-30', 10);
+select pg_temp.ok(true, 'acesso: quem lança no centro lança orçamento e previsão');
+insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values
+  ('c2000000-0000-0000-0000-0000000000b1', :'incorp', :'conta_inc', '10000000-0000-0000-0000-0000000000c1', :'ne_corp', :'cc_mkt', '2027-10-10', 100);
+select pg_temp.falha(format($$insert into erp.quitacoes (pagamento_id, parcela_id, principal) values ('c2000000-0000-0000-0000-0000000000b1', %L, 100)$$, :'td'),
+  'acesso: o pagamento não quita título que quem paga não vê (PJ)');
+select pg_temp.como(:'u7');
+insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values
+  ('c2000000-0000-0000-0000-0000000000a7', :'incorp', :'conta_inc', '10000000-0000-0000-0000-0000000000c1', :'ne_corp', :'cc_mkt', '2027-10-10', 100);
+select pg_temp.falha(format($$insert into erp.quitacoes (pagamento_id, parcela_id, principal) values ('c2000000-0000-0000-0000-0000000000a7', %L, 100)$$, :'td'),
+  'acesso: nem o financeiro quita título que não vê (PJ)');
+-- papel leitura na AD: a lista não dá o direito de gravar
+select pg_temp.sis(); insert into erp.listas_financeiro (lista, user_id) values ('AD', :'u10'); select pg_temp.volta();
+select pg_temp.como(:'u10');
+select pg_temp.falha(format($$insert into erp.liberacoes_sem_abater (titulo_id, justificativa) values (%L, 'x')$$, :'tb'),
+  'acesso: papel leitura não libera título sem abater, nem estando na AD');
+-- quem lançou o pagamento continua vendo, mesmo sem o perfil
+select pg_temp.sis(); delete from erp.atribuicoes where user_id = :'u9'; select pg_temp.volta();
+select pg_temp.como(:'u9');
+select pg_temp.ok(exists (select 1 from erp.pagamentos where id = 'c2000000-0000-0000-0000-0000000000b1') and pg_temp.vejo_tits() = '',
+  'acesso: sem o perfil, quem lançou o pagamento ainda o vê, e não vê mais os títulos');
 select pg_temp.como(null);
 rollback;
 
