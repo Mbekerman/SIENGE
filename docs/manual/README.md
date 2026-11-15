@@ -64,6 +64,7 @@ Hoje a BKM usa o Sienge para tudo. O ERP BKM é um conjunto de sistemas próprio
 - [⚠️ O que ainda é feito à mão no Sienge](transversais/passos-manuais-no-sienge.md)
 - [Aprovações e alçadas](transversais/aprovacoes.md)
 - [Relatórios e BI](transversais/relatorios-e-bi.md)
+- [Notificações](transversais/notificacoes.md)
 - [Temas pendentes](transversais/temas-pendentes.md)
 
 **Registro**
