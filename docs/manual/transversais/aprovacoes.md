@@ -283,7 +283,10 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 - **O master** muda a lista de aprovadores sozinho; os outros só a mudam com a unanimidade da própria lista. Só o master cria e administra administradores, e só ele define o grupo de sucessão.
 - **Tudo o que o master faz vale na hora**, sem aprovação. Ele escolhe, tipo a tipo, quais mudanças de acesso pedidas pelo administrador precisam de aprovação; todas começam exigindo.
 - **O administrador é o TI e não aprova nada.** Ele não entra na AF, na AO, na AD, como gestor ou diretor da área, nos aprovadores de acesso nem no grupo de sucessão.
-- **Usuários:** o usuário novo nasce como leitura. Papel e contador mudam por pedido aprovado ou pelo master. Login, desativar, apagar e usuário de sucessão: só o master. Ninguém muda o próprio cadastro, nem o master.
+- **Usuários:** o usuário novo **nasce inativo**; o administrador pede a ativação, aprovada conforme o nível do papel (abaixo). Papel e contador mudam por pedido aprovado ou pelo master. Login, desativar, reativar, apagar e usuário de sucessão: só o master. Ninguém muda o próprio cadastro, nem o master (Moises, 14/nov/2026, 21h; antes "nasce como leitura").
+- **AF, AO e AD:** só com a aprovação do master.
+- **Quem aprova cada nível de papel** (o master configura): para leitura, analista, gestor, diretor, contador, gestor da área e diretor da área, o master escolhe entre **Nenhuma** (vale na hora), **Delegado** (basta um dos delegados que ele escolheu), **Lista** (todos os aprovadores de acesso) ou **Master** (só ele). Valores iniciais: leitura e analista no Delegado; gestor, contador e as áreas na Lista; diretor no Master.
+- **O master sempre basta:** um voto dele aprova qualquer pedido de acesso; num título, aprova de uma vez todas as etapas que faltam (exceção à regra de uma etapa por pessoa); numa reclassificação, aprova sozinho. Quem lançou ou pediu não aprova, nem o master.
 
 **Sucessão do master:**
 
