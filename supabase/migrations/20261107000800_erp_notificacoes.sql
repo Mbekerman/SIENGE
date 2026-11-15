@@ -184,20 +184,39 @@ create trigger t_notificacao_guarda before insert or update or delete on erp.env
 -- Distribuição
 -- ---------------------------------------------------------------------------------------------
 -- Vê o evento: o master sempre; evento sem núcleo e sem centro (configuração), todos; com centro
--- ou núcleo, quem vê algum par núcleo × centro dele.
-create function erp._ve_evento(p_user uuid, p_nucleo uuid, p_centro uuid) returns boolean
+-- ou núcleo, quem vê algum par núcleo × centro dele, na divisão do evento (sem divisão, a linha
+-- do centro: quem só tem o PDV não recebe o que é do Marketing inteiro).
+create function erp._ve_evento(p_user uuid, p_nucleo uuid, p_centro uuid, p_divisao uuid default null) returns boolean
 language sql stable as $$
   select exists (select 1 from erp.master where user_id = p_user)
       or (p_nucleo is null and p_centro is null)
       or exists (select 1 from erp.nucleo_centros nc
                   where (p_nucleo is null or nc.nucleo_economico_id = p_nucleo)
                     and (p_centro is null or nc.centro_custo_id = p_centro)
-                    and erp.ve_linha(p_user, nc.nucleo_economico_id, nc.centro_custo_id, null, null)) $$;
+                    and erp.ve_linha(p_user, nc.nucleo_economico_id, nc.centro_custo_id, null, null, p_divisao)) $$;
+
+-- A divisão do evento: a dos dados (o título que foi ao master) ou, na faixa de alçada, a de
+-- depois e a de antes (quem cuida de uma ou da outra fica sabendo da mudança). Só vale a
+-- divisão do centro do evento; a de outro centro é ignorada.
+create function erp._divisoes_evento(p_centro uuid, p_dados jsonb) returns uuid[] language plpgsql stable as $$
+declare v uuid[] := '{}'; k text; d uuid;
+begin
+  if p_centro is null or p_dados is null then return v; end if;
+  foreach k in array array[p_dados->>'divisao_id', p_dados->'depois'->>'divisao_id', p_dados->'antes'->>'divisao_id'] loop
+    begin d := k::uuid; exception when others then d := null; end;
+    if d is not null and not d = any (v)
+       and exists (select 1 from erp.divisoes x where x.id = d and x.centro_custo_id = p_centro) then
+      v := v || d;
+    end if;
+  end loop;
+  return v;
+end $$;
 
 create function erp.tg_distribuir_evento() returns trigger language plpgsql as $$
-declare t erp.tipos_evento; v_detalhe text; v_pediu uuid; r record; v_id bigint;
+declare t erp.tipos_evento; v_detalhe text; v_pediu uuid; r record; v_id bigint; v_div uuid[];
 begin
   select * into t from erp.tipos_evento where codigo = new.tipo;
+  v_div := erp._divisoes_evento(new.centro_id, new.dados);
   begin v_pediu := (new.dados->>'pedida_por')::uuid; exception when others then v_pediu := null; end;
   -- o motivo, sem os dados do evento
   v_detalhe := concat_ws(' · ',
@@ -235,7 +254,8 @@ begin
            bool_or(d.whatsapp) as whatsapp
       from destinos d join erp.usuarios u on u.id = d.user_id and u.ativo and not u.so_sucessao
      where d.user_id is distinct from new.por                -- quem agiu não é avisado do que fez
-       and erp._ve_evento(d.user_id, new.nucleo_id, new.centro_id)
+       and (case when cardinality(v_div) = 0 then erp._ve_evento(d.user_id, new.nucleo_id, new.centro_id)
+                 else exists (select 1 from unnest(v_div) x(div) where erp._ve_evento(d.user_id, new.nucleo_id, new.centro_id, x.div)) end)
      group by d.user_id
   loop
     insert into erp.notificacoes (evento_id, user_id, tipo, critico, titulo, detalhe)
@@ -363,7 +383,7 @@ do $$
 declare t text;
 begin
   foreach t in array array['usuarios','master','tipos_evento','regras_notificacao','preferencias_notificacao',
-                           'listas_financeiro','centro_aprovadores','centro_diretores','aprovadores_config','nucleo_centros'] loop
+                           'listas_financeiro','centro_aprovadores','centro_diretores','aprovadores_config','nucleo_centros','divisoes'] loop
     execute format('grant select on erp.%I to erp_notificacoes', t);
     execute format('create policy notificacoes on erp.%I for select to erp_notificacoes using (erp.agindo_como(''erp_notificacoes''))', t);
   end loop;
@@ -406,8 +426,8 @@ grant select on erp.notificacoes to authenticated;
 revoke execute on all functions in schema erp from public;
 grant execute on all functions in schema erp to erp_sistema, erp_conferencia, erp_situacao, erp_reclassificacao, erp_acesso, erp_config;
 grant execute on function erp.tg_evento_controle() to erp_eventos;
-grant execute on function erp.eu(), erp.login_atual(), erp.agindo_como(text), erp.sistema(), erp._ve_evento(uuid, uuid, uuid),
-  erp.ve_linha(uuid, uuid, uuid, uuid, uuid, uuid)
+grant execute on function erp.eu(), erp.login_atual(), erp.agindo_como(text), erp.sistema(), erp._ve_evento(uuid, uuid, uuid, uuid),
+  erp._divisoes_evento(uuid, jsonb), erp.ve_linha(uuid, uuid, uuid, uuid, uuid, uuid)
   to erp_notificacoes;
 grant execute on function erp.marcar_notificacoes_lidas(bigint[]) to authenticated;
 
