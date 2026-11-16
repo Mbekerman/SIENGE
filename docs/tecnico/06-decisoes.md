@@ -2,6 +2,14 @@
 
 Decisões que mudam a arquitetura ou o código, da mais recente para a mais antiga. Quem decide é o Moises; "proposta" é sugestão ainda não confirmada por ele. Decisões de negócio detalhadas (regras para o usuário) ficam no manual do usuário; aqui só o que o desenvolvedor precisa saber.
 
+## 16/nov/2026
+
+Decisões do Moises, ainda sem código (relatadas pela thread do de-para):
+
+- **Cartas de consórcio** num cadastro próprio: administradora, grupo, cota, crédito, núcleo beneficiado e financiamento.
+- **Empreendimento beneficiado** na divisão e no título, com o modo `gestao` ou `reembolsar` e uma lista de núcleos com %. No modo `reembolsar`, nasce um par de títulos entre empresas: uma conta a pagar na SPE, com a natureza original, e a parte da holding como movimentação. O saldo a reembolsar fica por SPE. A revisar quando houver código: cada título do par tem de passar pela alçada e pelas permissões do próprio núcleo, e quem lança na holding não deve ganhar escrita na SPE por isso.
+- **PDV** num cadastro próprio, com rateio entre SPEs por vigência (% fixo), aplicado sozinho nos títulos. Com o rateio, a aprovação continua separada por centro (S-096).
+
 ## 15/nov/2026
 
 - **Camada `bi` para relatórios e painéis do sistema** (Moises, 15/nov; PR #54, na `develop` em `f8b8071`, 1162 testes): esquema estrela só de leitura sobre o `erp`, com o acesso de quem consulta, calendário único sempre 15 anos à frente e eventos do título com quem e quando. A soma do PJ por centro aparece só a quem tem a natureza PJ liberada (Moises, 15/nov 19h50). Sem metas nem KPIs por ora. Substitui o desenho de 8/nov para o Power BI (S-022 sem efeito).
