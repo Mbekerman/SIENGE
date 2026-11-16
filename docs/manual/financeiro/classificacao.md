@@ -192,7 +192,12 @@ Decidido pelo Moises em 16/nov/2026. "Dedução" quer dizer venda desfeita; "per
   - distrato sem retenção que cubra o valor;
   - baixa aprovada por AF ou AD.
 - ✅ **"Verba de assistência técnica" sai do plano.** Assistência Técnica é centro de custo e usa as naturezas de obra.
-- ⏳ **Ainda em aberto:** o gasto de assistência técnica depois da entrega usa naturezas de obra. Com a obra 100% concluída, ele cai inteiro na DRE do mês em que acontece. Falta decidir entre duas saídas: provisionar a garantia no custo orçado da obra, ou deixar o gasto entrar no mês em que acontece. A pergunta está com o Moises e o contador.
+- ✅ **Provisão para assistência técnica** (Moises, 16/nov/2026), só gerencial, sem dinheiro reservado:
+  - **Natureza:** "Provisão para assistência técnica", no grupo Obra. É custo do empreendimento e entra no POC.
+  - **Cálculo:** todo mês, o sistema provisiona sozinho 2% do custo de obra lançado no mês, em cada empreendimento.
+  - **Uso:** depois da entrega, o gasto de assistência técnica consome o saldo da provisão, e o que passar do saldo vira despesa do mês.
+  - **Reversão:** o saldo que sobrar é revertido 5 anos depois da entrega.
+  - **Configuração:** o percentual e o prazo são configuráveis; 2% e 5 anos são os valores iniciais.
 
 ## Tarefa: criar uma natureza nova
 
