@@ -122,6 +122,25 @@ Hoje o Sienge tem 97 centros de custo, que misturam obra, tipo de gasto e moment
 
 ✅ **Decidido** (7/nov/2026): um gasto que serve a vários núcleos, centros de custo ou naturezas (campanha institucional, aluguel da sede) é dividido em percentuais. Cada parte conta para o seu núcleo e o seu centro de custo.
 
+## Agrupamentos, móveis, consórcio, empreendimento beneficiado e PDV
+
+Decisões do Moises de 16/nov/2026, ainda sem código. O detalhe está no [plano de naturezas](https://claude.ai/artifact/PvD4oxEJHpjEpWJU2b6DFD).
+
+- ✅ **Pessoal, Contas de consumo e Imóveis, móveis, veículos e equipamentos são agrupamentos de naturezas, não centros de custo.** O salário da analista de Marketing é natureza Salários no centro Marketing; assim o custo fica com quem o gerou.
+- ✅ **Móvel tem três naturezas, conforme onde fica:**
+  - **Mobiliário e decoração do PDV**: despesa comercial do empreendimento, fora do POC;
+  - **Mobiliário e decoração das áreas comuns**: Obra, entra no POC;
+  - **Móveis para uso próprio**: investimento (ativo), o que fica com a BKM.
+- ✅ **Consórcio é um centro de custo** da holding (núcleo Corporativo), com tudo dentro: parcelas, venda da carta, intermediação e impostos. A divisão é o empreendimento e o nível abaixo é a carta. Cada carta é cadastrada com administradora, grupo, cota, crédito, empreendimento beneficiado e financiamento da Caixa; a divisão é escolhida uma vez, e as parcelas nascem com ela.
+- ✅ **Empreendimento beneficiado**, em dois modos:
+  - **Só gestão**: o custo fica na empresa que pagou e só aponta o empreendimento (caso do consórcio);
+  - **A reembolsar**: o custo é da SPE. O sistema gera a conta a pagar da SPE para a holding, com a natureza original, e mostra o saldo a reembolsar de cada SPE, com aviso de atraso.
+- ✅ **PDV** é cadastrado com as SPEs que atende e o percentual fixo de cada uma, por vigência. Todo título do PDV se divide sozinho, e pode cair em mais de uma SPE. A natureza "Custo fixo de PDV" deixa de existir.
+
+🟡 A conferir: hoje uma nota não se rateia entre empresas, porque tem um só tomador. Pela leitura do plano, o PDV de várias SPEs funciona pelo modo "a reembolsar": a holding paga e cada SPE devolve a sua parte. Ainda falta confirmar.
+
+⏳ Para o contador: o reembolso pelo custo exato fica fora da receita da holding? Qual o prazo máximo do saldo antes de virar mútuo (com IOF)? Precisa de contrato de compartilhamento de despesas por escrito?
+
 ## Tarefa: criar uma natureza nova
 
 > ⏳ As telas ainda não existem.
