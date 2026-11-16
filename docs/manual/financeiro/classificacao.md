@@ -170,6 +170,30 @@ O procedimento completo, escrito para o financeiro e a contabilidade, está em [
 
 ⏳ Para o contador: o reembolso pelo custo exato fica fora da receita da holding? Qual o prazo máximo do saldo antes de virar mútuo (com IOF)? Precisa de contrato de compartilhamento de despesas por escrito?
 
+### Perdas com clientes e distrato
+
+Decidido pelo Moises em 16/nov/2026. "Dedução" quer dizer venda desfeita; "perda" quer dizer dinheiro que o cliente deve e não vai pagar.
+
+- ✅ **O distrato é dedução da receita**, na natureza "Cancelamento de vendas (distrato)". A venda é desfeita, a receita já reconhecida é estornada e a unidade volta ao estoque.
+- ✅ **Parcela em atraso e despesa paga em nome do cliente** (ITBI, registro, juros de obra) **são despesa**, no grupo "Perdas com clientes", com quatro naturezas:
+  - Provisão de perda: parcelas em atraso;
+  - Provisão de perda: despesas pagas pelo cliente;
+  - Perda efetiva: parcelas;
+  - Perda efetiva: despesas pagas pelo cliente.
+
+  É despesa do período, no núcleo da SPE, fora do POC. Parcela atrasada não reduz a receita, porque a venda continua de pé.
+- ✅ **A provisão é automática** e aparece só na DRE gerencial. Nada vai para o Sienge nem para a contabilidade; se o contador quiser uma provisão contábil, usa os critérios dele.
+  - A base é o valor em atraso, e não o saldo inteiro do contrato.
+  - As faixas começam em 25% acima de 30 dias, 50% acima de 60 e 75% acima de 90.
+  - Uma rotina diária calcula a provisão. O fechamento do mês grava a diferença em relação ao mês anterior, e quando o cliente paga a provisão é revertida.
+- ✅ **As faixas são configuráveis**, com dias e percentuais, e as de parcelas podem ser diferentes das de despesas. A mudança segue a regra das configurações de dinheiro: AF ou AD pede, e o aprovador escolhido pelo master aprova. Vale do mês aberto em diante; mês fechado não é refeito.
+- ✅ **A perda efetiva acontece em três casos:**
+  - atraso acima de N dias, configurável;
+  - distrato sem retenção que cubra o valor;
+  - baixa aprovada por AF ou AD.
+- ✅ **"Verba de assistência técnica" sai do plano.** Assistência Técnica é centro de custo e usa as naturezas de obra.
+- ⏳ **Ainda em aberto:** o gasto de assistência técnica depois da entrega usa naturezas de obra. Com a obra 100% concluída, ele cai inteiro na DRE do mês em que acontece. Falta decidir entre duas saídas: provisionar a garantia no custo orçado da obra, ou deixar o gasto entrar no mês em que acontece. A pergunta está com o Moises e o contador.
+
 ## Tarefa: criar uma natureza nova
 
 > ⏳ As telas ainda não existem.
