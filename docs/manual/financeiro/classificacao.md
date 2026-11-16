@@ -143,7 +143,7 @@ Decisões do Moises de 16/nov/2026, ainda sem código. O detalhe está no [plano
 - ✅ **Empreendimento beneficiado**, em dois modos:
   - **Só gestão**: o custo fica na empresa que pagou e só aponta o empreendimento (caso do consórcio);
   - **A reembolsar**: o custo é da SPE. O sistema gera a conta a pagar da SPE para a holding, com a natureza original, e mostra o saldo a reembolsar de cada SPE, com aviso de atraso.
-- ✅ **PDV** é cadastrado com as SPEs que atende e o percentual fixo de cada uma, por vigência. Todo título do PDV se divide sozinho, e pode cair em mais de uma SPE. A natureza "Custo fixo de PDV" deixa de existir.
+- ✅ **PDV** é cadastrado com as SPEs que atende e o percentual fixo de cada uma, por vigência. Todo título do PDV se divide sozinho, e pode cair em mais de uma SPE. A natureza "Custo fixo de PDV" deixa de existir. Se a SPE alugar o PDV no nome dela, cada conta usa o centro PDV com a natureza normal: aluguel, condomínio, energia... O custo fixo do PDV sai de um filtro desse centro, com a abertura por conta. O histórico da conta 2010503 do Sienge vai para "Repasse de custo do PDV entre empresas", que serve só para o histórico.
 
 ### Despesa paga por uma empresa do grupo em nome de outra
 
@@ -169,6 +169,20 @@ O procedimento completo, escrito para o financeiro e a contabilidade, está em [
   - os valores iniciais de R$ 1.000 por item e R$ 3.000 por colaborador no mês.
 
 ⏳ Para o contador: o reembolso pelo custo exato fica fora da receita da holding? Qual o prazo máximo do saldo antes de virar mútuo (com IOF)? Precisa de contrato de compartilhamento de despesas por escrito?
+
+### Comissão, seguros, permuta, viagens e despachante
+
+Decidido pelo Moises em 16/nov/2026.
+
+- ✅ **Comissão de vendas é uma natureza só.** Todo título dela tem o campo obrigatório **Etapa da comissão**, com duas opções: Antecipação ou Saldo (pago após o registro). O título fica ligado à unidade ou ao contrato de venda, e isso permite duas coisas:
+  - no distrato, o sistema mostra quanto de antecipação ficou exposto;
+  - se alguém lança saldo de uma unidade ainda sem registro, o sistema avisa.
+- ✅ **Histórico da comissão no Sienge:** a conta 2010504 vira Antecipação e a 2010505 vira Saldo. A 2010203 (R$ 1,8 milhão no último ano) vira "Não informada", porque o Sienge não diz a etapa. Essa opção só existe para o histórico; um lançamento novo não a aceita.
+- ✅ **Seguros e garantias é um grupo de naturezas.** Ele tem as garantias do terrenista, a confissão de dívida, os três seguros que a Caixa exige (término de obra, risco de engenharia e garantia pós-obra) e as garantias que o investidor exige. Cada lançamento vai para o centro a que pertence.
+- ✅ **ITBI e registro das unidades dadas em permuta** é natureza própria, no grupo Terreno. É custo da permuta física, e não o ITBI do terreno.
+  - 🟡 **Cuidado com o POC:** esse custo só é pago na entrega das unidades. O orçamento de cada SPE precisa trazê-lo desde o lançamento; se não trouxer, a margem cai de uma vez no fim.
+- ✅ **Viagens é uma natureza só**: passagens, hospedagem e alimentação. É o centro que diz de quem é a viagem. Deslocamentos do dia a dia (táxi, aplicativo, km) continuam numa natureza à parte.
+- ✅ **"Despachante e assessoria documental"** fica no grupo Consultorias e serviços profissionais. O serviço de registro de habite-se, CND e averbação entra nela. O grupo Legalização guarda só as taxas e o que se paga ao cartório.
 
 ### Perdas com clientes e distrato
 
