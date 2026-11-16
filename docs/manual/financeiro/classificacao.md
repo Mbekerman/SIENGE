@@ -137,7 +137,18 @@ Decisões do Moises de 16/nov/2026, ainda sem código. O detalhe está no [plano
   - **A reembolsar**: o custo é da SPE. O sistema gera a conta a pagar da SPE para a holding, com a natureza original, e mostra o saldo a reembolsar de cada SPE, com aviso de atraso.
 - ✅ **PDV** é cadastrado com as SPEs que atende e o percentual fixo de cada uma, por vigência. Todo título do PDV se divide sozinho, e pode cair em mais de uma SPE. A natureza "Custo fixo de PDV" deixa de existir.
 
-🟡 A conferir: hoje uma nota não se rateia entre empresas, porque tem um só tomador. Pela leitura do plano, o PDV de várias SPEs funciona pelo modo "a reembolsar": a holding paga e cada SPE devolve a sua parte. Ainda falta confirmar.
+### Despesa paga por uma empresa do grupo em nome de outra
+
+O procedimento completo, escrito para o financeiro e a contabilidade, está em [Despesas pagas entre empresas do grupo](https://claude.ai/artifact/PVniSPGxFYtMP8jrymAUGL). Em resumo:
+
+- ✅ **Vale para qualquer despesa e em qualquer direção**: holding pagando pela SPE, SPE pagando pela holding ou SPE pagando por outra SPE. O aluguel do PDV é só o caso mais comum.
+- ✅ **Uma nota não se divide entre empresas**, porque tem um só tomador. Quem paga cobra de volta cada empresa pela parte dela, de um destes dois jeitos:
+  - **Nota em nome de quem pagou**: quem pagou emite uma nota de débito para cada empresa pelo valor exato, sem margem. Cada empresa lança a parte dela com a natureza original, no centro de quem usou;
+  - **Nota em nome de quem usou**: quem pagou fica com um valor a receber dessa empresa até o acerto.
+- ✅ **PDV de várias SPEs**: o percentual de cada SPE é fixo e tem data de início; muda só com nova vigência.
+- ✅ **Consórcio é a exceção**: fica na holding, no modo só gestão, sem reembolso.
+- 🟡 **Prazo de acerto**: até o dia 10 do mês seguinte. É proposta, ainda não decidida.
+- 🟡 **Até o ERP entrar**, passo manual no Sienge: a holding não lança a despesa reembolsada na conta da despesa, e a SPE deixa de usar a conta 2010503 (Custo fixo de PDV). Ver [Passos manuais no Sienge](../transversais/passos-manuais-no-sienge.md).
 
 ⏳ Para o contador: o reembolso pelo custo exato fica fora da receita da holding? Qual o prazo máximo do saldo antes de virar mútuo (com IOF)? Precisa de contrato de compartilhamento de despesas por escrito?
 
