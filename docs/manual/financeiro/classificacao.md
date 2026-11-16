@@ -145,10 +145,20 @@ O procedimento completo, escrito para o financeiro e a contabilidade, está em [
 - ✅ **Uma nota não se divide entre empresas**, porque tem um só tomador. Quem paga cobra de volta cada empresa pela parte dela, de um destes dois jeitos:
   - **Nota em nome de quem pagou**: quem pagou emite uma nota de débito para cada empresa pelo valor exato, sem margem. Cada empresa lança a parte dela com a natureza original, no centro de quem usou;
   - **Nota em nome de quem usou**: quem pagou fica com um valor a receber dessa empresa até o acerto.
+- ✅ **A nota de débito sai sozinha** (Moises, 16/nov/2026): ao lançar a conta, quem paga marca a empresa (ou o PDV) que vai reembolsar, como já escolhe o centro. No fim do mês, o sistema junta os títulos marcados para cada empresa, cada um com a sua natureza, e gera a nota de débito.
 - ✅ **PDV de várias SPEs**: o percentual de cada SPE é fixo e tem data de início; muda só com nova vigência.
 - ✅ **Consórcio é a exceção**: fica na holding, no modo só gestão, sem reembolso.
 - 🟡 **Prazo de acerto**: até o dia 10 do mês seguinte. É proposta, ainda não decidida.
 - 🟡 **Até o ERP entrar**, passo manual no Sienge: a holding não lança a despesa reembolsada na conta da despesa, e a SPE deixa de usar a conta 2010503 (Custo fixo de PDV). Ver [Passos manuais no Sienge](../transversais/passos-manuais-no-sienge.md).
+
+### Reembolso a colaborador
+
+- ✅ **Uma natureza só** (Moises, 16/nov/2026): "Despesas reembolsadas a colaboradores", no centro de quem gastou. Cada prestação de contas vira um título, com os comprovantes anexados, sem escolher natureza item por item. Motivo: no último ano foram 60 reembolsos, que somaram R$ 25,6 mil.
+- ✅ **Limites configuráveis**, um por item e outro acumulado no mês. O item acima do limite sai do reembolso e vai para a natureza própria, porque já é compra e não miudeza.
+- 🟡 Ainda sem decisão:
+  - o acumulado ser por colaborador (proposta), e não por centro;
+  - AF ou AD mudarem os limites, com registro de quem mudou e quando;
+  - os valores iniciais de R$ 1.000 por item e R$ 3.000 por colaborador no mês.
 
 ⏳ Para o contador: o reembolso pelo custo exato fica fora da receita da holding? Qual o prazo máximo do saldo antes de virar mútuo (com IOF)? Precisa de contrato de compartilhamento de despesas por escrito?
 

@@ -12,6 +12,12 @@
 
 1. **O título do fornecedor**, pelo valor líquido: valor da nota menos impostos retidos, caução e adiantamento abatido.
 2. **Um título por imposto retido**, contra o órgão que recebe (ISS para a prefeitura, INSS, IR, PIS/COFINS/CSLL para a Receita).
+   - ✅ **A retenção não é natureza** (Moises, 16/nov/2026). Ela fica registrada no título da nota, com tipo, base, alíquota, valor e a guia que a recolheu. A despesa entra pelo valor cheio: uma consultoria de R$ 10 mil com R$ 1,5 mil retidos custa R$ 10 mil. Saem do plano as contas "(-) Retenção" (2080101 a 2080105 e 1020301 a 1020305), que não tiveram lançamento no último ano.
+   - ✅ **A guia de recolhimento continua como natureza**, no grupo Movimentações: IRRF, INSS, ISS e PIS/COFINS/CSLL de terceiros.
+   - ✅ **Conferência:** o sistema mostra três coisas:
+     - o retido contra o recolhido por mês, imposto e centro, com a diferença em destaque;
+     - para cada fornecedor, as notas com o valor retido e a guia que pagou cada uma;
+     - um aviso para guia sem nota e para nota retida sem guia.
 3. **Uma entrada no extrato de caução** do contrato, se houver caução (ver [Caução](caucao.md)).
 
 E ainda **consome as previsões** do contrato ou da assinatura, da mais antiga para a mais nova, até o valor da nota.
