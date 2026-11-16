@@ -8,6 +8,8 @@ Decisões do Moises, ainda sem código (relatadas pela thread do de-para):
 
 - **Cartas de consórcio** num cadastro próprio: administradora, grupo, cota, crédito, núcleo beneficiado e financiamento.
 - **Empreendimento beneficiado** na divisão e no título, com o modo `gestao` ou `reembolsar` e uma lista de núcleos com %. No modo `reembolsar`, nasce um par de títulos entre empresas: uma conta a pagar na SPE, com a natureza original, e a parte da holding como movimentação. O saldo a reembolsar fica por SPE. A revisar quando houver código: cada título do par tem de passar pela alçada e pelas permissões do próprio núcleo, e quem lança na holding não deve ganhar escrita na SPE por isso.
+- **Dois tratamentos por natureza** (Moises, 13h16): o tipo na DRE gerencial e o tratamento contábil, que podem ser diferentes. Exemplo: as taxas mensais do investidor, DFM1 (2030308) e DFM2 (2030309), são despesa financeira no gerencial e distribuição de lucro na contabilidade. O plano passa a ter 208 naturezas.
+- **Centro Alavancagem**, com uma divisão por investidor (VERSI IV, SR IV e os que vierem). Consórcios continua centro próprio.
 - **PDV** num cadastro próprio, com rateio entre SPEs por vigência (% fixo), aplicado sozinho nos títulos. Com o rateio, a aprovação continua separada por centro (S-096).
 
 ## 15/nov/2026
