@@ -132,6 +132,14 @@ Decisões do Moises de 16/nov/2026, ainda sem código. O detalhe está no [plano
   - **Mobiliário e decoração das áreas comuns**: Obra, entra no POC;
   - **Móveis para uso próprio**: investimento (ativo), o que fica com a BKM.
 - ✅ **Consórcio é um centro de custo** da holding (núcleo Corporativo), com tudo dentro: parcelas, venda da carta, intermediação e impostos. A divisão é o empreendimento e o nível abaixo é a carta. Cada carta é cadastrada com administradora, grupo, cota, crédito, empreendimento beneficiado e financiamento da Caixa; a divisão é escolhida uma vez, e as parcelas nascem com ela.
+- ✅ **Alavancagem é um centro de custo** (Moises, 16/nov/2026). Ele reúne as operações com investidores que põem dinheiro na SPE, e cada investidor é uma divisão: VERSI IV, SR IV e os que vierem. Consórcios continua centro à parte. As naturezas dessas operações:
+  - **Aporte de investidor**: movimentação, fora da DRE;
+  - **Custo de capital do investidor (DFM1)**: despesa financeira na DRE gerencial;
+  - **Prêmio de captação do investidor (DFM2)**: despesa financeira na DRE gerencial;
+  - **Recompra de cotas do investidor**: movimentação, fora da DRE. É a devolução do capital no fim.
+
+  A contabilidade registra DFM1 e DFM2 como distribuição de lucro, mas na gestão elas são custo de conseguir o dinheiro. Por isso a natureza guarda os dois tratamentos, o da DRE gerencial e o da contabilidade, e as duas DRE saem do mesmo lançamento. No Sienge são as contas 2030308 e 2030309. Antes elas ficavam no grupo Sócios, fora da DRE, o que deixava a margem dos empreendimentos maior do que é.
+- ✅ **Due Diligence Jurídica é natureza própria**, no grupo Consultorias e serviços profissionais. O grupo de estudos passa a se chamar **Projetos e Estudos Técnicos**, e a natureza "Estudos técnicos" perdeu os parênteses do nome, para servir a mais casos.
 - ✅ **Empreendimento beneficiado**, em dois modos:
   - **Só gestão**: o custo fica na empresa que pagou e só aponta o empreendimento (caso do consórcio);
   - **A reembolsar**: o custo é da SPE. O sistema gera a conta a pagar da SPE para a holding, com a natureza original, e mostra o saldo a reembolsar de cada SPE, com aviso de atraso.
