@@ -6465,6 +6465,10 @@ select pg_temp.ok(not has_function_privilege('authenticated', 'erp.sienge_pegar_
                   and not has_table_privilege('authenticated', 'erp.sienge_prv_trocas', 'INSERT')
                   and not has_table_privilege('authenticated', 'erp.sienge_cruzamentos', 'UPDATE'),
   'cruzamento: as funções e as tabelas não se escrevem pela API');
+select pg_temp.ok(has_table_privilege('erp_sistema', 'erp.v_sienge_prv_apagar', 'SELECT')
+                  and not has_table_privilege('erp_sistema', 'erp.v_sienge_prv_apagar', 'INSERT')
+                  and (select count(*) >= 0 from erp.v_sienge_prv_apagar),
+  'planilha: o sistema lê a lista do que apagar (e só lê)');
 -- só de madrugada (2h às 6h em São Paulo), uma empresa por vez, uma vez por dia
 select pg_temp.ok(not exists (select 1 from erp.sienge_pegar_cruzamento('2026-11-18 15:00Z')), 'cruzamento: de dia, não cruza');
 select pg_temp.ok(not exists (select 1 from erp.sienge_pegar_cruzamento('2026-11-18 04:59Z')), 'cruzamento: antes das 2h, não cruza');

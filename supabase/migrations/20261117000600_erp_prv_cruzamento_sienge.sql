@@ -271,6 +271,8 @@ create policy perfil_le on erp.sienge_prv_trocas for select to authenticated usi
 create policy perfil_le on erp.sienge_prv_estranhas for select to authenticated using (erp.sou_master() or erp.estou_nas_listas(array['AF']));
 create policy perfil_le on erp.sienge_cruzamentos for select to authenticated using (erp.sou_master() or erp.estou_nas_listas(array['AF']));
 grant select on erp.sienge_prv_trocas, erp.sienge_prv_estranhas, erp.sienge_cruzamentos, erp.v_sienge_prv_estranhas to authenticated;
+-- a planilha do financeiro (servicos/sienge-escrita/planilha.ts) lê a lista do que apagar como o sistema
+grant select on erp.v_sienge_prv_apagar to erp_sistema;
 
 grant execute on function erp.tg_sienge_prv_troca(), erp.tg_sienge_cruzamento(), erp.tg_sienge_previsao(),
                           erp.sienge_pegar_cruzamento(timestamptz), erp.sienge_prv_nossas(int), erp.sienge_recriar_prv(uuid, int, text),

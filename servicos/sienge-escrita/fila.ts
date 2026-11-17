@@ -11,6 +11,7 @@
 // pedido com 4xx em TENTATIVAS_4XX tentativas seguidas: ninguém tenta de novo até alguém olhar).
 import { Divergencia, enviarTitulo, erroPermanente, ErroSienge, proximaTentativa, segundosRetryAfter, type PedidoTitulo, type Resposta } from './envio.ts';
 import { gravarComTrava, type Ambiente } from './trava.ts';
+import type { LinhaApagar } from './planilha.ts';
 
 // id: o título ou a previsão (o banco sabe qual).
 export type ItemFila = { item_id: string; sienge_id: number | null; tentativas: number };
@@ -31,6 +32,7 @@ export interface Banco {
   prvNossas(empresa: number): Promise<{ sienge_id: number; previsao_id: string; esperada: boolean }[]>;
   recriarPrv(previsaoId: string, siengeId: number, motivo: string): Promise<void>;
   terminarCruzamento(empresa: number, estranhas: Estranha[], resumo: Record<string, number>, erro?: string | null): Promise<number>;
+  linhasApagar(): Promise<LinhaApagar[]>; // erp.v_sienge_prv_apagar, para a planilha do financeiro
 }
 
 export type Estranha = { sienge_id: number; numero: string | null; emissao: string | null; valor: number | null; observacoes: string | null; motivo: string };
@@ -248,5 +250,9 @@ export function bancoPostgres(sql: Sql): Banco {
     terminarCruzamento: (e, est, resumo, erro) => comoSistema(async (tx) =>
       (await tx`select erp.sienge_terminar_cruzamento(${e}::int, ${JSON.stringify(est)}::jsonb, ${JSON.stringify(resumo)}::jsonb,
                                                       ${erro ?? null}::text) as n`)[0].n),
+    linhasApagar: () => comoSistema(async (tx) =>
+      (await tx`select previsao_id::text as previsao_id, sienge_id, empresa_sienge, data_prevista::text as data_prevista,
+                       valor::text as valor, situacao_previsao, to_json(apagar_desde) #>> '{}' as apagar_desde
+                  from erp.v_sienge_prv_apagar`).map((r: LinhaApagar) => ({ ...r }))),
   };
 }

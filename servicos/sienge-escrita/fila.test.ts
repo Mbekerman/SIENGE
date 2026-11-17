@@ -29,6 +29,7 @@ function banco(item: ItemFila | null, ped: PedidoTitulo | Error = pedido(), conf
     prvNossas: async () => [],
     recriarPrv: async () => { throw new Error('não recria'); },
     terminarCruzamento: async () => { throw new Error('não cruza'); },
+    linhasApagar: async () => [],
   };
   return { b, fim, reg, apagados };
 }
@@ -172,10 +173,11 @@ test('banco: todo passo roda numa transação como erp_sistema', async () => {
   assert.deepEqual(await bp.prvNossas(11), [{ sienge_id: 7, previsao_id: T, esperada: true }]);
   await bp.recriarPrv(T, 7, 'm');
   assert.equal(await bp.terminarCruzamento(11, [], {}), 3);
-  assert.equal(log.length, 12);
+  assert.deepEqual(await bp.linhasApagar(), []);
+  assert.equal(log.length, 13);
   const sqls = log.map((p) => p[1]);
   for (const f of ['sienge_enfileirar', 'sienge_pegar()', 'sienge_pedido_item', 'sienge_registrar_item', 'sienge_ids()', 'sienge_terminar', 'sienge_pegar_conferencia()', 'sienge_marcar_apagado',
-                   'sienge_pegar_cruzamento()', 'sienge_prv_nossas', 'sienge_recriar_prv', 'sienge_terminar_cruzamento'])
+                   'sienge_pegar_cruzamento()', 'sienge_prv_nossas', 'sienge_recriar_prv', 'sienge_terminar_cruzamento', 'v_sienge_prv_apagar'])
     assert.ok(sqls.some((q) => q.includes(`erp.${f}`)), f);
   for (const passo of log) assert.equal(passo[0], 'set local role erp_sistema');
 });
