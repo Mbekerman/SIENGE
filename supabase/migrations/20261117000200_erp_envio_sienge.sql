@@ -85,12 +85,14 @@ create table erp.parcela_pagamentos (
   pix_tipo     text check (pix_tipo in ('cpf_cnpj','email','telefone','aleatoria')),
   pix_chave    text,
   boleto_linha text,                     -- linha digitável, só dígitos
+  pix_excecao  text,                     -- justificativa da chave CPF/CNPJ que não é do credor (S-125)
   primary key (titulo_id, numero),
   foreign key (titulo_id, numero) references erp.parcelas (titulo_id, numero) on delete cascade,
   check ((forma = 'pix') = (pix_tipo is not null and pix_chave is not null)),
   check ((forma = 'boleto') = (boleto_linha is not null)),
   check (pix_chave is null or erp.chave_pix_valida(pix_tipo, pix_chave)),
-  check (boleto_linha is null or erp.linha_digitavel_valida(boleto_linha))
+  check (boleto_linha is null or erp.linha_digitavel_valida(boleto_linha)),
+  check (pix_excecao is null or (pix_tipo = 'cpf_cnpj' and length(trim(pix_excecao)) > 0))
 );
 
 -- A fila (criada antes da trava da forma de pagamento, que olha para ela)
@@ -108,13 +110,14 @@ create table erp.sienge_envios (
 );
 create index on erp.sienge_envios (proxima_em) where situacao in ('pendente','erro');
 
--- O que a forma de pagamento precisa bater com o título (S-125, a parte que não depende de decisão):
+-- O que a forma de pagamento precisa bater com o título (S-125; Moises, 17/11/2026):
 --   - boleto: o valor gravado na linha (os 10 últimos dígitos, em centavos) é o da parcela, ou zero
 --     (boleto sem valor impresso);
---   - PIX por CPF/CNPJ: a chave é o documento do credor do título (a chave de outra pessoa é recusada).
+--   - PIX por CPF/CNPJ: a chave é o documento do credor do título; a de outra pessoa só entra com a
+--     justificativa da exceção (pix_excecao), que fica marcada para quem aprova.
 -- Roda na gravação da forma (gatilho) e de novo no pedido ao Sienge, porque a parcela pode mudar na revisão.
 create function erp._conferir_forma_pagamento(p_titulo uuid, p_numero int, p_forma text, p_pix_tipo text,
-                                              p_pix_chave text, p_boleto_linha text) returns void
+                                              p_pix_chave text, p_boleto_linha text, p_pix_excecao text) returns void
 language plpgsql stable as $$
 declare v_parcela numeric; v_boleto numeric; v_doc text;
 begin
@@ -126,8 +129,8 @@ begin
     end if;
   elsif p_forma = 'pix' and p_pix_tipo = 'cpf_cnpj' then
     select p.documento into v_doc from erp.titulos t join erp.pessoas p on p.id = t.pessoa_id where t.id = p_titulo;
-    if v_doc is distinct from p_pix_chave then
-      raise exception 'A chave PIX por CPF/CNPJ da parcela % não é o documento do credor do título', p_numero;
+    if v_doc is distinct from p_pix_chave and length(trim(coalesce(p_pix_excecao, ''))) = 0 then
+      raise exception 'A chave PIX por CPF/CNPJ da parcela % não é o documento do credor do título (só com a justificativa da exceção)', p_numero;
     end if;
   end if;
 end $$;
@@ -141,9 +144,15 @@ begin
     raise exception 'A forma de pagamento não muda de título';
   end if;
   select * into t from erp.titulos where id = v_id;
-  -- S-125 (parte sem decisão): o boleto é da parcela e a chave CPF/CNPJ é do credor
+  -- S-125: o boleto é da parcela e a chave CPF/CNPJ é do credor (ou vem com a justificativa da exceção)
   if tg_op <> 'DELETE' then
-    perform erp._conferir_forma_pagamento(new.titulo_id, new.numero, new.forma, new.pix_tipo, new.pix_chave, new.boleto_linha);
+    -- a exceção só existe quando a chave CPF/CNPJ não é a do credor; fora disso, some
+    if new.pix_tipo is distinct from 'cpf_cnpj'
+       or new.pix_chave = (select p.documento from erp.pessoas p where p.id = t.pessoa_id) then
+      new.pix_excecao := null;
+    end if;
+    perform erp._conferir_forma_pagamento(new.titulo_id, new.numero, new.forma, new.pix_tipo, new.pix_chave, new.boleto_linha,
+                                          new.pix_excecao);
   end if;
   if t.situacao = 'rascunho' or erp.em_revisao(t.id) then return coalesce(new, old); end if;
   if t.situacao = 'aberto'
@@ -294,25 +303,75 @@ create trigger t_sienge_envio before insert or update or delete on erp.sienge_en
 create trigger t_aud_sienge_envios after insert or update on erp.sienge_envios
   for each row execute function erp.tg_auditoria('titulo_id');
 
+-- Chave PIX já usada com o credor: está numa parcela de outro título dele que já foi ao Sienge.
+-- Lê por baixo do RLS (os outros títulos do credor podem ser de centros que quem aprova não vê);
+-- fica só para o banco.
+create function erp._chave_pix_conhecida(p_pessoa uuid, p_chave text, p_titulo uuid) returns boolean
+language sql stable as $$
+  select exists (select 1 from erp.parcela_pagamentos g
+                   join erp.titulos t on t.id = g.titulo_id
+                   join erp.sienge_envios e on e.titulo_id = t.id and e.sienge_id is not null
+                  where t.pessoa_id = p_pessoa and g.pix_chave = p_chave and g.titulo_id <> p_titulo) $$;
+
+-- Os avisos de cada parcela para quem aprova (S-125; Moises, 17/11/2026): a chave que não é do
+-- documento do credor (e-mail, telefone, aleatória), a exceção da chave CPF/CNPJ com a justificativa
+-- e a chave nunca usada com o credor. Só responde sobre título que a pessoa vê.
+create function erp.avisos_forma_pagamento(p_titulo uuid) returns table (numero int, avisos text[])
+language sql stable as $$
+  select g.numero,
+         array_remove(array[
+           case when g.pix_tipo in ('email','telefone','aleatoria') then 'A chave não é do documento do credor' end,
+           case when g.pix_excecao is not null then 'Chave CPF/CNPJ de outra pessoa: ' || g.pix_excecao end,
+           case when g.forma = 'pix' and not erp._chave_pix_conhecida(t.pessoa_id, g.pix_chave, t.id)
+                then 'Chave nova para este credor' end], null)
+    from erp.parcela_pagamentos g join erp.titulos t on t.id = g.titulo_id
+   where g.titulo_id = p_titulo and (erp.sistema() or erp.vejo_titulo(p_titulo))
+   order by g.numero $$;
+
 -- O título está aprovado: aberto, sem fase pendente na alçada, sem recusa e fora da revisão.
 create function erp.titulo_aprovado(p_titulo uuid) returns boolean language sql stable as $$
   select exists (select 1 from erp.titulos t where t.id = p_titulo and t.situacao = 'aberto')
      and erp.alcada_fase(p_titulo) is null and not erp.alcada_recusada(p_titulo) and not erp.em_revisao(p_titulo) $$;
 
 -- Põe na fila os títulos a pagar aprovados (fornecedor e avulso). Devolve quantos entraram.
+-- Título com chave PIX nunca usada com o credor gera o alerta crítico chave_pix_nova (S-125; Moises,
+-- 17/11/2026), que chega ao master e à AF antes de o financeiro pagar no Sienge.
 create function erp.sienge_enfileirar() returns int language plpgsql as $$
-declare n int;
+declare n int := 0; r record;
 begin
   if not erp.sistema() then raise exception 'Só o sistema enfileira o envio ao Sienge'; end if;
-  insert into erp.sienge_envios (titulo_id)
-  select t.id from erp.titulos t
-   where t.sentido = 'pagar' and t.tipo in ('fornecedor','avulso') and t.situacao = 'aberto'
-     and not exists (select 1 from erp.sienge_envios e where e.titulo_id = t.id)
-     and erp.titulo_aprovado(t.id)
-  on conflict do nothing;
-  get diagnostics n = row_count;
+  for r in
+    with novos as (
+      insert into erp.sienge_envios (titulo_id)
+      select t.id from erp.titulos t
+       where t.sentido = 'pagar' and t.tipo in ('fornecedor','avulso') and t.situacao = 'aberto'
+         and not exists (select 1 from erp.sienge_envios e where e.titulo_id = t.id)
+         and erp.titulo_aprovado(t.id)
+      on conflict do nothing
+      returning titulo_id)
+    select x.titulo_id, t.pessoa_id,
+           (select jsonb_agg(jsonb_build_object('numero', g.numero, 'pix_tipo', g.pix_tipo, 'pix_chave', g.pix_chave) order by g.numero)
+              from erp.parcela_pagamentos g
+             where g.titulo_id = x.titulo_id and g.forma = 'pix'
+               and not erp._chave_pix_conhecida(t.pessoa_id, g.pix_chave, x.titulo_id)) as chaves,
+           (select array[r2.nucleo_economico_id, r2.centro_custo_id] from erp.titulo_rateios r2
+             where r2.titulo_id = x.titulo_id order by r2.percentual desc, r2.id limit 1) as onde
+      from novos x join erp.titulos t on t.id = x.titulo_id
+  loop
+    n := n + 1;
+    if r.chaves is not null then
+      perform erp.registrar_evento('chave_pix_nova', 'titulos', r.titulo_id::text, r.onde[1], r.onde[2],
+        jsonb_build_object('titulo_id', r.titulo_id, 'pessoa_id', r.pessoa_id, 'parcelas', r.chaves,
+                           'motivo', 'Chave PIX nunca usada com este credor: '
+                                     || (select string_agg(c->>'pix_chave', ', ') from jsonb_array_elements(r.chaves) c)));
+    end if;
+  end loop;
   return n;
 end $$;
+
+insert into erp.tipos_evento (codigo, rotulo, modulo, critico) values
+  ('chave_pix_nova', 'Título vai ao Sienge com chave PIX nunca usada com o credor', 'pagar', true);
+insert into erp.regras_notificacao (tipo, destino, lista) values ('chave_pix_nova', 'lista', 'AF');
 
 -- Tipo de documento do ERP → documento do Sienge (cadastro "Documentos" do Sienge, lido em 17/11/2026).
 create function erp.sienge_documento(p_tipo text) returns text language sql immutable as $$
@@ -377,7 +436,7 @@ begin
     from erp.parcelas p where p.titulo_id = t.id
      and not exists (select 1 from erp.parcela_pagamentos g where g.titulo_id = p.titulo_id and g.numero = p.numero);
   if v_falta is not null then raise exception 'Falta a forma de pagamento da parcela %', v_falta; end if;
-  perform erp._conferir_forma_pagamento(g.titulo_id, g.numero, g.forma, g.pix_tipo, g.pix_chave, g.boleto_linha)
+  perform erp._conferir_forma_pagamento(g.titulo_id, g.numero, g.forma, g.pix_tipo, g.pix_chave, g.boleto_linha, g.pix_excecao)
      from erp.parcela_pagamentos g where g.titulo_id = t.id;
   -- boleto do mesmo banco de uma conta ativa da empresa: "próprio banco" (1); senão "outros bancos" (2)
   select array_agg(distinct substring(cb.banco from '^[0-9]{3}')) into v_banco
@@ -445,6 +504,7 @@ begin
   end loop;
   for f in select p.oid::regprocedure from pg_proc p join pg_namespace n on n.oid = p.pronamespace
             where n.nspname = 'erp' and p.proname in ('linha_digitavel_valida','chave_pix_valida','tg_parcela_pagamento','_conferir_forma_pagamento',
+              '_chave_pix_conhecida','avisos_forma_pagamento',
               'tg_sienge_depara','tg_sienge_envio','titulo_aprovado','sienge_enfileirar','sienge_documento','sienge_pedido',
               'sienge_registrar','_chave_config','tg_evento_config') loop
     execute format('revoke execute on function %s from public', f);
@@ -499,6 +559,11 @@ grant select on erp.sienge_envios to authenticated;
 -- de quem grava abriria a troca da chave depois do voto).
 alter function erp.tg_parcela_pagamento() security definer set search_path = erp, pg_catalog, pg_temp;
 alter function erp.tg_parcela_pagamento() owner to erp_conferencia;
+-- os avisos leem os outros títulos do credor por baixo do RLS; respondem só sobre título que a pessoa vê
+alter function erp._chave_pix_conhecida(uuid, text, uuid) security definer set search_path = erp, pg_catalog, pg_temp;
+alter function erp._chave_pix_conhecida(uuid, text, uuid) owner to erp_conferencia;
+alter function erp.avisos_forma_pagamento(uuid) security definer set search_path = erp, pg_catalog, pg_temp;
+alter function erp.avisos_forma_pagamento(uuid) owner to erp_conferencia;
 
 -- EXECUTE: nada novo para public; as conferências puras e a trava para quem grava; a fila e o pedido
 -- só para o sistema.
@@ -506,9 +571,11 @@ revoke execute on all functions in schema erp from public;
 grant execute on function erp.linha_digitavel_valida(text), erp.chave_pix_valida(text, text), erp.sienge_documento(text)
   to authenticated, erp_sistema, erp_conferencia, erp_situacao, erp_reclassificacao, erp_acesso, erp_config;
 -- S-126: titulo_aprovado responde sobre qualquer título (lê a alçada por baixo do RLS): só o sistema e as conferências
-grant execute on function erp.titulo_aprovado(uuid), erp._conferir_forma_pagamento(uuid, int, text, text, text, text)
+grant execute on function erp.titulo_aprovado(uuid), erp._conferir_forma_pagamento(uuid, int, text, text, text, text, text),
+                          erp._chave_pix_conhecida(uuid, text, uuid)
   to erp_sistema, erp_conferencia, erp_situacao, erp_reclassificacao, erp_acesso, erp_config;
 grant execute on function erp.sienge_enfileirar(), erp.sienge_pedido(uuid), erp.sienge_registrar(uuid, int),
                           erp.tg_parcela_pagamento(), erp.tg_sienge_depara(), erp.tg_sienge_envio()
   to erp_sistema, erp_conferencia, erp_situacao, erp_reclassificacao, erp_acesso, erp_config;
 grant execute on function erp._chave_config(text) to erp_config, erp_conferencia;
+grant execute on function erp.avisos_forma_pagamento(uuid) to authenticated, erp_sistema, erp_conferencia;

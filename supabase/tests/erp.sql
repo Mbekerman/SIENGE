@@ -958,7 +958,7 @@ select pg_temp.ok(not exists (
        'cadeia_titulo','conferir_ajuste','alcada_fase','alcada_pendente','alcada_recusada','titulos_do_acumulado',
        'checar_competencia','_registrar_ajuste','recusar_so_sucessao','recusar_admin_aprovador','_beneficiarios_acesso',
        'confirmar_titulo','lancar_documento','liberar_caucao','publicar_orcamento','decidir_titulo','reenviar_titulo',
-       'registrar_movimento_societario','fechar_mes','reabrir_mes','pedir_reclassificacao','decidir_reclassificacao',
+       'registrar_movimento_societario','fechar_mes','reabrir_mes','pedir_reclassificacao','decidir_reclassificacao','avisos_forma_pagamento',
        'cancelar_reclassificacao','pedir_mudanca_acesso','decidir_mudanca_acesso','cancelar_mudanca_acesso','passar_master',
        'pedir_sucessao_master','decidir_sucessao_master','vetar_sucessao_master','efetivar_sucessao_master',
        'pedir_mudanca_config','decidir_mudanca_config','cancelar_mudanca_config','marcar_notificacoes_lidas')),
@@ -1016,7 +1016,7 @@ set local erp.sistema = 'on';
 set local erp.reclassificando = 'on';
 set local erp.sistema_apaga = 'on';
 do $$ begin
-  update erp.titulos set situacao = 'quitado' where id = (select id from erp.titulos where situacao = 'aberto' limit 1);
+  update erp.titulos set situacao = 'quitado' where id = (select id from erp.titulos where situacao = 'aberto' and criado_por = auth.uid() limit 1);
   raise exception 'passou';
 exception when others then
   if sqlerrm <> 'A situação do título muda pelas quitações' then raise exception 'situação do título: %', sqlerrm; end if;
@@ -5725,7 +5725,7 @@ select pg_temp.sis();
 select pg_temp.ok(erp.alcada_fase(:'tse') is not null and not erp.titulo_aprovado(:'tse'), 'sienge: o título lançado espera a alçada');
 select pg_temp.volta();
 select pg_temp.ok(not has_function_privilege('authenticated', 'erp.titulo_aprovado(uuid)', 'EXECUTE')
-                  and not has_function_privilege('authenticated', 'erp._conferir_forma_pagamento(uuid, int, text, text, text, text)', 'EXECUTE'),
+                  and not has_function_privilege('authenticated', 'erp._conferir_forma_pagamento(uuid, int, text, text, text, text, text)', 'EXECUTE'),
   'S-126: titulo_aprovado e a conferência da forma de pagamento não são executáveis pela API');
 insert into erp.parcela_pagamentos (titulo_id, numero, forma, pix_tipo, pix_chave) values (:'tse', 1, 'pix', 'email', 'teste@example.com');
 select pg_temp.falha(format($$insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (%L, 2, 'boleto', '34191090080000000212134567890008999990000015000')$$, :'tse'),
@@ -5734,11 +5734,30 @@ select pg_temp.falha(format($$insert into erp.parcela_pagamentos (titulo_id, num
   'sienge: PIX sem chave não entra');
 select pg_temp.falha(format($$insert into erp.parcela_pagamentos (titulo_id, numero, forma, pix_tipo, pix_chave) values (%L, 2, 'pix', 'email', 'Teste@Example.com')$$, :'tse'),
   'sienge: chave PIX fora do formato do tipo não entra (a validação da chave)');
--- S-125, parte sem decisão: o valor impresso no boleto é o da parcela (ou zero) e a chave CPF/CNPJ é do credor
+-- S-125 (Moises, 17/11/2026): o valor impresso no boleto é o da parcela (ou zero) e a chave CPF/CNPJ é do credor,
+-- salvo a exceção com justificativa
 select pg_temp.erro_igual(format($$insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (%L, 2, 'boleto', '34191090080000000212134567890008799990000000100')$$, :'tse'),
   'O valor do boleto (1.00) não é o da parcela 2 (150.00)', 'S-125: boleto de outro valor não entra');
 select pg_temp.erro_igual(format($$insert into erp.parcela_pagamentos (titulo_id, numero, forma, pix_tipo, pix_chave) values (%L, 2, 'pix', 'cpf_cnpj', '29732041000154')$$, :'tse'),
-  'A chave PIX por CPF/CNPJ da parcela 2 não é o documento do credor do título', 'S-125: chave CPF/CNPJ de outra pessoa não entra');
+  'A chave PIX por CPF/CNPJ da parcela 2 não é o documento do credor do título (só com a justificativa da exceção)',
+  'S-125: chave CPF/CNPJ de outra pessoa não entra sem justificativa');
+select pg_temp.falha(format($$insert into erp.parcela_pagamentos (titulo_id, numero, forma, pix_tipo, pix_chave, pix_excecao) values (%L, 2, 'pix', 'cpf_cnpj', '29732041000154', '  ')$$, :'tse'),
+  'S-125: justificativa em branco não vale');
+savepoint sp_exc;
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, pix_tipo, pix_chave, pix_excecao)
+values (:'tse', 2, 'pix', 'cpf_cnpj', '29732041000154', 'Pagamento ao sócio, pedido por escrito');
+select pg_temp.ok((select avisos = array['Chave CPF/CNPJ de outra pessoa: Pagamento ao sócio, pedido por escrito', 'Chave nova para este credor']
+                     from erp.avisos_forma_pagamento(:'tse') where numero = 2)
+                  and (select avisos = array['A chave não é do documento do credor', 'Chave nova para este credor']
+                     from erp.avisos_forma_pagamento(:'tse') where numero = 1),
+  'S-125: a exceção entra com a justificativa e quem aprova vê os avisos: outra pessoa, chave que não é do documento, chave nova');
+update erp.parcela_pagamentos set pix_chave = '77777777000177' where titulo_id = :'tse' and numero = 2;
+select pg_temp.ok((select pix_excecao is null from erp.parcela_pagamentos where titulo_id = :'tse' and numero = 2),
+  'S-125: com a chave do próprio credor, a exceção some');
+update erp.parcela_pagamentos set pix_tipo = 'email', pix_chave = 'b@example.com', pix_excecao = 'x' where titulo_id = :'tse' and numero = 2;
+select pg_temp.ok((select pix_excecao is null from erp.parcela_pagamentos where titulo_id = :'tse' and numero = 2),
+  'S-125: a exceção só existe na chave CPF/CNPJ');
+rollback to savepoint sp_exc;
 savepoint sp_forma;
 insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (:'tse', 2, 'boleto', '34191090080000000212134567890008199990000000000');
 insert into erp.parcela_pagamentos (titulo_id, numero, forma, pix_tipo, pix_chave) values (:'tse', 2, 'pix', 'cpf_cnpj', '77777777000177')
@@ -5815,6 +5834,14 @@ select pg_temp.como(null);
 select erp.sienge_enfileirar() as n_fila \gset
 select pg_temp.ok(:n_fila >= 1 and exists (select 1 from erp.sienge_envios where titulo_id = :'tse' and situacao = 'pendente'),
   'sienge: o título aprovado entra na fila');
+select pg_temp.ok((select count(*) = 1 and bool_and(e.dados->'parcelas' = '[{"numero": 1, "pix_tipo": "email", "pix_chave": "teste@example.com"}]'
+                                                    and e.centro_id = :'cc_mkt')
+                     from erp.eventos e where e.tipo = 'chave_pix_nova' and e.registro = :'tse')
+                  and exists (select 1 from erp.notificacoes n join erp.eventos e on e.id = n.evento_id
+                               where e.tipo = 'chave_pix_nova' and e.registro = :'tse' and n.critico and n.user_id = :'diretor')
+                  and (select critico from erp.tipos_evento where codigo = 'chave_pix_nova')
+                  and exists (select 1 from erp.regras_notificacao where tipo = 'chave_pix_nova' and destino = 'lista' and lista = 'AF' and ativa),
+  'S-125: título com chave PIX nunca usada com o credor gera o alerta crítico, para o master e a AF, só da chave nova');
 select pg_temp.ok(erp.sienge_enfileirar() = 0, 'sienge: enfileirar de novo não repete');
 select pg_temp.ok(not exists (select 1 from erp.sienge_envios e join erp.titulos t on t.id = e.titulo_id
                                where t.tipo not in ('fornecedor','avulso') or not erp.titulo_aprovado(t.id)),
@@ -5901,6 +5928,12 @@ insert into erp.codigos_externos (sistema, tabela, registro_id, codigo) values (
 select pg_temp.erro_igual(format($$select erp.sienge_registrar(%L, 9001)$$, :'tse'), 'O título já está ligado a outro título do Sienge',
   'sienge: registrar não liga o título a um segundo id do Sienge');
 rollback to savepoint sp_ped;
+-- na fila, sem id do Sienge ainda, a chave não conta como usada
+savepoint sp_fila2;
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, pix_tipo, pix_chave) values (:'touto', 1, 'pix', 'email', 'teste@example.com');
+select pg_temp.ok((select 'Chave nova para este credor' = any (avisos) from erp.avisos_forma_pagamento(:'touto') where numero = 1),
+  'S-125: a chave de título que ainda não chegou ao Sienge continua nova');
+rollback to savepoint sp_fila2;
 select erp.sienge_registrar(:'tse', 9001);
 select pg_temp.ok((select codigo = '9001' from erp.codigos_externos where sistema = 'sienge' and tabela = 'titulos' and registro_id = :'tse')
                   and (select sienge_id = 9001 and passo = 'criado' from erp.sienge_envios where titulo_id = :'tse'),
@@ -5909,6 +5942,34 @@ select pg_temp.erro_igual(format($$select erp.sienge_registrar(%L, 9002)$$, :'ts
   'sienge: o id do Sienge não se troca');
 select pg_temp.erro_igual(format($$delete from erp.sienge_envios where titulo_id = %L$$, :'tse'), 'A fila do Sienge não se apaga',
   'sienge: a fila não se apaga');
+-- a chave do título que já foi ao Sienge deixa de ser nova para o credor
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, pix_tipo, pix_chave) values (:'touto', 1, 'pix', 'email', 'teste@example.com');
+select pg_temp.ok((select avisos = array['A chave não é do documento do credor'] from erp.avisos_forma_pagamento(:'touto') where numero = 1)
+                  and (select avisos = array['A chave não é do documento do credor', 'Chave nova para este credor']
+                         from erp.avisos_forma_pagamento(:'tse') where numero = 1),
+  'S-125: a chave usada em outro título do credor já enviado ao Sienge não é mais nova (o próprio título não conta)');
+-- o alerta lista só a chave nova: a já usada com o credor fica de fora
+savepoint sp_ped;
+select pg_temp.como(:'diretor');
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+values ('70000000-0000-0000-0000-0000000000e4', :'spe', '10000000-0000-0000-0000-000000000007', 'nfse', '9004', '2026-06-02', '2026-06-01', 100);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('70000000-0000-0000-0000-0000000000e4', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select erp.lancar_documento('70000000-0000-0000-0000-0000000000e4', array['2026-06-20','2026-07-20']::date[]) as tse4 \gset
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, pix_tipo, pix_chave) values
+  (:'tse4', 1, 'pix', 'email', 'teste@example.com'), (:'tse4', 2, 'pix', 'email', 'nova@example.com');
+select erp.decidir_titulo(:'tse4', true);
+select pg_temp.como(null);
+select erp.sienge_enfileirar();
+select pg_temp.ok((select dados->'parcelas' = '[{"numero": 2, "pix_tipo": "email", "pix_chave": "nova@example.com"}]'
+                     from erp.eventos where tipo = 'chave_pix_nova' and registro = :'tse4'),
+  'S-125: o alerta lista só a chave nova do título');
+rollback to savepoint sp_ped;
+select pg_temp.como(:'leitor');
+select pg_temp.ok((select count(*) = 2 from erp.avisos_forma_pagamento(:'tse')), 'S-125: quem vê o título vê os avisos');
+select pg_temp.como('00000000-0000-0000-0000-0000000000ff');   -- login sem cadastro no ERP: não vê o título
+select pg_temp.ok(not exists (select 1 from erp.avisos_forma_pagamento(:'tse')), 'S-125: os avisos só respondem sobre título que a pessoa vê');
+select pg_temp.como(null);
 select pg_temp.erro_igual(format($$select erp.sienge_pedido(%L)$$, :'tit'), 'O título não está aprovado',
   'sienge: título que espera a alçada não monta pedido');
 select erp._criar_titulo(:'spe', 'pagar', 'avulso', '10000000-0000-0000-0000-000000000007', null, null, '2026-06-02', '2026-06-01',
