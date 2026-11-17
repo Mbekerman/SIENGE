@@ -145,6 +145,23 @@ Decisões do Moises de 16/nov/2026, ainda sem código. O detalhe está no [plano
   - **A reembolsar**: o custo é da SPE. O sistema gera a conta a pagar da SPE para a holding, com a natureza original, e mostra o saldo a reembolsar de cada SPE, com aviso de atraso.
 - ✅ **PDV** é cadastrado com as SPEs que atende e o percentual fixo de cada uma, por vigência. Todo título do PDV se divide sozinho pelos percentuais: entre núcleos da mesma empresa, por rateio; entre empresas diferentes, por repasse. A natureza "Custo fixo de PDV" deixa de existir. Se a SPE alugar o PDV no nome dela, cada conta usa o centro PDV com a natureza normal: aluguel, condomínio, energia... O custo fixo do PDV sai de um filtro desse centro, com a abertura por conta. O histórico da conta 2010503 do Sienge vai para "Repasse de custo do PDV entre empresas", a mesma natureza que a SPE usa daqui para frente no repasse.
 
+### Centros da holding e das SPEs (de-para dos centros do Sienge)
+
+Decidido pelo Moises em 17/nov/2026. O de-para completo está na planilha `/mnt/project-files/erp-bkm/naturezas/de-para-centros-sienge-2026-11-17.xlsx`.
+
+- ✅ **Novos Negócios é centro da holding**, no núcleo Corporativo, com o campo **Empreendimento beneficiado**. Serve aos terrenos que ainda não têm projeto aprovado e, por isso, ainda não têm SPE. Os centros antigos do Sienge desses terrenos vêm para cá: BKM 0X, SPE ES, Leo Becker, Xingu e Novos Negócios SP.
+- ✅ **Consórcios** é centro da holding, com o campo **Empreendimento de origem**.
+- ✅ **Aporte na SPE** é movimentação, fora da DRE.
+- ✅ **Projetos e Contratação Caixa** são centros próprios, cada um com o seu gestor e a sua alçada. Correspondem aos centros "PROJETOS" e "CUSTO CEF" de cada SPE no Sienge.
+- ✅ **Não haverá centro Viabilidade.** O pouco que havia no centro "VIABILIDADE" do Sienge migra pela natureza.
+- ✅ **Despesa da holding paga pela SPE:**
+  - A SPE continua pagando. O Moises recusou o bloqueio proposto.
+  - O lançamento mantém a natureza real (salário, aluguel...), para não perder o motivo do pagamento.
+  - A despesa entra num centro próprio da SPE, com o nome provisório "Despesas da holding". Esse centro fica **fora da DRE do empreendimento**.
+  - É um conceito novo: um centro marcado como fora da DRE do núcleo.
+- 🟡 **Regra do relatório, a confirmar:** tirar esse centro da DRE da SPE não pode fazer o custo sumir. Na DRE da holding e na DRE consolidada, esses valores (R$ 4,9 milhões no histórico) precisam aparecer como despesa da holding.
+- ⏳ **A esclarecer:** falta dizer se esse caso também segue o procedimento de reembolso entre empresas, com a holding devendo o valor à SPE. A dúvida do contador sobre o saldo virar mútuo, com IOF, vale aqui também.
+
 ### Despesa paga por uma empresa do grupo em nome de outra
 
 O procedimento completo, escrito para o financeiro e a contabilidade, está em [Despesas pagas entre empresas do grupo](https://claude.ai/artifact/PVniSPGxFYtMP8jrymAUGL). Em resumo:
