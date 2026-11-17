@@ -115,6 +115,7 @@ Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depo
   - **Saldo:** nasce outra previsão com o valor que sobrou, na data que a pessoa informar (hoje ou depois);
   - **Saving:** a previsão só é encerrada.
 - **Previsão no Sienge:** a previsão aprovada vai ao Sienge como título PRV, sem forma de pagamento. Quando ela deixa de estar aberta, a linha entra na lista para o financeiro apagar no Sienge. O sistema marca a linha sozinho quando o título some de lá.
+- **Marcação do apagado (PR #76, ainda não ligado):** quando o financeiro apaga o título PRV no Sienge, o ERP marca a linha em poucos minutos, pelo aviso do Sienge; sem o aviso, em até 30 minutos. Se o título apagado era de uma previsão ainda aberta, o ERP cria outro no Sienge.
 
 🟡 Propostas ainda sem confirmação do Moises:
 
