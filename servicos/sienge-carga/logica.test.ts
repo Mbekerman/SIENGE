@@ -1,7 +1,7 @@
 // node --test --experimental-strip-types servicos/sienge-carga/logica.test.ts
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cabecalhosParaGuardar, esperaDoSienge, montarConsulta, proximaAcaoMassa, proximaVirada, restanteHoje } from './logica.ts';
+import { cabecalhosParaGuardar, esperaDoSienge, marcaAusentes, montarConsulta, proximaAcaoMassa, proximaVirada, restanteHoje } from './logica.ts';
 
 const base = { id: 1, recurso: 'bulk:outcome', parametros: {}, situacao: 'pendente', pedido_assincrono: null,
   pedacos: null, pedacos_lidos: 0, iniciada_em: null };
@@ -44,4 +44,11 @@ test('consulta nunca leva credencial', () => {
 test('cabeçalhos guardados não incluem autenticação', () => {
   const h = new Headers({ 'X-Ratelimit-Remaining-Day': '13', Authorization: 'Basic x', 'Set-Cookie': 'a=b', 'Retry-After': '36' });
   assert.deepEqual(cabecalhosParaGuardar(h), { 'x-ratelimit-remaining-day': '13', 'retry-after': '36' });
+});
+test('só carga por emissão, sem filtro e com janela marca ausentes', () => {
+  const j = { selectionType: 'I', startDate: '2000-01-01', endDate: '2026-12-31', withAuthorizations: 'true' };
+  assert.equal(marcaAusentes(j), true);
+  assert.equal(marcaAusentes({ ...j, selectionType: 'D' }), false);
+  assert.equal(marcaAusentes({ ...j, companyId: '5' }), false);
+  assert.equal(marcaAusentes({ selectionType: 'I', startDate: '2000-01-01' }), false);
 });

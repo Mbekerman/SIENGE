@@ -46,6 +46,15 @@ export function proximaAcaoMassa(c: Carga, cota: Cota, agora: Date, reserva: num
   return { tipo: 'concluir' };
 }
 
+// Só a carga por emissão, sem filtro e com a janela pedida, pode marcar ausentes (mesma regra de
+// sienge.marcar_ausentes_pagar, que recusa as outras). As demais concluem sem marcar nada.
+const SEM_FILTRO = new Set(['selectionType', 'startDate', 'endDate', 'correctionIndexerId', 'correctionDate',
+  'withAuthorizations', 'withBankMovements']);
+export function marcaAusentes(parametros: Record<string, string>): boolean {
+  return parametros.selectionType === 'I' && !!parametros.startDate && !!parametros.endDate
+    && Object.keys(parametros).every((k) => SEM_FILTRO.has(k));
+}
+
 // Retry-After em segundos (o Sienge manda número); sem cabeçalho, 60 s.
 export function esperaDoSienge(retryAfter: string | null): number {
   const n = Number(retryAfter);

@@ -4,7 +4,7 @@
 // Segredos (Edge Functions › Secrets): SIENGE_USUARIO e SIENGE_SENHA. SUPABASE_DB_URL vem do Supabase.
 // A chave de quem chama fica no Vault do banco (sienge_carga_chave), lida aqui e pelo pg_cron.
 import postgres from 'npm:postgres@3.4.4';
-import { cabecalhosParaGuardar, esperaDoSienge, montarConsulta, proximaAcaoMassa, type Carga, type Cota } from './logica.ts';
+import { cabecalhosParaGuardar, esperaDoSienge, marcaAusentes, montarConsulta, proximaAcaoMassa, type Carga, type Cota } from './logica.ts';
 
 const SUB = Deno.env.get('SIENGE_SUBDOMINIO') ?? 'bkmincorporadora';
 const MASSA = `https://api.sienge.com.br/${SUB}/public/api/bulk-data/v1`;
@@ -59,6 +59,7 @@ Deno.serve(async (req) => {
       }
       if (acao.tipo === 'concluir') {
         await tx`update sienge.cargas set situacao = 'concluida', concluida_em = now() where id = ${c.id}`;
+        if (!marcaAusentes(c.parametros)) return { carga: c.id, passo: 'concluida', removidas: null };
         const [m] = await tx`select sienge.marcar_ausentes_pagar(${c.id}) as n`;
         return { carga: c.id, passo: 'concluida', removidas: m.n };
       }
