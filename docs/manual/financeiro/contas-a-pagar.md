@@ -55,6 +55,16 @@ Quando a nota chega e o título nasce, ele **consome** a previsão correspondent
 
 Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depois de criado, e a API aceita os impostos já na criação.
 
+#### Forma de pagamento e envio ao Sienge (PR #71)
+
+🟡 Código pronto no PR #71, ainda não juntado:
+
+- **Forma de pagamento de cada parcela:** quem lança a nota diz como cada parcela vai ser paga, por PIX (com o tipo e a chave) ou por boleto (com a linha digitável). O sistema confere a chave e os dígitos do boleto.
+- **Trava depois do primeiro voto:** depois do primeiro voto da alçada, ninguém muda a forma de pagamento, nem quem lançou. Ela só muda pela revisão do título.
+- **Envio automático:** o título aprovado vai sozinho ao Sienge, já com a forma de pagamento. A situação do envio aparece no título: pendente, enviado, erro ou manual.
+- **Divisão em parcelas:** o valor se divide em partes iguais, e o centavo que sobra fica na primeira parcela, como o Sienge faz. Antes ficava na última.
+- **Limite desta primeira versão:** nota com retenção ou caução ainda não vai ao Sienge.
+
 ### Previsões de despesa na transição
 
 ✅ **Decidido** (Moises, 14/nov/2026, depois dos comentários do diretor financeiro). O módulo de Orçamentos fica para depois. Enquanto isso:
