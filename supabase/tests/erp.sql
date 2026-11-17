@@ -6131,7 +6131,33 @@ insert into erp.previsoes (id, empresa_id, origem, nucleo_economico_id, centro_c
 values ('68000000-0000-0000-0000-0000000000a2', :'spe', 'manual', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2026-09-01', '2026-09-25', 500);
 select pg_temp.sis();
 select pg_temp.ok((select acumulado = :acum1 + 500 from erp.previsao_alcadas where previsao_id = '68000000-0000-0000-0000-0000000000a2' and divisao_id is null),
-  'previsão: o acumulado da previsão nova soma a aprovada do mês (e não a que espera)');
+  'previsão: o acumulado da previsão nova soma a aprovada do mês');
+select pg_temp.volta();
+-- S-129: a que espera também conta; dividir em duas não baixa a faixa (Moises, 17/11/2026)
+select pg_temp.como(:'analista');
+insert into erp.previsoes (id, empresa_id, origem, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+values ('68000000-0000-0000-0000-0000000000c1', :'spe', 'manual', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2027-01-01', '2027-01-10', 30000);
+insert into erp.previsoes (id, empresa_id, origem, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+values ('68000000-0000-0000-0000-0000000000c2', :'spe', 'manual', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2027-01-01', '2027-01-20', 30000);
+select pg_temp.sis();
+select acumulado as acum_c1, fases as fases_c1 from erp.previsao_alcadas where previsao_id = '68000000-0000-0000-0000-0000000000c1' and divisao_id is null \gset
+select acumulado as acum_c2, fases as fases_c2 from erp.previsao_alcadas where previsao_id = '68000000-0000-0000-0000-0000000000c2' and divisao_id is null \gset
+select pg_temp.ok(not erp.previsao_aprovada('68000000-0000-0000-0000-0000000000c1') and :acum_c2 = :acum_c1 + 30000,
+  'previsão: a segunda previsão do mês soma a primeira, que ainda espera aprovação');
+select pg_temp.ok(:'fases_c1' = '{AREA,AF}' and :'fases_c2' = '{AREA,AF,AD}',
+  'previsão: com a soma acima de 50 mil, a segunda pega a faixa da soma (gestor, AF e AD)');
+select pg_temp.volta();
+-- a nota que consome a previsão que espera conta só o que passa do saldo dela
+select pg_temp.como(:'diretor');
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto) values
+  ('70000000-0000-0000-0000-0000000000f5', :'spe', '10000000-0000-0000-0000-000000000007', 'nfse', '9105', '2027-01-05', '2027-01-01', 30000);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('70000000-0000-0000-0000-0000000000f5', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select erp.lancar_documento('70000000-0000-0000-0000-0000000000f5', array['2027-01-20']::date[],
+                            array['68000000-0000-0000-0000-0000000000c1']::uuid[]) as tf5 \gset
+select pg_temp.sis();
+select acumulado as acum_f5 from erp.titulo_alcadas where titulo_id = :'tf5' and divisao_id is null \gset
+select pg_temp.ok(:acum_f5 = :acum_c2, 'previsão: a nota que consome a que espera não conta duas vezes');
 select pg_temp.volta();
 -- recusa cancela a previsão
 select pg_temp.como(:'gestor');

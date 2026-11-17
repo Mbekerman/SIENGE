@@ -16,7 +16,7 @@
 --    lançou não aprova). Sem faixa configurada, só o master aprova (falta de aprovador vai ao master).
 --    Centro sem gestor e sem faixas próprias: a previsão nasce aprovada, como o título nasce sem alçada.
 --    Recusar cancela a previsão.
--- 3. Acumulado do mês: a previsão aprovada conta no mês dela; a nota que a consome conta só o que
+-- 3. Acumulado do mês: a previsão aberta, aprovada ou esperando, conta no mês dela (S-129); a nota que a consome conta só o que
 --    passa do saldo da previsão (a parte consumida sai do saldo, e o título conta inteiro).
 --
 -- Fica para depois (já registrado): a AD a mais para nota sem previsão, a verba livre e as travas de data.
@@ -252,8 +252,10 @@ create function erp.previsao_aprovada(p_id uuid) returns boolean language sql st
                      and not exists (select 1 from erp.previsao_alcadas a where a.previsao_id = p.id and erp._fase_previsao(a) is not null) end
       from erp.previsoes p where p.id = p_id), false) $$;
 
--- O saldo das previsões aprovadas no mês, para o acumulado da alçada: as do centro (ou da divisão) e,
--- com soma_fornecedor, as do mesmo fornecedor; no modo por núcleo, só as do núcleo pedido.
+-- O saldo das previsões a pagar abertas no mês, aprovadas ou esperando (S-129, Moises 17/11/2026:
+-- "Contar, como no título"; dividir em várias previsões não baixa a faixa), para o acumulado da alçada:
+-- as do centro (ou da divisão) e, com soma_fornecedor, as do mesmo fornecedor; no modo por núcleo, só
+-- as do núcleo pedido. A recusada é cancelada e sai.
 create function erp._previsoes_no_acumulado(p_empresa uuid, p_pessoa uuid, p_mes date, p_centro uuid, p_divisao uuid,
                                             p_nucleo uuid, p_excluir uuid) returns numeric language sql stable as $$
   select coalesce(sum(erp._previsao_saldo(q.id)), 0)
@@ -265,11 +267,10 @@ create function erp._previsoes_no_acumulado(p_empresa uuid, p_pessoa uuid, p_mes
      and (g.acumulado = 'centro' or q.empresa_id = p_empresa)
      and (g.acumulado <> 'nucleo_centro' or q.centro_custo_id <> p_centro
           or (p_divisao is not null and q.divisao_id is distinct from p_divisao)
-          or q.nucleo_economico_id is not distinct from p_nucleo)
-     and erp.previsao_aprovada(q.id) $$;
+          or q.nucleo_economico_id is not distinct from p_nucleo) $$;
 
 -- Uma alçada da previsão (centro, ou divisão com faixas próprias): o acumulado do mês é o dos títulos
--- do centro (como no título) mais as previsões aprovadas e esta; o limite por título usa o valor dela.
+-- do centro (como no título) mais as previsões abertas do mês e esta; o limite por título usa o valor dela.
 create function erp._fixar_alcada_previsao(p erp.previsoes, p_centro uuid, p_divisao uuid) returns erp.alcadas_pagamento
 language plpgsql as $$
 declare v_modo text := (select acumulado from erp.regra_alcada_pagamento);
@@ -410,7 +411,7 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------------------------------
--- 3. Acumulado do título: soma as previsões aprovadas do mês (a parte consumida já saiu do saldo)
+-- 3. Acumulado do título: soma as previsões abertas do mês (a parte consumida já saiu do saldo)
 -- ---------------------------------------------------------------------------------------------
 create or replace function erp._fixar_alcada(t erp.titulos, p_centro uuid, p_divisao uuid) returns erp.alcadas_pagamento
 language plpgsql as $$
@@ -434,7 +435,7 @@ begin
        and (v_modo <> 'nucleo_centro' or r2.centro_custo_id <> p_centro
             or (p_divisao is not null and r2.divisao_id is distinct from p_divisao)
             or r2.nucleo_economico_id is not distinct from r.nucleo_economico_id);
-    -- as previsões aprovadas do mês, pelo saldo (a parte já consumida por nota está no título)
+    -- as previsões abertas do mês, pelo saldo (a parte já consumida por nota está no título)
     v_soma := v_soma + erp._previsoes_no_acumulado(t.empresa_id, t.pessoa_id, t.competencia, p_centro, p_divisao,
                                                    r.nucleo_economico_id, null);
     if v_acum is null or v_soma > v_acum then v_acum := v_soma; v_titulos := v_ids; end if;
