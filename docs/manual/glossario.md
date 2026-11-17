@@ -25,6 +25,7 @@ As palavras abaixo têm um sentido preciso no ERP BKM. Quando houver diferença 
 | **Estágio** | Em que ponto o valor está: orçado, previsto, comprometido ou realizado. |
 | **Fechamento do mês** | O ato que trava os lançamentos de um mês. Depois dele, mudar algo exige alçada mais alta. |
 | **Fluxo de caixa** | Não é cadastro: é uma visão que soma o previsto, o comprometido e o realizado por data de caixa. |
+| **Kostyl** | Centro de custo de cada SPE para as despesas da holding pagas pela SPE. Fica fora da DRE do empreendimento; o custo entra na DRE da holding, na linha da natureza (Moises, 17/11/2026). |
 | **Liberação da medição** | Passo do Sienge que transforma a medição autorizada em título a pagar. Hoje só se faz à mão no Sienge. |
 | **Livro de lançamentos** | A tabela única onde todo valor do sistema vira uma linha com as mesmas classificações. É de onde saem relatórios, BI e consultas. |
 | **Medição** | O registro do quanto de um contrato foi executado num período; é o que gera a cobrança. |
