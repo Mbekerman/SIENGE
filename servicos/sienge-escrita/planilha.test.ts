@@ -20,6 +20,7 @@ test('chave: recusa ausente, inválida e token_uri que não é do Google', () =>
   assert.throws(() => lerChave(undefined), /falta o segredo/);
   assert.throws(() => lerChave('x'), /não é um JSON/);
   assert.throws(() => lerChave('{"client_email":"a"}'), /sem client_email ou private_key/);
+  assert.throws(() => lerChave(JSON.stringify({ client_email: 'a', private_key: 'MIIEvQIBADANBg' })), /sem client_email ou private_key/);
   assert.throws(() => lerChave(JSON.stringify({ client_email: 'a', private_key: '-----BEGIN PRIVATE KEY-----', token_uri: 'https://mal.example/token' })), /token_uri/);
 });
 
@@ -38,6 +39,7 @@ test('JWT da conta de serviço: RS256 válido, escopo só de planilhas, 1 hora',
   assert.deepEqual(JSON.parse(new TextDecoder().decode(de64(h))), { alg: 'RS256', typ: 'JWT' });
   const corpo = JSON.parse(new TextDecoder().decode(de64(c)));
   assert.equal(corpo.scope, ESCOPO);
+  assert.equal(ESCOPO, 'https://www.googleapis.com/auth/spreadsheets'); // só planilhas, nunca o Drive inteiro
   assert.equal(corpo.aud, 'https://oauth2.googleapis.com/token');
   assert.equal(corpo.exp - corpo.iat, 3600);
   assert.ok(await crypto.subtle.verify('RSASSA-PKCS1-v1_5', k.publica, de64(s), new TextEncoder().encode(`${h}.${c}`)));
@@ -75,4 +77,11 @@ test('atualizar: token pelo Google, limpa a aba e grava tudo; erro do Google par
     ? new Response('{"access_token":"tk"}', { status: 200 })
     : new Response('{"error":{"message":"The caller does not have permission"}}', { status: 403 })) as typeof fetch;
   await assert.rejects(atualizarPlanilha(async () => [], lerChave(k.json), id, new Date(), recusa), /Google gravar respondeu 403/);
+});
+
+test('erro do token não leva a assertion (o JWT vale 1 hora)', async () => {
+  const k = await chaveTeste();
+  const recusa = (async () => new Response('{"error":"invalid_grant"}', { status: 400 })) as typeof fetch;
+  await assert.rejects(atualizarPlanilha(async () => [], lerChave(k.json), '1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-ab', new Date(), recusa),
+    (e: unknown) => e instanceof Error && /Google token respondeu 400/.test(e.message) && !/assertion|eyJ/.test(e.message));
 });

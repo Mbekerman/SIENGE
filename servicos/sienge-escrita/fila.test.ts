@@ -346,3 +346,15 @@ test('cruzamento: sem empresa para cruzar (fora da madrugada ou feito), nada a f
   const h: Http = { ler: async () => { throw new Error('não chama'); }, enviar: async () => { throw new Error('não'); } };
   assert.deepEqual(await processarUm(x.b, h, cfg), { passo: 'nada a fazer', enfileirados: 1 });
 });
+
+test('cruzamento: mais de 50 páginas para com erro, sem apontar estranhas', async () => {
+  const c = cruzamento([]);
+  let paginas = 0;
+  const sem_fim: Http = { ler: async () => { paginas++; return { results: Array.from({ length: 200 }, (_, i) => ({ id: paginas * 1000 + i })) }; },
+    enviar: async () => { throw new Error('não'); } };
+  const r = await processarUm(c.b, sem_fim, cfg);
+  assert.equal(r.passo, 'cruzamento com erro');
+  assert.match((r as { erro: string }).erro, /mais de 10000 linhas PRV/);
+  assert.equal(paginas, 50);
+  assert.deepEqual(c.fins.map((f) => f.estranhas.length), [0]);
+});
