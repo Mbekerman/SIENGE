@@ -57,10 +57,17 @@ Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depo
 
 #### Forma de pagamento e envio ao Sienge (PR #71)
 
-🟡 Código pronto no PR #71, ainda não juntado:
+🟡 Código pronto no PR #71, ainda não juntado. As regras de boleto e PIX foram aprovadas pelo Moises em 17/nov/2026.
 
 - **Forma de pagamento de cada parcela:** quem lança a nota diz como cada parcela vai ser paga, por PIX (com o tipo e a chave) ou por boleto (com a linha digitável). O sistema confere a chave e os dígitos do boleto.
-- **Trava depois do primeiro voto:** depois do primeiro voto da alçada, ninguém muda a forma de pagamento, nem quem lançou. Ela só muda pela revisão do título.
+- **Trava:** depois do primeiro voto da alçada, ou com o título já na fila do Sienge, ninguém muda mais a forma de pagamento, nem quem lançou. Ela só volta a mudar na revisão do título.
+- **Boleto** (Moises, 17/nov/2026): o valor impresso na linha digitável tem que ser o da parcela. Boleto sem valor impresso (zero) é aceito.
+- **PIX por CPF ou CNPJ** (Moises, 17/nov/2026): a chave tem que ser o documento do credor do título. A chave de outra pessoa só entra com uma justificativa, que aparece para quem aprova.
+- **Avisos em cada parcela, para quem aprova:**
+  - "A chave não é do documento do credor", para chave de e-mail, telefone ou aleatória;
+  - "Chave CPF/CNPJ de outra pessoa", seguido da justificativa;
+  - "Chave nova para este credor". Uma chave é nova quando nunca foi usada num título desse credor que já foi para o Sienge.
+- **Aviso crítico de chave nova:** quando o título aprovado vai ao Sienge com uma chave nova, o master e a lista AF recebem um aviso crítico. Esse aviso não se desliga, nem no sino nem no e-mail.
 - **Envio automático:** o título aprovado vai sozinho ao Sienge, já com a forma de pagamento. A situação do envio aparece no título: pendente, enviado, erro ou manual.
 - **Divisão em parcelas:** o valor se divide em partes iguais, e o centavo que sobra fica na primeira parcela, como o Sienge faz. Antes ficava na última.
 - **Limite desta primeira versão:** nota com retenção ou caução ainda não vai ao Sienge.
