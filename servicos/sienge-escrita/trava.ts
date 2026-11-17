@@ -22,8 +22,8 @@
 // 5. Empresa: em teste, só as empresas de teste (hoje a 11). Em produção, nunca as de teste nem as
 //    fora do ERP (Muchmore, 1). Sem empresa conhecida, ou com empresas divergentes, recusa.
 //
-// conferirGravacao() é pura (testada em trava.test.ts); gravarComTrava() faz a leitura da empresa
-// do registro com a função que recebe e só então chama conferirGravacao().
+// conferirGravacao() é pura (testada em trava.test.ts); gravarComTrava() lê a empresa do registro com a
+// função que recebe, chama conferirGravacao() e, se passar, envia ela mesma o pedido conferido.
 
 export const EMPRESAS_TESTE = [11] as const;
 export const EMPRESAS_FORA = [1] as const; // Muchmore: não entra no ERP (Moises, 15/11/2026)
@@ -148,7 +148,9 @@ export function conferirGravacao(p: Pedido, ambiente: Ambiente, ctx: Contexto = 
     empresa = doCorpo ?? informada;
     if (empresa === null) return { ok: false, motivo: `${metodo} ${p.caminho} sem empresa conhecida` };
     if (!ehProducao(ambiente)) {
-      for (const c of credoresDoCorpo(p.corpo)) {
+      const credores = credoresDoCorpo(p.corpo);
+      if (recurso === 'bills' && credores.length === 0) return { ok: false, motivo: 'título novo sem creditorId' };
+      for (const c of credores) {
         if (c === null || !(ctx.credoresTeste?.has(c) ?? false)) return { ok: false, motivo: `credor ${c ?? '?'} não é credor de teste` };
       }
     }
@@ -163,11 +165,15 @@ export const LEITURA_EMPRESA: Record<string, { caminho: (id: string) => string; 
 
 export type LerJson = (caminho: string) => Promise<unknown>;
 
+// Quem grava é a própria trava, a partir do pedido conferido (S-123): o adaptador não passa uma
+// chamada pronta, que poderia apontar para outro id; passa só a função que envia método, caminho e corpo.
+export type Enviar<T> = (metodo: string, caminho: string, corpo: unknown) => Promise<T>;
+
 export async function gravarComTrava<T>(
   p: Pedido,
   ambiente: Ambiente,
   ler: LerJson,
-  gravar: () => Promise<T>,
+  enviar: Enviar<T>,
   ctx: Omit<Contexto, 'empresaDoRegistro'> = {},
 ): Promise<T> {
   let empresaDoRegistro: number | null = null;
@@ -181,5 +187,5 @@ export async function gravarComTrava<T>(
   }
   const d = conferirGravacao(p, ambiente, { ...ctx, empresaDoRegistro });
   if (!d.ok) throw new Error(`trava do Sienge: ${d.motivo}`);
-  return await gravar();
+  return await enviar(p.metodo.toUpperCase(), p.caminho, p.corpo);
 }

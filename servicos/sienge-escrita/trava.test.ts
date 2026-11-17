@@ -20,6 +20,7 @@ test('título novo em teste: só empresa 11 e credor de teste', () => {
   assert.equal(conferirGravacao(novo(titulo(11, 27)), 'dev', ctxTeste).ok, false); // credor real
   assert.equal(conferirGravacao(novo(titulo(11, null)), 'dev', ctxTeste).ok, false);
   assert.equal(conferirGravacao(novo(titulo(11)), 'dev').ok, false); // sem lista de credores de teste
+  assert.equal(conferirGravacao(novo({ debtorId: 11, totalInvoiceAmount: 1 }), 'dev', ctxTeste).ok, false); // sem creditorId
 });
 
 test('ambiente diferente da palavra exata conta como teste', () => {
@@ -108,14 +109,14 @@ test('registroDoCaminho', () => {
 test('gravarComTrava lê a empresa do título antes e só grava se passar', async () => {
   const lidos: string[] = [];
   const ler = async (c: string) => { lidos.push(c); return c === '/bills/8547' ? { debtorId: 11 } : { debtorId: 2 }; };
-  let gravou = 0;
-  const gravar = async () => { gravou++; return 'ok'; };
-  assert.equal(await gravarComTrava(pix(8547, 11), 'dev', ler, gravar, ctxTeste), 'ok');
+  const enviados: string[] = [];
+  const gravar = async (m: string, c: string) => { enviados.push(`${m} ${c}`); return 'ok'; };
+  assert.equal(await gravarComTrava({ ...pix(8547, 11), metodo: 'patch' }, 'dev', ler, gravar, ctxTeste), 'ok');
   await assert.rejects(gravarComTrava(pix(8457, 11), 'dev', ler, gravar, ctxTeste), /registro \(2\)/);
   // recurso sem leitura conhecida: recusa sem gravar
   await assert.rejects(gravarComTrava({ metodo: 'PATCH', caminho: '/supply-contracts/measurements/2', empresa: 11 }, 'dev', ler, gravar, ctxTeste), /não lida/);
   // leitura não é feita para registro novo nem para credor
   await assert.rejects(gravarComTrava({ metodo: 'PATCH', caminho: '/creditors/27/pix-informations/1' }, 'dev', ler, gravar), /PIX/);
   assert.deepEqual(lidos, ['/bills/8547', '/bills/8457']);
-  assert.equal(gravou, 1);
+  assert.deepEqual(enviados, ['PATCH /bills/8547/installments/1/payment-information/pix']); // envia o pedido conferido, não outro
 });

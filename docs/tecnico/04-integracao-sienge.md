@@ -72,7 +72,7 @@ Fonte de verdade da API: os YAMLs em `Mbekerman/sienge-api-docs/oficial/yaml-fil
 - **Registro que já existe** (rota com id: parcela, PIX ou boleto da parcela, anexo, autorizar, DELETE): a empresa é lida no próprio registro no Sienge antes da gravação (hoje só `/bills`, pelo `debtorId`), nunca só a declarada por quem chama. Recurso sem leitura conhecida recusa. Em teste, o registro também tem de estar na lista dos criados pelo próprio teste, para um id digitado errado não alcançar outro título.
 - **Credor:** PIX e conta bancária de credor nunca se gravam pela API, em ambiente nenhum. Em teste, nenhuma gravação em credor. Em produção, só a inclusão de credor novo (`POST /creditors`).
 
-O adaptador do passo 1 ainda não existe: quando existir, todo envio dele passa por essa função (testes em `trava.test.ts`, no CI).
+A própria trava envia o pedido que conferiu: o adaptador entrega só a função que envia método, caminho e corpo, para não haver uma chamada pronta apontando para outro id (S-123). Medição e contrato ainda não têm leitura de empresa e ficam recusados até ganharem uma. O adaptador do passo 1 ainda não existe: quando existir, todo envio dele passa por essa função (testes em `trava.test.ts`, no CI).
 
 Testes feitos em 6/nov/2026 no contrato de teste **CTP/28**: empresa 2 (BKM Incorporadora e Construtora S.A.), obra 13 (Escritório Central BKMSP), credor 27, item 1 "vb" a R$ 1,00 por unidade.
 
