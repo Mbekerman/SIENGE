@@ -155,6 +155,19 @@ O procedimento completo, escrito para o financeiro e a contabilidade, está em [
   - **Nota em nome de quem usou**: quem pagou fica com um valor a receber dessa empresa até o acerto.
 - ✅ **A nota de débito sai sozinha** (Moises, 16/nov/2026): ao lançar a conta, quem paga marca a empresa (ou o PDV) que vai reembolsar, como já escolhe o centro. No fim do mês, o sistema junta os títulos marcados para cada empresa, cada um com a sua natureza, e gera a nota de débito.
 - ✅ **PDV de várias SPEs**: o percentual de cada SPE é fixo e tem data de início; muda só com nova vigência.
+- ✅ **Repasse ou rateio, nunca os dois** (Moises, 17/nov/2026):
+  - **A holding pagou:** o caminho é o repasse. A holding cobra cada SPE, e cada uma lança a sua parte na natureza "Repasse de custo do PDV entre empresas", que agora fica no grupo de ocupação.
+  - **A própria SPE pagou:** a nota é rateada entre os núcleos pelo PDV escolhido no lançamento.
+  - **Bloqueio:** a mesma nota nunca passa pelos dois caminhos. O sistema bloqueia o repasse de uma nota que já foi rateada, senão o custo entraria duas vezes na DRE.
+  - ⚠️ **Conflito a resolver:** o exemplo da decisão rateia uma nota da SPE A entre os núcleos da A e da B. Duas regras já decididas proíbem isso. Pela trava S-056, o núcleo é sempre da mesma empresa do registro. Pelo procedimento de 16/11, uma nota não se divide entre empresas, porque tem um só tomador. Falta o Moises dizer qual regra vale quando o PDV atende SPEs diferentes.
+- ✅ **Não existe divisão por PDV físico** (Moises, 17/nov/2026). O lançamento escolhe o PDV, e o PDV define o rateio entre os núcleos, por vigência. O lançamento guarda qual PDV foi.
+- ✅ **Árvore do Marketing e do PDV fechada** (Moises, 17/nov/2026). Ela tem 39 divisões nos centros Marketing, "PDV - Custo fixo" e "PDV - Construção e reforma". As naturezas liberadas e as regras de fronteira estão na planilha `/mnt/project-files/erp-bkm/naturezas/arvore-marketing-pdv-2026-11-17.xlsx`, aba "Regras de fronteira". As principais:
+  - Produção paga a confecção, e Mídia paga a veiculação.
+  - Promoção são as ações de rua, em empresas e porta a porta (PAP). Eventos são evento, feirão e festa, e tudo o que se contrata para o evento entra nele.
+  - A comunicação visual do PDV fica toda em Marketing › Mídia Off.
+  - Pessoal, no Marketing, é uma divisão de nível 1 sem filhos e recebe lançamento direto.
+  - Ocupação, no PDV, substitui "Imóvel e conservação" e junta as contas de consumo: energia, água, gás, telefonia e internet. O serviço de limpeza fica em Ocupação; o material de limpeza, em Copa e limpeza.
+- ✅ **Natureza nova "Ações promocionais de divulgação"**, no grupo 09. Com ela, o plano tem 217 naturezas.
 - ✅ **Consórcio é a exceção**: fica na holding, no modo só gestão, sem reembolso.
 - 🟡 **Prazo de acerto**: até o dia 10 do mês seguinte. É proposta, ainda não decidida.
 - 🟡 **Até o ERP entrar**, passo manual no Sienge: a holding não lança a despesa reembolsada na conta da despesa, e a SPE deixa de usar a conta 2010503 (Custo fixo de PDV). Ver [Passos manuais no Sienge](../transversais/passos-manuais-no-sienge.md).
