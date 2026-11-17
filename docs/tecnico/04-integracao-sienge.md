@@ -191,4 +191,6 @@ Decisão do Moises (14/nov/2026): sem módulo de orçamento por ora, a previsão
 
 **O programa:** o mesmo `processarUm()`. Parcela sem forma não tem passo de pagamento. Quando não há item vencido, confere uma linha a apagar: `GET /bills/{id}` com 404 marca apagada; outro erro fica para a próxima conferência. Só leitura, não passa pela trava.
 
+**Limites conhecidos (S-131, revisão de 17/nov/2026):** a linha PRV vai com o saldo do momento do envio e não muda depois. A nota que consome a previsão em parte deixa a PRV inteira e o título da nota no Sienge ao mesmo tempo: o valor conta duas vezes no Sienge até a previsão ser encerrada (saldo ou saving), quando a PRV vai para a lista do que apagar. A natureza reclassificada também não chega à PRV. A conferência marca apagado em qualquer 404, sem antes confirmar que um título que sabidamente existe responde 200 (um caminho errado ou uma mudança da API marcaria tudo). Os três ficam para o cruzamento.
+
 **Ainda não feito:** planilha Google só leitura com a lista do que apagar; aviso por e-mail; cruzamento que recria a linha PRV faltante e marca a estranha inválida avisando o AF; a varredura completa de madrugada (hoje a conferência roda quando a fila está vazia, uma linha por minuto); criar o credor "PREVISÃO BKM" no Sienge e gravar o parâmetro.

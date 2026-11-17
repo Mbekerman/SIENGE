@@ -6115,6 +6115,8 @@ select pg_temp.erro_igual($$select erp.decidir_previsao('68000000-0000-0000-0000
   'Esta fase de aprovação é de quem está em AREA', 'previsão: em sequência, a AF espera o gestor');
 select pg_temp.como(:'gestor');
 select pg_temp.ok(erp.decidir_previsao('68000000-0000-0000-0000-0000000000a1', true) = 'pendente', 'previsão: o gestor aprova a fase dele');
+select pg_temp.erro_igual($$select erp.decidir_previsao('68000000-0000-0000-0000-0000000000a1', true)$$,
+  'Você já aprovou uma fase de aprovação desta previsão', 'previsão: cada pessoa aprova uma fase só');
 select pg_temp.como(:'contador');
 select pg_temp.ok(erp.decidir_previsao('68000000-0000-0000-0000-0000000000a1', true) = 'aprovado', 'previsão: a AF completa');
 select pg_temp.sis();
@@ -6189,6 +6191,14 @@ select pg_temp.ok((select saldo = 600 from erp.v_previsoes_a_decidir where id = 
 select pg_temp.como(:'leitor');
 select pg_temp.erro_igual($$select erp.encerrar_previsao('68000000-0000-0000-0000-0000000000a1', 'saving')$$,
   'Seu papel só permite consulta', 'saldo: leitura não encerra');
+savepoint sp_lanca;
+select pg_temp.sis();
+update erp.perfil_centros set nivel = 'leitor' where perfil_id = :'tudo' and centro_custo_id = :'cc_mkt';
+select pg_temp.como(:'analista');
+select pg_temp.ok(erp.vejo_previsao('68000000-0000-0000-0000-0000000000a1'), 'saldo: (o analista ainda vê a previsão)');
+select pg_temp.erro_igual($$select erp.encerrar_previsao('68000000-0000-0000-0000-0000000000a1', 'saving')$$,
+  'Você não lança nesta previsão', 'saldo: quem vê mas não lança no centro não encerra');
+rollback to savepoint sp_lanca;
 select pg_temp.como(:'analista');
 select pg_temp.erro_igual($$select erp.encerrar_previsao('68000000-0000-0000-0000-0000000000a1', 'saldo')$$,
   'Informe a data em que o saldo será pago', 'saldo: o saldo pede a data');
@@ -6224,6 +6234,43 @@ select pg_temp.erro_igual(format($$select erp.decidir_previsao(%L, true)$$, :'ps
   'O saldo segue a aprovação da previsão original', 'saldo: não se decide à parte');
 select pg_temp.erro_igual($$select erp.encerrar_previsao('68000000-0000-0000-0000-0000000000a1', 'saving')$$,
   'Só previsão aberta se encerra', 'saldo: encerrada não se encerra de novo');
+-- a original sem aprovação não vira saldo; o saldo perde a aprovação quando a original perde
+select pg_temp.como(:'diretor');
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto) values
+  ('70000000-0000-0000-0000-0000000000f3', :'spe', '10000000-0000-0000-0000-000000000007', 'nfse', '9103', '2026-11-03', '2026-11-01', 100);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('70000000-0000-0000-0000-0000000000f3', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select erp.lancar_documento('70000000-0000-0000-0000-0000000000f3', array['2026-11-20']::date[],
+                            array['68000000-0000-0000-0000-0000000000a4']::uuid[]);
+select pg_temp.sis();
+select pg_temp.ok(not erp.previsao_aprovada('68000000-0000-0000-0000-0000000000a4')
+                  and erp._previsao_saldo('68000000-0000-0000-0000-0000000000a4') > 0,
+  'saldo: (a4 consumida em parte e sem aprovação)');
+select pg_temp.volta();
+select pg_temp.erro_igual($$select erp.encerrar_previsao('68000000-0000-0000-0000-0000000000a4', 'saldo', '2030-03-15')$$,
+  'A previsão original não está aprovada; lance o saldo como previsão nova', 'saldo: a original sem aprovação não vira saldo');
+select pg_temp.sis();
+select id as pcontr from erp.previsoes where compromisso_id = '61000000-0000-0000-0000-0000000000a1' and origem = 'assinatura'
+ order by data_prevista limit 1 \gset
+select pg_temp.volta();
+select pg_temp.como(:'diretor');
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+select '70000000-0000-0000-0000-0000000000f4', p.empresa_id, p.pessoa_id, 'nfse', '9104', p.competencia, p.competencia, 1
+  from erp.previsoes p where p.id = :'pcontr';
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+select '70000000-0000-0000-0000-0000000000f4', p.nucleo_economico_id, p.centro_custo_id, p.natureza_id, 100 from erp.previsoes p where p.id = :'pcontr';
+select erp.lancar_documento('70000000-0000-0000-0000-0000000000f4', array[(select data_prevista from erp.previsoes where id = :'pcontr')]::date[],
+                            array[:'pcontr']::uuid[]);
+select erp.encerrar_previsao(:'pcontr', 'saldo', '2030-04-15') as psaldo2 \gset
+select pg_temp.sis();
+select pg_temp.ok(erp.previsao_aprovada(:'psaldo2'), 'saldo: o saldo da previsão do contrato aprovado nasce aprovado');
+select pg_temp.volta();
+select pg_temp.como(:'gestor');
+update erp.compromissos set valor_periodo = valor_periodo + 1 where id = '61000000-0000-0000-0000-0000000000a1';
+select pg_temp.sis();
+select pg_temp.ok(not erp.compromisso_aprovado('61000000-0000-0000-0000-0000000000a1') and not erp.previsao_aprovada(:'psaldo2'),
+  'saldo: o contrato voltou a esperar aprovação, e o saldo da previsão dele também');
+select pg_temp.volta();
 rollback;
 
 \echo '# previsão no Sienge: título PRV, fila e lista do que apagar'
