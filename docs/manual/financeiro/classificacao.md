@@ -157,9 +157,9 @@ O procedimento completo, escrito para o financeiro e a contabilidade, está em [
 - ✅ **PDV de várias SPEs**: o percentual de cada SPE é fixo e tem data de início; muda só com nova vigência.
 - ✅ **Repasse ou rateio, nunca os dois** (Moises, 17/nov/2026):
   - **A holding pagou:** o caminho é o repasse. A holding cobra cada SPE, e cada uma lança a sua parte na natureza "Repasse de custo do PDV entre empresas", que agora fica no grupo de ocupação.
-  - **A própria SPE pagou:** a nota é rateada entre os núcleos pelo PDV escolhido no lançamento.
-  - **Bloqueio:** a mesma nota nunca passa pelos dois caminhos. O sistema bloqueia o repasse de uma nota que já foi rateada, senão o custo entraria duas vezes na DRE.
-  - ⚠️ **Conflito a resolver:** o exemplo da decisão rateia uma nota da SPE A entre os núcleos da A e da B. Duas regras já decididas proíbem isso. Pela trava S-056, o núcleo é sempre da mesma empresa do registro. Pelo procedimento de 16/11, uma nota não se divide entre empresas, porque tem um só tomador. Falta o Moises dizer qual regra vale quando o PDV atende SPEs diferentes.
+  - **PDV que atende mais de uma empresa:** o caminho é sempre o repasse, mesmo quando uma SPE pagou. Quem pagou cobra as outras empresas pelos percentuais do PDV (Moises, 17/nov/2026, mantendo a trava S-056 e a regra de 16/11).
+  - **Rateio direto:** vale só entre núcleos da mesma empresa, pelo PDV escolhido no lançamento.
+  - **Bloqueio:** a mesma nota nunca passa pelos dois caminhos. O sistema bloqueia o repasse de uma nota já rateada, senão o custo entraria duas vezes na DRE.
 - ✅ **Não existe divisão por PDV físico** (Moises, 17/nov/2026). O lançamento escolhe o PDV, e o PDV define o rateio entre os núcleos, por vigência. O lançamento guarda qual PDV foi.
 - ✅ **Árvore do Marketing e do PDV fechada** (Moises, 17/nov/2026). Ela tem 39 divisões nos centros Marketing, "PDV - Custo fixo" e "PDV - Construção e reforma". As naturezas liberadas e as regras de fronteira estão na planilha `/mnt/project-files/erp-bkm/naturezas/arvore-marketing-pdv-2026-11-17.xlsx`, aba "Regras de fronteira". As principais:
   - Produção paga a confecção, e Mídia paga a veiculação.
