@@ -170,6 +170,23 @@ end $$;
 -- ---------------------------------------------------------------------------------------------
 -- 2. Alçada da previsão
 -- ---------------------------------------------------------------------------------------------
+-- Origem: o saldo de uma previsão encerrada aponta para ela; só a rotina grava as origens que valem
+-- aprovação sem alçada (assinatura e saldo_previsao).
+alter table erp.previsoes add column origem_previsao_id uuid references erp.previsoes;
+alter table erp.previsoes drop constraint previsoes_origem_check,
+  add constraint previsoes_origem_check check (origem in ('orcamento','assinatura','saldo_contrato','cronograma','manual','saldo_previsao'));
+alter table erp.previsoes drop constraint previsoes_situacao_check,
+  add constraint previsoes_situacao_check check (situacao in ('aberta','consumida','cancelada','encerrada'));
+alter table erp.previsoes add constraint previsoes_saldo_check check ((origem = 'saldo_previsao') = (origem_previsao_id is not null));
+create function erp.tg_previsao_origem() returns trigger language plpgsql as $$
+begin
+  if new.origem in ('assinatura','saldo_previsao') and not erp.agindo_como('erp_situacao') and not erp.sistema() then
+    raise exception 'A previsão de origem % nasce da rotina (contrato ou saldo), não à mão', new.origem;
+  end if;
+  return new;
+end $$;
+create trigger t_origem before insert on erp.previsoes for each row execute function erp.tg_previsao_origem();
+
 create table erp.previsao_alcadas (
   id                uuid primary key default gen_random_uuid(),
   previsao_id       uuid not null references erp.previsoes,
@@ -212,9 +229,12 @@ create trigger t_guarda before insert or update or delete on erp.previsao_aprova
   for each row execute function erp.tg_previsao_alcada_guarda();
 
 -- A previsão segue o contrato quando é de contrato ou assinatura recorrente.
+-- Só a previsão que a rotina do contrato gerou (origem assinatura, que só a rotina grava) segue a
+-- aprovação do contrato; a lançada à mão com o contrato ao lado (inclusive o saldo do contrato, que
+-- ainda não tem rotina) passa pela alçada.
 create function erp.previsao_do_contrato(p_id uuid) returns uuid language sql stable as $$
   select c.id from erp.previsoes p join erp.compromissos c on c.id = p.compromisso_id
-   where p.id = p_id and erp.compromisso_precisa_aprovacao(c.tipo) $$;
+   where p.id = p_id and p.origem = 'assinatura' and erp.compromisso_precisa_aprovacao(c.tipo) $$;
 
 create function erp._fase_previsao(a erp.previsao_alcadas) returns int language sql stable as $$
   select min(i) from generate_subscripts(a.fases, 1) i
@@ -225,6 +245,8 @@ create function erp.previsao_aprovada(p_id uuid) returns boolean language sql st
   select coalesce((
     select case when p.sentido <> 'pagar' then true
                 when p.situacao = 'cancelada' then false
+                -- o saldo de uma previsão encerrada vale a aprovação da original (Moises, 17/11/2026)
+                when p.origem_previsao_id is not null then erp.previsao_aprovada(p.origem_previsao_id)
                 when erp.previsao_do_contrato(p.id) is not null then erp.compromisso_aprovado(erp.previsao_do_contrato(p.id))
                 else not exists (select 1 from erp.previsao_aprovacoes v where v.previsao_id = p.id and not v.aprovado)
                      and not exists (select 1 from erp.previsao_alcadas a where a.previsao_id = p.id and erp._fase_previsao(a) is not null) end
@@ -290,7 +312,8 @@ end $$;
 create function erp.tg_previsao_alcada() returns trigger language plpgsql as $$
 declare f erp.alcadas_pagamento; v_centro boolean := false;
 begin
-  if new.sentido <> 'pagar' or new.centro_custo_id is null or erp.previsao_do_contrato(new.id) is not null then return null; end if;
+  if new.sentido <> 'pagar' or new.centro_custo_id is null or erp.previsao_do_contrato(new.id) is not null
+     or new.origem_previsao_id is not null then return null; end if;
   perform 1 from erp.centros_custo where id = new.centro_custo_id for update;   -- como no título (S-060)
   if new.divisao_id is not null and exists (select 1 from erp.alcadas_pagamento ap where ap.divisao_id = new.divisao_id) then
     f := erp._fixar_alcada_previsao(new, new.centro_custo_id, new.divisao_id);
@@ -320,6 +343,7 @@ begin
   select * into p from erp.previsoes where id = p_previsao for update;
   if p.id is null or not erp.vejo_previsao(p.id) then raise exception 'Previsão não existe'; end if;
   if erp.previsao_do_contrato(p.id) is not null then raise exception 'A previsão do contrato segue a aprovação do contrato'; end if;
+  if p.origem_previsao_id is not null then raise exception 'O saldo segue a aprovação da previsão original'; end if;
   if p.situacao <> 'aberta' then raise exception 'Só previsão aberta se aprova'; end if;
   if not exists (select 1 from erp.previsao_alcadas where previsao_id = p.id) then raise exception 'Esta previsão não passa pela alçada'; end if;
   if erp.previsao_aprovada(p.id) then raise exception 'A previsão já foi aprovada'; end if;
@@ -519,6 +543,109 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------------------------------
+-- 4. Assinatura pela rotina, e saldo × saving (Moises, 17/11/2026)
+-- ---------------------------------------------------------------------------------------------
+-- A rotina da assinatura grava como erp_situacao (a origem "assinatura" vale a aprovação do contrato);
+-- confere antes se quem chama lança no contrato, que o RLS conferia quando ela era invoker.
+create or replace function erp.gerar_previsoes_assinatura(p_compromisso uuid, p_ate date) returns int
+language plpgsql as $$
+declare c erp.compromissos; d date; v_passo interval; n int := 0; r record;
+begin
+  perform erp.exigir_editor();
+  select * into c from erp.compromissos where id = p_compromisso;
+  if c.id is null or not (erp.sistema() or erp.lanco_compromisso(c.id)) then raise exception 'Contrato não existe'; end if;
+  if c.tipo <> 'assinatura' or c.situacao <> 'ativo' then raise exception 'Só assinatura ativa gera previsões'; end if;
+  if not erp.rateio_completo('compromisso', c.id) then raise exception 'O rateio da assinatura não soma 100%%'; end if;
+  v_passo := case c.periodicidade when 'mensal' then '1 month' when 'bimestral' then '2 months'
+             when 'trimestral' then '3 months' when 'semestral' then '6 months' else '1 year' end::interval;
+  d := erp.mes(c.inicio);
+  while d <= least(p_ate, coalesce(c.fim, p_ate)) loop
+    if not exists (select 1 from erp.previsoes where compromisso_id = c.id and competencia = d and situacao <> 'cancelada') then
+      for r in select * from erp.ratear('compromisso', c.id, c.valor_periodo) loop
+        insert into erp.previsoes (empresa_id, origem, compromisso_id, pessoa_id, nucleo_economico_id, natureza_id,
+                                      centro_custo_id, divisao_id, subdivisao_id, competencia, data_prevista, valor, descricao)
+        values (c.empresa_id, 'assinatura', c.id, c.pessoa_id, r.nucleo_economico_id, r.natureza_id, r.centro_custo_id, r.divisao_id, r.subdivisao_id,
+                d, least(d + (coalesce(c.dia_vencimento, 1) - 1), (d + interval '1 month - 1 day')::date),
+                r.valor, c.descricao);
+      end loop;
+      n := n + 1;
+    end if;
+    d := (d + v_passo)::date;
+  end loop;
+  return n;
+end $$;
+
+-- O livro: encerrar estorna o saldo do previsto, como cancelar.
+create or replace function erp.tg_previsao() returns trigger language plpgsql as $$
+declare v_saldo numeric;
+begin
+  if tg_op = 'INSERT' then
+    insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, centro_custo_id, divisao_id, subdivisao_id,
+                                    competencia, data_caixa, valor, previsao_id)
+    values ('previsto', new.empresa_id, new.nucleo_economico_id, new.natureza_id, new.centro_custo_id, new.divisao_id, new.subdivisao_id,
+            new.competencia, new.data_prevista, erp.sinal(new.sentido) * new.valor, new.id);
+    return new;
+  end if;
+  if new.situacao in ('cancelada','encerrada') and old.situacao = 'aberta' then
+    v_saldo := erp._previsao_saldo(new.id);
+    if v_saldo > 0 then
+      insert into erp.lancamentos (estagio, empresa_id, nucleo_economico_id, natureza_id, centro_custo_id, divisao_id, subdivisao_id,
+                                      competencia, data_caixa, valor, previsao_id)
+      values ('previsto', new.empresa_id, new.nucleo_economico_id, new.natureza_id, new.centro_custo_id, new.divisao_id, new.subdivisao_id,
+              new.competencia, new.data_prevista, -erp.sinal(new.sentido) * v_saldo, new.id);
+    end if;
+  end if;
+  return new;
+end $$;
+
+-- A nota veio menor que a previsão: quem lança decide se a diferença ainda será paga (saldo, com a
+-- data que informar: nasce outra previsão, aprovada como a original) ou se foi economia (saving). Nos
+-- dois casos a previsão é encerrada (e a linha PRV dela sai do Sienge).
+create function erp.encerrar_previsao(p_previsao uuid, p_destino text, p_data date default null) returns uuid
+language plpgsql as $$
+declare p erp.previsoes; v_saldo numeric; v_nova uuid;
+begin
+  perform erp.exigir_editor();
+  select * into p from erp.previsoes where id = p_previsao for update;
+  if p.id is null or not erp.vejo_previsao(p.id) then raise exception 'Previsão não existe'; end if;
+  if not erp.lanco(p.nucleo_economico_id, p.centro_custo_id, p.natureza_id, p.criada_por, p.divisao_id) then
+    raise exception 'Você não lança nesta previsão';
+  end if;
+  if p.situacao <> 'aberta' then raise exception 'Só previsão aberta se encerra'; end if;
+  if not exists (select 1 from erp.titulo_previsoes tp join erp.titulos t on t.id = tp.titulo_id
+                  where tp.previsao_id = p.id and t.situacao <> 'cancelado') then
+    raise exception 'A previsão ainda não foi consumida por nenhuma nota; para desistir, cancele';
+  end if;
+  v_saldo := erp._previsao_saldo(p.id);
+  if p_destino = 'saving' then
+    if p_data is not null then raise exception 'Saving não tem data'; end if;
+  elsif p_destino = 'saldo' then
+    if p_data is null then raise exception 'Informe a data em que o saldo será pago'; end if;
+    if p_data < (now() at time zone 'America/Sao_Paulo')::date then raise exception 'A data do saldo já passou'; end if;
+    if not erp.previsao_aprovada(p.id) then raise exception 'A previsão original não está aprovada; lance o saldo como previsão nova'; end if;
+  else
+    raise exception 'Destino é saldo ou saving';
+  end if;
+  update erp.previsoes set situacao = 'encerrada' where id = p.id;
+  if p_destino = 'saldo' then
+    insert into erp.previsoes (empresa_id, sentido, origem, origem_previsao_id, compromisso_id, pessoa_id, nucleo_economico_id,
+                               natureza_id, centro_custo_id, divisao_id, subdivisao_id, competencia, data_prevista, valor, descricao)
+    values (p.empresa_id, p.sentido, 'saldo_previsao', p.id, p.compromisso_id, p.pessoa_id, p.nucleo_economico_id,
+            p.natureza_id, p.centro_custo_id, p.divisao_id, p.subdivisao_id, erp.mes(p_data), p_data, v_saldo,
+            left('Saldo · ' || coalesce(p.descricao, ''), 500))
+    returning id into v_nova;
+  end if;
+  return v_nova;
+end $$;
+
+-- As previsões que esperam a decisão: consumidas em parte por nota, com saldo e ainda abertas.
+create view erp.v_previsoes_a_decidir with (security_invoker = true) as
+  select v.id, v.empresa_id, v.pessoa_id, v.centro_custo_id, v.divisao_id, v.natureza_id, v.competencia, v.data_prevista,
+         v.valor, v.consumido, v.saldo
+    from erp.v_previsoes v
+   where v.situacao = 'aberta' and v.sentido = 'pagar' and v.consumido > 0 and v.saldo > 0;
+
+-- ---------------------------------------------------------------------------------------------
 -- Segurança
 -- ---------------------------------------------------------------------------------------------
 do $$
@@ -542,7 +669,7 @@ begin
             where n.nspname = 'erp' and p.proname in ('tg_compromisso_versao','tg_rateio_versao','compromisso_precisa_aprovacao',
               'compromisso_vagas','compromisso_aprovado','tg_compromisso_aprovacao','decidir_compromisso','tg_previsao_alcada_guarda',
               'previsao_do_contrato','_fase_previsao','previsao_aprovada','_previsoes_no_acumulado','_fixar_alcada_previsao',
-              'tg_previsao_alcada','decidir_previsao') loop
+              'tg_previsao_alcada','decidir_previsao','tg_previsao_origem','encerrar_previsao') loop
     execute format('revoke execute on function %s from public', f);
     if exists (select 1 from pg_roles where rolname = 'anon') then execute format('revoke execute on function %s from anon', f); end if;
     if exists (select 1 from pg_roles where rolname = 'service_role') then execute format('revoke execute on function %s from service_role', f); end if;
@@ -567,6 +694,9 @@ begin
     ('erp.decidir_previsao(uuid, boolean, text, uuid, uuid)', 'erp_situacao'),
     ('erp.tg_rateio_versao()', 'erp_situacao'),
     ('erp.tg_previsao_alcada()', 'erp_situacao'),
+    ('erp.encerrar_previsao(uuid, text, date)', 'erp_situacao'),
+    ('erp.gerar_previsoes_assinatura(uuid, date)', 'erp_situacao'),   -- a origem "assinatura" só pela rotina
+    ('erp.tg_previsao()', 'erp_situacao'),                             -- o create or replace acima volta a invoker
     ('erp.lancar_documento(uuid, date[], uuid[])', 'erp_situacao'),   -- o create or replace acima volta a invoker
     ('erp.compromisso_aprovado(uuid)', 'erp_conferencia'),
     ('erp.previsao_aprovada(uuid)', 'erp_conferencia')) v(f, dono) loop
@@ -577,5 +707,6 @@ end $$;
 -- A API decide; as conferências que respondem sobre qualquer id ficam só para o banco (S-126).
 grant execute on function erp.decidir_compromisso(uuid, boolean, text), erp.decidir_previsao(uuid, boolean, text, uuid, uuid),
                           erp.compromisso_precisa_aprovacao(text), erp.tg_compromisso_versao(), erp.tg_compromisso_aprovacao(),
-                          erp.tg_previsao_alcada_guarda()
+                          erp.tg_previsao_alcada_guarda(), erp.encerrar_previsao(uuid, text, date), erp.tg_previsao_origem()
   to authenticated;
+grant select on erp.v_previsoes_a_decidir to authenticated;

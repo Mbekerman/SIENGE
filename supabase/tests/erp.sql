@@ -962,7 +962,7 @@ select pg_temp.ok(not exists (
        'cadeia_titulo','conferir_ajuste','alcada_fase','alcada_pendente','alcada_recusada','titulos_do_acumulado',
        'checar_competencia','_registrar_ajuste','recusar_so_sucessao','recusar_admin_aprovador','_beneficiarios_acesso',
        'confirmar_titulo','lancar_documento','liberar_caucao','publicar_orcamento','decidir_titulo','reenviar_titulo',
-       'registrar_movimento_societario','fechar_mes','reabrir_mes','pedir_reclassificacao','decidir_reclassificacao','avisos_forma_pagamento','decidir_compromisso','decidir_previsao',
+       'registrar_movimento_societario','fechar_mes','reabrir_mes','pedir_reclassificacao','decidir_reclassificacao','avisos_forma_pagamento','decidir_compromisso','decidir_previsao','encerrar_previsao','gerar_previsoes_assinatura',
        'cancelar_reclassificacao','pedir_mudanca_acesso','decidir_mudanca_acesso','cancelar_mudanca_acesso','passar_master',
        'pedir_sucessao_master','decidir_sucessao_master','vetar_sucessao_master','efetivar_sucessao_master',
        'pedir_mudanca_config','decidir_mudanca_config','cancelar_mudanca_config','marcar_notificacoes_lidas')),
@@ -6162,6 +6162,68 @@ select acumulado as acum_f2 from erp.titulo_alcadas where titulo_id = :'tf2' and
 select pg_temp.ok(:acum_f1 = :acum1 + 100, 'previsão: o acumulado do título soma a previsão aprovada do mês');
 select pg_temp.ok(:acum_f2 = :acum_f1 + 400 - 400, 'previsão: a nota que consome a previsão não conta duas vezes (só o saldo que sobra)');
 select pg_temp.volta();
+
+-- só a rotina grava as origens que valem aprovação sem alçada
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format($$insert into erp.previsoes (empresa_id, origem, compromisso_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+  values (%L, 'assinatura', '61000000-0000-0000-0000-0000000000a1', %L, %L, %L, '2026-11-01', '2026-11-10', 99999)$$, :'spe', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04')),
+  'A previsão de origem assinatura nasce da rotina (contrato ou saldo), não à mão', 'previsão: ninguém lança à mão a origem do contrato');
+select pg_temp.erro_igual(format($$insert into erp.previsoes (empresa_id, origem, origem_previsao_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+  values (%L, 'saldo_previsao', '68000000-0000-0000-0000-0000000000a1', %L, %L, %L, '2026-11-01', '2026-11-10', 99999)$$, :'spe', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04')),
+  'A previsão de origem saldo_previsao nasce da rotina (contrato ou saldo), não à mão', 'previsão: ninguém lança à mão o saldo de outra previsão');
+insert into erp.previsoes (id, empresa_id, origem, compromisso_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+values ('68000000-0000-0000-0000-0000000000a4', :'spe', 'manual', '61000000-0000-0000-0000-0000000000a1', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2026-11-01', '2026-11-10', 700);
+select pg_temp.sis();
+select pg_temp.ok(erp.compromisso_aprovado('61000000-0000-0000-0000-0000000000a1') and not erp.previsao_aprovada('68000000-0000-0000-0000-0000000000a4')
+                  and exists (select 1 from erp.previsao_alcadas where previsao_id = '68000000-0000-0000-0000-0000000000a4'),
+  'previsão: a lançada à mão ao lado de um contrato aprovado passa pela alçada (não pega a aprovação do contrato)');
+select pg_temp.volta();
+select pg_temp.como(:'leitor');
+select pg_temp.falha($$select erp.gerar_previsoes_assinatura('61000000-0000-0000-0000-0000000000a1', '2026-12-31')$$,
+  'previsão: quem não lança no contrato não gera as previsões dele');
+
+-- saldo × saving: a nota (400) veio menor que a previsão (1000)
+select pg_temp.como(:'analista');
+select pg_temp.ok((select saldo = 600 from erp.v_previsoes_a_decidir where id = '68000000-0000-0000-0000-0000000000a1'),
+  'previsão: a consumida em parte aparece para decidir, com o saldo');
+select pg_temp.como(:'leitor');
+select pg_temp.erro_igual($$select erp.encerrar_previsao('68000000-0000-0000-0000-0000000000a1', 'saving')$$,
+  'Seu papel só permite consulta', 'saldo: leitura não encerra');
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual($$select erp.encerrar_previsao('68000000-0000-0000-0000-0000000000a1', 'saldo')$$,
+  'Informe a data em que o saldo será pago', 'saldo: o saldo pede a data');
+select pg_temp.erro_igual($$select erp.encerrar_previsao('68000000-0000-0000-0000-0000000000a1', 'saldo', '2020-01-01')$$,
+  'A data do saldo já passou', 'saldo: a data não fica no passado');
+select pg_temp.erro_igual($$select erp.encerrar_previsao('68000000-0000-0000-0000-0000000000a1', 'saving', '2030-01-01')$$,
+  'Saving não tem data', 'saving: sem data');
+select pg_temp.erro_igual($$select erp.encerrar_previsao('68000000-0000-0000-0000-0000000000a1', 'outro')$$,
+  'Destino é saldo ou saving', 'saldo: só os dois destinos');
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual($$select erp.encerrar_previsao('68000000-0000-0000-0000-0000000000a3', 'saving')$$,
+  'A previsão ainda não foi consumida por nenhuma nota; para desistir, cancele', 'saving: só previsão consumida em parte');
+savepoint sp_saving;
+select pg_temp.como(:'analista');
+select pg_temp.ok(erp.encerrar_previsao('68000000-0000-0000-0000-0000000000a1', 'saving') is null, 'saving: não cria outra previsão');
+select pg_temp.sis();
+select pg_temp.ok((select situacao = 'encerrada' from erp.previsoes where id = '68000000-0000-0000-0000-0000000000a1')
+                  and (select sum(valor) = 0 from erp.lancamentos where previsao_id = '68000000-0000-0000-0000-0000000000a1' and estagio = 'previsto')
+                  and not exists (select 1 from erp.previsoes where origem_previsao_id = '68000000-0000-0000-0000-0000000000a1'),
+  'saving: a previsão é encerrada e o saldo sai do previsto');
+rollback to savepoint sp_saving;
+select pg_temp.como(:'analista');
+select erp.encerrar_previsao('68000000-0000-0000-0000-0000000000a1', 'saldo', '2030-03-15') as psaldo \gset
+select pg_temp.sis();
+select pg_temp.ok((select situacao = 'encerrada' from erp.previsoes where id = '68000000-0000-0000-0000-0000000000a1')
+                  and (select valor = 600 and origem = 'saldo_previsao' and situacao = 'aberta' and competencia = '2030-03-01' and data_prevista = '2030-03-15'
+                         from erp.previsoes where id = :'psaldo' and origem_previsao_id = '68000000-0000-0000-0000-0000000000a1')
+                  and erp.previsao_aprovada(:'psaldo')
+                  and not exists (select 1 from erp.previsao_alcadas where previsao_id = :'psaldo'),
+  'saldo: encerra a original e nasce a previsão do saldo na data informada, aprovada como a original e sem alçada própria');
+select pg_temp.volta();
+select pg_temp.erro_igual(format($$select erp.decidir_previsao(%L, true)$$, :'psaldo'),
+  'O saldo segue a aprovação da previsão original', 'saldo: não se decide à parte');
+select pg_temp.erro_igual($$select erp.encerrar_previsao('68000000-0000-0000-0000-0000000000a1', 'saving')$$,
+  'Só previsão aberta se encerra', 'saldo: encerrada não se encerra de novo');
 rollback;
 
 \echo '# fim'
