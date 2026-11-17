@@ -5,9 +5,10 @@
 // Sem dependência de Deno nem de Node: o banco chega como a interface Banco (bancoPostgres() a monta
 // sobre o postgres.js) e o Sienge como Http (httpSienge() a monta sobre fetch). Testado em fila.test.ts.
 //
-// Situações da fila: pendente → enviado; erro (tenta de novo com espera crescente, até 6 h);
-// manual (divergência entre o Sienge e o ERP: ninguém tenta de novo até alguém olhar).
-import { Divergencia, enviarTitulo, ErroSienge, proximaTentativa, type PedidoTitulo, type Resposta } from './envio.ts';
+// Situações da fila: pendente → enviado; erro (tenta de novo com espera crescente, até 6 h, ou o que o
+// Sienge pedir no Retry-After); manual (divergência entre o Sienge e o ERP, ou o Sienge recusando o
+// pedido com 4xx em TENTATIVAS_4XX tentativas seguidas: ninguém tenta de novo até alguém olhar).
+import { Divergencia, enviarTitulo, erroPermanente, ErroSienge, proximaTentativa, segundosRetryAfter, type PedidoTitulo, type Resposta } from './envio.ts';
 import { gravarComTrava, type Ambiente } from './trava.ts';
 
 export type ItemFila = { titulo_id: string; sienge_id: number | null; tentativas: number };
@@ -34,6 +35,9 @@ export type Resultado =
   | { passo: 'enviado'; titulo: string; siengeId: number; criado: boolean; enfileirados: number }
   | { passo: 'erro' | 'manual'; titulo: string; erro: string; enfileirados: number };
 
+// Depois de tantas recusas 4xx seguidas (o pedido está errado, não o momento), o título vai para manual.
+export const TENTATIVAS_4XX = 3;
+
 export async function processarUm(banco: Banco, http: Http, cfg: Config): Promise<Resultado> {
   const agora = cfg.agora ?? (() => new Date());
   const enfileirados = await banco.enfileirar();
@@ -56,9 +60,18 @@ export async function processarUm(banco: Banco, http: Http, cfg: Config): Promis
     await banco.terminar(item.titulo_id, { situacao: 'enviado', passo: 'pagamento', erro: null, tentativas, proxima: agora() });
     return { passo: 'enviado', titulo: item.titulo_id, siengeId: r.siengeId, criado: r.criado, enfileirados };
   } catch (e) {
-    const msg = (e instanceof Error ? e.message : String(e)).slice(0, 1000);
-    const situacao = e instanceof Divergencia ? 'manual' : 'erro';
-    await banco.terminar(item.titulo_id, { situacao, erro: msg, tentativas, proxima: proximaTentativa(tentativas, agora()) });
+    let msg = (e instanceof Error ? e.message : String(e)).slice(0, 1000);
+    let situacao: 'erro' | 'manual' = e instanceof Divergencia ? 'manual' : 'erro';
+    if (situacao === 'erro' && erroPermanente(e) && tentativas >= TENTATIVAS_4XX) {
+      situacao = 'manual';
+      msg = `recusado pelo Sienge em ${tentativas} tentativas: ${msg}`.slice(0, 1000);
+    }
+    let proxima = proximaTentativa(tentativas, agora());
+    if (e instanceof ErroSienge && e.retryAfter !== null) {
+      const pedido = new Date(agora().getTime() + e.retryAfter * 1000);
+      if (pedido > proxima) proxima = pedido;
+    }
+    await banco.terminar(item.titulo_id, { situacao, erro: msg, tentativas, proxima });
     return { passo: situacao, titulo: item.titulo_id, erro: msg, enfileirados };
   }
 }
@@ -77,7 +90,10 @@ export function httpSienge(base: string, autorizacao: string, buscar: typeof fet
       signal: AbortSignal.timeout(60_000),
     });
     const texto = await r.text();
-    if (r.status < 200 || r.status > 299) throw new ErroSienge(r.status, `Sienge ${metodo} ${caminho.split('?')[0]} respondeu ${r.status}: ${texto.slice(0, 300)}`);
+    if (r.status < 200 || r.status > 299) {
+      throw new ErroSienge(r.status, `Sienge ${metodo} ${caminho.split('?')[0]} respondeu ${r.status}: ${texto.slice(0, 300)}`,
+        segundosRetryAfter(r.headers.get('retry-after'), new Date()));
+    }
     let json: unknown = null;
     try { json = texto ? JSON.parse(texto) : null; } catch { json = texto; }
     return { status: r.status, location: r.headers.get('location'), corpo: json };

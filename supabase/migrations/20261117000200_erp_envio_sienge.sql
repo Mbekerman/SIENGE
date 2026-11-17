@@ -108,6 +108,30 @@ create table erp.sienge_envios (
 );
 create index on erp.sienge_envios (proxima_em) where situacao in ('pendente','erro');
 
+-- O que a forma de pagamento precisa bater com o título (S-125, a parte que não depende de decisão):
+--   - boleto: o valor gravado na linha (os 10 últimos dígitos, em centavos) é o da parcela, ou zero
+--     (boleto sem valor impresso);
+--   - PIX por CPF/CNPJ: a chave é o documento do credor do título (a chave de outra pessoa é recusada).
+-- Roda na gravação da forma (gatilho) e de novo no pedido ao Sienge, porque a parcela pode mudar na revisão.
+create function erp._conferir_forma_pagamento(p_titulo uuid, p_numero int, p_forma text, p_pix_tipo text,
+                                              p_pix_chave text, p_boleto_linha text) returns void
+language plpgsql stable as $$
+declare v_parcela numeric; v_boleto numeric; v_doc text;
+begin
+  if p_forma = 'boleto' and erp.linha_digitavel_valida(p_boleto_linha) then   -- a linha errada, o check da tabela recusa
+    select valor into v_parcela from erp.parcelas where titulo_id = p_titulo and numero = p_numero;
+    v_boleto := (substr(p_boleto_linha, 38, 10)::numeric / 100)::numeric(15,2);
+    if v_boleto <> 0 and v_boleto is distinct from v_parcela then
+      raise exception 'O valor do boleto (%) não é o da parcela % (%)', v_boleto, p_numero, v_parcela;
+    end if;
+  elsif p_forma = 'pix' and p_pix_tipo = 'cpf_cnpj' then
+    select p.documento into v_doc from erp.titulos t join erp.pessoas p on p.id = t.pessoa_id where t.id = p_titulo;
+    if v_doc is distinct from p_pix_chave then
+      raise exception 'A chave PIX por CPF/CNPJ da parcela % não é o documento do credor do título', p_numero;
+    end if;
+  end if;
+end $$;
+
 -- Quem aprova aprova a chave e o boleto: depois do primeiro voto da rodada, ou com o título na fila
 -- do Sienge, a forma de pagamento não muda (na revisão, sim: o reenvio abre outra rodada).
 create function erp.tg_parcela_pagamento() returns trigger language plpgsql as $$
@@ -117,6 +141,10 @@ begin
     raise exception 'A forma de pagamento não muda de título';
   end if;
   select * into t from erp.titulos where id = v_id;
+  -- S-125 (parte sem decisão): o boleto é da parcela e a chave CPF/CNPJ é do credor
+  if tg_op <> 'DELETE' then
+    perform erp._conferir_forma_pagamento(new.titulo_id, new.numero, new.forma, new.pix_tipo, new.pix_chave, new.boleto_linha);
+  end if;
   if t.situacao = 'rascunho' or erp.em_revisao(t.id) then return coalesce(new, old); end if;
   if t.situacao = 'aberto'
      and not exists (select 1 from erp.titulo_aprovacoes v where v.titulo_id = t.id and v.rodada = t.rodada)
@@ -349,6 +377,8 @@ begin
     from erp.parcelas p where p.titulo_id = t.id
      and not exists (select 1 from erp.parcela_pagamentos g where g.titulo_id = p.titulo_id and g.numero = p.numero);
   if v_falta is not null then raise exception 'Falta a forma de pagamento da parcela %', v_falta; end if;
+  perform erp._conferir_forma_pagamento(g.titulo_id, g.numero, g.forma, g.pix_tipo, g.pix_chave, g.boleto_linha)
+     from erp.parcela_pagamentos g where g.titulo_id = t.id;
   -- boleto do mesmo banco de uma conta ativa da empresa: "próprio banco" (1); senão "outros bancos" (2)
   select array_agg(distinct substring(cb.banco from '^[0-9]{3}')) into v_banco
     from erp.contas_bancarias cb where cb.empresa_id = t.empresa_id and cb.ativa;
@@ -414,7 +444,7 @@ begin
     execute format('revoke all on erp.%I from authenticated', t);
   end loop;
   for f in select p.oid::regprocedure from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-            where n.nspname = 'erp' and p.proname in ('linha_digitavel_valida','chave_pix_valida','tg_parcela_pagamento',
+            where n.nspname = 'erp' and p.proname in ('linha_digitavel_valida','chave_pix_valida','tg_parcela_pagamento','_conferir_forma_pagamento',
               'tg_sienge_depara','tg_sienge_envio','titulo_aprovado','sienge_enfileirar','sienge_documento','sienge_pedido',
               'sienge_registrar','_chave_config','tg_evento_config') loop
     execute format('revoke execute on function %s from public', f);
@@ -473,9 +503,11 @@ alter function erp.tg_parcela_pagamento() owner to erp_conferencia;
 -- EXECUTE: nada novo para public; as conferências puras e a trava para quem grava; a fila e o pedido
 -- só para o sistema.
 revoke execute on all functions in schema erp from public;
-grant execute on function erp.linha_digitavel_valida(text), erp.chave_pix_valida(text, text), erp.sienge_documento(text),
-                          erp.titulo_aprovado(uuid)
+grant execute on function erp.linha_digitavel_valida(text), erp.chave_pix_valida(text, text), erp.sienge_documento(text)
   to authenticated, erp_sistema, erp_conferencia, erp_situacao, erp_reclassificacao, erp_acesso, erp_config;
+-- S-126: titulo_aprovado responde sobre qualquer título (lê a alçada por baixo do RLS): só o sistema e as conferências
+grant execute on function erp.titulo_aprovado(uuid), erp._conferir_forma_pagamento(uuid, int, text, text, text, text)
+  to erp_sistema, erp_conferencia, erp_situacao, erp_reclassificacao, erp_acesso, erp_config;
 grant execute on function erp.sienge_enfileirar(), erp.sienge_pedido(uuid), erp.sienge_registrar(uuid, int),
                           erp.tg_parcela_pagamento(), erp.tg_sienge_depara(), erp.tg_sienge_envio()
   to erp_sistema, erp_conferencia, erp_situacao, erp_reclassificacao, erp_acesso, erp_config;

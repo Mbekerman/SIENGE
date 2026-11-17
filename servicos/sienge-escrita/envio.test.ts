@@ -2,8 +2,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  acharPeloMarcador, barrasDaLinha, ErroSienge, chavePix, conferirParcelas, Divergencia, enviarTitulo, idDoLocation,
-  pagamentoDaParcela, proximaTentativa, type Api, type Parcela, type PedidoTitulo,
+  acharPeloMarcador, barrasDaLinha, ErroSienge, chavePix, conferirParcelas, Divergencia, enviarTitulo, erroPermanente, idDoLocation,
+  pagamentoDaParcela, proximaTentativa, segundosRetryAfter, type Api, type Parcela, type PedidoTitulo,
 } from './envio.ts';
 
 const LINHA = '34191090080000000212134567890008799990000000100'; // boleto de teste (o mesmo do erp.sql)
@@ -60,6 +60,11 @@ test('conferir parcelas: vencimento corrige, valor ou quantidade diferente para'
   assert.throws(() => conferirParcelas(nossas, [
     { installmentNumber: 1, dueDate: '2026-12-01', amount: 150 }, { installmentNumber: 2, dueDate: '2027-01-01', amount: 150 },
   ]), Divergencia);
+  // só a quantidade difere: as nossas batem, mas o Sienge tem uma a mais
+  assert.throws(() => conferirParcelas(nossas, [
+    { installmentNumber: 1, dueDate: '2026-12-01', amount: 100 }, { installmentNumber: 2, dueDate: '2027-01-01', amount: 200 },
+    { installmentNumber: 3, dueDate: '2027-02-01', amount: 0 },
+  ]), /3 parcelas/);
 });
 
 const pedido = (parcelas: Parcela[]): PedidoTitulo => ({
@@ -150,10 +155,26 @@ test('pesquisa sem resultado (404 do Sienge) é lista vazia; outro erro sobe', a
 });
 
 test('enviar: POST sem 201 ou sem Location não registra nada', async () => {
-  const f = falso();
-  f.api.gravar = async () => ({ status: 200, location: null });
-  await assert.rejects(enviarTitulo(f.api, pedido([p(1, '2026-12-01', 100)]), null), /POST/);
-  assert.deepEqual(f.registrados, []);
+  for (const resp of [{ status: 200, location: null }, { status: 200, location: '/bills/9100' }, { status: 201, location: null }]) {
+    const f = falso();
+    f.api.gravar = async () => resp;
+    await assert.rejects(enviarTitulo(f.api, pedido([p(1, '2026-12-01', 100)]), null), /POST/);
+    assert.deepEqual(f.registrados, []);
+  }
+});
+
+test('erro permanente: 4xx menos 408 e 429; Retry-After em segundos ou data', () => {
+  assert.equal(erroPermanente(new ErroSienge(400, 'x')), true);
+  assert.equal(erroPermanente(new ErroSienge(422, 'x')), true);
+  assert.equal(erroPermanente(new ErroSienge(408, 'x')), false);
+  assert.equal(erroPermanente(new ErroSienge(429, 'x')), false);
+  assert.equal(erroPermanente(new ErroSienge(500, 'x')), false);
+  assert.equal(erroPermanente(new Error('rede')), false);
+  const t0 = new Date('2026-11-17T12:00:00Z');
+  assert.equal(segundosRetryAfter('120', t0), 120);
+  assert.equal(segundosRetryAfter('Tue, 17 Nov 2026 12:05:00 GMT', t0), 300);
+  assert.equal(segundosRetryAfter(null, t0), null);
+  assert.equal(segundosRetryAfter('amanhã', t0), null);
 });
 
 test('próxima tentativa: 1, 2, 4 minutos... até 6 horas', () => {

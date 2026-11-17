@@ -44,9 +44,29 @@ export class Divergencia extends Error {}
 
 // Resposta do Sienge fora de 2xx. A pesquisa de títulos sem resultado responde 404 "Resource not found"
 // (visto em 17/11/2026), por isso quem pesquisa trata 404 como lista vazia.
+// retryAfter: segundos pedidos pelo Sienge no cabeçalho Retry-After (429 e 503), quando vem (S-044).
 export class ErroSienge extends Error {
   readonly status: number;
-  constructor(status: number, mensagem: string) { super(mensagem); this.status = status; }
+  readonly retryAfter: number | null;
+  constructor(status: number, mensagem: string, retryAfter: number | null = null) {
+    super(mensagem);
+    this.status = status;
+    this.retryAfter = retryAfter;
+  }
+}
+
+// Erro que não se resolve tentando de novo: 4xx, menos tempo esgotado (408) e limite de chamadas (429).
+export function erroPermanente(e: unknown): boolean {
+  return e instanceof ErroSienge && e.status >= 400 && e.status < 500 && e.status !== 408 && e.status !== 429;
+}
+
+// Retry-After em segundos ou em data HTTP; null quando não vem ou não se entende.
+export function segundosRetryAfter(valor: string | null, agora: Date): number | null {
+  if (!valor) return null;
+  const v = valor.trim();
+  if (/^\d+$/.test(v)) return Number(v);
+  const d = Date.parse(v);
+  return Number.isNaN(d) ? null : Math.max(0, Math.ceil((d - agora.getTime()) / 1000));
 }
 
 export const PIX_SIENGE = 14; // forma de pagamento PIX no Sienge (lida no título 8547, 17/11/2026)
