@@ -5870,9 +5870,10 @@ select erp.sienge_pedido(:'tse') as ped \gset
 select pg_temp.ok((:'ped'::jsonb->'titulo'->>'debtorId')::int = 11 and (:'ped'::jsonb->'titulo'->>'creditorId')::int = 823
                   and :'ped'::jsonb->'titulo'->>'documentIdentificationId' = 'NFSE' and :'ped'::jsonb->'titulo'->>'documentNumber' = '9001'
                   and (:'ped'::jsonb->'titulo'->>'totalInvoiceAmount')::numeric = 300 and (:'ped'::jsonb->'titulo'->>'installmentsNumber')::int = 2
-                  and :'ped'::jsonb->'titulo'->>'dueDate' = '2026-06-20' and :'ped'::jsonb->'titulo'->>'baseDate' = '2026-06-01'
+                  and :'ped'::jsonb->'titulo'->>'dueDate' = '2026-06-20' and :'ped'::jsonb->'titulo'->>'billDate' = '2026-06-01'
+                  and :'ped'::jsonb->'titulo'->>'baseDate' = (select emissao::text from erp.titulos where id = :'tse')
                   and :'ped'::jsonb->'titulo'->>'notes' like 'ERP ' || :'tse' || '%',
-  'sienge: o corpo do título leva empresa, credor, documento, valor, parcelas, vencimento, data base e o marcador do ERP');
+  'sienge: o corpo do título leva empresa, credor, documento, valor, parcelas, vencimento, a competência em billDate, a emissão como data base e o marcador do ERP');
 select pg_temp.ok((select sum((x->>'percentage')::numeric) = 100 and count(*) = 2 and bool_and(x->>'percentage' ~ '^[0-9]+(\.[0-9]{1,2})?$')
                      from jsonb_array_elements(:'ped'::jsonb->'titulo'->'budgetCategories') x),
   'sienge: o rateio vai em centro e conta do Sienge, com 2 casas e somando 100');
@@ -6356,7 +6357,8 @@ select erp.sienge_pedido_item('69000000-0000-0000-0000-0000000000b2') as pb2 \gs
 select pg_temp.ok((:'pb2'::jsonb->'titulo'->>'creditorId')::int = 823 and :'pb2'::jsonb->'titulo'->>'documentIdentificationId' = 'PRV'
                   and :'pb2'::jsonb->'titulo'->>'documentNumber' = 'PRV-690000000000'
                   and (:'pb2'::jsonb->'titulo'->>'installmentsNumber')::int = 1 and (:'pb2'::jsonb->'titulo'->>'totalInvoiceAmount')::numeric = 80
-                  and :'pb2'::jsonb->'titulo'->>'dueDate' = '2026-12-15' and :'pb2'::jsonb->'titulo'->>'baseDate' = '2026-12-01'
+                  and :'pb2'::jsonb->'titulo'->>'dueDate' = '2026-12-15' and :'pb2'::jsonb->'titulo'->>'billDate' = '2026-12-01'
+                  and :'pb2'::jsonb->'titulo'->>'baseDate' = (now() at time zone 'America/Sao_Paulo')::date::text
                   and :'pb2'::jsonb->'titulo'->>'notes' = 'ERP 69000000-0000-0000-0000-0000000000b2 · Previsão'
                   and :'pb2'::jsonb->'titulo'->'budgetCategories' = '[{"costCenterId": 100, "percentage": 100, "paymentCategoriesId": "2030224"}]'
                   and :'pb2'::jsonb->'parcelas' = '[{"numero": 1, "valor": 80.00, "vencimento": "2026-12-15"}]',
