@@ -59,6 +59,13 @@ Fonte de verdade da API: os YAMLs em `Mbekerman/sienge-api-docs/oficial/yaml-fil
 - A área de negócio é por empresa.
 - Ao digitar o CNPJ no cadastro de obra, o Sienge busca na Receita e preenche endereço e e-mail sozinho. Conferir o CNPJ antes de salvar: na criação, um CNPJ de terceiro ficou gravado alguns minutos e foi trocado, sem nenhum lançamento nesse intervalo.
 
+**Primeira gravação na área de testes (17/nov/2026, com ok do Moises).** `POST /bills` na empresa 11 / centro de custo 100 criou o título 8547 (PRV, TESTEAPI11, R$ 1,00, credor 27, conta 2030224). Isso confirma que o usuário de API grava numa empresa nova sem nenhuma liberação.
+
+- A primeira tentativa voltou 400: "Devido ao parâmetro 665 não é possível cadastrar esse título, o plano financeiro não está autorizado para o centro de custo informado". O parâmetro 665 limita as contas do plano financeiro por centro de custo (a pagar, a receber, caixa e bancos). A lista fica na aba "Plano financeiro" do cadastro da obra/centro de custo, e um centro novo nasce sem nenhuma conta. No centro 100 foram liberadas as 399 contas de movimento. **Para o ERP:** o de-para natureza → conta tem de respeitar as contas liberadas em cada centro (ler e guardar essa lista no espelho e conferir antes do envio); senão, o título é recusado no envio.
+- O centro 100 tem o código interno 104 (`entity.empreendPK.cdEmpreend`). A API e a tela usam o código de exibição, 100.
+- Cota: três vezes, entre 11h22 e 11h27, a primeira chamada voltou 429 com `X-Ratelimit-Remaining-Minute: 0`. Outro sistema, provavelmente o CRM, esgota os 200 por minuto. O cliente tem de esperar o `Ratelimit-Reset` e tentar de novo, com a idempotência da S-021.
+- A API não apaga título: o 8547 fica na empresa 11 até alguém apagar pela tela.
+
 Testes feitos em 6/nov/2026 no contrato de teste **CTP/28**: empresa 2 (BKM Incorporadora e Construtora S.A.), obra 13 (Escritório Central BKMSP), credor 27, item 1 "vb" a R$ 1,00 por unidade.
 
 | Teste | Resultado |
