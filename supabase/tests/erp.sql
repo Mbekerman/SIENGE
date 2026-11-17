@@ -962,7 +962,7 @@ select pg_temp.ok(not exists (
        'cadeia_titulo','conferir_ajuste','alcada_fase','alcada_pendente','alcada_recusada','titulos_do_acumulado',
        'checar_competencia','_registrar_ajuste','recusar_so_sucessao','recusar_admin_aprovador','_beneficiarios_acesso',
        'confirmar_titulo','lancar_documento','liberar_caucao','publicar_orcamento','decidir_titulo','reenviar_titulo',
-       'registrar_movimento_societario','fechar_mes','reabrir_mes','pedir_reclassificacao','decidir_reclassificacao','avisos_forma_pagamento',
+       'registrar_movimento_societario','fechar_mes','reabrir_mes','pedir_reclassificacao','decidir_reclassificacao','avisos_forma_pagamento','decidir_compromisso','decidir_previsao','encerrar_previsao','gerar_previsoes_assinatura',
        'cancelar_reclassificacao','pedir_mudanca_acesso','decidir_mudanca_acesso','cancelar_mudanca_acesso','passar_master',
        'pedir_sucessao_master','decidir_sucessao_master','vetar_sucessao_master','efetivar_sucessao_master',
        'pedir_mudanca_config','decidir_mudanca_config','cancelar_mudanca_config','marcar_notificacoes_lidas')),
@@ -1312,7 +1312,7 @@ select pg_temp.ok(not exists (
                                'regra_adiantamento','regra_alcada_pagamento','regras_ajuste','contas_bancarias',
                                'codigos_externos','aprovadores_config','regras_mudanca_config','mudancas_config',
                                'mudanca_config_votos','usuarios','auditoria','regras_notificacao','tipos_evento',
-                               'sienge_centros','sienge_contas')
+                               'sienge_centros','sienge_contas','sienge_parametros')
              and (cmd = 'ALL' or (cmd = 'SELECT' and tablename in ('usuarios','auditoria'))))
     and not (policyname = 'eventos_grava' and tablename = 'eventos' and cmd = 'INSERT' and roles = '{erp_eventos}')
     -- a distribuição das notificações: lê quem recebe, grava só o sino e a fila
@@ -4580,6 +4580,8 @@ select pg_temp.ok((select situacao = 'aplicada' and beneficiarios = array[:'leit
 
 -- alçada na divisão: o PDV tem faixas próprias; até 5 mil no mês, só a divisão; acima, a divisão e o centro
 select pg_temp.sis();
+-- a previsão do PDV do teste da S-102 nasceu sem alçada (aprovada) e entraria no acumulado; aqui conta só o título
+update erp.previsoes set situacao = 'cancelada' where id = '8a000000-0000-0000-0000-0000000000a1';
 update erp.regra_alcada_pagamento set soma_fornecedor = false;
 insert into erp.centro_aprovadores values (:'cc_mkt', :'gestor');
 insert into erp.listas_financeiro (lista, user_id) values ('AF', :'contador');
@@ -5991,6 +5993,449 @@ select erp._criar_titulo(:'spe', 'pagar', 'avulso', '10000000-0000-0000-0000-000
   1, array['2026-07-01','2026-08-01','2026-09-01']::date[], null, null, 'arredondamento') as tarr \gset
 select pg_temp.ok((select array_agg(valor order by numero) = array[0.34, 0.33, 0.33]::numeric[] from erp.parcelas where titulo_id = :'tarr'),
   'sienge: o centavo que sobra fica na primeira parcela, como no Sienge');
+rollback;
+
+
+-- ---------------------------------------------------------------------
+\echo '# aprovação do contrato recorrente e da previsão'
+begin;
+select pg_temp.sis();
+insert into erp.centro_aprovadores values (:'cc_mkt', :'gestor') on conflict do nothing;
+insert into erp.listas_financeiro (lista, user_id) values ('AF', :'contador') on conflict do nothing;
+select pg_temp.volta();
+
+-- contrato recorrente: gestor do centro + AF ou AO; quem lançou não aprova
+select pg_temp.como(:'analista');
+insert into erp.compromissos (id, empresa_id, tipo, pessoa_id, descricao, inicio, periodicidade, valor_periodo, dia_vencimento)
+values ('61000000-0000-0000-0000-0000000000a1', :'spe', 'assinatura', '10000000-0000-0000-0000-000000000007', 'Assinatura de teste',
+        '2026-06-01', 'mensal', 200, 10);
+insert into erp.compromisso_rateios (compromisso_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+values ('61000000-0000-0000-0000-0000000000a1', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select pg_temp.sis();
+select erp.gerar_previsoes_assinatura('61000000-0000-0000-0000-0000000000a1', '2026-07-31');
+select pg_temp.ok(not erp.compromisso_aprovado('61000000-0000-0000-0000-0000000000a1'), 'contrato: a assinatura nasce esperando aprovação');
+select pg_temp.ok((select count(*) = 2 and bool_and(not erp.previsao_aprovada(id)) from erp.previsoes where compromisso_id = '61000000-0000-0000-0000-0000000000a1')
+                  and not exists (select 1 from erp.previsao_alcadas a join erp.previsoes p on p.id = a.previsao_id
+                                   where p.compromisso_id = '61000000-0000-0000-0000-0000000000a1'),
+  'contrato: as previsões da assinatura não têm alçada própria e esperam o contrato');
+select (select aprovacao_versao from erp.compromissos where id = '61000000-0000-0000-0000-0000000000a1') as v1 \gset
+select pg_temp.volta();
+select pg_temp.ok(not has_function_privilege('authenticated', 'erp.compromisso_aprovado(uuid)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp.previsao_aprovada(uuid)', 'EXECUTE'),
+  'contrato: as conferências de aprovação não são executáveis pela API (respondem sobre qualquer id)');
+select pg_temp.erro_igual($$select erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', true)$$,
+  'Quem lançou ou alterou o contrato não aprova', 'contrato: quem lançou não aprova');
+select pg_temp.como(:'leitor');
+select pg_temp.erro_igual($$select erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', true)$$,
+  'Seu papel só permite consulta', 'contrato: leitura não aprova');
+select pg_temp.como(:'analista2');
+select pg_temp.erro_igual($$select erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', true)$$,
+  'A aprovação deste contrato é do gestor de cada centro e da AF ou da AO', 'contrato: quem não é gestor do centro nem AF/AO não aprova');
+select pg_temp.como(:'gestor');
+select pg_temp.ok(erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', true) = 'pendente', 'contrato: o gestor do centro aprova a vaga dele');
+select pg_temp.erro_igual($$select erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', true)$$,
+  'Você já aprovou este contrato', 'contrato: uma vaga por pessoa');
+select pg_temp.erro_igual($$insert into erp.compromisso_aprovacoes (compromisso_id, versao, vaga, aprovado, por)
+                            values ('61000000-0000-0000-0000-0000000000a1', 1, 'FIN', true, '00000000-0000-0000-0000-00000000000e')$$,
+  'O contrato só se aprova por erp.decidir_compromisso', 'contrato: a aprovação não se grava direto');
+select pg_temp.como(:'contador');
+select pg_temp.erro_igual($$select erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', false)$$,
+  'Recusar exige justificativa', 'contrato: recusar exige justificativa');
+select pg_temp.ok(erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', true) = 'aprovado', 'contrato: a AF completa a aprovação');
+select pg_temp.sis();
+select pg_temp.ok(erp.compromisso_aprovado('61000000-0000-0000-0000-0000000000a1')
+                  and (select bool_and(erp.previsao_aprovada(id)) from erp.previsoes where compromisso_id = '61000000-0000-0000-0000-0000000000a1'),
+  'contrato: aprovado o contrato, as previsões dele ficam aprovadas');
+select pg_temp.volta();
+
+-- mudou o que pede aprovação: versão nova, aprovação de novo, e quem mudou não aprova
+select pg_temp.como(:'gestor');
+update erp.compromissos set valor_periodo = 250 where id = '61000000-0000-0000-0000-0000000000a1';
+select pg_temp.sis();
+select pg_temp.ok((select aprovacao_versao = :v1 + 1 and alterado_por = :'gestor' from erp.compromissos where id = '61000000-0000-0000-0000-0000000000a1')
+                  and not erp.compromisso_aprovado('61000000-0000-0000-0000-0000000000a1')
+                  and (select bool_and(not erp.previsao_aprovada(id)) from erp.previsoes where compromisso_id = '61000000-0000-0000-0000-0000000000a1'),
+  'contrato: mudar o valor abre versão nova; o contrato e as previsões voltam a esperar');
+update erp.compromissos set descricao = 'Assinatura de teste (nome)' where id = '61000000-0000-0000-0000-0000000000a1';
+select pg_temp.ok((select aprovacao_versao = :v1 + 1 from erp.compromissos where id = '61000000-0000-0000-0000-0000000000a1'),
+  'contrato: mudar só a descrição não pede aprovação de novo');
+select pg_temp.volta();
+select pg_temp.erro_igual($$select erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', true)$$,
+  'Quem lançou ou alterou o contrato não aprova', 'contrato: quem alterou não aprova a alteração');
+select pg_temp.erro_igual($$update erp.compromissos set aprovacao_versao = 1 where id = '61000000-0000-0000-0000-0000000000a1'$$,
+  'A versão da aprovação do contrato só muda pela alteração do contrato', 'contrato: a versão não se põe à mão');
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual($$select erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', true)$$,
+  'Quem lançou ou alterou o contrato não aprova', 'contrato: quem lançou continua sem aprovar nas versões seguintes');
+select pg_temp.como(:'contador');
+select pg_temp.ok(erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', false, 'valor acima do combinado') = 'recusado',
+  'contrato: a AF recusa com justificativa');
+select pg_temp.erro_igual($$select erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', true)$$,
+  'O contrato foi recusado; mude o contrato para pedir a aprovação de novo', 'contrato: recusado fica recusado até mudar');
+-- o rateio também abre versão nova (menos a natureza, que muda pela reclassificação)
+select pg_temp.como(:'analista');
+update erp.compromisso_rateios set percentual = 100 where compromisso_id = '61000000-0000-0000-0000-0000000000a1';
+select pg_temp.sis();
+select pg_temp.ok((select aprovacao_versao = :v1 + 1 from erp.compromissos where id = '61000000-0000-0000-0000-0000000000a1'),
+  'contrato: gravar o rateio sem mudar nada não abre versão');
+select pg_temp.volta();
+update erp.compromisso_rateios set nucleo_economico_id = :'ne_vm', percentual = 100.0000, centro_custo_id = :'cc_mkt'
+ where compromisso_id = '61000000-0000-0000-0000-0000000000a1';
+insert into erp.compromisso_rateios (compromisso_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+values ('61000000-0000-0000-0000-0000000000a1', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), 50);
+update erp.compromisso_rateios set percentual = 50 where compromisso_id = '61000000-0000-0000-0000-0000000000a1' and centro_custo_id = :'cc_mkt';
+select pg_temp.sis();
+select pg_temp.ok((select aprovacao_versao = :v1 + 3 and alterado_por = :'analista' from erp.compromissos where id = '61000000-0000-0000-0000-0000000000a1'),
+  'contrato: incluir ou mudar linha do rateio abre versão nova');
+select pg_temp.volta();
+select pg_temp.como(:'diretor');
+select pg_temp.ok(erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', true) = 'aprovado', 'contrato: o master aprova todas as vagas de uma vez');
+select pg_temp.sis();
+select pg_temp.ok(erp.compromisso_aprovado('61000000-0000-0000-0000-0000000000a1'), 'contrato: aprovado pelo master');
+select pg_temp.volta();
+
+-- previsão lançada à mão: alçada de pagamento do centro
+select pg_temp.como(:'analista');
+insert into erp.previsoes (id, empresa_id, origem, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor, descricao)
+values ('68000000-0000-0000-0000-0000000000a1', :'spe', 'manual', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2026-09-01', '2026-09-20', 1000, 'Feira');
+select pg_temp.sis();
+select pg_temp.ok((select fases = '{AREA,AF}' from erp.previsao_alcadas where previsao_id = '68000000-0000-0000-0000-0000000000a1' and divisao_id is null)
+                  and not erp.previsao_aprovada('68000000-0000-0000-0000-0000000000a1'),
+  'previsão: a lançada à mão ganha a alçada do centro e espera');
+select acumulado as acum1 from erp.previsao_alcadas where previsao_id = '68000000-0000-0000-0000-0000000000a1' \gset
+select pg_temp.volta();
+select pg_temp.erro_igual($$select erp.decidir_previsao('68000000-0000-0000-0000-0000000000a1', true)$$,
+  'Quem lançou não aprova o próprio lançamento', 'previsão: quem lançou não aprova');
+select pg_temp.erro_igual($$insert into erp.previsao_aprovacoes (alcada_id, previsao_id, fase, lista, aprovado, por)
+                            select id, previsao_id, 1, 'AREA', true, '00000000-0000-0000-0000-00000000000e' from erp.previsao_alcadas
+                             where previsao_id = '68000000-0000-0000-0000-0000000000a1'$$,
+  'A alçada da previsão só é escrita pelo banco', 'previsão: a aprovação não se grava direto');
+select pg_temp.como(:'contador');
+select pg_temp.erro_igual($$select erp.decidir_previsao('68000000-0000-0000-0000-0000000000a1', true)$$,
+  'Esta fase de aprovação é de quem está em AREA', 'previsão: em sequência, a AF espera o gestor');
+select pg_temp.como(:'gestor');
+select pg_temp.ok(erp.decidir_previsao('68000000-0000-0000-0000-0000000000a1', true) = 'pendente', 'previsão: o gestor aprova a fase dele');
+select pg_temp.erro_igual($$select erp.decidir_previsao('68000000-0000-0000-0000-0000000000a1', true)$$,
+  'Você já aprovou uma fase de aprovação desta previsão', 'previsão: cada pessoa aprova uma fase só');
+select pg_temp.como(:'contador');
+select pg_temp.ok(erp.decidir_previsao('68000000-0000-0000-0000-0000000000a1', true) = 'aprovado', 'previsão: a AF completa');
+select pg_temp.sis();
+select pg_temp.ok(erp.previsao_aprovada('68000000-0000-0000-0000-0000000000a1'), 'previsão: aprovada');
+select pg_temp.volta();
+select pg_temp.erro_igual($$select erp.decidir_previsao('68000000-0000-0000-0000-0000000000a1', true)$$,
+  'A previsão já foi aprovada', 'previsão: aprovada não se decide de novo');
+
+-- acumulado: a aprovada conta no mês dela
+select pg_temp.como(:'analista');
+insert into erp.previsoes (id, empresa_id, origem, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+values ('68000000-0000-0000-0000-0000000000a2', :'spe', 'manual', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2026-09-01', '2026-09-25', 500);
+select pg_temp.sis();
+select pg_temp.ok((select acumulado = :acum1 + 500 from erp.previsao_alcadas where previsao_id = '68000000-0000-0000-0000-0000000000a2' and divisao_id is null),
+  'previsão: o acumulado da previsão nova soma a aprovada do mês');
+select pg_temp.volta();
+-- S-129: a que espera também conta; dividir em duas não baixa a faixa (Moises, 17/11/2026)
+select pg_temp.como(:'analista');
+insert into erp.previsoes (id, empresa_id, origem, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+values ('68000000-0000-0000-0000-0000000000c1', :'spe', 'manual', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2027-01-01', '2027-01-10', 30000);
+insert into erp.previsoes (id, empresa_id, origem, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+values ('68000000-0000-0000-0000-0000000000c2', :'spe', 'manual', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2027-01-01', '2027-01-20', 30000);
+select pg_temp.sis();
+select acumulado as acum_c1, fases as fases_c1 from erp.previsao_alcadas where previsao_id = '68000000-0000-0000-0000-0000000000c1' and divisao_id is null \gset
+select acumulado as acum_c2, fases as fases_c2 from erp.previsao_alcadas where previsao_id = '68000000-0000-0000-0000-0000000000c2' and divisao_id is null \gset
+select pg_temp.ok(not erp.previsao_aprovada('68000000-0000-0000-0000-0000000000c1') and :acum_c2 = :acum_c1 + 30000,
+  'previsão: a segunda previsão do mês soma a primeira, que ainda espera aprovação');
+select pg_temp.ok(:'fases_c1' = '{AREA,AF}' and :'fases_c2' = '{AREA,AF,AD}',
+  'previsão: com a soma acima de 50 mil, a segunda pega a faixa da soma (gestor, AF e AD)');
+select pg_temp.volta();
+-- a nota que consome a previsão que espera conta só o que passa do saldo dela
+select pg_temp.como(:'diretor');
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto) values
+  ('70000000-0000-0000-0000-0000000000f5', :'spe', '10000000-0000-0000-0000-000000000007', 'nfse', '9105', '2027-01-05', '2027-01-01', 30000);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('70000000-0000-0000-0000-0000000000f5', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select erp.lancar_documento('70000000-0000-0000-0000-0000000000f5', array['2027-01-20']::date[],
+                            array['68000000-0000-0000-0000-0000000000c1']::uuid[]) as tf5 \gset
+select pg_temp.sis();
+select acumulado as acum_f5 from erp.titulo_alcadas where titulo_id = :'tf5' and divisao_id is null \gset
+select pg_temp.ok(:acum_f5 = :acum_c2, 'previsão: a nota que consome a que espera não conta duas vezes');
+select pg_temp.volta();
+-- recusa cancela a previsão
+select pg_temp.como(:'gestor');
+select pg_temp.erro_igual($$select erp.decidir_previsao('68000000-0000-0000-0000-0000000000a2', false)$$,
+  'Recusar exige justificativa', 'previsão: recusar exige justificativa');
+select erp.decidir_previsao('68000000-0000-0000-0000-0000000000a2', false, 'sem verba') as r_prev \gset
+select pg_temp.ok(:'r_prev' = 'recusado'
+                  and (select situacao = 'cancelada' from erp.previsoes where id = '68000000-0000-0000-0000-0000000000a2'),
+  'previsão: recusada é cancelada');
+-- o master aprova tudo de uma vez, inclusive a que lançou
+select pg_temp.como(:'diretor');
+insert into erp.previsoes (id, empresa_id, origem, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+values ('68000000-0000-0000-0000-0000000000a3', :'spe', 'manual', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2026-10-01', '2026-10-25', 300);
+select pg_temp.ok(erp.decidir_previsao('68000000-0000-0000-0000-0000000000a3', true) = 'aprovado', 'previsão: o master aprova todas as fases, mesmo a dele');
+
+-- o título do mês soma a previsão aprovada; a nota que consome a previsão conta só o que passa do saldo
+select pg_temp.como(:'diretor');
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto) values
+  ('70000000-0000-0000-0000-0000000000f1', :'spe', '10000000-0000-0000-0000-000000000007', 'nfse', '9101', '2026-09-02', '2026-09-01', 100),
+  ('70000000-0000-0000-0000-0000000000f2', :'spe', '10000000-0000-0000-0000-000000000007', 'nfse', '9102', '2026-09-03', '2026-09-01', 400);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('70000000-0000-0000-0000-0000000000f1', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100),
+  ('70000000-0000-0000-0000-0000000000f2', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select erp.lancar_documento('70000000-0000-0000-0000-0000000000f1', array['2026-09-20']::date[]) as tf1 \gset
+select erp.lancar_documento('70000000-0000-0000-0000-0000000000f2', array['2026-09-20']::date[],
+                            array['68000000-0000-0000-0000-0000000000a1']::uuid[]) as tf2 \gset
+select pg_temp.sis();
+select acumulado as acum_f1 from erp.titulo_alcadas where titulo_id = :'tf1' and divisao_id is null \gset
+select acumulado as acum_f2 from erp.titulo_alcadas where titulo_id = :'tf2' and divisao_id is null \gset
+select pg_temp.ok(:acum_f1 = :acum1 + 100, 'previsão: o acumulado do título soma a previsão aprovada do mês');
+select pg_temp.ok(:acum_f2 = :acum_f1 + 400 - 400, 'previsão: a nota que consome a previsão não conta duas vezes (só o saldo que sobra)');
+select pg_temp.volta();
+
+-- só a rotina grava as origens que valem aprovação sem alçada
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format($$insert into erp.previsoes (empresa_id, origem, compromisso_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+  values (%L, 'assinatura', '61000000-0000-0000-0000-0000000000a1', %L, %L, %L, '2026-11-01', '2026-11-10', 99999)$$, :'spe', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04')),
+  'A previsão de origem assinatura nasce da rotina (contrato ou saldo), não à mão', 'previsão: ninguém lança à mão a origem do contrato');
+select pg_temp.erro_igual(format($$insert into erp.previsoes (empresa_id, origem, origem_previsao_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+  values (%L, 'saldo_previsao', '68000000-0000-0000-0000-0000000000a1', %L, %L, %L, '2026-11-01', '2026-11-10', 99999)$$, :'spe', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04')),
+  'A previsão de origem saldo_previsao nasce da rotina (contrato ou saldo), não à mão', 'previsão: ninguém lança à mão o saldo de outra previsão');
+insert into erp.previsoes (id, empresa_id, origem, compromisso_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+values ('68000000-0000-0000-0000-0000000000a4', :'spe', 'manual', '61000000-0000-0000-0000-0000000000a1', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2026-11-01', '2026-11-10', 700);
+select pg_temp.sis();
+select pg_temp.ok(erp.compromisso_aprovado('61000000-0000-0000-0000-0000000000a1') and not erp.previsao_aprovada('68000000-0000-0000-0000-0000000000a4')
+                  and exists (select 1 from erp.previsao_alcadas where previsao_id = '68000000-0000-0000-0000-0000000000a4'),
+  'previsão: a lançada à mão ao lado de um contrato aprovado passa pela alçada (não pega a aprovação do contrato)');
+select pg_temp.volta();
+select pg_temp.como(:'leitor');
+select pg_temp.falha($$select erp.gerar_previsoes_assinatura('61000000-0000-0000-0000-0000000000a1', '2026-12-31')$$,
+  'previsão: quem não lança no contrato não gera as previsões dele');
+
+-- saldo × saving: a nota (400) veio menor que a previsão (1000)
+select pg_temp.como(:'analista');
+select pg_temp.ok((select saldo = 600 from erp.v_previsoes_a_decidir where id = '68000000-0000-0000-0000-0000000000a1'),
+  'previsão: a consumida em parte aparece para decidir, com o saldo');
+select pg_temp.como(:'leitor');
+select pg_temp.erro_igual($$select erp.encerrar_previsao('68000000-0000-0000-0000-0000000000a1', 'saving')$$,
+  'Seu papel só permite consulta', 'saldo: leitura não encerra');
+savepoint sp_lanca;
+select pg_temp.sis();
+update erp.perfil_centros set nivel = 'leitor' where perfil_id = :'tudo' and centro_custo_id = :'cc_mkt';
+select pg_temp.como(:'analista');
+select pg_temp.ok(erp.vejo_previsao('68000000-0000-0000-0000-0000000000a1'), 'saldo: (o analista ainda vê a previsão)');
+select pg_temp.erro_igual($$select erp.encerrar_previsao('68000000-0000-0000-0000-0000000000a1', 'saving')$$,
+  'Você não lança nesta previsão', 'saldo: quem vê mas não lança no centro não encerra');
+rollback to savepoint sp_lanca;
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual($$select erp.encerrar_previsao('68000000-0000-0000-0000-0000000000a1', 'saldo')$$,
+  'Informe a data em que o saldo será pago', 'saldo: o saldo pede a data');
+select pg_temp.erro_igual($$select erp.encerrar_previsao('68000000-0000-0000-0000-0000000000a1', 'saldo', '2020-01-01')$$,
+  'A data do saldo já passou', 'saldo: a data não fica no passado');
+select pg_temp.erro_igual($$select erp.encerrar_previsao('68000000-0000-0000-0000-0000000000a1', 'saving', '2030-01-01')$$,
+  'Saving não tem data', 'saving: sem data');
+select pg_temp.erro_igual($$select erp.encerrar_previsao('68000000-0000-0000-0000-0000000000a1', 'outro')$$,
+  'Destino é saldo ou saving', 'saldo: só os dois destinos');
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual($$select erp.encerrar_previsao('68000000-0000-0000-0000-0000000000a3', 'saving')$$,
+  'A previsão ainda não foi consumida por nenhuma nota; para desistir, cancele', 'saving: só previsão consumida em parte');
+savepoint sp_saving;
+select pg_temp.como(:'analista');
+select pg_temp.ok(erp.encerrar_previsao('68000000-0000-0000-0000-0000000000a1', 'saving') is null, 'saving: não cria outra previsão');
+select pg_temp.sis();
+select pg_temp.ok((select situacao = 'encerrada' from erp.previsoes where id = '68000000-0000-0000-0000-0000000000a1')
+                  and (select sum(valor) = 0 from erp.lancamentos where previsao_id = '68000000-0000-0000-0000-0000000000a1' and estagio = 'previsto')
+                  and not exists (select 1 from erp.previsoes where origem_previsao_id = '68000000-0000-0000-0000-0000000000a1'),
+  'saving: a previsão é encerrada e o saldo sai do previsto');
+rollback to savepoint sp_saving;
+select pg_temp.como(:'analista');
+select erp.encerrar_previsao('68000000-0000-0000-0000-0000000000a1', 'saldo', '2030-03-15') as psaldo \gset
+select pg_temp.sis();
+select pg_temp.ok((select situacao = 'encerrada' from erp.previsoes where id = '68000000-0000-0000-0000-0000000000a1')
+                  and (select valor = 600 and origem = 'saldo_previsao' and situacao = 'aberta' and competencia = '2030-03-01' and data_prevista = '2030-03-15'
+                         from erp.previsoes where id = :'psaldo' and origem_previsao_id = '68000000-0000-0000-0000-0000000000a1')
+                  and erp.previsao_aprovada(:'psaldo')
+                  and not exists (select 1 from erp.previsao_alcadas where previsao_id = :'psaldo'),
+  'saldo: encerra a original e nasce a previsão do saldo na data informada, aprovada como a original e sem alçada própria');
+select pg_temp.volta();
+select pg_temp.erro_igual(format($$select erp.decidir_previsao(%L, true)$$, :'psaldo'),
+  'O saldo segue a aprovação da previsão original', 'saldo: não se decide à parte');
+select pg_temp.erro_igual($$select erp.encerrar_previsao('68000000-0000-0000-0000-0000000000a1', 'saving')$$,
+  'Só previsão aberta se encerra', 'saldo: encerrada não se encerra de novo');
+-- a original sem aprovação não vira saldo; o saldo perde a aprovação quando a original perde
+select pg_temp.como(:'diretor');
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto) values
+  ('70000000-0000-0000-0000-0000000000f3', :'spe', '10000000-0000-0000-0000-000000000007', 'nfse', '9103', '2026-11-03', '2026-11-01', 100);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('70000000-0000-0000-0000-0000000000f3', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select erp.lancar_documento('70000000-0000-0000-0000-0000000000f3', array['2026-11-20']::date[],
+                            array['68000000-0000-0000-0000-0000000000a4']::uuid[]);
+select pg_temp.sis();
+select pg_temp.ok(not erp.previsao_aprovada('68000000-0000-0000-0000-0000000000a4')
+                  and erp._previsao_saldo('68000000-0000-0000-0000-0000000000a4') > 0,
+  'saldo: (a4 consumida em parte e sem aprovação)');
+select pg_temp.volta();
+select pg_temp.erro_igual($$select erp.encerrar_previsao('68000000-0000-0000-0000-0000000000a4', 'saldo', '2030-03-15')$$,
+  'A previsão original não está aprovada; lance o saldo como previsão nova', 'saldo: a original sem aprovação não vira saldo');
+select pg_temp.sis();
+select id as pcontr from erp.previsoes where compromisso_id = '61000000-0000-0000-0000-0000000000a1' and origem = 'assinatura'
+ order by data_prevista limit 1 \gset
+select pg_temp.volta();
+select pg_temp.como(:'diretor');
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+select '70000000-0000-0000-0000-0000000000f4', p.empresa_id, p.pessoa_id, 'nfse', '9104', p.competencia, p.competencia, 1
+  from erp.previsoes p where p.id = :'pcontr';
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+select '70000000-0000-0000-0000-0000000000f4', p.nucleo_economico_id, p.centro_custo_id, p.natureza_id, 100 from erp.previsoes p where p.id = :'pcontr';
+select erp.lancar_documento('70000000-0000-0000-0000-0000000000f4', array[(select data_prevista from erp.previsoes where id = :'pcontr')]::date[],
+                            array[:'pcontr']::uuid[]);
+select erp.encerrar_previsao(:'pcontr', 'saldo', '2030-04-15') as psaldo2 \gset
+select pg_temp.sis();
+select pg_temp.ok(erp.previsao_aprovada(:'psaldo2'), 'saldo: o saldo da previsão do contrato aprovado nasce aprovado');
+select pg_temp.volta();
+select pg_temp.como(:'gestor');
+update erp.compromissos set valor_periodo = valor_periodo + 1 where id = '61000000-0000-0000-0000-0000000000a1';
+select pg_temp.sis();
+select pg_temp.ok(not erp.compromisso_aprovado('61000000-0000-0000-0000-0000000000a1') and not erp.previsao_aprovada(:'psaldo2'),
+  'saldo: o contrato voltou a esperar aprovação, e o saldo da previsão dele também');
+select pg_temp.volta();
+rollback;
+
+\echo '# previsão no Sienge: título PRV, fila e lista do que apagar'
+begin;
+select pg_temp.sis();
+insert into erp.codigos_externos (sistema, tabela, registro_id, codigo) values
+  ('sienge', 'empresas', :'spe', '11'), ('sienge', 'pessoas', '10000000-0000-0000-0000-000000000007', '823')
+  on conflict do nothing;
+insert into erp.sienge_centros (nucleo_economico_id, centro_custo_id, sienge_centro) values (:'ne_vm', :'cc_mkt', 100) on conflict do nothing;
+insert into erp.sienge_contas (natureza_id, centro_custo_id, sienge_conta) values (pg_temp.nat('05.01.04'), :'cc_mkt', '2030224') on conflict do nothing;
+insert into erp.centro_aprovadores values (:'cc_mkt', :'gestor') on conflict do nothing;   -- o centro entra na alçada
+select pg_temp.volta();
+select pg_temp.como(:'diretor');
+insert into erp.previsoes (id, empresa_id, origem, pessoa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor, descricao)
+values ('69000000-0000-0000-0000-0000000000b1', :'spe', 'manual', '10000000-0000-0000-0000-000000000007', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2026-12-01', '2026-12-10', 250, 'Mídia de dezembro'),
+       ('69000000-0000-0000-0000-0000000000b2', :'spe', 'manual', null, :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2026-12-01', '2026-12-15', 80, null);
+select pg_temp.como(:'analista');
+insert into erp.previsoes (id, empresa_id, origem, pessoa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor, descricao)
+values ('69000000-0000-0000-0000-0000000000b3', :'spe', 'manual', null, :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2026-12-01', '2026-12-20', 60, null);
+select pg_temp.como(:'diretor');
+select erp.decidir_previsao(p.id, true) from erp.previsoes p
+ where p.id in ('69000000-0000-0000-0000-0000000000b1', '69000000-0000-0000-0000-0000000000b2')
+   and exists (select 1 from erp.previsao_alcadas a where a.previsao_id = p.id);
+select pg_temp.sis();
+-- b3, lançada pelo analista, fica esperando a alçada
+select pg_temp.ok(not has_function_privilege('authenticated', 'erp.sienge_pegar()', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp.sienge_pedido_item(uuid)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp.sienge_registrar_item(uuid, int)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp.sienge_terminar(uuid, text, text, text, int, timestamptz)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp.sienge_ids()', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp.sienge_pegar_conferencia()', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp.sienge_marcar_apagado(uuid)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp._sienge_pedido_previsao(uuid)', 'EXECUTE'),
+  'prv: a fila e o pedido da previsão não são executáveis pela API');
+select erp.sienge_enfileirar();
+select pg_temp.ok((select count(*) = 2 and bool_and(situacao = 'pendente') from erp.sienge_previsoes
+                    where previsao_id in ('69000000-0000-0000-0000-0000000000b1', '69000000-0000-0000-0000-0000000000b2')),
+  'prv: a previsão aberta e aprovada entra na fila');
+select pg_temp.ok(not erp.previsao_aprovada('69000000-0000-0000-0000-0000000000b3')
+                  and (select situacao = 'aberta' from erp.previsoes where id = '69000000-0000-0000-0000-0000000000b3')
+                  and not exists (select 1 from erp.sienge_previsoes where previsao_id = '69000000-0000-0000-0000-0000000000b3'),
+  'prv: a previsão aberta sem aprovação não entra na fila');
+select pg_temp.erro_igual($$select erp._sienge_pedido_previsao('69000000-0000-0000-0000-0000000000b3')$$,
+  'A previsão não está aprovada', 'prv: o pedido confere a aprovação de novo');
+select pg_temp.erro_igual($$select erp.sienge_pedido_item('69000000-0000-0000-0000-0000000000b2')$$,
+  'Falta o credor genérico da previsão no Sienge (parâmetro credor_previsao)', 'prv: sem credor e sem o genérico, não vai');
+select pg_temp.volta();
+select pg_temp.como(:'analista');
+select pg_temp.falha($$insert into erp.sienge_parametros (chave, valor) values ('credor_previsao', '823')$$,
+  'prv: quem não é master não grava o credor genérico');
+select pg_temp.como(:'diretor');
+insert into erp.sienge_parametros (chave, valor) values ('credor_previsao', '823');
+select pg_temp.sis();
+select pg_temp.ok(exists (select 1 from erp.eventos where tipo = 'codigo_externo_alterado' and tabela = 'sienge_parametros' and registro = 'credor_previsao'),
+  'prv: o credor genérico vira evento crítico de código externo');
+select erp.sienge_pedido_item('69000000-0000-0000-0000-0000000000b2') as pb2 \gset
+select pg_temp.ok((:'pb2'::jsonb->'titulo'->>'creditorId')::int = 823 and :'pb2'::jsonb->'titulo'->>'documentIdentificationId' = 'PRV'
+                  and :'pb2'::jsonb->'titulo'->>'documentNumber' = 'PRV-690000000000'
+                  and (:'pb2'::jsonb->'titulo'->>'installmentsNumber')::int = 1 and (:'pb2'::jsonb->'titulo'->>'totalInvoiceAmount')::numeric = 80
+                  and :'pb2'::jsonb->'titulo'->>'dueDate' = '2026-12-15' and :'pb2'::jsonb->'titulo'->>'baseDate' = '2026-12-01'
+                  and :'pb2'::jsonb->'titulo'->>'notes' = 'ERP 69000000-0000-0000-0000-0000000000b2 · Previsão'
+                  and :'pb2'::jsonb->'titulo'->'budgetCategories' = '[{"costCenterId": 100, "percentage": 100, "paymentCategoriesId": "2030224"}]'
+                  and :'pb2'::jsonb->'parcelas' = '[{"numero": 1, "valor": 80.00, "vencimento": "2026-12-15"}]',
+  'prv: o pedido leva o documento PRV, o credor genérico, uma parcela sem forma de pagamento e o marcador do ERP');
+select pg_temp.ok((erp.sienge_pedido_item('69000000-0000-0000-0000-0000000000b1')->'titulo'->>'creditorId')::int = 823,
+  'prv: com credor, vai o credor da previsão');
+select item_id as it1 from erp.sienge_pegar() \gset
+select pg_temp.ok(exists (select 1 from erp.sienge_previsoes where previsao_id = :'it1' and proxima_em > now() + interval '14 minutes'),
+  'prv: a fila entrega uma previsão e a reserva por 15 minutos');
+select erp.sienge_registrar_item('69000000-0000-0000-0000-0000000000b1', 7001);
+select erp.sienge_terminar('69000000-0000-0000-0000-0000000000b1', 'enviado', 'pagamento', null, 1, now());
+select pg_temp.ok((select situacao = 'enviado' and sienge_id = 7001 from erp.sienge_previsoes where previsao_id = '69000000-0000-0000-0000-0000000000b1')
+                  and (select codigo = '7001' from erp.codigos_externos where sistema = 'sienge' and tabela = 'previsoes'
+                         and registro_id = '69000000-0000-0000-0000-0000000000b1')
+                  and 7001 in (select erp.sienge_ids()),
+  'prv: o id do Sienge fica na fila e nos códigos externos, e entra nos ids da trava');
+select pg_temp.erro_igual($$select erp.sienge_terminar('69000000-0000-0000-0000-0000000000b1', 'apagado', null, null, 1, now())$$,
+  'Situação da fila inválida', 'prv: terminar só com as situações da fila');
+select pg_temp.erro_igual($$update erp.sienge_previsoes set sienge_id = 7002 where previsao_id = '69000000-0000-0000-0000-0000000000b1'$$,
+  'A previsão já tem id no Sienge (7001); não troca', 'prv: o id do Sienge não se troca');
+select pg_temp.erro_igual($$delete from erp.sienge_previsoes where previsao_id = '69000000-0000-0000-0000-0000000000b1'$$,
+  'A fila do Sienge não se apaga', 'prv: a fila não se apaga');
+select pg_temp.ok(not exists (select 1 from erp.sienge_pegar_conferencia()), 'prv: nada a conferir enquanto a previsão está aberta');
+select erp.sienge_enfileirar();
+select pg_temp.ok((select apagar_desde is null from erp.sienge_previsoes where previsao_id = '69000000-0000-0000-0000-0000000000b1'),
+  'prv: a enviada ainda aberta não vai para a lista do que apagar');
+select pg_temp.erro_igual($$select erp.sienge_marcar_apagado('69000000-0000-0000-0000-0000000000b1')$$,
+  'A previsão não está na lista do que apagar', 'prv: só se marca apagada a que está na lista do que apagar');
+insert into erp.codigos_externos (sistema, tabela, registro_id, codigo) values ('sienge', 'previsoes', '69000000-0000-0000-0000-0000000000b2', '9999');
+select pg_temp.erro_igual($$select erp.sienge_registrar_item('69000000-0000-0000-0000-0000000000b2', 7002)$$,
+  'A previsão já está ligada a outro título do Sienge', 'prv: o registro não liga a previsão a um segundo título do Sienge');
+delete from erp.codigos_externos where sistema = 'sienge' and tabela = 'previsoes' and registro_id = '69000000-0000-0000-0000-0000000000b2';
+-- a previsão sai de aberta: a enviada vai para a lista do que apagar, a que não foi é descartada
+select pg_temp.volta();
+select pg_temp.como(:'diretor');
+update erp.previsoes set situacao = 'cancelada' where id in ('69000000-0000-0000-0000-0000000000b1', '69000000-0000-0000-0000-0000000000b2');
+select pg_temp.sis();
+select erp.sienge_enfileirar();
+select pg_temp.ok((select apagar_desde is not null and apagado_em is null from erp.sienge_previsoes where previsao_id = '69000000-0000-0000-0000-0000000000b1')
+                  and (select situacao = 'descartado' and apagar_desde is null from erp.sienge_previsoes where previsao_id = '69000000-0000-0000-0000-0000000000b2'),
+  'prv: a enviada que saiu de aberta vai para a lista do que apagar; a que não foi é descartada');
+select pg_temp.erro_igual($$update erp.sienge_previsoes set apagar_desde = null where previsao_id = '69000000-0000-0000-0000-0000000000b1'$$,
+  'A marca de apagar não muda', 'prv: a marca de apagar não se desfaz');
+select pg_temp.erro_igual($$select erp.sienge_terminar('69000000-0000-0000-0000-0000000000b2', 'erro', null, 'x', 2, now())$$,
+  'Item fora da fila do Sienge', 'prv: a descartada não volta para a fila');
+select pg_temp.erro_igual($$select erp.sienge_pedido_item('69000000-0000-0000-0000-0000000000b1')$$,
+  'A previsão não está aberta', 'prv: a previsão que saiu de aberta não monta pedido');
+select pg_temp.volta();
+select pg_temp.como(:'diretor');
+select pg_temp.ok((select sienge_id = 7001 and empresa_sienge = '11' from erp.v_sienge_prv_apagar where previsao_id = '69000000-0000-0000-0000-0000000000b1'),
+  'prv: quem vê a previsão vê a linha a apagar, com o id e a empresa do Sienge');
+select pg_temp.falha($$update erp.sienge_previsoes set apagado_em = now() where previsao_id = '69000000-0000-0000-0000-0000000000b1'$$,
+  'prv: pela API ninguém marca apagado');
+select pg_temp.sis();
+select pg_temp.ok((select item_id = '69000000-0000-0000-0000-0000000000b1' and sienge_id = 7001 from erp.sienge_pegar_conferencia()),
+  'prv: a conferência entrega a linha a apagar');
+select pg_temp.ok(not exists (select 1 from erp.sienge_pegar_conferencia()), 'prv: a mesma linha só volta à conferência depois de 30 minutos');
+update erp.sienge_previsoes set conferido_em = now() - interval '29 minutes' where previsao_id = '69000000-0000-0000-0000-0000000000b1';
+select pg_temp.ok(not exists (select 1 from erp.sienge_pegar_conferencia()), 'prv: conferida há 29 minutos, ainda não volta');
+update erp.sienge_previsoes set conferido_em = now() - interval '31 minutes' where previsao_id = '69000000-0000-0000-0000-0000000000b1';
+select pg_temp.ok(exists (select 1 from erp.sienge_pegar_conferencia()), 'prv: conferida há 31 minutos, volta');
+select erp.sienge_marcar_apagado('69000000-0000-0000-0000-0000000000b1');
+select pg_temp.ok(not exists (select 1 from erp.v_sienge_prv_apagar where previsao_id = '69000000-0000-0000-0000-0000000000b1')
+                  and 7001 not in (select erp.sienge_ids()),
+  'prv: apagada no Sienge, sai da lista e dos ids da trava');
+select pg_temp.erro_igual($$select erp.sienge_marcar_apagado('69000000-0000-0000-0000-0000000000b1')$$,
+  'A previsão não está na lista do que apagar', 'prv: não se marca apagado duas vezes');
+-- um papel nosso que passa pela política "operacao": as funções recusam sozinhas
+select pg_temp.como(null);
+select set_config('role', 'erp_situacao', false);
+select pg_temp.erro_igual($$select * from erp.sienge_pegar()$$, 'Só o sistema pega a fila do Sienge', 'prv: fora do sistema, pegar é recusado');
+select pg_temp.erro_igual($$select erp.sienge_pedido_item('69000000-0000-0000-0000-0000000000b1')$$, 'Só o sistema monta o envio ao Sienge', 'prv: fora do sistema, o pedido é recusado');
+select pg_temp.erro_igual($$select erp.sienge_registrar_item('69000000-0000-0000-0000-0000000000b1', 1)$$, 'Só o sistema registra o envio ao Sienge', 'prv: fora do sistema, registrar é recusado');
+select pg_temp.erro_igual($$select erp.sienge_terminar('69000000-0000-0000-0000-0000000000b1', 'erro', null, null, 1, now())$$, 'Só o sistema mexe na fila do Sienge', 'prv: fora do sistema, terminar é recusado');
+select pg_temp.erro_igual($$select * from erp.sienge_pegar_conferencia()$$, 'Só o sistema confere o Sienge', 'prv: fora do sistema, a conferência é recusada');
+select pg_temp.erro_igual($$select erp.sienge_marcar_apagado('69000000-0000-0000-0000-0000000000b1')$$, 'Só o sistema confere o Sienge', 'prv: fora do sistema, marcar apagado é recusado');
+select pg_temp.erro_igual($$insert into erp.sienge_previsoes (previsao_id) values ('69000000-0000-0000-0000-0000000000b3')$$,
+  'A fila do Sienge só é escrita pelo sistema', 'prv: o gatilho da fila recusa quem não é o sistema');
+select pg_temp.como(null);
 rollback;
 
 \echo '# fim'

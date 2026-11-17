@@ -38,6 +38,18 @@ Desenho aceito como direção (6/nov/2026): **previsões e contratos do dia a di
 
 Processo de aprovação da BKM hoje (Moises, 6/nov/2026): medição → aprovação de 2 gestores → analista faz a liberação (é ali que entram a nota e os impostos) → financeiro. No desenho, os 2 gestores aprovam no nosso sistema e a autorização no Sienge é consequência.
 
+## 5.2.1 Aprovação do contrato recorrente e da previsão [Construído, 17/nov/2026]
+
+Decisões do Moises (8, 14 e 17/nov/2026). Só a previsão aprovada vai ao Sienge, como título PRV (4.7.1 do doc 04).
+
+- **Contrato e assinatura** (`compromissos` dos tipos contrato e assinatura): aprovam o gestor do centro (vaga AREA) e alguém da AF ou da AO (vaga FIN), em `compromisso_aprovacoes`, por versão. Mudar empresa, tipo, credor, datas, valores, periodicidade, vencimento, caução ou o rateio (salvo só a natureza) abre uma versão nova, que pede aprovação de novo. Quem criou ou alterou por último não aprova; ninguém ocupa as duas vagas; o master aprova tudo de uma vez. `decidir_compromisso(contrato, aprovar, justificativa)`.
+- **Previsão do contrato** nasce aprovada pelo contrato aprovado (`previsao_aprovada` segue `compromisso_aprovado`).
+- **Previsão lançada à mão**: passa pela alçada do título (`previsao_alcadas`, `previsao_aprovacoes`), com as faixas do centro e da divisão, paralelo ou em sequência; sem faixa, vai ao master com evento. Quem lançou não aprova; recusar exige justificativa e cancela a previsão. `decidir_previsao(previsão, aprovar, justificativa, centro, divisão)`.
+- **Acumulado do mês**: a previsão a pagar aberta conta no mês dela, aprovada ou esperando, como o título (S-129, Moises 17/11/2026: dividir em várias previsões não baixa a faixa); a recusada é cancelada e sai; a nota que a consome conta só o que passa dela (o consumo vem antes de fixar a alçada do título).
+- **Origem protegida**: previsão de origem `assinatura` ou `saldo_previsao` só nasce pela rotina do banco (`tg_previsao_origem`); só a de origem `assinatura` segue a aprovação do contrato. Assim, previsão lançada à mão com o id de um contrato aprovado não nasce aprovada.
+- **Nota menor que a previsão: saldo ou saving** (Moises, 17/nov/2026): `encerrar_previsao(previsão, destino, data)` dá baixa na previsão parcialmente consumida (situação `encerrada`, o livro estorna o saldo). Com `saldo`, cria outra previsão com o que sobrou, na data informada (hoje ou depois), com origem `saldo_previsao`, que segue a aprovação da original e não passa por alçada própria. Com `saving`, não cria nada. `v_previsoes_a_decidir` lista as que têm consumo e saldo.
+- **Envio ao Sienge**: a previsão aprovada aberta vai como título PRV; a que deixa de ser aberta vira linha a apagar à mão (ver `04-integracao-sienge.md`, 4.7.1).
+
 ## 5.3 "Lançar nota fiscal" [Desenhado]
 
 Experiência pedida pelo Moises (6/nov/2026), com o que cada passo exige tecnicamente:

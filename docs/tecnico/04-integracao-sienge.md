@@ -176,3 +176,21 @@ Pedido do Moises (17/nov/2026): "Faça a adaptação da escrita". Só o título 
 Toda gravação passa por `gravarComTrava()`; em teste, a lista de "criados pelo teste" é a dos ids da fila, então um id errado nunca alcança título de fora dela. Cada `PATCH` custa uma leitura a mais (a trava lê a empresa no título). Um título de 3 parcelas gasta cerca de 12 chamadas.
 
 **Ainda não feito:** instalar a função e o pg_cron no `bkm_dev` (segredos e `grant erp_sistema` ao usuário da conexão); conferir antes do envio se a conta está liberada no centro (parâmetro 665; hoje o Sienge recusa e o título fica em `erro` com a mensagem); anexo do PDF; nota com retenção (falta a filial); aviso a quem lançou quando o envio vai para `erro` ou `manual`; tela da fila.
+
+## 4.7.1 Previsão no Sienge (título PRV) [Construído, 17/nov/2026; testado no banco e no programa, não no Sienge]
+
+Decisão do Moises (14/nov/2026): sem módulo de orçamento por ora, a previsão aprovada vai ao Sienge como título PRV sem forma de pagamento, ligada à nossa; a que sai de aberta (cancelada, encerrada ou trocada) vira linha para o financeiro apagar à mão, e o sistema marca quando ela some.
+
+**No banco** (migration `20261117000400_erp_previsao_sienge.sql`):
+
+- `erp.sienge_parametros`: chave `credor_previsao`, o credor genérico "PREVISÃO BKM" do Sienge, usado quando a previsão não tem credor com código. Muda só o master (política de configuração, evento `codigo_externo_alterado`).
+- `erp.sienge_previsoes`: a fila das previsões, com as mesmas situações da dos títulos e mais `descartado` (saiu de aberta antes de ser enviada). `apagar_desde` marca a enviada que deixou de ser aberta; `apagado_em`, a que sumiu do Sienge. Id do Sienge, `apagar_desde` e `apagado_em` não mudam depois de gravados; nada se apaga.
+- `erp.sienge_enfileirar()` põe os títulos aprovados e as previsões aprovadas abertas (`erp.previsao_aprovada`), marca para apagar as enviadas que deixaram de ser abertas e descarta as não enviadas.
+- `erp._sienge_pedido_previsao`: documento `PRV`, número `PRV-` + 12 primeiros caracteres do id, credor da previsão ou o genérico (sem ele, recusa com "Falta o credor genérico..."), de-para da natureza com 100% numa conta, uma parcela com o saldo na data prevista e o marcador `ERP <id>` nas observações.
+- As funções da fila passaram a servir aos dois tipos: `erp.sienge_pegar()` (o mais vencido dos dois, cada tabela com `for update skip locked`), `sienge_pedido_item`, `sienge_registrar_item`, `sienge_terminar`, `sienge_ids()`. Para a conferência, `sienge_pegar_conferencia()` (a mais antiga a apagar sem conferência há 30 minutos) e `sienge_marcar_apagado`. `erp.v_sienge_prv_apagar` é a lista do que apagar.
+
+**O programa:** o mesmo `processarUm()`. Parcela sem forma não tem passo de pagamento. Quando não há item vencido, confere uma linha a apagar: `GET /bills/{id}` com 404 marca apagada; outro erro fica para a próxima conferência. Só leitura, não passa pela trava.
+
+**Limites conhecidos (S-131, revisão de 17/nov/2026):** a linha PRV vai com o saldo do momento do envio e não muda depois. A nota que consome a previsão em parte deixa a PRV inteira e o título da nota no Sienge ao mesmo tempo: o valor conta duas vezes no Sienge até a previsão ser encerrada (saldo ou saving), quando a PRV vai para a lista do que apagar. A natureza reclassificada também não chega à PRV. A conferência marca apagado em qualquer 404, sem antes confirmar que um título que sabidamente existe responde 200 (um caminho errado ou uma mudança da API marcaria tudo). Os três ficam para o cruzamento.
+
+**Ainda não feito:** planilha Google só leitura com a lista do que apagar; aviso por e-mail; cruzamento que recria a linha PRV faltante e marca a estranha inválida avisando o AF; a varredura completa de madrugada (hoje a conferência roda quando a fila está vazia, uma linha por minuto); criar o credor "PREVISÃO BKM" no Sienge e gravar o parâmetro.
