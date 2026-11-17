@@ -4,6 +4,27 @@
 
 Estes passos **não** podem ser feitos pelo ERP BKM, porque a API do Sienge não tem o comando. Quem executa precisa entrar no Sienge. Cada página do manual repete o aviso no ponto em que o passo aparece.
 
+## 🧪 Área de testes no Sienge
+
+✅ **Criada em 17/nov/2026, a pedido do Moises.** Todo teste de lançamento vai nela, nunca nas empresas reais.
+
+| O quê | Código | Nome |
+| --- | --- | --- |
+| Empresa | 11 | BKM TESTES - NAO USAR |
+| Obra / centro de custo | 100 | TESTES API - NAO USAR |
+| Conta corrente | TESTE-API | CONTA TESTE - NAO PAGAR (banco fictício, fora do disponível) |
+
+> ⚠️ **Passo manual.** A API não cria empresa, obra nem conta corrente. Tudo isso se faz na tela do Sienge:
+> - **Empresa:** Apoio › Empresas › Cadastros;
+> - **Obra ou centro de custo:** Apoio › Obras/Centros de Custo › Cadastros;
+> - **Conta corrente:** Apoio › Contas Correntes › Cadastros.
+>
+> **Empresa nova nasce invisível** para todos os usuários da tela. Para alguém enxergá-la, libere "Acesso aos dados da empresa" em Segurança › Autorizações › Usuários › Empresas. Hoje só o Moises tem esse acesso na empresa 11.
+>
+> **Para desfazer:** exclua enquanto não houver lançamento. Depois do primeiro lançamento, só dá para desativar.
+
+## Passos manuais do dia a dia
+
 | Passo manual no Sienge | Onde aparece no processo | Como o ERP BKM ajuda | Fonte |
 | --- | --- | --- | --- |
 | **Liberar a medição** (gera o título) | Depois da aprovação dos 2 gestores | Entrega a ficha pronta (número, data, valor, impostos lidos da nota) e completa o título depois | Documentação da API e teste de 6/nov/2026 |
