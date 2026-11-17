@@ -245,6 +245,15 @@ create table sienge.historico (
 );
 create index on sienge.historico (tabela, chave);
 
+-- Quais parcelas vieram em cada carga. É o que decide o ausente: a última resposta de uma parcela
+-- pode ser de outra carga (duas cargas intercaladas), então a marca é por carga, não por resposta.
+create table sienge.pagar_presencas (
+  carga_id bigint not null references sienge.cargas(id),
+  titulo_id int not null,
+  parcela_id int not null,
+  primary key (carga_id, titulo_id, parcela_id)
+);
+
 create function sienge.tg_historico_imutavel() returns trigger language plpgsql as $$
 begin raise exception 'histórico do espelho não se altera nem se apaga'; end $$;
 create trigger t_imutavel before update or delete on sienge.historico
@@ -280,6 +289,10 @@ begin
   if found then return v_id; end if;
 
   v_corpo := p_corpo::jsonb;
+  -- lista solta não tem onde filtrar as empresas de fora: recusa (a massa sempre vem em data)
+  if jsonb_typeof(v_corpo) = 'array' then
+    raise exception 'corpo em lista pura não se grava (sem data ou results)';
+  end if;
   v_chave := case when jsonb_typeof(v_corpo -> 'data') = 'array' then 'data'
                   when jsonb_typeof(v_corpo -> 'results') = 'array' then 'results' end;
   if v_chave is not null then
@@ -289,6 +302,8 @@ begin
                         where f.empresa_id::text in (x ->> 'companyId', x ->> 'debtorId'));
     v_fora := jsonb_array_length(v_corpo -> v_chave) - jsonb_array_length(v_lista);
     v_corpo := jsonb_set(v_corpo, array[v_chave], v_lista);
+  elsif p_recurso like 'bulk:%' and p_status = 200 then
+    raise exception 'resposta de massa sem a lista data ou results';
   end if;
 
   insert into sienge_bruto.respostas (carga_id, recurso, consulta, pedaco, status_http, cabecalhos, corpo,
@@ -322,6 +337,10 @@ begin
     end if;
     if exists (select 1 from empresas_fora where empresa_id = (p ->> 'companyId')::int) then
       n_fora := n_fora + 1; continue;
+    end if;
+    if r.carga_id is not null then
+      insert into pagar_presencas values (r.carga_id, (p ->> 'billId')::int, (p ->> 'installmentId')::int)
+        on conflict do nothing;
     end if;
     v_imp := md5(p::text);
     select * into v_atual from pagar_parcelas
@@ -406,12 +425,20 @@ end $$;
 -- parcelas da janela que não vieram em nenhuma resposta dela. Nada é apagado.
 create function sienge.marcar_ausentes_pagar(p_carga_id bigint) returns int
 language plpgsql set search_path = sienge, pg_temp as $$
-declare c sienge.cargas; n int;
+declare c sienge.cargas; n int; v_ini date; v_fim date; v_extra text;
 begin
   select * into c from cargas where id = p_carga_id;
   if not found then raise exception 'carga % não existe', p_carga_id; end if;
   if c.situacao <> 'concluida' then raise exception 'carga % não está concluída', p_carga_id; end if;
-  if c.janela_inicio is null or c.janela_fim is null then raise exception 'carga % sem janela', p_carga_id; end if;
+  -- filtro de empresa, centro, obra ou outro: a carga não leu tudo da janela, então não marca nada
+  select string_agg(k, ', ') into v_extra from jsonb_object_keys(c.parametros) k
+   where k not in ('selectionType', 'startDate', 'endDate', 'correctionIndexerId', 'correctionDate',
+                   'withAuthorizations', 'withBankMovements');
+  if v_extra is not null then raise exception 'carga % com filtro (%): não marca ausentes', p_carga_id, v_extra; end if;
+  -- a janela é a que foi PEDIDA ao Sienge
+  v_ini := _data(c.parametros ->> 'startDate');
+  v_fim := _data(c.parametros ->> 'endDate');
+  if v_ini is null or v_fim is null then raise exception 'carga % sem startDate e endDate', p_carga_id; end if;
   if coalesce(c.parametros ->> 'selectionType', '') <> 'I' then
     raise exception 'só carga por data de emissão (selectionType I) marca ausentes';
   end if;
@@ -424,9 +451,9 @@ begin
   end if;
   update pagar_parcelas pp set removido_em = now()
    where pp.removido_em is null
-     and pp.emissao between c.janela_inicio and c.janela_fim
-     and not exists (select 1 from sienge_bruto.respostas r
-                      where r.carga_id = p_carga_id and r.id = pp.resposta_id);
+     and pp.emissao between v_ini and v_fim
+     and not exists (select 1 from pagar_presencas pr
+                      where pr.carga_id = p_carga_id and pr.titulo_id = pp.titulo_id and pr.parcela_id = pp.parcela_id);
   get diagnostics n = row_count;
   return n;
 end $$;

@@ -36,6 +36,7 @@ function iguais(a: string, b: string): boolean {
 
 Deno.serve(async (req) => {
   const sql = postgres(Deno.env.get('SUPABASE_DB_URL')!, { max: 1, prepare: false });
+  let cargaId: number | null = null; // a carga deste passo, para o erro cair nela e não em outra
   try {
     const [k] = await sql`select decrypted_secret as v from vault.decrypted_secrets where name = 'sienge_carga_chave'`;
     if (!k?.v || !iguais(req.headers.get('x-carga-chave') ?? '', k.v)) return new Response('não autorizado', { status: 401 });
@@ -47,6 +48,7 @@ Deno.serve(async (req) => {
          where situacao in ('pendente', 'rodando') and (retomar_depois is null or retomar_depois <= now())
          order by id limit 1 for update skip locked`;
       if (!c) return { passo: 'nada a fazer' };
+      cargaId = c.id;
       if (!CAMINHOS[c.recurso]) throw new Error(`recurso sem programa: ${c.recurso}`);
 
       const [cota] = await tx<NonNullable<Cota>[]>`select restante_dia, lido_em from sienge.cota_api where tipo = 'massa'`;
@@ -92,7 +94,7 @@ Deno.serve(async (req) => {
         const id = JSON.parse(corpo).identifier;
         if (!id) throw new Error('resposta sem identifier');
         await tx`update sienge.cargas set pedido_assincrono = ${id}, situacao = 'rodando',
-                   iniciada_em = coalesce(iniciada_em, now()), ultimo_erro = null, retomar_depois = now() + interval '1 minute'
+                   iniciada_em = coalesce(iniciada_em, now()), ultimo_erro = null, tentativas = 0, retomar_depois = now() + interval '1 minute'
                  where id = ${c.id}`;
         return { carga: c.id, passo: 'pedido feito' };
       }
@@ -100,12 +102,13 @@ Deno.serve(async (req) => {
         const st = JSON.parse(corpo);
         if (st.status === 'Finished') {
           if (!Number.isInteger(st.chunks) || st.chunks < 1) throw new Error(`massa terminou sem pedaços (${st.chunks})`);
-          await tx`update sienge.cargas set pedacos = ${st.chunks} where id = ${c.id}`;
+          await tx`update sienge.cargas set pedacos = ${st.chunks}, tentativas = 0, ultimo_erro = null where id = ${c.id}`;
           return { carga: c.id, passo: 'pronto', pedacos: st.chunks };
         }
         if (st.status === 'Failed') {
           await tx`update sienge.cargas set pedido_assincrono = null, ultimo_erro = ${'massa falhou: ' + (st.error ?? '')},
-                     tentativas = tentativas + 1, retomar_depois = now() + interval '30 minutes' where id = ${c.id}`;
+                     tentativas = tentativas + 1, retomar_depois = now() + interval '30 minutes',
+                     situacao = case when tentativas + 1 >= 5 then 'erro' else situacao end where id = ${c.id}`;
           return { carga: c.id, passo: 'massa falhou' };
         }
         await tx`update sienge.cargas set retomar_depois = now() + interval '1 minute' where id = ${c.id}`;
@@ -115,18 +118,21 @@ Deno.serve(async (req) => {
       const [g] = await tx`select sienge.gravar_resposta(${c.id}, ${c.recurso}, ${consulta}, ${acao.pedaco}, ${r.status},
                              ${tx.json(cab)}, ${corpo}, ${lido}) as id`;
       const [e] = await tx`select sienge.carregar_parcelas_pagar(${g.id}) as n`;
-      await tx`update sienge.cargas set pedacos_lidos = ${acao.pedaco}, ultimo_erro = null where id = ${c.id}`;
+      await tx`update sienge.cargas set pedacos_lidos = ${acao.pedaco}, ultimo_erro = null, tentativas = 0 where id = ${c.id}`;
       return { carga: c.id, passo: `pedaço ${acao.pedaco}`, espelho: e.n };
     });
     return Response.json(resultado);
   } catch (err) {
     const msg = String((err as Error)?.message ?? err).slice(0, 500);
-    try {
-      await sql`update sienge.cargas set tentativas = tentativas + 1, ultimo_erro = ${msg},
-                  retomar_depois = now() + interval '5 minutes',
-                  situacao = case when tentativas + 1 >= 5 then 'erro' else situacao end
-                where id = (select id from sienge.cargas where situacao in ('pendente', 'rodando') order by id limit 1)`;
-    } catch { /* o erro original é o que importa */ }
+    // erro antes de escolher a carga (banco, Vault): não é de carga nenhuma
+    if (cargaId !== null) {
+      try {
+        await sql`update sienge.cargas set tentativas = tentativas + 1, ultimo_erro = ${msg},
+                    retomar_depois = now() + interval '5 minutes',
+                    situacao = case when tentativas + 1 >= 5 then 'erro' else situacao end
+                  where id = ${cargaId}`;
+      } catch { /* o erro original é o que importa */ }
+    }
     return Response.json({ erro: msg }, { status: 500 });
   } finally {
     await sql.end();

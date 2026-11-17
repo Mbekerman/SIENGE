@@ -48,7 +48,16 @@ language sql as $$
 $$;
 
 insert into sienge.cargas (recurso, parametros, janela_inicio, janela_fim, situacao)
-values ('bulk:outcome', '{"selectionType":"I"}', '2026-01-01', '2026-12-31', 'rodando');
+values ('bulk:outcome', '{"selectionType":"I","startDate":"2026-01-01","endDate":"2026-12-31"}', '2026-01-01', '2026-12-31', 'rodando');
+
+create function pg_temp.erro_tem(sqlcmd text, trecho text, msg text) returns void language plpgsql as $$
+begin
+  begin execute sqlcmd; exception when others then
+    if position(trecho in sqlerrm) = 0 then raise exception 'FALHOU: % (erro outro: %)', msg, sqlerrm; end if;
+    raise notice 'ok  % (%)', msg, sqlerrm; return;
+  end;
+  raise exception 'FALHOU: esperava erro em %', msg;
+end $$;
 
 -- 1. camada bruta: a Muchmore sai antes de gravar
 select sienge.gravar_resposta(1, 'bulk:outcome', '/outcome?selectionType=I', 1, 200, '{"x-ratelimit-remaining-day":"13"}',
@@ -98,13 +107,13 @@ select pg_temp.ok((select saldo = 0 from sienge.pagar_parcelas where titulo_id =
                   and (select count(*) from sienge.pagar_rateios where titulo_id = 10 and parcela_id = 2) = 2,
   'espelho: a versão nova traz a baixa, e o rateio não duplica');
 
--- 4. ausentes: só depois de carga concluída que leu a janela inteira
+-- 4. ausentes: só depois de carga concluída que leu a janela inteira, sem filtro
 select pg_temp.falha('select sienge.marcar_ausentes_pagar(1)', 'ausentes: carga ainda rodando não marca nada');
 update sienge.cargas set situacao = 'concluida' where id = 1;
 -- a resposta 2 trouxe só a parcela 10/2; a 10/1 veio na resposta 1, da mesma carga
 select pg_temp.ok(sienge.marcar_ausentes_pagar(1) = 0, 'ausentes: o que veio em qualquer resposta da carga fica');
 insert into sienge.cargas (recurso, parametros, janela_inicio, janela_fim, situacao)
-values ('bulk:outcome', '{"selectionType":"I"}', '2026-01-01', '2026-12-31', 'rodando');
+values ('bulk:outcome', '{"selectionType":"I","startDate":"2026-01-01","endDate":"2026-12-31"}', '2026-01-01', '2026-12-31', 'rodando');                                   -- carga 2
 select sienge.gravar_resposta(2, 'bulk:outcome', '/outcome?selectionType=I', 1, 200, '{}',
   jsonb_build_object('data', jsonb_build_array(pg_temp.parcela(10, 2, 5, 100, 0)))::text, '2026-11-19 01:00+00') as r3 \gset
 select sienge.carregar_parcelas_pagar(:r3);
@@ -118,14 +127,86 @@ select sienge.gravar_resposta(2, 'bulk:outcome', '/outcome?selectionType=I', 2, 
 select sienge.carregar_parcelas_pagar(:r4);
 select pg_temp.ok((select removido_em is null from sienge.pagar_parcelas where titulo_id = 10 and parcela_id = 1),
   'ausentes: parcela que volta perde a marca de removida');
+
+-- recusas; cada carga tem uma resposta processada, para a recusa ser só pelo motivo testado
+create function pg_temp.carga_com_resposta(params jsonb, ini date, fim date, processar boolean) returns bigint
+language plpgsql as $$
+declare c bigint; r bigint;
+begin
+  insert into sienge.cargas (recurso, parametros, janela_inicio, janela_fim, situacao)
+    values ('bulk:outcome', params, ini, fim, 'rodando') returning id into c;
+  r := sienge.gravar_resposta(c, 'bulk:outcome', '/outcome?c=' || c, 1, 200, '{}',
+         jsonb_build_object('data', jsonb_build_array(pg_temp.parcela(10, 2, 5, 100, 0)))::text, now());
+  if processar then perform sienge.carregar_parcelas_pagar(r); end if;
+  update sienge.cargas set situacao = 'concluida' where id = c;
+  return c;
+end $$;
+select pg_temp.carga_com_resposta('{"selectionType":"D","startDate":"2026-01-01","endDate":"2026-12-31"}', '2026-01-01', '2026-12-31', true) as cd \gset
+select pg_temp.erro_tem('select sienge.marcar_ausentes_pagar(' || :cd || ')', 'selectionType I',
+  'ausentes: carga por vencimento não marca ausentes');
+select pg_temp.carga_com_resposta('{"selectionType":"I","startDate":"2026-01-01","endDate":"2026-12-31"}', '2026-01-01', '2026-12-31', false) as cnp \gset
+select pg_temp.erro_tem('select sienge.marcar_ausentes_pagar(' || :cnp || ')', 'não processada',
+  'ausentes: carga com resposta não processada não marca ausentes');
+select pg_temp.carga_com_resposta('{"selectionType":"I","startDate":"2026-01-01","endDate":"2026-12-31","companyId":"5"}', '2026-01-01', '2026-12-31', true) as cf \gset
+select pg_temp.erro_tem('select sienge.marcar_ausentes_pagar(' || :cf || ')', 'com filtro',
+  'ausentes: carga filtrada por empresa não marca as outras empresas');
+select pg_temp.carga_com_resposta('{"selectionType":"I"}', '2026-01-01', '2026-12-31', true) as csj \gset
+select pg_temp.erro_tem('select sienge.marcar_ausentes_pagar(' || :csj || ')', 'sem startDate',
+  'ausentes: carga sem a janela pedida não marca ausentes');
 insert into sienge.cargas (recurso, parametros, janela_inicio, janela_fim, situacao)
-values ('bulk:outcome', '{"selectionType":"D"}', '2026-01-01', '2026-12-31', 'concluida');
-select pg_temp.falha('select sienge.marcar_ausentes_pagar(3)', 'ausentes: carga por vencimento não marca ausentes');
+values ('bulk:outcome', '{"selectionType":"I","startDate":"2000-01-01","endDate":"2026-12-31"}', '2000-01-01', '2026-12-31', 'concluida')
+returning id as cvazia \gset
+select pg_temp.erro_tem('select sienge.marcar_ausentes_pagar(' || :cvazia || ')', 'sem nenhuma resposta',
+  'ausentes: carga concluída sem nenhuma resposta não marca nada');
+select pg_temp.ok((select count(*) = 0 from sienge.pagar_parcelas where removido_em is not null),
+  'ausentes: as recusas não deixam marca');
+
+-- a janela é a PEDIDA ao Sienge (fevereiro), não a das colunas (o ano todo): a parcela de março fica
+select pg_temp.carga_com_resposta('{"selectionType":"I","startDate":"2026-02-01","endDate":"2026-02-28"}', '2026-01-01', '2026-12-31', true) as cjan \gset
+select pg_temp.ok(sienge.marcar_ausentes_pagar(:cjan) = 0
+                  and (select removido_em is null from sienge.pagar_parcelas where titulo_id = 10 and parcela_id = 1),
+  'ausentes: só marca dentro da janela pedida ao Sienge');
+select pg_temp.carga_com_resposta('{"selectionType":"I","startDate":"2026-04-01","endDate":"2026-12-31"}', '2026-01-01', '2026-12-31', true) as cabr \gset
+select pg_temp.ok(sienge.marcar_ausentes_pagar(:cabr) = 0
+                  and (select removido_em is null from sienge.pagar_parcelas where titulo_id = 10 and parcela_id = 1),
+  'ausentes: o começo da janela também é o pedido ao Sienge');
+
+-- duas cargas intercaladas: a segunda relê a parcela (troca a última resposta), e a primeira não a marca
 insert into sienge.cargas (recurso, parametros, janela_inicio, janela_fim, situacao)
-values ('bulk:outcome', '{"selectionType":"I"}', '2000-01-01', '2026-12-31', 'concluida');
-select pg_temp.falha('select sienge.marcar_ausentes_pagar(4)', 'ausentes: carga concluída sem nenhuma resposta não marca nada');
-select pg_temp.ok((select count(*) = 0 from sienge.pagar_parcelas where removido_em is not null and titulo_id <> 10),
-  'ausentes: a recusa não deixa marca');
+values ('bulk:outcome', '{"selectionType":"I","startDate":"2026-01-01","endDate":"2026-12-31"}', '2026-01-01', '2026-12-31', 'rodando') returning id as ca \gset
+insert into sienge.cargas (recurso, parametros, janela_inicio, janela_fim, situacao)
+values ('bulk:outcome', '{"selectionType":"I","startDate":"2026-01-01","endDate":"2026-12-31"}', '2026-01-01', '2026-12-31', 'rodando') returning id as cb \gset
+select sienge.carregar_parcelas_pagar(sienge.gravar_resposta(:ca, 'bulk:outcome', '/outcome?a', 1, 200, '{}',
+  jsonb_build_object('data', jsonb_build_array(pg_temp.parcela(10, 1, 5, 100, 0), pg_temp.parcela(10, 2, 5, 100, 0)))::text, now()));
+select sienge.carregar_parcelas_pagar(sienge.gravar_resposta(:cb, 'bulk:outcome', '/outcome?b', 1, 200, '{}',
+  jsonb_build_object('data', jsonb_build_array(pg_temp.parcela(10, 1, 5, 100, 0), pg_temp.parcela(10, 2, 5, 100, 0)))::text, now()));
+update sienge.cargas set situacao = 'concluida' where id = :ca;
+select pg_temp.ok(sienge.marcar_ausentes_pagar(:ca) = 0
+                  and (select count(*) = 0 from sienge.pagar_parcelas where removido_em is not null),
+  'ausentes: carga intercalada com outra não marca o que ela mesma leu');
+
+-- carregar: só resposta 200, e a Muchmore fica de fora mesmo se chegar ao bruto por outro caminho
+select sienge.gravar_resposta(1, 'bulk:outcome', '/outcome?erro', 9, 500, '{}', '{"message":"erro"}', now()) as r500 \gset
+select pg_temp.erro_tem('select sienge.carregar_parcelas_pagar(' || :r500 || ')', 'não é 200',
+  'espelho: resposta que não é 200 não se carrega');
+insert into sienge_bruto.respostas (carga_id, recurso, consulta, pedaco, status_http, cabecalhos, corpo, sha256, lido_em)
+values (1, 'bulk:outcome', '/outcome?direto', 1, 200, '{}',
+        jsonb_build_object('data', jsonb_build_array(pg_temp.parcela(12, 1, 1, 70, 70))), 'direto', now())
+returning id as rmu \gset
+select pg_temp.ok(sienge.carregar_parcelas_pagar(:rmu) = '{"novas":0,"mudadas":0,"iguais":0,"empresas_fora":1}'
+                  and not exists (select 1 from sienge.pagar_parcelas where empresa_id = 1),
+  'espelho: carregar também deixa a Muchmore de fora');
+
+-- bruto: o que não tem onde filtrar empresa é recusado; credencial recusada também direto na tabela
+select pg_temp.erro_tem($$select sienge.gravar_resposta(1, 'bulk:outcome', '/outcome?lista', 1, 200, '{}', '[{"companyId":1}]', now())$$,
+  'lista pura', 'bruto: corpo em lista pura (sem data) é recusado');
+select pg_temp.erro_tem($$select sienge.gravar_resposta(1, 'bulk:outcome', '/outcome?semdata', 1, 200, '{}', '{"x":[]}', now())$$,
+  'sem a lista', 'bruto: resposta de massa sem data ou results é recusada');
+select pg_temp.erro_tem($$select sienge.gravar_resposta(1, 'rest:bills', '/bills?password=x', 1, 200, '{}', '{"results":[]}', now())$$,
+  'consulta com credencial', 'bruto: a função recusa consulta com credencial antes da tabela');
+select pg_temp.falha($$insert into sienge_bruto.respostas (carga_id, recurso, consulta, pedaco, status_http, cabecalhos, corpo, sha256, lido_em)
+                       values (1, 'rest:bills', '/bills?token=x', 1, 200, '{}', '{}', 'x', now())$$,
+  'bruto: a tabela recusa consulta com credencial mesmo fora da função');
 
 -- 5. nada se altera nem se apaga
 select pg_temp.falha(format('update sienge_bruto.respostas set corpo = %L where id = %s', '{}', :r1), 'bruto: corpo não se altera');
@@ -156,6 +237,11 @@ select pg_temp.ok(not exists (select 1 from pg_proc p join pg_namespace n on n.o
                                cross join (values ('anon'), ('authenticated'), ('service_role')) r(papel)
                                where n.nspname in ('sienge', 'sienge_bruto') and has_function_privilege(r.papel, p.oid, 'EXECUTE')),
   'segurança: nenhuma função do espelho executável pela API');
+select pg_temp.ok(not exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+                               cross join (values ('anon'), ('authenticated'), ('service_role')) r(papel)
+                               where n.nspname in ('sienge', 'sienge_bruto') and c.relkind = 'S'
+                                 and has_sequence_privilege(r.papel, c.oid, 'USAGE,SELECT,UPDATE')),
+  'segurança: nenhuma sequência do espelho usável pela API');
 select pg_temp.ok(not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
                                where n.nspname in ('sienge', 'sienge_bruto') and p.prosecdef),
   'segurança: nenhuma função definer');

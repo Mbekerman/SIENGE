@@ -115,7 +115,8 @@ Código em `servicos/sienge-carga/` (`index.ts` e `logica.ts`; testes de `logica
 - **Falhas:** pedido expirado (404 no assíncrono) recomeça do zero; "Failed" da massa espera 30 minutos; massa "Finished" sem pedaços é erro (não conclui); outro erro espera 5 minutos e, na 5ª tentativa, a carga fica em `erro`.
 - **Quem chama:** a função não pede JWT; confere o cabeçalho `x-carga-chave` contra o segredo `sienge_carga_chave` do Vault, em tempo constante.
 - **Custo da carga de todo o contas a pagar (2000 a 2026):** cerca de 7 chamadas de massa (1 pedido, 1 a 4 andamentos, 2 pedaços), das 20 do dia.
-- Primeira execução no `bkm_dev`: 17/nov/2026, 08h59 (Brasília); primeira tentativa recusada com 401 por credencial (sem gastar cota).
+- Um erro conta na carga daquele passo; um passo bem-sucedido zera as tentativas.
+- **Primeira execução no `bkm_dev` [Testado, 17/nov/2026]:** 08h59 recusada com 401 (credencial; sem cabeçalho de cota, não gastou); 09h03 pedido aceito; um 502 do Sienge no andamento, refeito sozinho; 4 pedaços (3.243 + 889 da Muchmore, 3.537, 3.338, 643 linhas; o pedaço não chega a 8.192 linhas, o corte é por outro critério); concluída às 09h15. Gastou 5 das 20 chamadas de massa. 10.761 parcelas de 6.922 títulos, 11.204 rateios (todos somam 100%), 8.813 autorizações, 8.400 baixas, 6.239 movimentos. Batem com o arquivo de 16/11 (10.736 sem a Muchmore) mais 25 parcelas lançadas depois; os títulos 8300 a 8510 conferidos um a um.
 
 ## 4.7 Envio ao Sienge [Desenhado]
 
