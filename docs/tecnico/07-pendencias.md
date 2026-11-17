@@ -5,7 +5,8 @@
 | Pergunta | Afeta | Desde |
 | --- | --- | --- |
 | Qual pacote de API a BKM tem? | Se a cópia diária cabe na cota; frequência da sincronização | 6/nov |
-| Código da filial da empresa 2 no Sienge | `tax-information` (dados fiscais de serviço) | 6/nov |
+| Código da filial da empresa 2 no Sienge | `tax-information` (dados fiscais de serviço). Em 17/nov as empresas 2 e 11 não tinham filial cadastrada (Apoio › Fiscal › Filiais); sem filial, o envio recusa nota com retenção. Criar uma filial de teste na 11? | 6/nov |
+| Onde instalar o programa de envio (`sienge-escrita`) e com qual credencial; papel `erp_sistema` para a conexão dele (`grant erp_sistema to` o usuário da conexão) | Envio automático no `bkm_dev` e na produção | 17/nov |
 | Existe base de testes do Sienge? | Onde rodar testes de escrita (hoje é produção) | 6/nov |
 | Notas de contrato por medição ou por título avulso? | Fluxo de envio ao Sienge ([05](05-contas-a-pagar.md)) | 6/nov |
 | Suporte do Sienge: liberação automática de medição, API de liberação, de ciência e de autorização de pagamento? | Quantos passos manuais sobram | 6/nov |
@@ -45,4 +46,13 @@ Criado em 6/nov/2026, pode ser apagado à mão no Sienge (a API não apaga):
 | Título 8417 | Gerado pela liberação da medição 2; ficou NFSE 112, vencimento 10/12/2026 |
 | Título 8422 | PRV, R$ 1,00, vencimento 10/03/2027, criado pela API, "TESTE API Claude" |
 
-A medição 1 do CTP/28 (R$ 8,33) não é de teste nosso e não foi tocada.
+A medição 1 do CTP/28 (R$ 8,33) não é de teste nosso e não foi tocada. O título 8422 foi apagado em 17/nov; a medição 2 e o 8417 ficam (Moises, 17/nov).
+
+Na área de testes (empresa 11, credor 823 "CREDOR TESTE API - NAO PAGAR"), criados pela API em 17/nov/2026, podem ficar:
+
+| Registro | Detalhe |
+| --- | --- |
+| Título 8547 | PRV TESTEAPI11, R$ 1,00, credor 27 (primeiro teste de gravação) |
+| Título 8558 | NFSE E2E1, R$ 2,00 em 2 parcelas (PIX e boleto), envio de ponta a ponta |
+| Título 8559 | NFSE E2E2, R$ 1,00 em 3 parcelas, só para ver o arredondamento |
+| Título 8560 | NFSE E2E3, R$ 1,00 em 3 parcelas com vencimentos corrigidos (PIX, boleto, PIX com CNPJ), envio de ponta a ponta |

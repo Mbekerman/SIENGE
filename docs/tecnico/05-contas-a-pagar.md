@@ -34,6 +34,8 @@ Desenho aceito como direção (6/nov/2026): **previsões e contratos do dia a di
 | Saldo do contrato no Sienge | controlado | não controlado (passa a ser nosso) |
 | Risco | analista redigita parte da nota | título errado só se corrige apagando à mão no Sienge |
 
+**[Construído, 17/nov/2026] Título avulso a partir da nota aprovada:** a nota lançada (`lancar_documento`) gera o título; quem lança informa a forma de pagamento de cada parcela (`parcela_pagamentos`); aprovado na alçada, o título entra na fila `sienge_envios` e o programa `servicos/sienge-escrita` faz o `POST /bills` e grava a forma de pagamento de cada parcela. Fora desta versão: nota com retenção ou caução, imposto, caução, adiantamento, societário, anexo do PDF e o caminho por medição. Detalhe em [04](04-integracao-sienge.md), 4.7.
+
 Processo de aprovação da BKM hoje (Moises, 6/nov/2026): medição → aprovação de 2 gestores → analista faz a liberação (é ali que entram a nota e os impostos) → financeiro. No desenho, os 2 gestores aprovam no nosso sistema e a autorização no Sienge é consequência.
 
 ## 5.3 "Lançar nota fiscal" [Desenhado]

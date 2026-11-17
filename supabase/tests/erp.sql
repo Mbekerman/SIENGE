@@ -1307,7 +1307,8 @@ select pg_temp.ok(not exists (
              and tablename in ('naturezas_sistema','niveis_aprovacao','alcadas_pagamento','alcadas_reclassificacao',
                                'regra_adiantamento','regra_alcada_pagamento','regras_ajuste','contas_bancarias',
                                'codigos_externos','aprovadores_config','regras_mudanca_config','mudancas_config',
-                               'mudanca_config_votos','usuarios','auditoria','regras_notificacao','tipos_evento')
+                               'mudanca_config_votos','usuarios','auditoria','regras_notificacao','tipos_evento',
+                               'sienge_centros','sienge_contas')
              and (cmd = 'ALL' or (cmd = 'SELECT' and tablename in ('usuarios','auditoria'))))
     and not (policyname = 'eventos_grava' and tablename = 'eventos' and cmd = 'INSERT' and roles = '{erp_eventos}')
     -- a distribuição das notificações: lê quem recebe, grava só o sino e a fila
@@ -5696,6 +5697,109 @@ select pg_temp.ok(not exists (select 1 from pg_class c join pg_namespace n on n.
   'bi: nada para anon, service_role nem public');
 select pg_temp.ok(not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'bi' and p.prosecdef),
   'bi: nenhuma função definer (o acesso é só o RLS de quem consulta)');
+rollback;
+
+-- ---------------------------------------------------------------------
+\echo '# envio ao Sienge: forma de pagamento, de-para, fila e pedido'
+begin;
+select pg_temp.ok(erp.linha_digitavel_valida('34191090080000000212134567890008799990000000100'), 'sienge: linha digitável com os DVs certos vale');
+select pg_temp.ok(not erp.linha_digitavel_valida('34191090080000000212134567890008799990000000101')
+                  and not erp.linha_digitavel_valida('34191090090000000212134567890008799990000000100')
+                  and not erp.linha_digitavel_valida('3419109008'),
+  'sienge: linha com DV geral, DV de campo ou tamanho errado é recusada');
+select pg_temp.ok(erp.chave_pix_valida('cpf_cnpj', '29732041000154') and erp.chave_pix_valida('email', 'teste@example.com')
+                  and erp.chave_pix_valida('telefone', '+5511987654321') and not erp.chave_pix_valida('email', 'Teste@Example.com')
+                  and not erp.chave_pix_valida('cpf_cnpj', '29.732.041/0001-54') and not erp.chave_pix_valida('outro', 'x'),
+  'sienge: chave PIX conferida pelo tipo (só dígitos, e-mail minúsculo, telefone com +55)');
+
+-- a nota sem retenção vira título aberto, na alçada, sem voto ainda
+select pg_temp.sis(); insert into erp.centro_aprovadores values (:'cc_mkt', :'gestor') on conflict do nothing; select pg_temp.volta();
+select pg_temp.como(:'diretor');
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+values ('70000000-0000-0000-0000-0000000000e1', :'spe', '10000000-0000-0000-0000-000000000007', 'nfse', '9001', '2026-06-02', '2026-06-01', 300);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('70000000-0000-0000-0000-0000000000e1', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 66.6667),
+  ('70000000-0000-0000-0000-0000000000e1', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), 33.3333);
+select erp.lancar_documento('70000000-0000-0000-0000-0000000000e1', array['2026-06-20','2026-07-20']::date[]) as tse \gset
+select pg_temp.ok(erp.alcada_fase(:'tse') is not null and not erp.titulo_aprovado(:'tse'), 'sienge: o título lançado espera a alçada');
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, pix_tipo, pix_chave) values (:'tse', 1, 'pix', 'email', 'teste@example.com');
+select pg_temp.falha(format($$insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (%L, 2, 'boleto', '34191090080000000212134567890008799990000000101')$$, :'tse'),
+  'sienge: boleto com linha digitável errada não entra');
+select pg_temp.falha(format($$insert into erp.parcela_pagamentos (titulo_id, numero, forma, pix_tipo) values (%L, 2, 'pix', 'email')$$, :'tse'),
+  'sienge: PIX sem chave não entra');
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (:'tse', 2, 'boleto', '34191090080000000212134567890008799990000000100');
+select pg_temp.ok((select count(*) = 2 from erp.parcela_pagamentos where titulo_id = :'tse'),
+  'sienge: antes do primeiro voto, quem lança informa a forma de pagamento de cada parcela');
+select pg_temp.ok((select count(*) = 1 from erp.auditoria where tabela = 'parcela_pagamentos' and registro = :'tse' and acao = 'insert' and depois->>'forma' = 'pix'),
+  'sienge: a forma de pagamento fica na auditoria');
+select pg_temp.como(:'leitor');
+select pg_temp.falha(format($$update erp.parcela_pagamentos set pix_chave = 'fraude@example.com' where titulo_id = %L and numero = 1$$, :'tse'),
+  'sienge: quem não lança no título não troca a chave');
+select pg_temp.como(:'diretor');
+select erp.decidir_titulo(:'tse', true) as r_se \gset
+select pg_temp.ok(:'r_se' = 'aprovado' and erp.titulo_aprovado(:'tse'), 'sienge: o master aprova o título');
+select pg_temp.erro_igual(format($$update erp.parcela_pagamentos set pix_chave = 'fraude@example.com' where titulo_id = %L and numero = 1$$, :'tse'),
+  'A forma de pagamento só muda antes do primeiro voto da alçada (ou na revisão do título)',
+  'sienge: depois do voto, nem quem lançou troca a chave PIX');
+select pg_temp.erro_igual(format($$delete from erp.parcela_pagamentos where titulo_id = %L$$, :'tse'),
+  'A forma de pagamento só muda antes do primeiro voto da alçada (ou na revisão do título)',
+  'sienge: depois do voto, a forma de pagamento não se apaga');
+
+-- a fila e o pedido são do sistema
+select pg_temp.falha($$select erp.sienge_enfileirar()$$, 'sienge: a API não enfileira');
+select pg_temp.falha(format($$select erp.sienge_pedido(%L)$$, :'tse'), 'sienge: a API não monta o pedido');
+select pg_temp.falha(format($$insert into erp.sienge_envios (titulo_id) values (%L)$$, :'tse'), 'sienge: a API não grava na fila');
+select pg_temp.como(:'analista');
+select pg_temp.falha(format($$insert into erp.sienge_contas (natureza_id, centro_custo_id, sienge_conta) values (%L, %L, '1')$$, pg_temp.nat('04.01'), :'cc_obra'),
+  'sienge: quem não é master não grava o de-para direto');
+select pg_temp.como(null);
+select erp.sienge_enfileirar() as n_fila \gset
+select pg_temp.ok(:n_fila >= 1 and exists (select 1 from erp.sienge_envios where titulo_id = :'tse' and situacao = 'pendente'),
+  'sienge: o título aprovado entra na fila');
+select pg_temp.ok(erp.sienge_enfileirar() = 0, 'sienge: enfileirar de novo não repete');
+select pg_temp.ok(not exists (select 1 from erp.sienge_envios e join erp.titulos t on t.id = e.titulo_id
+                               where t.tipo not in ('fornecedor','avulso') or not erp.titulo_aprovado(t.id)),
+  'sienge: só título de fornecedor ou avulso aprovado entra na fila (imposto e o que espera a alçada, não)');
+select pg_temp.erro_igual(format($$select erp.sienge_pedido(%L)$$, :'tse'), 'A empresa do título não tem código no Sienge',
+  'sienge: sem o código da empresa, o pedido é recusado');
+insert into erp.codigos_externos (sistema, tabela, registro_id, codigo) values
+  ('sienge', 'empresas', :'spe', '11'), ('sienge', 'pessoas', '10000000-0000-0000-0000-000000000007', '823');
+select pg_temp.erro_igual(format($$select erp.sienge_pedido(%L)$$, :'tse'),
+  'De-para do Sienge incompleto: núcleo + centro sem centro de custo do Sienge',
+  'sienge: sem o de-para, o pedido diz o que falta');
+insert into erp.sienge_centros (nucleo_economico_id, centro_custo_id, sienge_centro) values (:'ne_vm', :'cc_mkt', 100), (:'ne_vm', :'cc_obra', 100);
+insert into erp.sienge_contas (natureza_id, centro_custo_id, sienge_conta) values
+  (pg_temp.nat('05.01.04'), :'cc_mkt', '2030224'), (pg_temp.nat('04.01'), :'cc_obra', '2010101');
+select pg_temp.ok((select count(*) = 4 from erp.eventos where tipo = 'codigo_externo_alterado' and tabela in ('sienge_centros','sienge_contas')),
+  'sienge: cada linha do de-para vira evento crítico de código externo');
+select erp.sienge_pedido(:'tse') as ped \gset
+select pg_temp.ok((:'ped'::jsonb->'titulo'->>'debtorId')::int = 11 and (:'ped'::jsonb->'titulo'->>'creditorId')::int = 823
+                  and :'ped'::jsonb->'titulo'->>'documentIdentificationId' = 'NFSE' and :'ped'::jsonb->'titulo'->>'documentNumber' = '9001'
+                  and (:'ped'::jsonb->'titulo'->>'totalInvoiceAmount')::numeric = 300 and (:'ped'::jsonb->'titulo'->>'installmentsNumber')::int = 2
+                  and :'ped'::jsonb->'titulo'->>'dueDate' = '2026-06-20' and :'ped'::jsonb->'titulo'->>'baseDate' = '2026-06-01'
+                  and :'ped'::jsonb->'titulo'->>'notes' like 'ERP ' || :'tse' || '%',
+  'sienge: o corpo do título leva empresa, credor, documento, valor, parcelas, vencimento, data base e o marcador do ERP');
+select pg_temp.ok((select sum((x->>'percentage')::numeric) = 100 and count(*) = 2 and bool_and(x->>'percentage' ~ '^[0-9]+(\.[0-9]{1,2})?$')
+                     from jsonb_array_elements(:'ped'::jsonb->'titulo'->'budgetCategories') x),
+  'sienge: o rateio vai em centro e conta do Sienge, com 2 casas e somando 100');
+select pg_temp.ok((select jsonb_agg(x->>'forma' order by (x->>'numero')::int) = '["pix","boleto"]'
+                          and (array_agg((x->>'boleto_tipo')::int) filter (where x->>'forma' = 'boleto'))[1] = 2
+                     from jsonb_array_elements(:'ped'::jsonb->'parcelas') x),
+  'sienge: cada parcela leva a forma de pagamento; boleto de banco sem conta da empresa é "outros bancos"');
+select erp.sienge_registrar(:'tse', 9001);
+select pg_temp.ok((select codigo = '9001' from erp.codigos_externos where sistema = 'sienge' and tabela = 'titulos' and registro_id = :'tse')
+                  and (select sienge_id = 9001 and passo = 'criado' from erp.sienge_envios where titulo_id = :'tse'),
+  'sienge: o id do Sienge fica na fila e nos códigos externos');
+select pg_temp.erro_igual(format($$select erp.sienge_registrar(%L, 9002)$$, :'tse'), 'O título já tem id no Sienge (9001); não troca',
+  'sienge: o id do Sienge não se troca');
+select pg_temp.erro_igual(format($$delete from erp.sienge_envios where titulo_id = %L$$, :'tse'), 'A fila do Sienge não se apaga',
+  'sienge: a fila não se apaga');
+select pg_temp.erro_igual(format($$select erp.sienge_pedido(%L)$$, :'tit'), 'O título não está aprovado',
+  'sienge: título que espera a alçada não monta pedido');
+select erp._criar_titulo(:'spe', 'pagar', 'avulso', '10000000-0000-0000-0000-000000000007', null, null, '2026-06-02', '2026-06-01',
+  1, array['2026-07-01','2026-08-01','2026-09-01']::date[], null, null, 'arredondamento') as tarr \gset
+select pg_temp.ok((select array_agg(valor order by numero) = array[0.34, 0.33, 0.33]::numeric[] from erp.parcelas where titulo_id = :'tarr'),
+  'sienge: o centavo que sobra fica na primeira parcela, como no Sienge');
 rollback;
 
 \echo '# fim'
