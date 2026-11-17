@@ -51,6 +51,14 @@ Fonte de verdade da API: os YAMLs em `Mbekerman/sienge-api-docs/oficial/yaml-fil
 
 ## 4.4 Comportamentos testados na base da BKM
 
+**Área de testes desde 17/nov/2026** (criada pela tela, a pedido do Moises): empresa 11 "BKM TESTES - NAO USAR" (grupo de empresas 5 - TESTES), obra e centro de custo 100 "TESTES API - NAO USAR" (configuração copiada da obra 13) e conta corrente TESTE-API "CONTA TESTE - NAO PAGAR" (banco gerencial, fora do disponível). O Sienge criou sozinho as contas CAIXA e EMISSAOCHQ na empresa. **Daqui em diante, toda gravação de teste pela API vai na empresa 11 / obra 100, não mais na empresa 2 / obra 13.** Fatos vistos na criação:
+
+- A API não cria empresa, obra nem conta corrente (ver 4.3).
+- O usuário de API **não tem trava por empresa**: logo depois de criados, `GET /companies`, `/cost-centers/100` e `/checking-accounts` já mostraram os cadastros novos, e o usuário de API nem aparece em Autorizações › Usuários › Empresas. Ou seja, a credencial da API alcança todas as empresas, inclusive a Muchmore; só o nosso código a deixa de fora. Gravar na empresa 11 ainda não foi testado. Risco coberto pela S-021 e pela S-115.
+- Na tela, o usuário só vê a empresa com "Acesso aos dados da empresa" marcado; empresa nova nasce sem ninguém autorizado.
+- A área de negócio é por empresa.
+- Ao digitar o CNPJ no cadastro de obra, o Sienge busca na Receita e preenche endereço e e-mail sozinho. Conferir o CNPJ antes de salvar: na criação, um CNPJ de terceiro ficou gravado alguns minutos e foi trocado, sem nenhum lançamento nesse intervalo.
+
 Testes feitos em 6/nov/2026 no contrato de teste **CTP/28**: empresa 2 (BKM Incorporadora e Construtora S.A.), obra 13 (Escritório Central BKMSP), credor 27, item 1 "vb" a R$ 1,00 por unidade.
 
 | Teste | Resultado |
