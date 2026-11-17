@@ -30,6 +30,8 @@ function banco(item: ItemFila | null, ped: PedidoTitulo | Error = pedido(), conf
     recriarPrv: async () => { throw new Error('não recria'); },
     terminarCruzamento: async () => { throw new Error('não cruza'); },
     linhasApagar: async () => [],
+    pegarAviso: async () => null,
+    terminarAviso: async () => { throw new Error('não há aviso'); },
   };
   return { b, fim, reg, apagados };
 }
@@ -157,6 +159,7 @@ test('banco: todo passo roda numa transação como erp_sistema', async () => {
     if (/erp\.sienge_pegar_cruzamento\(\)/.test(partes.join(''))) return Promise.resolve([{ empresa_sienge: 11, desde: '2026-11-01' }]);
     if (/erp\.sienge_prv_nossas/.test(partes.join(''))) return Promise.resolve([{ sienge_id: 7, previsao_id: T, esperada: true }]);
     if (/erp\.sienge_terminar_cruzamento/.test(partes.join(''))) return Promise.resolve([{ n: 3 }]);
+    if (/erp\.sienge_pegar_aviso\(\)/.test(partes.join(''))) return Promise.resolve([{ evento_id: T, bill_id: 7, previsao_id: T, tipo: 'apagar' }]);
     return Promise.resolve([]);
   };
   const sql = { begin: async (f: (t: unknown) => Promise<unknown>) => { atual = []; log.push(atual); return await f(tx); } };
@@ -174,10 +177,13 @@ test('banco: todo passo roda numa transação como erp_sistema', async () => {
   await bp.recriarPrv(T, 7, 'm');
   assert.equal(await bp.terminarCruzamento(11, [], {}), 3);
   assert.deepEqual(await bp.linhasApagar(), []);
-  assert.equal(log.length, 13);
+  assert.deepEqual(await bp.pegarAviso(), { evento_id: T, bill_id: 7, previsao_id: T, tipo: 'apagar' });
+  await bp.terminarAviso(T, 'r', false);
+  assert.equal(log.length, 15);
   const sqls = log.map((p) => p[1]);
   for (const f of ['sienge_enfileirar', 'sienge_pegar()', 'sienge_pedido_item', 'sienge_registrar_item', 'sienge_ids()', 'sienge_terminar', 'sienge_pegar_conferencia()', 'sienge_marcar_apagado',
-                   'sienge_pegar_cruzamento()', 'sienge_prv_nossas', 'sienge_recriar_prv', 'sienge_terminar_cruzamento', 'v_sienge_prv_apagar'])
+                   'sienge_pegar_cruzamento()', 'sienge_prv_nossas', 'sienge_recriar_prv', 'sienge_terminar_cruzamento', 'v_sienge_prv_apagar',
+                   'sienge_pegar_aviso()', 'sienge_terminar_aviso'])
     assert.ok(sqls.some((q) => q.includes(`erp.${f}`)), f);
   for (const passo of log) assert.equal(passo[0], 'set local role erp_sistema');
 });
@@ -357,4 +363,73 @@ test('cruzamento: mais de 50 páginas para com erro, sem apontar estranhas', asy
   assert.match((r as { erro: string }).erro, /mais de 10000 linhas PRV/);
   assert.equal(paginas, 50);
   assert.deepEqual(c.fins.map((f) => f.estranhas.length), [0]);
+});
+
+// Aviso do Sienge (webhook) de parcela removida: só o 404 do título faz agir.
+function comAviso(tipo: 'apagar' | 'esperada', conferir: { item_id: string; sienge_id: number } | null = null) {
+  const x = banco(null, pedido(), conferir);
+  const fechados: [string, string, boolean][] = [];
+  const recriadas: [string, number, string][] = [];
+  let dado = false;
+  x.b.pegarAviso = async () => { if (dado) return null; dado = true; return { evento_id: 'ev1', bill_id: 7301, previsao_id: 'p1', tipo }; };
+  x.b.terminarAviso = async (e, r, p) => { fechados.push([e, r, p]); };
+  x.b.recriarPrv = async (p, s, m) => { recriadas.push([p, s, m]); };
+  return { ...x, fechados, recriadas };
+}
+const leitor = (resp: number | 'ok') => {
+  const chamadas: string[] = [];
+  const h: Http = {
+    ler: async (c) => { chamadas.push(c); if (resp === 'ok') return { id: 7301 }; throw new ErroSienge(resp, `Sienge respondeu ${resp}`, null); },
+    enviar: async () => { throw new Error('aviso não grava no Sienge'); },
+  };
+  return { h, chamadas };
+};
+
+test('aviso: linha a apagar com 404 fica apagada e o aviso fecha; conferência não roda', async () => {
+  const x = comAviso('apagar', { item_id: 'outra', sienge_id: 1 });
+  const l = leitor(404);
+  const r = await processarUm(x.b, l.h, cfg);
+  assert.deepEqual(r, { passo: 'aviso', evento: 'ev1', siengeId: 7301, resultado: 'apagado no Sienge (404): linha marcada como apagada', enfileirados: 1 });
+  assert.deepEqual(x.apagados, ['p1']);
+  assert.deepEqual(x.recriadas, []);
+  assert.deepEqual(x.fechados, [['ev1', 'apagado no Sienge (404): linha marcada como apagada', true]]);
+  assert.deepEqual(l.chamadas, ['/bills/7301']);
+});
+
+test('aviso: linha esperada com 404 volta à fila com o motivo', async () => {
+  const x = comAviso('esperada');
+  const r = await processarUm(x.b, leitor(404).h, cfg);
+  assert.equal((r as { resultado: string }).resultado, 'apagado no Sienge (404): a previsão volta à fila');
+  assert.deepEqual(x.apagados, []);
+  assert.deepEqual(x.recriadas, [['p1', 7301, 'aviso do Sienge: parcela removida e 404 no título 7301']]);
+  assert.equal(x.fechados[0][2], true);
+});
+
+test('aviso: título que ainda existe fecha sem mexer em nada', async () => {
+  for (const tipo of ['apagar', 'esperada'] as const) {
+    const x = comAviso(tipo);
+    await processarUm(x.b, leitor('ok').h, cfg);
+    assert.deepEqual([x.apagados, x.recriadas], [[], []]);
+    assert.deepEqual(x.fechados, [['ev1', 'o título ainda existe no Sienge: nada feito', true]]);
+  }
+});
+
+test('aviso: outro erro do Sienge deixa o aviso aberto para tentar de novo', async () => {
+  for (const st of [500, 429, 401]) {
+    const x = comAviso('apagar');
+    const r = await processarUm(x.b, leitor(st).h, cfg);
+    assert.equal((r as { resultado: string }).resultado, 'erro ao ler o título');
+    assert.deepEqual([x.apagados, x.recriadas], [[], []]);
+    assert.equal(x.fechados.length, 1);
+    assert.equal(x.fechados[0][2], false);
+    assert.match(x.fechados[0][1], new RegExp(`^tentar de novo: Sienge respondeu ${st}`));
+  }
+});
+
+test('aviso: o item da fila vem antes do aviso', async () => {
+  const x = comAviso('apagar');
+  x.b.pegar = async () => ({ item_id: T, sienge_id: null, tentativas: 0 });
+  const r = await processarUm(x.b, sienge().h, cfg);
+  assert.equal(r.passo, 'enviado');
+  assert.deepEqual(x.fechados, []);
 });
