@@ -6466,8 +6466,7 @@ select pg_temp.ok(not has_function_privilege('authenticated', 'erp.sienge_pegar_
                   and not has_table_privilege('authenticated', 'erp.sienge_cruzamentos', 'UPDATE'),
   'cruzamento: as funções e as tabelas não se escrevem pela API');
 select pg_temp.ok(has_table_privilege('erp_sistema', 'erp.v_sienge_prv_apagar', 'SELECT')
-                  and not has_table_privilege('erp_sistema', 'erp.v_sienge_prv_apagar', 'INSERT')
-                  and (select count(*) >= 0 from erp.v_sienge_prv_apagar),
+                  and not has_table_privilege('erp_sistema', 'erp.v_sienge_prv_apagar', 'INSERT'),
   'planilha: o sistema lê a lista do que apagar (e só lê)');
 -- só de madrugada (2h às 6h em São Paulo), uma empresa por vez, uma vez por dia
 select pg_temp.ok(not exists (select 1 from erp.sienge_pegar_cruzamento('2026-11-18 15:00Z')), 'cruzamento: de dia, não cruza');
@@ -6519,6 +6518,25 @@ select pg_temp.ok((select count(*) = 1 from erp.eventos where tipo = 'prv_estran
 select pg_temp.ok((select sumiu_em is not null from erp.sienge_prv_estranhas where sienge_id = 8002)
                   and (select array_agg(sienge_id) = '{8001}' from erp.v_sienge_prv_estranhas),
   'cruzamento: a que não aparece mais sai da lista');
+-- cada trava da recriação sozinha (S-134): a marca de apagar, a previsão fora de aberta e o gatilho da fila
+savepoint sp_cruz2;
+update erp.sienge_previsoes set apagar_desde = now() where previsao_id = '6b000000-0000-0000-0000-0000000000c1';
+select pg_temp.erro_igual($$select erp.sienge_recriar_prv('6b000000-0000-0000-0000-0000000000c1', 7102, 'x')$$,
+  'Só a linha PRV enviada de previsão aberta se recria', 'cruzamento: linha marcada para apagar não se recria, mesmo com a previsão aberta');
+insert into erp.sienge_prv_trocas (previsao_id, sienge_id, motivo) values ('6b000000-0000-0000-0000-0000000000c1', 7102, 'teste');
+select pg_temp.erro_igual($$update erp.sienge_previsoes set sienge_id = null where previsao_id = '6b000000-0000-0000-0000-0000000000c1'$$,
+  'A previsão já tem id no Sienge (7102); não troca', 'cruzamento: a fila não solta o id da linha marcada para apagar, nem com a troca registrada');
+-- a planilha lê como erp_sistema, sem login: a linha a apagar aparece
+select set_config('role', 'erp_sistema', false);
+select pg_temp.ok((select count(*) = 1 from erp.v_sienge_prv_apagar where sienge_id = 7102) and erp.login_atual() is null,
+  'planilha: como erp_sistema, a linha a apagar aparece na lista');
+select pg_temp.sis();
+rollback to savepoint sp_cruz2;
+savepoint sp_cruz3;
+update erp.previsoes set situacao = 'cancelada' where id = '6b000000-0000-0000-0000-0000000000c1';
+select pg_temp.erro_igual($$select erp.sienge_recriar_prv('6b000000-0000-0000-0000-0000000000c1', 7102, 'x')$$,
+  'Só a linha PRV enviada de previsão aberta se recria', 'cruzamento: previsão que não está aberta não se recria, mesmo sem a marca de apagar');
+rollback to savepoint sp_cruz3;
 -- só a linha enviada é esperada e se recria
 savepoint sp_cruz;
 select erp.sienge_terminar('6b000000-0000-0000-0000-0000000000c1', 'erro', 'pagamento', 'x', 2, now());

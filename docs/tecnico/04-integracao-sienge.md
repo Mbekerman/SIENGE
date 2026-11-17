@@ -29,7 +29,7 @@ Fonte de verdade da API: os YAMLs em `Mbekerman/sienge-api-docs/oficial/yaml-fil
   - As respostas REST trazem só `X-Ratelimit-Limit-Minute: 200` e `X-Ratelimit-Limit-Second: 100` (`Ratelimit-Limit: 100`); nenhum cabeçalho mostra a cota diária, então o adaptador só a descobre pelo 429.
   - `GET /bills` aceita o período de 2000 a 2030 numa consulta só; cada título traz `registeredUserId`/`registeredBy` e `changedUserId`/`changedBy`, a única fonte de usuários do Sienge.
   - Volumes na data (com a Muchmore): 7.800 títulos a pagar (885 da empresa 1), 14.681 movimentos de extrato, cerca de 25.900 lançamentos contábeis (22.366 da empresa 5), 819 credores, 278 clientes, 188 contratos de venda, 562 pedidos, 894 notas de compra, 447 NF-e, 129 contratos de suprimentos, 677 medições e 1.786 movimentos de estoque; patrimônio, locação e tabela de preços vazios. Inventário: https://claude.ai/artifact/8z7NqNByYSHEHCSW2ix8WC.
-  - **Já há 6 webhooks cadastrados** no Sienge, que não são do ERP (provavelmente de outra integração, como o CRM). Antes de cadastrar os nossos, saber de quem são e para onde enviam: um webhook desconhecido recebe dados da BKM [A conferir].
+  - **Já há 6 webhooks cadastrados** no Sienge, que não são do ERP: todos do CV CRM (`bkm.cvcrm.com.br`), conferido em 17/nov/2026 (ver 4.5).
   - Cadastros na data: 98 centros de custo (`/cost-centers`; novos 98 e 99, "SPE 07 ADM FINANCEIRO" e "SPE 08 ADM FINANCEIRO"), 99 empreendimentos (`/enterprises`), 10 empresas (`/companies`; nova a 10, BKM 08 SPE). O espelho precisa aceitar cadastro novo sem mudar código.
 - **De-para principal (Moises, 15/nov/2026):** a conta do Sienge sai da chave natureza + centro de custo nossos (mais a divisão em Veiculação); o centro de custo do Sienge sai de núcleo + divisão (por exemplo, a divisão PDV vai para "SPE 0X - PONTO DE VENDA"). O histórico guarda a conta e o centro originais do Sienge. Nunca se lança em conta inativa. A Muchmore (empresa 1) fica fora do ERP. Proposta em conferência: https://claude.ai/artifact/3CeNQB6kTJv8PekMp4fvb6.
 - `GET /purchase-orders` funciona (testado em 8/nov: 556 pedidos); casar com o pedido fica para o módulo de Compras.
@@ -114,12 +114,18 @@ Consequências que o código deve respeitar:
 5. **Medição só por quantidade.** Valor da nota vira quantidade = valor ÷ preço unitário, com no máximo 4 casas. Com item a R$ 1,00 não há perda; com preço alto pode sobrar até alguns centavos (item de R$ 5.000,00 e nota de R$ 4.873,22 dá R$ 0,22 de diferença). O código deve avisar antes de lançar quando o valor não fechar.
 6. **Os passos sem API são três:** liberação de medição, ciência e autorização de pagamento do título. O sistema acompanha por webhook e mostra o que espera ação no Sienge.
 
-## 4.5 Webhooks (`guias/webhooks.md`, `hooks-v1.yaml`, `guias/webhooks-index.md`) [Desenhado; não cadastrado]
+## 4.5 Webhooks (`guias/webhooks.md`, `hooks-v1.yaml`, `guias/webhooks-index.md`) [Desenhado; testado em 17/nov/2026, sem cadastro permanente]
 
 - Cadastro por `POST /hooks` com URL, eventos e token. 104 eventos.
 - O Sienge espera 2,5 s pela resposta; depois tenta em 10 min, 30 min, 1 h, 3 h e 5 h, e desiste (~10 h). Aviso perdido não volta.
 - Cabeçalhos: `x-sienge-tenant`, `x-sienge-event`, `x-sienge-hook-id`, `x-sienge-id` (único por evento: usar para não processar duas vezes), `user-agent: sienge-hooks`.
-- O corpo traz só o identificador (ex.: `{ "billId": 123 }`). Sem assinatura documentada nem garantia de ordem; a documentação não diz como o token chega. **Testar no primeiro cadastro.**
+- O corpo traz só o identificador (ex.: `{ "billId": 123 }`). Sem assinatura documentada nem garantia de ordem.
+- **Testado em 17/nov/2026 (empresa 11, ok do Moises):** webhook cadastrado com `PAYMENT_INSTALLMENT_CREATED`, `PAYMENT_INSTALLMENT_REMOVED` e `PAYMENT_BILL_UPDATED`, para um receptor de teste no `bkm_dev` que só registrava o que chegava; descadastrado no fim.
+  - O **token do cadastro chega no cabeçalho `Authorization: Bearer <token>`** (conferido pelo hash). É o que autentica o aviso: o recebedor recusa sem ele, comparando em tempo constante. O `user-agent` veio `axios/0.19.2`, não `sienge-hooks` como diz o guia.
+  - Título PRV de 2 parcelas criado pela API (8593): 2 avisos `PAYMENT_INSTALLMENT_CREATED` em 1 segundo, um por parcela, com `{"billId", "installmentId", "billOrigin": "Sistemas Externos", "documentType": "PREVISÃO DE PAGAMENTO/RECEBIMENTO"}`.
+  - Título apagado pela tela: 2 avisos `PAYMENT_INSTALLMENT_REMOVED` em 1 segundo, com o mesmo corpo. Isso detecta a linha PRV apagada pelo financeiro na hora (a conferência de 30 minutos e o cruzamento continuam como rede de segurança, porque aviso perdido não volta).
+  - O PATCH do vencimento da parcela não gerou `PAYMENT_BILL_UPDATED` (esse caso seria o `PAYMENT_INSTALLMENT_UPDATED`, não cadastrado no teste).
+  - Os 6 webhooks que já existiam são do **CV CRM** (`bkm.cvcrm.com.br`): cliente alterado, contrato de venda emitido e cancelado, cessão de direitos, unidade alterada e antecipação de parcelas.
 - Faltam eventos de: título criado (vem pela parcela criada), medição criada, contrato criado ou alterado, aditivo, pedido criado à mão, nota de compra.
 - Eventos úteis do contas a pagar: parcela criada/alterada/removida, autorização disponível e alterada, ciência pendente e feita, baixa feita/alterada/cancelada, estorno, medição autorizada/desautorizada, `CLEARING_*` (liberação finalizada e apagada), credor, movimento bancário.
 
