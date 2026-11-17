@@ -9,7 +9,8 @@
 //   2. Parcelas: lê as parcelas que o Sienge criou e confere com as nossas. Valor ou quantidade
 //      diferente é divergência (título lançado pela API não aceita mudar valor de parcela; teste de
 //      6/11/2026): para em "manual". Vencimento diferente é corrigido (PATCH da parcela).
-//   3. Pagamento: PIX ou boleto de cada parcela (PATCH, que sobrescreve; pode repetir).
+//   3. Pagamento: PIX ou boleto de cada parcela (PATCH, que sobrescreve; pode repetir). A previsão
+//      (título PRV) não tem forma de pagamento e para no passo 2.
 // Toda gravação passa por gravarComTrava() (trava.ts): a função gravar() que o programa recebe já é
 // a trava. Funções puras exportadas para o teste (envio.test.ts).
 
@@ -17,7 +18,7 @@ export type Parcela = {
   numero: number;
   vencimento: string; // yyyy-mm-dd
   valor: number;
-  forma: 'pix' | 'boleto';
+  forma?: 'pix' | 'boleto'; // sem forma: título PRV da previsão (não tem passo de pagamento)
   pix_tipo?: 'cpf_cnpj' | 'email' | 'telefone' | 'aleatoria';
   pix_chave?: string;
   boleto_linha?: string;
@@ -221,6 +222,7 @@ export async function enviarTitulo(api: Api, ped: PedidoTitulo, siengeId: number
     await api.gravar('PATCH', `/bills/${id}/installments/${c.numero}`, { dueDate: c.dueDate });
   }
   for (const p of ped.parcelas) {
+    if (!p.forma) continue; // a previsão (PRV) vai sem forma de pagamento
     const g = pagamentoDaParcela(id, p, ped.titulo_id);
     await api.gravar('PATCH', g.caminho, g.corpo);
   }

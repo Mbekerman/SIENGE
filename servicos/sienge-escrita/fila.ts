@@ -1,5 +1,6 @@
-// A fila do envio ao Sienge (erp.sienge_envios): cada chamada de processarUm() põe na fila os títulos
-// recém-aprovados e envia UM título vencido da fila. Quem chama de minuto em minuto é o agendador
+// A fila do envio ao Sienge (erp.sienge_envios, os títulos; erp.sienge_previsoes, as previsões como
+// título PRV): cada chamada de processarUm() põe na fila os títulos e as previsões recém-aprovados e
+// envia UM item vencido da fila; sem item, confere se uma linha PRV a apagar já sumiu do Sienge. Quem chama de minuto em minuto é o agendador
 // (Edge Function index.ts, ou o executor local de teste local.ts).
 //
 // Sem dependência de Deno nem de Node: o banco chega como a interface Banco (bancoPostgres() a monta
@@ -11,16 +12,20 @@
 import { Divergencia, enviarTitulo, erroPermanente, ErroSienge, proximaTentativa, segundosRetryAfter, type PedidoTitulo, type Resposta } from './envio.ts';
 import { gravarComTrava, type Ambiente } from './trava.ts';
 
-export type ItemFila = { titulo_id: string; sienge_id: number | null; tentativas: number };
+// id: o título ou a previsão (o banco sabe qual).
+export type ItemFila = { item_id: string; sienge_id: number | null; tentativas: number };
 
 export interface Banco {
   enfileirar(): Promise<number>;
-  // Pega um título vencido e o reserva por 15 minutos (outra execução não pega o mesmo).
+  // Pega um item vencido e o reserva por 15 minutos (outra execução não pega o mesmo).
   pegar(): Promise<ItemFila | null>;
-  pedido(tituloId: string): Promise<PedidoTitulo>; // erp.sienge_pedido: recusa com o motivo
-  registrar(tituloId: string, siengeId: number): Promise<void>; // erp.sienge_registrar
-  idsNoSienge(): Promise<number[]>; // os sienge_id da fila (criados por este programa)
-  terminar(tituloId: string, r: { situacao: 'enviado' | 'erro' | 'manual'; passo?: string | null; erro?: string | null; tentativas: number; proxima: Date }): Promise<void>;
+  pedido(itemId: string): Promise<PedidoTitulo>; // erp.sienge_pedido_item: recusa com o motivo
+  registrar(itemId: string, siengeId: number): Promise<void>; // erp.sienge_registrar_item
+  idsNoSienge(): Promise<number[]>; // os sienge_id das filas (criados por este programa)
+  terminar(itemId: string, r: { situacao: 'enviado' | 'erro' | 'manual'; passo?: string | null; erro?: string | null; tentativas: number; proxima: Date }): Promise<void>;
+  // A linha PRV a apagar mais antiga sem conferência há 30 minutos (marca a conferência).
+  pegarConferencia(): Promise<{ item_id: string; sienge_id: number } | null>;
+  marcarApagado(itemId: string): Promise<void>; // o título sumiu do Sienge
 }
 
 export interface Http {
@@ -32,6 +37,7 @@ export type Config = { ambiente: Ambiente; credoresTeste: number[]; agora?: () =
 
 export type Resultado =
   | { passo: 'nada a fazer'; enfileirados: number }
+  | { passo: 'apagado'; previsao: string; siengeId: number; enfileirados: number }
   | { passo: 'enviado'; titulo: string; siengeId: number; criado: boolean; enfileirados: number }
   | { passo: 'erro' | 'manual'; titulo: string; erro: string; enfileirados: number };
 
@@ -42,11 +48,11 @@ export async function processarUm(banco: Banco, http: Http, cfg: Config): Promis
   const agora = cfg.agora ?? (() => new Date());
   const enfileirados = await banco.enfileirar();
   const item = await banco.pegar();
-  if (!item) return { passo: 'nada a fazer', enfileirados };
+  if (!item) return await conferirApagado(banco, http, enfileirados);
 
   const tentativas = item.tentativas + 1;
   try {
-    const ped = await banco.pedido(item.titulo_id);
+    const ped = await banco.pedido(item.item_id);
     // Em teste, a trava só deixa gravar em título criado por este programa: os da fila.
     const criados = new Set((await banco.idsNoSienge()).map((id) => `bills:${id}`));
     const ctx = { credoresTeste: new Set(cfg.credoresTeste), criadosPeloTeste: criados };
@@ -54,11 +60,11 @@ export async function processarUm(banco: Banco, http: Http, cfg: Config): Promis
       ler: (c) => http.ler(c),
       gravar: (metodo, caminho, corpo) =>
         gravarComTrava({ metodo, caminho, corpo, empresa: ped.empresa }, cfg.ambiente, (c) => http.ler(c), (m, c, b) => http.enviar(m, c, b), ctx),
-      registrarCriado: async (id) => { await banco.registrar(item.titulo_id, id); criados.add(`bills:${id}`); },
+      registrarCriado: async (id) => { await banco.registrar(item.item_id, id); criados.add(`bills:${id}`); },
       hoje: () => dataSaoPaulo(agora()),
     }, ped, item.sienge_id);
-    await banco.terminar(item.titulo_id, { situacao: 'enviado', passo: 'pagamento', erro: null, tentativas, proxima: agora() });
-    return { passo: 'enviado', titulo: item.titulo_id, siengeId: r.siengeId, criado: r.criado, enfileirados };
+    await banco.terminar(item.item_id, { situacao: 'enviado', passo: 'pagamento', erro: null, tentativas, proxima: agora() });
+    return { passo: 'enviado', titulo: item.item_id, siengeId: r.siengeId, criado: r.criado, enfileirados };
   } catch (e) {
     let msg = (e instanceof Error ? e.message : String(e)).slice(0, 1000);
     let situacao: 'erro' | 'manual' = e instanceof Divergencia ? 'manual' : 'erro';
@@ -71,9 +77,25 @@ export async function processarUm(banco: Banco, http: Http, cfg: Config): Promis
       const pedido = new Date(agora().getTime() + e.retryAfter * 1000);
       if (pedido > proxima) proxima = pedido;
     }
-    await banco.terminar(item.titulo_id, { situacao, erro: msg, tentativas, proxima });
-    return { passo: situacao, titulo: item.titulo_id, erro: msg, enfileirados };
+    await banco.terminar(item.item_id, { situacao, erro: msg, tentativas, proxima });
+    return { passo: situacao, titulo: item.item_id, erro: msg, enfileirados };
   }
+}
+
+// A linha PRV que o financeiro apaga à mão: o GET do título responde 404 quando ela sumiu. Outro erro
+// fica para a próxima conferência (daqui a 30 minutos); só leitura, não passa pela trava.
+async function conferirApagado(banco: Banco, http: Http, enfileirados: number): Promise<Resultado> {
+  const c = await banco.pegarConferencia();
+  if (!c) return { passo: 'nada a fazer', enfileirados };
+  try {
+    await http.ler(`/bills/${c.sienge_id}`);
+  } catch (e) {
+    if (e instanceof ErroSienge && e.status === 404) {
+      await banco.marcarApagado(c.item_id);
+      return { passo: 'apagado', previsao: c.item_id, siengeId: c.sienge_id, enfileirados };
+    }
+  }
+  return { passo: 'nada a fazer', enfileirados };
 }
 
 export function dataSaoPaulo(d: Date): string {
@@ -115,23 +137,21 @@ export function bancoPostgres(sql: Sql): Banco {
   return {
     enfileirar: () => comoSistema(async (tx) => (await tx`select erp.sienge_enfileirar() as n`)[0].n),
     pegar: () => comoSistema(async (tx) => {
-      const [r] = await tx`
-        update erp.sienge_envios set proxima_em = now() + interval '15 minutes'
-         where titulo_id = (select titulo_id from erp.sienge_envios
-                             where situacao in ('pendente','erro') and proxima_em <= now()
-                             order by proxima_em limit 1 for update skip locked)
-        returning titulo_id, sienge_id, tentativas`;
-      return r ? { titulo_id: r.titulo_id, sienge_id: r.sienge_id, tentativas: r.tentativas } : null;
+      const [r] = await tx`select item_id, sienge_id, tentativas from erp.sienge_pegar()`;
+      return r ? { item_id: r.item_id, sienge_id: r.sienge_id, tentativas: r.tentativas } : null;
     }),
-    pedido: (id) => comoSistema(async (tx) => (await tx`select erp.sienge_pedido(${id}::uuid) as p`)[0].p),
-    registrar: (id, s) => comoSistema(async (tx) => { await tx`select erp.sienge_registrar(${id}::uuid, ${s}::int)`; }),
+    pedido: (id) => comoSistema(async (tx) => (await tx`select erp.sienge_pedido_item(${id}::uuid) as p`)[0].p),
+    registrar: (id, s) => comoSistema(async (tx) => { await tx`select erp.sienge_registrar_item(${id}::uuid, ${s}::int)`; }),
     idsNoSienge: () => comoSistema(async (tx) =>
-      (await tx`select sienge_id from erp.sienge_envios where sienge_id is not null`).map((r: { sienge_id: number }) => r.sienge_id)),
+      (await tx`select erp.sienge_ids() as sienge_id`).map((r: { sienge_id: number }) => r.sienge_id)),
     terminar: (id, r) => comoSistema(async (tx) => {
-      await tx`update erp.sienge_envios
-                  set situacao = ${r.situacao}, passo = coalesce(${r.passo ?? null}::text, passo), erro = ${r.erro ?? null}::text,
-                      tentativas = ${r.tentativas}::int, proxima_em = ${r.proxima}::timestamptz
-                where titulo_id = ${id}::uuid`;
+      await tx`select erp.sienge_terminar(${id}::uuid, ${r.situacao}::text, ${r.passo ?? null}::text, ${r.erro ?? null}::text,
+                                          ${r.tentativas}::int, ${r.proxima}::timestamptz)`;
     }),
+    pegarConferencia: () => comoSistema(async (tx) => {
+      const [r] = await tx`select item_id, sienge_id from erp.sienge_pegar_conferencia()`;
+      return r ? { item_id: r.item_id, sienge_id: r.sienge_id } : null;
+    }),
+    marcarApagado: (id) => comoSistema(async (tx) => { await tx`select erp.sienge_marcar_apagado(${id}::uuid)`; }),
   };
 }

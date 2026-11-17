@@ -1312,7 +1312,7 @@ select pg_temp.ok(not exists (
                                'regra_adiantamento','regra_alcada_pagamento','regras_ajuste','contas_bancarias',
                                'codigos_externos','aprovadores_config','regras_mudanca_config','mudancas_config',
                                'mudanca_config_votos','usuarios','auditoria','regras_notificacao','tipos_evento',
-                               'sienge_centros','sienge_contas')
+                               'sienge_centros','sienge_contas','sienge_parametros')
              and (cmd = 'ALL' or (cmd = 'SELECT' and tablename in ('usuarios','auditoria'))))
     and not (policyname = 'eventos_grava' and tablename = 'eventos' and cmd = 'INSERT' and roles = '{erp_eventos}')
     -- a distribuição das notificações: lê quem recebe, grava só o sino e a fila
@@ -6224,6 +6224,145 @@ select pg_temp.erro_igual(format($$select erp.decidir_previsao(%L, true)$$, :'ps
   'O saldo segue a aprovação da previsão original', 'saldo: não se decide à parte');
 select pg_temp.erro_igual($$select erp.encerrar_previsao('68000000-0000-0000-0000-0000000000a1', 'saving')$$,
   'Só previsão aberta se encerra', 'saldo: encerrada não se encerra de novo');
+rollback;
+
+\echo '# previsão no Sienge: título PRV, fila e lista do que apagar'
+begin;
+select pg_temp.sis();
+insert into erp.codigos_externos (sistema, tabela, registro_id, codigo) values
+  ('sienge', 'empresas', :'spe', '11'), ('sienge', 'pessoas', '10000000-0000-0000-0000-000000000007', '823')
+  on conflict do nothing;
+insert into erp.sienge_centros (nucleo_economico_id, centro_custo_id, sienge_centro) values (:'ne_vm', :'cc_mkt', 100) on conflict do nothing;
+insert into erp.sienge_contas (natureza_id, centro_custo_id, sienge_conta) values (pg_temp.nat('05.01.04'), :'cc_mkt', '2030224') on conflict do nothing;
+insert into erp.centro_aprovadores values (:'cc_mkt', :'gestor') on conflict do nothing;   -- o centro entra na alçada
+select pg_temp.volta();
+select pg_temp.como(:'diretor');
+insert into erp.previsoes (id, empresa_id, origem, pessoa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor, descricao)
+values ('69000000-0000-0000-0000-0000000000b1', :'spe', 'manual', '10000000-0000-0000-0000-000000000007', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2026-12-01', '2026-12-10', 250, 'Mídia de dezembro'),
+       ('69000000-0000-0000-0000-0000000000b2', :'spe', 'manual', null, :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2026-12-01', '2026-12-15', 80, null);
+select pg_temp.como(:'analista');
+insert into erp.previsoes (id, empresa_id, origem, pessoa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor, descricao)
+values ('69000000-0000-0000-0000-0000000000b3', :'spe', 'manual', null, :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2026-12-01', '2026-12-20', 60, null);
+select pg_temp.como(:'diretor');
+select erp.decidir_previsao(p.id, true) from erp.previsoes p
+ where p.id in ('69000000-0000-0000-0000-0000000000b1', '69000000-0000-0000-0000-0000000000b2')
+   and exists (select 1 from erp.previsao_alcadas a where a.previsao_id = p.id);
+select pg_temp.sis();
+-- b3, lançada pelo analista, fica esperando a alçada
+select pg_temp.ok(not has_function_privilege('authenticated', 'erp.sienge_pegar()', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp.sienge_pedido_item(uuid)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp.sienge_registrar_item(uuid, int)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp.sienge_terminar(uuid, text, text, text, int, timestamptz)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp.sienge_ids()', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp.sienge_pegar_conferencia()', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp.sienge_marcar_apagado(uuid)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp._sienge_pedido_previsao(uuid)', 'EXECUTE'),
+  'prv: a fila e o pedido da previsão não são executáveis pela API');
+select erp.sienge_enfileirar();
+select pg_temp.ok((select count(*) = 2 and bool_and(situacao = 'pendente') from erp.sienge_previsoes
+                    where previsao_id in ('69000000-0000-0000-0000-0000000000b1', '69000000-0000-0000-0000-0000000000b2')),
+  'prv: a previsão aberta e aprovada entra na fila');
+select pg_temp.ok(not erp.previsao_aprovada('69000000-0000-0000-0000-0000000000b3')
+                  and (select situacao = 'aberta' from erp.previsoes where id = '69000000-0000-0000-0000-0000000000b3')
+                  and not exists (select 1 from erp.sienge_previsoes where previsao_id = '69000000-0000-0000-0000-0000000000b3'),
+  'prv: a previsão aberta sem aprovação não entra na fila');
+select pg_temp.erro_igual($$select erp._sienge_pedido_previsao('69000000-0000-0000-0000-0000000000b3')$$,
+  'A previsão não está aprovada', 'prv: o pedido confere a aprovação de novo');
+select pg_temp.erro_igual($$select erp.sienge_pedido_item('69000000-0000-0000-0000-0000000000b2')$$,
+  'Falta o credor genérico da previsão no Sienge (parâmetro credor_previsao)', 'prv: sem credor e sem o genérico, não vai');
+select pg_temp.volta();
+select pg_temp.como(:'analista');
+select pg_temp.falha($$insert into erp.sienge_parametros (chave, valor) values ('credor_previsao', '823')$$,
+  'prv: quem não é master não grava o credor genérico');
+select pg_temp.como(:'diretor');
+insert into erp.sienge_parametros (chave, valor) values ('credor_previsao', '823');
+select pg_temp.sis();
+select pg_temp.ok(exists (select 1 from erp.eventos where tipo = 'codigo_externo_alterado' and tabela = 'sienge_parametros' and registro = 'credor_previsao'),
+  'prv: o credor genérico vira evento crítico de código externo');
+select erp.sienge_pedido_item('69000000-0000-0000-0000-0000000000b2') as pb2 \gset
+select pg_temp.ok((:'pb2'::jsonb->'titulo'->>'creditorId')::int = 823 and :'pb2'::jsonb->'titulo'->>'documentIdentificationId' = 'PRV'
+                  and :'pb2'::jsonb->'titulo'->>'documentNumber' = 'PRV-690000000000'
+                  and (:'pb2'::jsonb->'titulo'->>'installmentsNumber')::int = 1 and (:'pb2'::jsonb->'titulo'->>'totalInvoiceAmount')::numeric = 80
+                  and :'pb2'::jsonb->'titulo'->>'dueDate' = '2026-12-15' and :'pb2'::jsonb->'titulo'->>'baseDate' = '2026-12-01'
+                  and :'pb2'::jsonb->'titulo'->>'notes' = 'ERP 69000000-0000-0000-0000-0000000000b2 · Previsão'
+                  and :'pb2'::jsonb->'titulo'->'budgetCategories' = '[{"costCenterId": 100, "percentage": 100, "paymentCategoriesId": "2030224"}]'
+                  and :'pb2'::jsonb->'parcelas' = '[{"numero": 1, "valor": 80.00, "vencimento": "2026-12-15"}]',
+  'prv: o pedido leva o documento PRV, o credor genérico, uma parcela sem forma de pagamento e o marcador do ERP');
+select pg_temp.ok((erp.sienge_pedido_item('69000000-0000-0000-0000-0000000000b1')->'titulo'->>'creditorId')::int = 823,
+  'prv: com credor, vai o credor da previsão');
+select item_id as it1 from erp.sienge_pegar() \gset
+select pg_temp.ok(exists (select 1 from erp.sienge_previsoes where previsao_id = :'it1' and proxima_em > now() + interval '14 minutes'),
+  'prv: a fila entrega uma previsão e a reserva por 15 minutos');
+select erp.sienge_registrar_item('69000000-0000-0000-0000-0000000000b1', 7001);
+select erp.sienge_terminar('69000000-0000-0000-0000-0000000000b1', 'enviado', 'pagamento', null, 1, now());
+select pg_temp.ok((select situacao = 'enviado' and sienge_id = 7001 from erp.sienge_previsoes where previsao_id = '69000000-0000-0000-0000-0000000000b1')
+                  and (select codigo = '7001' from erp.codigos_externos where sistema = 'sienge' and tabela = 'previsoes'
+                         and registro_id = '69000000-0000-0000-0000-0000000000b1')
+                  and 7001 in (select erp.sienge_ids()),
+  'prv: o id do Sienge fica na fila e nos códigos externos, e entra nos ids da trava');
+select pg_temp.erro_igual($$select erp.sienge_terminar('69000000-0000-0000-0000-0000000000b1', 'apagado', null, null, 1, now())$$,
+  'Situação da fila inválida', 'prv: terminar só com as situações da fila');
+select pg_temp.erro_igual($$update erp.sienge_previsoes set sienge_id = 7002 where previsao_id = '69000000-0000-0000-0000-0000000000b1'$$,
+  'A previsão já tem id no Sienge (7001); não troca', 'prv: o id do Sienge não se troca');
+select pg_temp.erro_igual($$delete from erp.sienge_previsoes where previsao_id = '69000000-0000-0000-0000-0000000000b1'$$,
+  'A fila do Sienge não se apaga', 'prv: a fila não se apaga');
+select pg_temp.ok(not exists (select 1 from erp.sienge_pegar_conferencia()), 'prv: nada a conferir enquanto a previsão está aberta');
+select erp.sienge_enfileirar();
+select pg_temp.ok((select apagar_desde is null from erp.sienge_previsoes where previsao_id = '69000000-0000-0000-0000-0000000000b1'),
+  'prv: a enviada ainda aberta não vai para a lista do que apagar');
+select pg_temp.erro_igual($$select erp.sienge_marcar_apagado('69000000-0000-0000-0000-0000000000b1')$$,
+  'A previsão não está na lista do que apagar', 'prv: só se marca apagada a que está na lista do que apagar');
+insert into erp.codigos_externos (sistema, tabela, registro_id, codigo) values ('sienge', 'previsoes', '69000000-0000-0000-0000-0000000000b2', '9999');
+select pg_temp.erro_igual($$select erp.sienge_registrar_item('69000000-0000-0000-0000-0000000000b2', 7002)$$,
+  'A previsão já está ligada a outro título do Sienge', 'prv: o registro não liga a previsão a um segundo título do Sienge');
+delete from erp.codigos_externos where sistema = 'sienge' and tabela = 'previsoes' and registro_id = '69000000-0000-0000-0000-0000000000b2';
+-- a previsão sai de aberta: a enviada vai para a lista do que apagar, a que não foi é descartada
+select pg_temp.volta();
+select pg_temp.como(:'diretor');
+update erp.previsoes set situacao = 'cancelada' where id in ('69000000-0000-0000-0000-0000000000b1', '69000000-0000-0000-0000-0000000000b2');
+select pg_temp.sis();
+select erp.sienge_enfileirar();
+select pg_temp.ok((select apagar_desde is not null and apagado_em is null from erp.sienge_previsoes where previsao_id = '69000000-0000-0000-0000-0000000000b1')
+                  and (select situacao = 'descartado' and apagar_desde is null from erp.sienge_previsoes where previsao_id = '69000000-0000-0000-0000-0000000000b2'),
+  'prv: a enviada que saiu de aberta vai para a lista do que apagar; a que não foi é descartada');
+select pg_temp.erro_igual($$update erp.sienge_previsoes set apagar_desde = null where previsao_id = '69000000-0000-0000-0000-0000000000b1'$$,
+  'A marca de apagar não muda', 'prv: a marca de apagar não se desfaz');
+select pg_temp.erro_igual($$select erp.sienge_terminar('69000000-0000-0000-0000-0000000000b2', 'erro', null, 'x', 2, now())$$,
+  'Item fora da fila do Sienge', 'prv: a descartada não volta para a fila');
+select pg_temp.erro_igual($$select erp.sienge_pedido_item('69000000-0000-0000-0000-0000000000b1')$$,
+  'A previsão não está aberta', 'prv: a previsão que saiu de aberta não monta pedido');
+select pg_temp.volta();
+select pg_temp.como(:'diretor');
+select pg_temp.ok((select sienge_id = 7001 and empresa_sienge = '11' from erp.v_sienge_prv_apagar where previsao_id = '69000000-0000-0000-0000-0000000000b1'),
+  'prv: quem vê a previsão vê a linha a apagar, com o id e a empresa do Sienge');
+select pg_temp.falha($$update erp.sienge_previsoes set apagado_em = now() where previsao_id = '69000000-0000-0000-0000-0000000000b1'$$,
+  'prv: pela API ninguém marca apagado');
+select pg_temp.sis();
+select pg_temp.ok((select item_id = '69000000-0000-0000-0000-0000000000b1' and sienge_id = 7001 from erp.sienge_pegar_conferencia()),
+  'prv: a conferência entrega a linha a apagar');
+select pg_temp.ok(not exists (select 1 from erp.sienge_pegar_conferencia()), 'prv: a mesma linha só volta à conferência depois de 30 minutos');
+update erp.sienge_previsoes set conferido_em = now() - interval '29 minutes' where previsao_id = '69000000-0000-0000-0000-0000000000b1';
+select pg_temp.ok(not exists (select 1 from erp.sienge_pegar_conferencia()), 'prv: conferida há 29 minutos, ainda não volta');
+update erp.sienge_previsoes set conferido_em = now() - interval '31 minutes' where previsao_id = '69000000-0000-0000-0000-0000000000b1';
+select pg_temp.ok(exists (select 1 from erp.sienge_pegar_conferencia()), 'prv: conferida há 31 minutos, volta');
+select erp.sienge_marcar_apagado('69000000-0000-0000-0000-0000000000b1');
+select pg_temp.ok(not exists (select 1 from erp.v_sienge_prv_apagar where previsao_id = '69000000-0000-0000-0000-0000000000b1')
+                  and 7001 not in (select erp.sienge_ids()),
+  'prv: apagada no Sienge, sai da lista e dos ids da trava');
+select pg_temp.erro_igual($$select erp.sienge_marcar_apagado('69000000-0000-0000-0000-0000000000b1')$$,
+  'A previsão não está na lista do que apagar', 'prv: não se marca apagado duas vezes');
+-- um papel nosso que passa pela política "operacao": as funções recusam sozinhas
+select pg_temp.como(null);
+select set_config('role', 'erp_situacao', false);
+select pg_temp.erro_igual($$select * from erp.sienge_pegar()$$, 'Só o sistema pega a fila do Sienge', 'prv: fora do sistema, pegar é recusado');
+select pg_temp.erro_igual($$select erp.sienge_pedido_item('69000000-0000-0000-0000-0000000000b1')$$, 'Só o sistema monta o envio ao Sienge', 'prv: fora do sistema, o pedido é recusado');
+select pg_temp.erro_igual($$select erp.sienge_registrar_item('69000000-0000-0000-0000-0000000000b1', 1)$$, 'Só o sistema registra o envio ao Sienge', 'prv: fora do sistema, registrar é recusado');
+select pg_temp.erro_igual($$select erp.sienge_terminar('69000000-0000-0000-0000-0000000000b1', 'erro', null, null, 1, now())$$, 'Só o sistema mexe na fila do Sienge', 'prv: fora do sistema, terminar é recusado');
+select pg_temp.erro_igual($$select * from erp.sienge_pegar_conferencia()$$, 'Só o sistema confere o Sienge', 'prv: fora do sistema, a conferência é recusada');
+select pg_temp.erro_igual($$select erp.sienge_marcar_apagado('69000000-0000-0000-0000-0000000000b1')$$, 'Só o sistema confere o Sienge', 'prv: fora do sistema, marcar apagado é recusado');
+select pg_temp.erro_igual($$insert into erp.sienge_previsoes (previsao_id) values ('69000000-0000-0000-0000-0000000000b3')$$,
+  'A fila do Sienge só é escrita pelo sistema', 'prv: o gatilho da fila recusa quem não é o sistema');
+select pg_temp.como(null);
 rollback;
 
 \echo '# fim'
