@@ -45,7 +45,7 @@ Fonte de verdade da API: os YAMLs em `Mbekerman/sienge-api-docs/oficial/yaml-fil
 | Pedidos de compra | anexos, autorizar, reprovar, avaliar | pedido, itens, entregas, apropriações | criar pedido (só nasce por solicitação com acordo de preços ou negociação de cotação autorizada) |
 | Notas de compra | cabeçalho + itens a partir de entrega de pedido | notas, NF-e recebidas da SEFAZ | nota sem pedido; **leitura de NFS-e recebida** |
 | Credores | criar, mudar, dados bancários, Pix, ativar, desativar | lista | — |
-| Cadastros de apoio | — | empresas, obras, centros de custo, planos financeiros, documentos, indexadores, contas | criar qualquer um; listar usuários; listar filiais |
+| Cadastros de apoio | — | empresas, obras, centros de custo, planos financeiros, documentos, indexadores, contas | criar qualquer um; listar usuários; listar filiais. Conferido de novo em 17/nov/2026: `company-v1`, `enterprise-v1`, `centro-de-custos` e `checking-accounts-v1` só têm `GET`, e os `post` do `enterprise-v1` são webhooks que o Sienge envia (`COST_CENTER_CREATED` e outros). Por isso, empresa, obra e conta corrente de teste se criam à mão na tela do Sienge, e o usuário de API tem de ser liberado na empresa nova antes de gravar nela. |
 | Contabilidade | lançamentos e lotes | contas, saldos, balancete | — |
 | Comercial | clientes, unidades, reservas, contratos de venda, comissões | tabela de preços, saldo devedor, parcelas a receber | — |
 
