@@ -157,9 +157,9 @@ Decidido pelo Moises em 17/nov/2026. O de-para completo está na planilha `/mnt/
 - ✅ **Despesa da holding paga pela SPE:**
   - A SPE continua pagando. O Moises recusou o bloqueio proposto.
   - O lançamento mantém a natureza real (salário, aluguel...), para não perder o motivo do pagamento.
-  - A despesa entra num centro próprio da SPE, com o nome provisório "Despesas da holding". Esse centro fica **fora da DRE do empreendimento**.
+  - A despesa entra num centro próprio da SPE, chamado **Kostyl**. Esse centro fica **fora da DRE do empreendimento**.
   - É um conceito novo: um centro marcado como fora da DRE do núcleo.
-- 🟡 **Regra do relatório, a confirmar:** tirar esse centro da DRE da SPE não pode fazer o custo sumir. Na DRE da holding e na DRE consolidada, esses valores (R$ 4,9 milhões no histórico) precisam aparecer como despesa da holding.
+- ✅ **Na DRE da holding** (Moises, 17/nov/2026): o custo do Kostyl entra como despesa da holding, na linha da natureza de cada lançamento. Na DRE consolidada também aparece como despesa da holding.
 - ⏳ **A esclarecer:** falta dizer se esse caso também segue o procedimento de reembolso entre empresas, com a holding devendo o valor à SPE. A dúvida do contador sobre o saldo virar mútuo, com IOF, vale aqui também.
 
 ### Despesa paga por uma empresa do grupo em nome de outra
