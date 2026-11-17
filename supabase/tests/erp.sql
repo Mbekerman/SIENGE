@@ -6582,5 +6582,106 @@ select pg_temp.como(null);
 select pg_temp.erro_igual($$delete from erp.sienge_prv_trocas$$, 'O histórico do Sienge não se altera nem se apaga', 'cruzamento: o histórico de troca não se apaga');
 rollback;
 
+\echo '# aviso do Sienge (webhook) para a linha PRV apagada'
+begin;
+select pg_temp.sis();
+insert into erp.codigos_externos (sistema, tabela, registro_id, codigo) values ('sienge', 'empresas', :'spe', '11') on conflict do nothing;
+insert into erp.sienge_centros (nucleo_economico_id, centro_custo_id, sienge_centro) values (:'ne_vm', :'cc_mkt', 100) on conflict do nothing;
+insert into erp.sienge_contas (natureza_id, centro_custo_id, sienge_conta) values (pg_temp.nat('05.01.04'), :'cc_mkt', '2030224') on conflict do nothing;
+insert into erp.sienge_parametros (chave, valor) values ('credor_previsao', '823') on conflict do nothing;
+select pg_temp.volta();
+select pg_temp.como(:'diretor');
+insert into erp.previsoes (id, empresa_id, origem, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+values ('6c000000-0000-0000-0000-0000000000d1', :'spe', 'manual', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2026-12-01', '2026-12-10', 41),
+       ('6c000000-0000-0000-0000-0000000000d2', :'spe', 'manual', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2026-12-01', '2026-12-10', 42);
+select erp.decidir_previsao(x, true) from unnest(array['6c000000-0000-0000-0000-0000000000d1', '6c000000-0000-0000-0000-0000000000d2']::uuid[]) x
+ where exists (select 1 from erp.previsao_alcadas where previsao_id = x);
+select pg_temp.sis();
+select erp.sienge_enfileirar();
+select erp.sienge_registrar_item('6c000000-0000-0000-0000-0000000000d1', 7201);
+select erp.sienge_terminar('6c000000-0000-0000-0000-0000000000d1', 'enviado', 'pagamento', null, 1, now());
+select erp.sienge_registrar_item('6c000000-0000-0000-0000-0000000000d2', 7202);
+select erp.sienge_terminar('6c000000-0000-0000-0000-0000000000d2', 'enviado', 'pagamento', null, 1, now());
+update erp.sienge_previsoes set apagar_desde = now() where previsao_id = '6c000000-0000-0000-0000-0000000000d2';
+select pg_temp.ok(not has_function_privilege('authenticated', 'erp.sienge_registrar_aviso(uuid, text, text, jsonb)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp.sienge_pegar_aviso(timestamptz)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp.sienge_terminar_aviso(uuid, text, boolean)', 'EXECUTE')
+                  and not has_table_privilege('authenticated', 'erp.sienge_avisos', 'INSERT')
+                  and not has_table_privilege('anon', 'erp.sienge_avisos', 'SELECT'),
+  'aviso: as funções e a tabela não se escrevem pela API');
+-- registrar
+select pg_temp.ok(erp.sienge_registrar_aviso('a1000000-0000-0000-0000-000000000001', 'PAYMENT_INSTALLMENT_REMOVED', 'h', '{"billId": 9999, "installmentId": 1}'),
+  'aviso: o aviso novo entra');
+select pg_temp.ok(not erp.sienge_registrar_aviso('a1000000-0000-0000-0000-000000000001', 'PAYMENT_INSTALLMENT_REMOVED', 'h', '{"billId": 9999, "installmentId": 1}')
+                  and (select count(*) = 1 from erp.sienge_avisos where evento_id = 'a1000000-0000-0000-0000-000000000001'),
+  'aviso: o mesmo aviso repetido não entra de novo');
+select pg_temp.ok((select processado_em is not null and resultado = 'não é linha PRV do ERP' from erp.sienge_avisos where evento_id = 'a1000000-0000-0000-0000-000000000001'),
+  'aviso: título que não é linha PRV do ERP fecha sem chamar o Sienge');
+select erp.sienge_registrar_aviso('a1000000-0000-0000-0000-000000000002', 'PAYMENT_INSTALLMENT_CREATED', 'h', '{"billId": 7201, "installmentId": 1}');
+select pg_temp.ok((select processado_em is not null and resultado = 'evento sem ação' from erp.sienge_avisos where evento_id = 'a1000000-0000-0000-0000-000000000002'),
+  'aviso: outro evento de linha nossa só fica registrado');
+select erp.sienge_registrar_aviso('a1000000-0000-0000-0000-000000000003', 'PAYMENT_INSTALLMENT_REMOVED', 'h', '{"billId": "7202"}');
+select pg_temp.ok((select bill_id is null and processado_em is not null from erp.sienge_avisos where evento_id = 'a1000000-0000-0000-0000-000000000003'),
+  'aviso: billId que não é número não liga a nada');
+select pg_temp.erro_igual($$select erp.sienge_registrar_aviso('a1000000-0000-0000-0000-000000000009', 'PAYMENT_INSTALLMENT_REMOVED', 'h', '[1]')$$,
+  'Aviso do Sienge inválido', 'aviso: corpo que não é objeto é recusado');
+savepoint sp_av1;
+update erp.previsoes set situacao = 'cancelada' where id = '6c000000-0000-0000-0000-0000000000d1';
+select erp.sienge_registrar_aviso('a1000000-0000-0000-0000-000000000004', 'PAYMENT_INSTALLMENT_REMOVED', 'h', '{"billId": 7201}');
+select pg_temp.ok((select processado_em is not null and resultado = 'não é linha PRV do ERP' from erp.sienge_avisos where evento_id = 'a1000000-0000-0000-0000-000000000004'),
+  'aviso: linha enviada de previsão que não está aberta (sem a marca de apagar) não é esperada');
+rollback to savepoint sp_av1;
+select erp.sienge_registrar_aviso('a1000000-0000-0000-0000-000000000011', 'PAYMENT_INSTALLMENT_REMOVED', 'h', '{"billId": 7202, "installmentId": 1}');
+select erp.sienge_registrar_aviso('a1000000-0000-0000-0000-000000000012', 'PAYMENT_INSTALLMENT_REMOVED', 'h', '{"billId": 7202, "installmentId": 2}');
+select erp.sienge_registrar_aviso('a1000000-0000-0000-0000-000000000013', 'PAYMENT_INSTALLMENT_REMOVED', 'h', '{"billId": 7201, "installmentId": 1}');
+select pg_temp.ok((select count(*) = 3 from erp.sienge_avisos where processado_em is null), 'aviso: as remoções de linha nossa ficam pendentes');
+-- pegar e processar
+select evento_id as av1, bill_id as b1, previsao_id as p1, tipo as t1 from erp.sienge_pegar_aviso() \gset
+select pg_temp.ok(:'av1' = 'a1000000-0000-0000-0000-000000000011' and :b1 = 7202 and :'p1' = '6c000000-0000-0000-0000-0000000000d2' and :'t1' = 'apagar',
+  'aviso: o mais antigo vem com a previsão e o tipo (linha a apagar)');
+select pg_temp.ok((select evento_id = 'a1000000-0000-0000-0000-000000000012' from erp.sienge_pegar_aviso(now() + interval '1 minute')),
+  'aviso: o reservado não é pego de novo (vem o próximo)');
+select erp.sienge_marcar_apagado('6c000000-0000-0000-0000-0000000000d2');
+select erp.sienge_terminar_aviso('a1000000-0000-0000-0000-000000000011', 'apagado no Sienge (404)');
+select pg_temp.erro_igual($$select erp.sienge_terminar_aviso('a1000000-0000-0000-0000-000000000011', 'x')$$,
+  'Aviso do Sienge inexistente ou já processado', 'aviso: o processado não fecha de novo');
+select evento_id as av3, tipo as t3, previsao_id as p3 from erp.sienge_pegar_aviso(now() + interval '10 minutes') \gset
+select pg_temp.ok(:'av3' = 'a1000000-0000-0000-0000-000000000013' and :'t3' = 'esperada' and :'p3' = '6c000000-0000-0000-0000-0000000000d1'
+                  and (select resultado = 'a linha já não está pendente no ERP' and processado_em is not null
+                         from erp.sienge_avisos where evento_id = 'a1000000-0000-0000-0000-000000000012'),
+  'aviso: o da outra parcela do título já apagado fecha sozinho; vem a linha esperada');
+-- sem resposta: tenta de novo depois de 5 minutos, até 5 vezes
+select erp.sienge_terminar_aviso('a1000000-0000-0000-0000-000000000013', 'Sienge respondeu 500', false);
+select pg_temp.ok(not exists (select 1 from erp.sienge_pegar_aviso(now() + interval '12 minutes'))
+                  and exists (select 1 from erp.sienge_pegar_aviso(now() + interval '16 minutes')),
+  'aviso: sem resposta, volta depois de 5 minutos');
+select erp.sienge_pegar_aviso(now() + interval '22 minutes');
+select erp.sienge_pegar_aviso(now() + interval '28 minutes');
+select erp.sienge_pegar_aviso(now() + interval '34 minutes');
+select not exists (select 1 from erp.sienge_pegar_aviso(now() + interval '40 minutes')) as nada5 \gset
+select pg_temp.ok(:'nada5'::boolean
+                  and (select processado_em is not null and resultado like 'erro: 5 tentativas%' and tentativas = 5
+                         from erp.sienge_avisos where evento_id = 'a1000000-0000-0000-0000-000000000013'),
+  'aviso: depois de 5 tentativas fecha com erro (a conferência e o cruzamento resolvem)');
+-- o aviso recebido não muda nem se apaga
+select pg_temp.erro_igual($$update erp.sienge_avisos set corpo = '{}' where evento_id = 'a1000000-0000-0000-0000-000000000011'$$,
+  'O aviso recebido não muda', 'aviso: o corpo recebido não muda');
+select pg_temp.erro_igual($$update erp.sienge_avisos set resultado = 'x' where evento_id = 'a1000000-0000-0000-0000-000000000011'$$,
+  'O aviso já foi processado', 'aviso: o processado não muda');
+select pg_temp.erro_igual($$delete from erp.sienge_avisos$$, 'Os avisos do Sienge não se apagam', 'aviso: não se apaga');
+-- quem vê e quem escreve
+select pg_temp.volta();
+select pg_temp.como(:'diretor');
+select pg_temp.ok(exists (select 1 from erp.sienge_avisos), 'aviso: o master lê os avisos');
+select pg_temp.como(:'leitor');
+select pg_temp.ok(not exists (select 1 from erp.sienge_avisos), 'aviso: quem não é master nem AF não lê');
+select pg_temp.como(null);
+select set_config('role', 'erp_situacao', false);
+select pg_temp.erro_igual($$select erp.sienge_registrar_aviso('a1000000-0000-0000-0000-000000000099', 'PAYMENT_INSTALLMENT_REMOVED', 'h', '{"billId": 7201}')$$,
+  'Só o sistema registra aviso do Sienge', 'aviso: fora do sistema, registrar é recusado');
+select pg_temp.erro_igual($$select * from erp.sienge_pegar_aviso()$$, 'Só o sistema processa aviso do Sienge', 'aviso: fora do sistema, pegar é recusado');
+select pg_temp.como(null);
+rollback;
+
 \echo '# fim'
 do $$ begin raise notice 'TODOS OS TESTES PASSARAM'; end $$;

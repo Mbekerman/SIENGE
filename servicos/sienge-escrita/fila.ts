@@ -1,6 +1,6 @@
 // A fila do envio ao Sienge (erp.sienge_envios, os títulos; erp.sienge_previsoes, as previsões como
 // título PRV): cada chamada de processarUm() põe na fila os títulos e as previsões recém-aprovados e
-// envia UM item vencido da fila; sem item, confere se uma linha PRV a apagar já sumiu do Sienge. Quem chama de minuto em minuto é o agendador
+// envia UM item vencido da fila; sem item, trata um aviso do Sienge (webhook) ou confere se uma linha PRV a apagar já sumiu do Sienge. Quem chama de minuto em minuto é o agendador
 // (Edge Function index.ts, ou o executor local de teste local.ts).
 //
 // Sem dependência de Deno nem de Node: o banco chega como a interface Banco (bancoPostgres() a monta
@@ -33,7 +33,12 @@ export interface Banco {
   recriarPrv(previsaoId: string, siengeId: number, motivo: string): Promise<void>;
   terminarCruzamento(empresa: number, estranhas: Estranha[], resumo: Record<string, number>, erro?: string | null): Promise<number>;
   linhasApagar(): Promise<LinhaApagar[]>; // erp.v_sienge_prv_apagar, para a planilha do financeiro
+  // Aviso do Sienge (webhook) de parcela removida de uma linha PRV nossa: o banco reserva por 5 minutos.
+  pegarAviso(): Promise<Aviso | null>;
+  terminarAviso(eventoId: string, resultado: string, processado: boolean): Promise<void>;
 }
+
+export type Aviso = { evento_id: string; bill_id: number; previsao_id: string; tipo: 'apagar' | 'esperada' };
 
 export type Estranha = { sienge_id: number; numero: string | null; emissao: string | null; valor: number | null; observacoes: string | null; motivo: string };
 
@@ -47,6 +52,7 @@ export type Config = { ambiente: Ambiente; credoresTeste: number[]; agora?: () =
 export type Resultado =
   | { passo: 'nada a fazer'; enfileirados: number }
   | { passo: 'apagado'; previsao: string; siengeId: number; enfileirados: number }
+  | { passo: 'aviso'; evento: string; siengeId: number; resultado: string; enfileirados: number }
   | { passo: 'cruzado'; empresa: number; lidas: number; recriadas: number; estranhas: number; novas: number; enfileirados: number }
   | { passo: 'cruzamento com erro'; empresa: number; erro: string; enfileirados: number }
   | { passo: 'enviado'; titulo: string; siengeId: number; criado: boolean; enfileirados: number }
@@ -60,6 +66,8 @@ export async function processarUm(banco: Banco, http: Http, cfg: Config): Promis
   const enfileirados = await banco.enfileirar();
   const item = await banco.pegar();
   if (!item) {
+    const a = await processarAviso(banco, http, enfileirados);
+    if (a) return a;
     const c = await conferirApagado(banco, http, enfileirados);
     return c.passo === 'nada a fazer' ? await cruzarPrv(banco, http, enfileirados, dataSaoPaulo(agora())) : c;
   }
@@ -94,6 +102,35 @@ export async function processarUm(banco: Banco, http: Http, cfg: Config): Promis
     await banco.terminar(item.item_id, { situacao, erro: msg, tentativas, proxima });
     return { passo: situacao, titulo: item.item_id, erro: msg, enfileirados };
   }
+}
+
+// O aviso do Sienge é só um dado (qualquer um pode mandar um POST ao recebedor): só o 404 do GET do
+// título, lido aqui, faz agir. Linha da lista do que apagar → apagada; linha esperada de previsão aberta →
+// a previsão volta à fila e vai outra linha. Título que ainda existe fecha o aviso sem mexer em nada;
+// outro erro deixa o aviso para a próxima tentativa (o banco desiste depois de 5).
+async function processarAviso(banco: Banco, http: Http, enfileirados: number): Promise<Resultado | null> {
+  const a = await banco.pegarAviso();
+  if (!a) return null;
+  let resultado: string;
+  try {
+    await http.ler(`/bills/${a.bill_id}`);
+    resultado = 'o título ainda existe no Sienge: nada feito';
+  } catch (e) {
+    if (!(e instanceof ErroSienge && e.status === 404)) {
+      const msg = (e instanceof Error ? e.message : String(e)).slice(0, 250);
+      await banco.terminarAviso(a.evento_id, `tentar de novo: ${msg}`, false);
+      return { passo: 'aviso', evento: a.evento_id, siengeId: a.bill_id, resultado: 'erro ao ler o título', enfileirados };
+    }
+    if (a.tipo === 'apagar') {
+      await banco.marcarApagado(a.previsao_id);
+      resultado = 'apagado no Sienge (404): linha marcada como apagada';
+    } else {
+      await banco.recriarPrv(a.previsao_id, a.bill_id, `aviso do Sienge: parcela removida e 404 no título ${a.bill_id}`);
+      resultado = 'apagado no Sienge (404): a previsão volta à fila';
+    }
+  }
+  await banco.terminarAviso(a.evento_id, resultado, true);
+  return { passo: 'aviso', evento: a.evento_id, siengeId: a.bill_id, resultado, enfileirados };
 }
 
 // A linha PRV que o financeiro apaga à mão: o GET do título responde 404 quando ela sumiu. Outro erro
@@ -254,5 +291,12 @@ export function bancoPostgres(sql: Sql): Banco {
       (await tx`select previsao_id::text as previsao_id, sienge_id, empresa_sienge, data_prevista::text as data_prevista,
                        valor::text as valor, situacao_previsao, to_json(apagar_desde) #>> '{}' as apagar_desde
                   from erp.v_sienge_prv_apagar`).map((r: LinhaApagar) => ({ ...r }))),
+    pegarAviso: () => comoSistema(async (tx) => {
+      const [r] = await tx`select evento_id::text as evento_id, bill_id, previsao_id::text as previsao_id, tipo from erp.sienge_pegar_aviso()`;
+      return r ? { evento_id: r.evento_id, bill_id: r.bill_id, previsao_id: r.previsao_id, tipo: r.tipo } : null;
+    }),
+    terminarAviso: (e, res, proc) => comoSistema(async (tx) => {
+      await tx`select erp.sienge_terminar_aviso(${e}::uuid, ${res}::text, ${proc}::boolean)`;
+    }),
   };
 }
