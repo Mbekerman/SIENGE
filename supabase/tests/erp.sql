@@ -146,6 +146,10 @@ select pg_temp.ok((select count(*) from erp.naturezas_liberadas) = (select count
 delete from erp.naturezas_liberadas;   -- os testes trocam o id dos centros; libera de novo depois
 
 \echo '# raiz: empresas, sócios, empreendimento'
+-- antes de qualquer teste mexer no anon: as migrations não deixam função do erp para ele (S-127)
+select pg_temp.ok(not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                               where n.nspname = 'erp' and has_function_privilege('anon', p.oid, 'EXECUTE')),
+  'S-127: anon não executa nenhuma função do erp');
 insert into erp.pessoas (id, tipo, nome, documento) values
   ('10000000-0000-0000-0000-000000000001', 'juridica', 'Holding BKM', '11111111000111'),
   ('10000000-0000-0000-0000-000000000002', 'juridica', 'BKM Incorporadora', '22222222000122'),
@@ -5957,13 +5961,24 @@ insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_cus
   ('70000000-0000-0000-0000-0000000000e4', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
 select erp.lancar_documento('70000000-0000-0000-0000-0000000000e4', array['2026-06-20','2026-07-20']::date[]) as tse4 \gset
 insert into erp.parcela_pagamentos (titulo_id, numero, forma, pix_tipo, pix_chave) values
-  (:'tse4', 1, 'pix', 'email', 'teste@example.com'), (:'tse4', 2, 'pix', 'email', 'nova@example.com');
+  (:'tse4', 1, 'pix', 'email', 'teste@example.com');
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, pix_tipo, pix_chave, pix_excecao) values
+  (:'tse4', 2, 'pix', 'cpf_cnpj', '29732041000154', 'Cessão de crédito');
 select erp.decidir_titulo(:'tse4', true);
 select pg_temp.como(null);
 select erp.sienge_enfileirar();
-select pg_temp.ok((select dados->'parcelas' = '[{"numero": 2, "pix_tipo": "email", "pix_chave": "nova@example.com"}]'
+select pg_temp.ok((select dados->'parcelas' = '[{"numero": 2, "pix_tipo": "cpf_cnpj", "pix_chave": "29732041000154"}]'
                      from erp.eventos where tipo = 'chave_pix_nova' and registro = :'tse4'),
   'S-125: o alerta lista só a chave nova do título');
+select pg_temp.ok((select x->>'pix_chave' = '29732041000154' from jsonb_array_elements(erp.sienge_pedido(:'tse4')->'parcelas') x
+                    where (x->>'numero')::int = 2),
+  'S-127: a exceção justificada vai até o pedido ao Sienge');
+-- a mesma chave, já enviada para outro credor, continua nova para este (S-127)
+select erp._criar_titulo(:'spe', 'pagar', 'avulso', '10000000-0000-0000-0000-000000000006', null, null, '2026-06-02', '2026-06-01',
+  10, array['2026-07-01']::date[], null, null, 'outro credor') as toutro \gset
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, pix_tipo, pix_chave) values (:'toutro', 1, 'pix', 'email', 'teste@example.com');
+select pg_temp.ok((select 'Chave nova para este credor' = any (avisos) from erp.avisos_forma_pagamento(:'toutro') where numero = 1),
+  'S-127: a chave usada com outro credor é nova para este');
 rollback to savepoint sp_ped;
 select pg_temp.como(:'leitor');
 select pg_temp.ok((select count(*) = 2 from erp.avisos_forma_pagamento(:'tse')), 'S-125: quem vê o título vê os avisos');
