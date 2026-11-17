@@ -105,6 +105,17 @@ Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depo
 - Nota **emitida antes da previsão aprovada** é travada, porque senão a aprovação vira só uma etapa formal.
 - A **AF** ou a **AD** podem abrir exceção, com motivo.
 
+#### Contratos recorrentes e previsões no código (PR #72)
+
+🟡 Código pronto no PR #72, ainda não juntado:
+
+- **Aprovação do contrato recorrente e da assinatura:** aprovam o gestor do centro e alguém da AF ou da AO. Quem criou ou alterou o contrato não aprova. Mudar valores, datas, credor ou rateio pede aprovação de novo.
+- **Previsões do contrato** nascem aprovadas quando o contrato é aprovado. A previsão lançada à mão passa pela alçada do título.
+- **Nota menor que a previsão:** quem lança escolhe entre duas opções:
+  - **Saldo:** nasce outra previsão com o valor que sobrou, na data que a pessoa informar (hoje ou depois);
+  - **Saving:** a previsão só é encerrada.
+- **Previsão no Sienge:** a previsão aprovada vai ao Sienge como título PRV, sem forma de pagamento. Quando ela deixa de estar aberta, a linha entra na lista para o financeiro apagar no Sienge. O sistema marca a linha sozinho quando o título some de lá.
+
 🟡 Propostas ainda sem confirmação do Moises:
 
 - **Previsão vencida sem nota** há X dias aparece numa lista para quem lançou, que reprograma ou cancela com motivo.
