@@ -6440,5 +6440,129 @@ select pg_temp.erro_igual($$insert into erp.sienge_previsoes (previsao_id) value
 select pg_temp.como(null);
 rollback;
 
+\echo '# cruzamento das linhas PRV com o Sienge'
+begin;
+select pg_temp.sis();
+insert into erp.codigos_externos (sistema, tabela, registro_id, codigo) values ('sienge', 'empresas', :'spe', '11') on conflict do nothing;
+insert into erp.sienge_centros (nucleo_economico_id, centro_custo_id, sienge_centro) values (:'ne_vm', :'cc_mkt', 100) on conflict do nothing;
+insert into erp.sienge_contas (natureza_id, centro_custo_id, sienge_conta) values (pg_temp.nat('05.01.04'), :'cc_mkt', '2030224') on conflict do nothing;
+insert into erp.sienge_parametros (chave, valor) values ('credor_previsao', '823') on conflict do nothing;
+select pg_temp.volta();
+select pg_temp.como(:'diretor');
+insert into erp.previsoes (id, empresa_id, origem, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+values ('6b000000-0000-0000-0000-0000000000c1', :'spe', 'manual', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2026-12-01', '2026-12-10', 40);
+select erp.decidir_previsao('6b000000-0000-0000-0000-0000000000c1', true)
+ where exists (select 1 from erp.previsao_alcadas where previsao_id = '6b000000-0000-0000-0000-0000000000c1');
+select pg_temp.sis();
+select erp.sienge_enfileirar();
+select erp.sienge_registrar_item('6b000000-0000-0000-0000-0000000000c1', 7101);
+select erp.sienge_terminar('6b000000-0000-0000-0000-0000000000c1', 'enviado', 'pagamento', null, 1, now());
+select pg_temp.ok(not has_function_privilege('authenticated', 'erp.sienge_pegar_cruzamento(timestamptz)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp.sienge_prv_nossas(int)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp.sienge_recriar_prv(uuid, int, text)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp.sienge_terminar_cruzamento(int, jsonb, jsonb, text, timestamptz)', 'EXECUTE')
+                  and not has_table_privilege('authenticated', 'erp.sienge_prv_estranhas', 'INSERT')
+                  and not has_table_privilege('authenticated', 'erp.sienge_prv_trocas', 'INSERT')
+                  and not has_table_privilege('authenticated', 'erp.sienge_cruzamentos', 'UPDATE'),
+  'cruzamento: as funções e as tabelas não se escrevem pela API');
+select pg_temp.ok(has_table_privilege('erp_sistema', 'erp.v_sienge_prv_apagar', 'SELECT')
+                  and not has_table_privilege('erp_sistema', 'erp.v_sienge_prv_apagar', 'INSERT')
+                  and (select count(*) >= 0 from erp.v_sienge_prv_apagar),
+  'planilha: o sistema lê a lista do que apagar (e só lê)');
+-- só de madrugada (2h às 6h em São Paulo), uma empresa por vez, uma vez por dia
+select pg_temp.ok(not exists (select 1 from erp.sienge_pegar_cruzamento('2026-11-18 15:00Z')), 'cruzamento: de dia, não cruza');
+select pg_temp.ok(not exists (select 1 from erp.sienge_pegar_cruzamento('2026-11-18 04:59Z')), 'cruzamento: antes das 2h, não cruza');
+select empresa_sienge as emp, desde from erp.sienge_pegar_cruzamento('2026-11-18 06:00Z') \gset
+select pg_temp.ok(:emp = 11 and :'desde'::date = (now() at time zone 'America/Sao_Paulo')::date,
+  'cruzamento: às 3h pega a empresa, desde a emissão da linha PRV mais antiga dela');
+select pg_temp.ok(not exists (select 1 from erp.sienge_pegar_cruzamento('2026-11-18 06:10Z') where empresa_sienge = 11),
+  'cruzamento: a empresa em andamento não é pega de novo');
+select pg_temp.ok((select esperada from erp.sienge_prv_nossas(11) where sienge_id = 7101), 'cruzamento: a linha enviada de previsão aberta é esperada no Sienge');
+-- faltante: recria
+select pg_temp.erro_igual($$select erp.sienge_recriar_prv('6b000000-0000-0000-0000-0000000000c1', 7999, 'x')$$,
+  'A previsão não está ligada a este título do Sienge', 'cruzamento: recria só o id que é da previsão');
+select pg_temp.erro_igual($$update erp.sienge_previsoes set sienge_id = null where previsao_id = '6b000000-0000-0000-0000-0000000000c1'$$,
+  'A previsão já tem id no Sienge (7101); não troca', 'cruzamento: sem a troca registrada, o id não se solta');
+select erp.sienge_recriar_prv('6b000000-0000-0000-0000-0000000000c1', 7101, 'Fora da lista e 404 no Sienge');
+select pg_temp.ok((select sienge_id is null and situacao = 'pendente' and tentativas = 0 from erp.sienge_previsoes where previsao_id = '6b000000-0000-0000-0000-0000000000c1')
+                  and exists (select 1 from erp.sienge_prv_trocas where previsao_id = '6b000000-0000-0000-0000-0000000000c1' and sienge_id = 7101)
+                  and not exists (select 1 from erp.codigos_externos where sistema = 'sienge' and tabela = 'previsoes' and registro_id = '6b000000-0000-0000-0000-0000000000c1')
+                  and exists (select 1 from erp.eventos where tipo = 'prv_recriada' and registro = '6b000000-0000-0000-0000-0000000000c1'),
+  'cruzamento: a linha que sumiu volta à fila, com o id antigo guardado e o aviso à AF');
+select pg_temp.ok((select not esperada from erp.sienge_prv_nossas(11) where sienge_id = 7101), 'cruzamento: o id antigo continua conhecido (não vira estranha)');
+select erp.sienge_registrar_item('6b000000-0000-0000-0000-0000000000c1', 7102);
+select erp.sienge_terminar('6b000000-0000-0000-0000-0000000000c1', 'enviado', 'pagamento', null, 1, now());
+select pg_temp.ok((select codigo = '7102' from erp.codigos_externos where sistema = 'sienge' and tabela = 'previsoes' and registro_id = '6b000000-0000-0000-0000-0000000000c1'),
+  'cruzamento: a linha nova ganha o id novo');
+select pg_temp.erro_igual($$select erp.sienge_recriar_prv('6b000000-0000-0000-0000-0000000000c1', 7102, '')$$,
+  'new row for relation "sienge_prv_trocas" violates check constraint "sienge_prv_trocas_motivo_check"', 'cruzamento: recriar pede o motivo');
+-- estranhas
+select pg_temp.erro_igual($$select erp.sienge_terminar_cruzamento(11, '[{"sienge_id": 7102, "motivo": "x"}]', '{}', null, '2026-11-18 06:20Z')$$,
+  'Linha do ERP marcada como estranha', 'cruzamento: linha do ERP nunca vira estranha');
+select pg_temp.erro_igual($$select erp.sienge_terminar_cruzamento(11, '[{"sienge_id": 7101, "motivo": "x"}]', '{}', null, '2026-11-18 06:20Z')$$,
+  'Linha do ERP marcada como estranha', 'cruzamento: nem a linha antiga trocada');
+select pg_temp.ok(erp.sienge_terminar_cruzamento(11, '[{"sienge_id": 8001, "numero": "PRV-X", "emissao": "2025-03-01", "valor": 10, "motivo": "não é do ERP"},
+                                                  {"sienge_id": 8002, "numero": "PRV-Y", "motivo": "não é do ERP"}]', '{"lidos": 3}', null, '2026-11-18 06:20Z') = 2,
+  'cruzamento: as estranhas novas entram');
+select pg_temp.ok((select situacao = 'ok' and (resumo->>'novas')::int = 2 and (resumo->>'lidos')::int = 3 from erp.sienge_cruzamentos where dia = '2026-11-18' and empresa_sienge = 11)
+                  and exists (select 1 from erp.eventos where tipo = 'prv_estranhas' and registro = '11' and dados->>'novas' = '2'),
+  'cruzamento: a passada fecha e a AF é avisada com a quantidade');
+select pg_temp.erro_igual($$select erp.sienge_terminar_cruzamento(11, '[]', '{}', null, '2026-11-18 06:30Z')$$,
+  'Cruzamento fora de hora', 'cruzamento: não fecha passada que não está rodando');
+select pg_temp.ok(not exists (select 1 from erp.sienge_pegar_cruzamento('2026-11-18 07:00Z') where empresa_sienge = 11), 'cruzamento: uma passada por dia');
+-- no dia seguinte: a 8001 continua (não avisa de novo), a 8002 sumiu
+select pg_temp.ok(exists (select 1 from erp.sienge_pegar_cruzamento('2026-11-19 06:00Z') where empresa_sienge = 11), 'cruzamento: no outro dia, passa de novo');
+select pg_temp.ok(erp.sienge_terminar_cruzamento(11, '[{"sienge_id": 8001, "motivo": "não é do ERP"}]', '{}', null, '2026-11-19 06:20Z') = 0,
+  'cruzamento: estranha já vista não conta como nova');
+select pg_temp.ok((select count(*) = 1 from erp.eventos where tipo = 'prv_estranhas' and registro = '11'),
+  'cruzamento: estranha já vista não avisa de novo');
+select pg_temp.ok((select sumiu_em is not null from erp.sienge_prv_estranhas where sienge_id = 8002)
+                  and (select array_agg(sienge_id) = '{8001}' from erp.v_sienge_prv_estranhas),
+  'cruzamento: a que não aparece mais sai da lista');
+-- só a linha enviada é esperada e se recria
+savepoint sp_cruz;
+select erp.sienge_terminar('6b000000-0000-0000-0000-0000000000c1', 'erro', 'pagamento', 'x', 2, now());
+select pg_temp.erro_igual($$select erp.sienge_recriar_prv('6b000000-0000-0000-0000-0000000000c1', 7102, 'x')$$,
+  'Só a linha PRV enviada de previsão aberta se recria', 'cruzamento: linha da fila em erro não se recria');
+select pg_temp.ok((select not esperada from erp.sienge_prv_nossas(11) where sienge_id = 7102), 'cruzamento: linha da fila em erro não é esperada');
+rollback to savepoint sp_cruz;
+-- erro: tenta de novo 30 minutos depois, até 3 vezes
+select pg_temp.ok(exists (select 1 from erp.sienge_pegar_cruzamento('2026-11-20 06:00Z')), 'cruzamento: (passada do dia 20)');
+select erp.sienge_terminar_cruzamento(11, null, '{}', 'Sienge GET /bills respondeu 500', '2026-11-20 06:05Z');
+select pg_temp.ok((select situacao = 'erro' from erp.sienge_cruzamentos where dia = '2026-11-20' and empresa_sienge = 11)
+                  and not exists (select 1 from erp.sienge_pegar_cruzamento('2026-11-20 06:20Z'))
+                  and exists (select 1 from erp.sienge_pegar_cruzamento('2026-11-20 06:40Z')),
+  'cruzamento: com erro, tenta de novo depois de 30 minutos');
+select erp.sienge_terminar_cruzamento(11, null, '{}', 'de novo', '2026-11-20 06:41Z');
+select pg_temp.ok(exists (select 1 from erp.sienge_pegar_cruzamento('2026-11-20 07:20Z')), 'cruzamento: (terceira tentativa)');
+select erp.sienge_terminar_cruzamento(11, null, '{}', 'de novo', '2026-11-20 07:21Z');
+select pg_temp.ok(not exists (select 1 from erp.sienge_pegar_cruzamento('2026-11-20 08:00Z')), 'cruzamento: depois de 3 tentativas, só no outro dia');
+-- a que sumiu e voltou volta à lista, sem aviso novo
+select pg_temp.ok(exists (select 1 from erp.sienge_pegar_cruzamento('2026-11-21 06:00Z')), 'cruzamento: (passada do dia 21)');
+select pg_temp.ok(erp.sienge_terminar_cruzamento(11, '[{"sienge_id": 8001, "motivo": "a"}, {"sienge_id": 8002, "motivo": "b"}]', '{}', null, '2026-11-21 06:20Z') = 0,
+  'cruzamento: a estranha que voltou não é nova');
+select pg_temp.ok((select count(*) = 2 from erp.v_sienge_prv_estranhas), 'cruzamento: a estranha que voltou aparece de novo na lista');
+-- quem vê
+select pg_temp.volta();
+select pg_temp.como(:'diretor');
+select pg_temp.ok(exists (select 1 from erp.v_sienge_prv_estranhas), 'cruzamento: o master vê as estranhas');
+select pg_temp.como(:'leitor');
+select pg_temp.ok(not exists (select 1 from erp.v_sienge_prv_estranhas) and not exists (select 1 from erp.sienge_cruzamentos),
+  'cruzamento: quem não está na AF não vê as estranhas nem as passadas');
+select pg_temp.falha($$update erp.sienge_prv_estranhas set sumiu_em = now()$$, 'cruzamento: ninguém mexe nas estranhas pela API');
+select pg_temp.como(null);
+select set_config('role', 'erp_situacao', false);
+select pg_temp.erro_igual($$select * from erp.sienge_pegar_cruzamento('2026-11-22 06:00Z')$$, 'Só o sistema cruza o Sienge', 'cruzamento: fora do sistema, pegar é recusado');
+select pg_temp.erro_igual($$select erp.sienge_recriar_prv('6b000000-0000-0000-0000-0000000000c1', 7102, 'x')$$, 'Só o sistema cruza o Sienge', 'cruzamento: fora do sistema, recriar é recusado');
+select pg_temp.erro_igual($$select erp.sienge_terminar_cruzamento(11, '[]', '{}')$$, 'Só o sistema cruza o Sienge', 'cruzamento: fora do sistema, fechar é recusado');
+select pg_temp.erro_igual($$select * from erp.sienge_prv_nossas(11)$$, 'Só o sistema cruza o Sienge', 'cruzamento: fora do sistema, a lista das nossas é recusada');
+select pg_temp.erro_igual($$insert into erp.sienge_prv_trocas (previsao_id, sienge_id, motivo) values ('6b000000-0000-0000-0000-0000000000c1', 1, 'x')$$,
+  'O histórico do Sienge só é escrito pelo sistema', 'cruzamento: o histórico de troca só pelo sistema');
+select pg_temp.erro_igual($$insert into erp.sienge_cruzamentos (dia, empresa_sienge) values ('2026-11-21', 11)$$,
+  'O cruzamento do Sienge só é escrito pelo sistema', 'cruzamento: as passadas só pelo sistema');
+select pg_temp.como(null);
+select pg_temp.erro_igual($$delete from erp.sienge_prv_trocas$$, 'O histórico do Sienge não se altera nem se apaga', 'cruzamento: o histórico de troca não se apaga');
+rollback;
+
 \echo '# fim'
 do $$ begin raise notice 'TODOS OS TESTES PASSARAM'; end $$;

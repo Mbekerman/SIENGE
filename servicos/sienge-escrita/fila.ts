@@ -11,6 +11,7 @@
 // pedido com 4xx em TENTATIVAS_4XX tentativas seguidas: ninguém tenta de novo até alguém olhar).
 import { Divergencia, enviarTitulo, erroPermanente, ErroSienge, proximaTentativa, segundosRetryAfter, type PedidoTitulo, type Resposta } from './envio.ts';
 import { gravarComTrava, type Ambiente } from './trava.ts';
+import type { LinhaApagar } from './planilha.ts';
 
 // id: o título ou a previsão (o banco sabe qual).
 export type ItemFila = { item_id: string; sienge_id: number | null; tentativas: number };
@@ -26,7 +27,15 @@ export interface Banco {
   // A linha PRV a apagar mais antiga sem conferência há 30 minutos (marca a conferência).
   pegarConferencia(): Promise<{ item_id: string; sienge_id: number } | null>;
   marcarApagado(itemId: string): Promise<void>; // o título sumiu do Sienge
+  // Cruzamento das linhas PRV (de madrugada, uma empresa por vez; o banco escolhe e reserva).
+  pegarCruzamento(): Promise<{ empresa: number; desde: string } | null>;
+  prvNossas(empresa: number): Promise<{ sienge_id: number; previsao_id: string; esperada: boolean }[]>;
+  recriarPrv(previsaoId: string, siengeId: number, motivo: string): Promise<void>;
+  terminarCruzamento(empresa: number, estranhas: Estranha[], resumo: Record<string, number>, erro?: string | null): Promise<number>;
+  linhasApagar(): Promise<LinhaApagar[]>; // erp.v_sienge_prv_apagar, para a planilha do financeiro
 }
+
+export type Estranha = { sienge_id: number; numero: string | null; emissao: string | null; valor: number | null; observacoes: string | null; motivo: string };
 
 export interface Http {
   ler(caminho: string): Promise<unknown>; // GET; erro se não for 2xx
@@ -38,6 +47,8 @@ export type Config = { ambiente: Ambiente; credoresTeste: number[]; agora?: () =
 export type Resultado =
   | { passo: 'nada a fazer'; enfileirados: number }
   | { passo: 'apagado'; previsao: string; siengeId: number; enfileirados: number }
+  | { passo: 'cruzado'; empresa: number; lidas: number; recriadas: number; estranhas: number; novas: number; enfileirados: number }
+  | { passo: 'cruzamento com erro'; empresa: number; erro: string; enfileirados: number }
   | { passo: 'enviado'; titulo: string; siengeId: number; criado: boolean; enfileirados: number }
   | { passo: 'erro' | 'manual'; titulo: string; erro: string; enfileirados: number };
 
@@ -48,7 +59,10 @@ export async function processarUm(banco: Banco, http: Http, cfg: Config): Promis
   const agora = cfg.agora ?? (() => new Date());
   const enfileirados = await banco.enfileirar();
   const item = await banco.pegar();
-  if (!item) return await conferirApagado(banco, http, enfileirados);
+  if (!item) {
+    const c = await conferirApagado(banco, http, enfileirados);
+    return c.passo === 'nada a fazer' ? await cruzarPrv(banco, http, enfileirados, dataSaoPaulo(agora())) : c;
+  }
 
   const tentativas = item.tentativas + 1;
   try {
@@ -96,6 +110,78 @@ async function conferirApagado(banco: Banco, http: Http, enfileirados: number): 
     }
   }
   return { passo: 'nada a fazer', enfileirados };
+}
+
+// Cruzamento das linhas PRV de uma empresa com o Sienge (só leitura no Sienge):
+// - a nossa esperada que não está na lista e cujo GET responde 404 sumiu: a previsão volta à fila e vai
+//   outra linha (erp.sienge_recriar_prv); fora da lista sem 404 (outro erro, ou emissão fora da janela)
+//   não se mexe;
+// - a linha PRV da empresa que não é nossa (nem atual, nem a apagar, nem trocada) é estranha: a AF é
+//   avisada das novas. Com a marca "ERP <id>" nas observações, é provável duplicada de um envio nosso.
+export const PAGINA_PRV = 200;
+const MAX_PAGINAS = 50;
+const MARCA_ERP = /^ERP [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+type LinhaPrv = { id: number; documentNumber?: string; issueDate?: string; totalInvoiceAmount?: number; notes?: string };
+
+async function cruzarPrv(banco: Banco, http: Http, enfileirados: number, hoje: string): Promise<Resultado> {
+  const c = await banco.pegarCruzamento();
+  if (!c) return { passo: 'nada a fazer', enfileirados };
+  try {
+    const linhas = await listarPrv(http, c.empresa, c.desde, hoje);
+    const nossas = await banco.prvNossas(c.empresa);
+    const naLista = new Set(linhas.map((l) => l.id));
+    const conhecidas = new Set(nossas.map((n) => n.sienge_id));
+    let recriadas = 0, naoConfirmadas = 0;
+    for (const n of nossas) {
+      if (!n.esperada || naLista.has(n.sienge_id)) continue;
+      if (await sumiu(http, n.sienge_id)) {
+        await banco.recriarPrv(n.previsao_id, n.sienge_id, `linha PRV ${n.sienge_id} fora da lista da empresa ${c.empresa} e 404 no Sienge`);
+        recriadas++;
+      } else naoConfirmadas++;
+    }
+    const estranhas: Estranha[] = linhas.filter((l) => !conhecidas.has(l.id)).map((l) => ({
+      sienge_id: l.id, numero: l.documentNumber ?? null, emissao: l.issueDate ?? null,
+      valor: typeof l.totalInvoiceAmount === 'number' ? l.totalInvoiceAmount : null, observacoes: l.notes ?? null,
+      motivo: MARCA_ERP.test(l.notes ?? '') ? 'tem a marca do ERP, mas não está ligada a nenhuma previsão (duplicada?)' : 'sem a marca do ERP',
+    }));
+    const novas = await banco.terminarCruzamento(c.empresa, estranhas,
+      { lidas: linhas.length, recriadas, nao_confirmadas: naoConfirmadas });
+    return { passo: 'cruzado', empresa: c.empresa, lidas: linhas.length, recriadas, estranhas: estranhas.length, novas, enfileirados };
+  } catch (e) {
+    const msg = (e instanceof Error ? e.message : String(e)).slice(0, 1000);
+    await banco.terminarCruzamento(c.empresa, [], {}, msg);
+    return { passo: 'cruzamento com erro', empresa: c.empresa, erro: msg, enfileirados };
+  }
+}
+
+// GET /bills pede startDate e endDate (emissão). Lista vazia responde 404.
+async function listarPrv(http: Http, empresa: number, desde: string, hoje: string): Promise<LinhaPrv[]> {
+  const todas: LinhaPrv[] = [];
+  for (let pagina = 0; pagina < MAX_PAGINAS; pagina++) {
+    const q = new URLSearchParams({ startDate: desde, endDate: hoje, debtorId: String(empresa),
+      documentsIdentificationId: 'PRV', limit: String(PAGINA_PRV), offset: String(pagina * PAGINA_PRV) });
+    let r: { results?: LinhaPrv[]; resultSetMetadata?: { total?: number } };
+    try {
+      r = (await http.ler(`/bills?${q}`)) as typeof r;
+    } catch (e) {
+      if (e instanceof ErroSienge && e.status === 404 && pagina === 0) return [];
+      throw e;
+    }
+    const lote = Array.isArray(r?.results) ? r.results : [];
+    for (const l of lote) {
+      if (!Number.isInteger(l?.id)) throw new Error('lista de títulos do Sienge sem id');
+      todas.push(l);
+    }
+    const total = r?.resultSetMetadata?.total;
+    if (lote.length < PAGINA_PRV || (typeof total === 'number' && todas.length >= total)) return todas;
+  }
+  throw new Error(`mais de ${MAX_PAGINAS * PAGINA_PRV} linhas PRV na empresa ${empresa}: cruzamento parado`);
+}
+
+async function sumiu(http: Http, id: number): Promise<boolean> {
+  try { await http.ler(`/bills/${id}`); return false; }
+  catch (e) { if (e instanceof ErroSienge && e.status === 404) return true; return false; }
 }
 
 export function dataSaoPaulo(d: Date): string {
@@ -153,5 +239,20 @@ export function bancoPostgres(sql: Sql): Banco {
       return r ? { item_id: r.item_id, sienge_id: r.sienge_id } : null;
     }),
     marcarApagado: (id) => comoSistema(async (tx) => { await tx`select erp.sienge_marcar_apagado(${id}::uuid)`; }),
+    pegarCruzamento: () => comoSistema(async (tx) => {
+      const [r] = await tx`select empresa_sienge, desde::text as desde from erp.sienge_pegar_cruzamento()`;
+      return r ? { empresa: r.empresa_sienge, desde: r.desde } : null;
+    }),
+    prvNossas: (e) => comoSistema(async (tx) =>
+      (await tx`select sienge_id, previsao_id::text as previsao_id, esperada from erp.sienge_prv_nossas(${e}::int)`)
+        .map((r: { sienge_id: number; previsao_id: string; esperada: boolean }) => ({ ...r }))),
+    recriarPrv: (p, s, m) => comoSistema(async (tx) => { await tx`select erp.sienge_recriar_prv(${p}::uuid, ${s}::int, ${m}::text)`; }),
+    terminarCruzamento: (e, est, resumo, erro) => comoSistema(async (tx) =>
+      (await tx`select erp.sienge_terminar_cruzamento(${e}::int, ${JSON.stringify(est)}::jsonb, ${JSON.stringify(resumo)}::jsonb,
+                                                      ${erro ?? null}::text) as n`)[0].n),
+    linhasApagar: () => comoSistema(async (tx) =>
+      (await tx`select previsao_id::text as previsao_id, sienge_id, empresa_sienge, data_prevista::text as data_prevista,
+                       valor::text as valor, situacao_previsao, to_json(apagar_desde) #>> '{}' as apagar_desde
+                  from erp.v_sienge_prv_apagar`).map((r: LinhaApagar) => ({ ...r }))),
   };
 }

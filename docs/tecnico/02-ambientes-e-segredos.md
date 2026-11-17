@@ -64,6 +64,8 @@ Nenhum valor de segredo é escrito no repositório, em documento ou no chat.
 | `SIENGE_USUARIO`, `SIENGE_SENHA` (envio) | Gravação do título, das parcelas e da forma de pagamento (`servicos/sienge-escrita`) | Ainda não criados para a função `sienge-escrita`; o teste de 17/nov rodou no ambiente de nuvem do Claude (proxy) | Cofre do projeto de produção do ERP (ver S-115) |
 | `SIENGE_AMBIENTE` (não é segredo) | Só a palavra exata `producao` libera gravar fora da empresa de teste; ausente ou outra palavra é teste | Não definido em lugar nenhum (teste) | Só na produção |
 | `SIENGE_CREDORES_TESTE` (não é segredo) | Credores de teste aceitos pela trava em teste, separados por vírgula | Padrão 823 no código | |
+| `GOOGLE_PLANILHA_CHAVE` | JSON da chave da conta de serviço do Google `erp-planilha-prv` (projeto bkm-terrenos, sem papel no projeto), que só escreve na planilha das linhas PRV a apagar, compartilhada com ela como Editor | Segredo da função `sienge-escrita` no `bkm_dev`, criado pelo Moises (pendente em 17/nov/2026) | Trocar a chave na conta de serviço e apagar a antiga |
+| `PLANILHA_PRV_ID` (não é segredo) | O id (ou o link) da planilha "PRV a apagar no Sienge"; a aba se chama `PRV a apagar` | Pendente | |
 | `sienge_escrita_chave` | Chave com que o pg_cron chama a função `sienge-escrita` | Ainda não criada (`supabase/dev/sienge_escrita_agenda.sql` cria) | Idem na produção |
 | Chaves do Supabase, do Google e de leitura de PDF por IA | | Não criadas | A definir com o servidor |
 

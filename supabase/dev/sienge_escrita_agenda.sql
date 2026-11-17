@@ -21,4 +21,25 @@ select cron.schedule('sienge-escrita', '* * * * *', $cron$
     timeout_milliseconds := 300000)
 $cron$);
 
--- para parar: select cron.unschedule('sienge-escrita');
+-- planilha do Google com as linhas PRV a apagar: a cada 30 minutos no horário comercial (8h às 19h30 em
+-- São Paulo, segunda a sexta; o pg_cron do Supabase usa UTC) e às 6h30, depois do cruzamento da madrugada.
+-- Precisa dos segredos GOOGLE_PLANILHA_CHAVE e PLANILHA_PRV_ID na função.
+select cron.schedule('sienge-planilha-prv', '*/30 11-22 * * 1-5', $cron$
+  select net.http_post(
+    url := 'https://zwxvmotxnjvnoigroqds.supabase.co/functions/v1/sienge-escrita',
+    headers := jsonb_build_object('x-escrita-chave', (select decrypted_secret from vault.decrypted_secrets where name = 'sienge_escrita_chave'),
+                                  'content-type', 'application/json'),
+    body := '{"tarefa": "planilha"}'::jsonb,
+    timeout_milliseconds := 120000)
+$cron$);
+select cron.schedule('sienge-planilha-prv-madrugada', '30 9 * * *', $cron$
+  select net.http_post(
+    url := 'https://zwxvmotxnjvnoigroqds.supabase.co/functions/v1/sienge-escrita',
+    headers := jsonb_build_object('x-escrita-chave', (select decrypted_secret from vault.decrypted_secrets where name = 'sienge_escrita_chave'),
+                                  'content-type', 'application/json'),
+    body := '{"tarefa": "planilha"}'::jsonb,
+    timeout_milliseconds := 120000)
+$cron$);
+
+-- para parar: select cron.unschedule('sienge-escrita'); select cron.unschedule('sienge-planilha-prv');
+-- select cron.unschedule('sienge-planilha-prv-madrugada');
