@@ -131,7 +131,7 @@ Decisões do Moises de 16/nov/2026, ainda sem código. O detalhe está no [plano
   - **Mobiliário e decoração do PDV**: despesa comercial do empreendimento, fora do POC;
   - **Mobiliário e decoração das áreas comuns**: Obra, entra no POC;
   - **Móveis para uso próprio**: investimento (ativo), o que fica com a BKM.
-- ✅ **Consórcio é um centro de custo** da holding (núcleo Corporativo), com tudo dentro: parcelas, venda da carta, intermediação e impostos. A divisão é o empreendimento e o nível abaixo é a carta. Cada carta é cadastrada com administradora, grupo, cota, crédito, empreendimento beneficiado e financiamento da Caixa; a divisão é escolhida uma vez, e as parcelas nascem com ela.
+- ✅ **Consórcio é um centro de custo** da holding (núcleo Corporativo), com tudo dentro: parcelas, venda da carta, intermediação e impostos. A divisão é o empreendimento e o nível abaixo é a carta. Cada carta é cadastrada com administradora, grupo, cota, crédito, empreendimento de origem (nome do campo desde 17/nov/2026) e financiamento da Caixa; a divisão é escolhida uma vez, e as parcelas nascem com ela.
 - ✅ **Alavancagem é um centro de custo** (Moises, 16/nov/2026). Ele reúne as operações com investidores que põem dinheiro na SPE, e cada investidor é uma divisão: VERSI IV, SR IV e os que vierem. Consórcios continua centro à parte. As naturezas dessas operações:
   - **Aporte de investidor**: movimentação, fora da DRE;
   - **Custo de capital do investidor (DFM1)**: despesa financeira na DRE gerencial;
