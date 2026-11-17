@@ -4,6 +4,11 @@ Decisões que mudam a arquitetura ou o código, da mais recente para a mais anti
 
 ## 17/nov/2026
 
+- **Envio ao Sienge pelo título avulso** (Moises, 17/nov: "Faça a adaptação da escrita"; 14h12: "caminhar com o app com dados de teste e somente mandar títulos pro Sienge, nada de puxar histórico ainda"). A nota aprovada vira `POST /bills` com as parcelas e a forma de pagamento; medição fica para depois. A escolha entre medição e título avulso para notas de contrato (05, 5.2) continua aberta.
+- **Centavo da divisão das parcelas na primeira parcela**, como o Sienge (antes, na última). O `POST /bills` não leva o valor de cada parcela e o Sienge não deixa mudar o valor depois; com a regra antiga, toda nota de valor que não divide igual iria para "manual".
+- **Forma de pagamento trava no primeiro voto da alçada** (proposta, seguindo a regra de 8/nov de o aprovador ver o destino do dinheiro): quem lança informa PIX ou boleto antes; depois do primeiro voto, só pela revisão do título.
+- **Primeira versão recusa nota com retenção ou caução** no envio: o `tax-information` exige o código da filial, e as empresas 2 e 11 não têm filial cadastrada (conferido na tela em 17/nov).
+- **Programa de envio como Edge Function chamada pelo pg_cron** (proposta, mesmo caminho da carga; ver 4.7): a credencial é segredo da função, contra o desenho do Secret Manager (S-115).
 - **Carga de teste do histórico com dados reais no `bkm_dev`** (Moises, 17/nov, 08h43: "quero colocar o programa rodando em teste agora, em desenvolvimento, pra depois subirmos pra produção"). É exceção à regra de 14/nov de só dados de teste no `bkm_dev` (ver S-116). A carga na produção precisa de outro ok do Moises.
 - **Programa de carga como Edge Function chamada pelo pg_cron** (proposta, por ora só no desenvolvimento): o ambiente do Claude não alcança o Supabase pela rede e não há conta do Google Cloud ligada. Na produção, o mesmo código pode rodar em outro lugar (Cloud Run com Cloud Scheduler); a regra de negócio ficou no banco e em `logica.ts`.
 - **Espelho guarda o original do Sienge, sem tradução:** conta e centro de custo originais em cada rateio; o de-para para naturezas e centros fica na camada de cima (thread do de-para). O que estiver mal classificado entra como está.

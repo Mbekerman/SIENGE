@@ -61,6 +61,10 @@ Nenhum valor de segredo é escrito no repositório, em documento ou no chat.
 | Token do webhook do Sienge | Conferir que o aviso veio do Sienge | Não criado | Secret Manager do Google Cloud (regra de portabilidade de 14/nov; não o Vault do Supabase). A documentação não diz como o token chega ao nosso servidor: testar ao cadastrar o primeiro webhook |
 | `SIENGE_USUARIO`, `SIENGE_SENHA` (teste da carga) | GET do programa de carga do histórico | Segredos da Edge Function `sienge-carga` no `bkm_dev` (Edge Functions › Secrets), criados pelo Moises em 17/nov/2026 | Cofre do projeto de produção do ERP (ver S-115) |
 | `sienge_carga_chave` | Chave com que o pg_cron chama a função `sienge-carga` | Vault do `bkm_dev`, gerada aleatória pelo próprio SQL (nunca escrita em lugar nenhum) | Idem na produção |
+| `SIENGE_USUARIO`, `SIENGE_SENHA` (envio) | Gravação do título, das parcelas e da forma de pagamento (`servicos/sienge-escrita`) | Ainda não criados para a função `sienge-escrita`; o teste de 17/nov rodou no ambiente de nuvem do Claude (proxy) | Cofre do projeto de produção do ERP (ver S-115) |
+| `SIENGE_AMBIENTE` (não é segredo) | Só a palavra exata `producao` libera gravar fora da empresa de teste; ausente ou outra palavra é teste | Não definido em lugar nenhum (teste) | Só na produção |
+| `SIENGE_CREDORES_TESTE` (não é segredo) | Credores de teste aceitos pela trava em teste, separados por vírgula | Padrão 823 no código | |
+| `sienge_escrita_chave` | Chave com que o pg_cron chama a função `sienge-escrita` | Ainda não criada (`supabase/dev/sienge_escrita_agenda.sql` cria) | Idem na produção |
 | Chaves do Supabase, do Google e de leitura de PDF por IA | | Não criadas | A definir com o servidor |
 
 ### Dados da conta de API do Sienge (sem segredo)

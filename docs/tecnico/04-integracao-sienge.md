@@ -72,7 +72,19 @@ Fonte de verdade da API: os YAMLs em `Mbekerman/sienge-api-docs/oficial/yaml-fil
 - **Registro que já existe** (rota com id: parcela, PIX ou boleto da parcela, anexo, autorizar, DELETE): a empresa é lida no próprio registro no Sienge antes da gravação (hoje só `/bills`, pelo `debtorId`), nunca só a declarada por quem chama. Recurso sem leitura conhecida recusa. Em teste, o registro também tem de estar na lista dos criados pelo próprio teste, para um id digitado errado não alcançar outro título.
 - **Credor:** PIX e conta bancária de credor nunca se gravam pela API, em ambiente nenhum. Em teste, nenhuma gravação em credor. Em produção, só a inclusão de credor novo (`POST /creditors`).
 
-A própria trava envia o pedido que conferiu: o adaptador entrega só a função que envia método, caminho e corpo, para não haver uma chamada pronta apontando para outro id (S-123). Medição e contrato ainda não têm leitura de empresa e ficam recusados até ganharem uma. O adaptador do passo 1 ainda não existe: quando existir, todo envio dele passa por essa função (testes em `trava.test.ts`, no CI).
+A própria trava envia o pedido que conferiu: o adaptador entrega só a função que envia método, caminho e corpo, para não haver uma chamada pronta apontando para outro id (S-123). Medição e contrato ainda não têm leitura de empresa e ficam recusados até ganharem uma. O adaptador do passo 1 (`servicos/sienge-escrita`, 4.7) manda toda gravação por essa função (testes em `trava.test.ts`, `envio.test.ts` e `fila.test.ts`, no CI).
+
+**Envio de ponta a ponta (17/nov/2026, empresa 11, credor 823; programa da seção 4.7):**
+
+| Teste | Resultado |
+| --- | --- |
+| `POST /bills` NFSE com rateio em duas contas (66,67% 2030224 e 33,33% 2030115, centro 100) e 2 parcelas | 201, título 8558. NFSE na empresa 11 **não** pediu unidade (na empresa 2 pediu, ver abaixo) |
+| Como o Sienge cria as parcelas | Não há campo de parcelas no `BillInsert`: o Sienge divide o total igual, um mês entre cada vencimento a partir do `dueDate`, e o centavo que sobra fica na **primeira** (R$ 1,00 em 3 → 0,34 + 0,33 + 0,33; título 8559) |
+| `PATCH /bills/{id}/installments/{n}` com `dueDate` em título de origem SE | 204; o vencimento mudou (título 8560, parcelas 2 e 3). O número da parcela na rota é o `installmentNumber` |
+| PIX da parcela com chave e-mail e com CNPJ formatado (`keyPixType` C) | 204; parcela passa a `paymentTypeId` 14, PIX |
+| Boleto da parcela (`/payment-information/boleto-bancario`, `paymentTypeId` 2, código de barras de 44 e linha de 47 dígitos) | 204; parcela passa a "Bloqueto Bancário Outros Bancos". O 1 é "próprio banco" |
+| `GET /bills` com filtro que não acha nada | **404** "Resource not found", não lista vazia. Com resultado, 200 e `notes` em cada título; o filtro de data é pela emissão |
+| `documentIdentificationId` lido de volta | Vem com espaço à direita quando o código tem 3 letras ("PRV ") |
 
 Testes feitos em 6/nov/2026 no contrato de teste **CTP/28**: empresa 2 (BKM Incorporadora e Construtora S.A.), obra 13 (Escritório Central BKMSP), credor 27, item 1 "vb" a R$ 1,00 por unidade.
 
@@ -142,6 +154,25 @@ Código em `servicos/sienge-carga/` (`index.ts` e `logica.ts`; testes de `logica
 - Ao concluir, só a carga por emissão (`selectionType` I), sem filtro e com `startDate`/`endDate` chama `marcar_ausentes_pagar` (`marcaAusentes` em `logica.ts`); as outras concluem sem marcar nada.
 - **Primeira execução no `bkm_dev` [Testado, 17/nov/2026]:** 08h59 recusada com 401 (credencial; sem cabeçalho de cota, não gastou); 09h03 pedido aceito; um 502 do Sienge no andamento, refeito sozinho; 4 pedaços (3.243 + 889 da Muchmore, 3.537, 3.338, 643 linhas; o pedaço não chega a 8.192 linhas, o corte é por outro critério); concluída às 09h15. Gastou 5 das 20 chamadas de massa. 10.761 parcelas de 6.922 títulos, 11.204 rateios (todos somam 100%), 8.813 autorizações, 8.400 baixas, 6.239 movimentos. Batem com o arquivo de 16/11 (10.736 sem a Muchmore) mais 25 parcelas lançadas depois; os títulos 8300 a 8510 conferidos um a um.
 
-## 4.7 Envio ao Sienge [Desenhado]
+## 4.7 Envio ao Sienge [Construído, 17/nov/2026; testado de ponta a ponta na empresa 11; ainda não instalado]
 
-Fila no banco (pedido de envio com estado pendente, enviado, erro, e o id devolvido pelo Sienge), processada pelo adaptador no servidor, respeitando 200/min e com nova tentativa. Antes de criar título, procurar o mesmo credor + número no espelho e na fila. Credenciais lidas do Secret Manager do Google Cloud (não do Vault do Supabase, regra de portabilidade de 14/nov/2026). Nenhum desses componentes existe ainda.
+Pedido do Moises (17/nov/2026): "Faça a adaptação da escrita". Só o título a pagar de fornecedor ou avulso aprovado, com a forma de pagamento de cada parcela.
+
+**No banco** (migration `20261117000200_erp_envio_sienge.sql`; dicionário em `docs/erp.md`):
+
+- `erp.parcela_pagamentos`: PIX ou boleto de cada parcela, conferido no banco (chave pelo tipo; linha digitável pelos dígitos; o valor impresso no boleto, os 10 últimos dígitos, igual ao da parcela ou zero; a chave PIX por CPF/CNPJ igual ao documento do credor do título, ou de outra pessoa só com a justificativa da exceção em `pix_excecao`, S-125). Quem aprova vê os avisos de cada parcela em `erp.avisos_forma_pagamento(título)`: chave de e-mail, telefone ou aleatória (não é do documento do credor), exceção com a justificativa e chave nova para o credor (nunca usada num outro título dele que já tem id no Sienge). Ao entrar na fila, o título com chave nova gera o evento crítico `chave_pix_nova` (master sempre; regra padrão para a lista AF), com só as chaves novas. Trava no primeiro voto da alçada e quando o título entra na fila. O pedido ao Sienge confere tudo de novo, porque a parcela pode mudar na revisão.
+- `erp.sienge_centros` e `erp.sienge_contas`: de-para núcleo + centro → centro do Sienge e natureza + centro → conta do Sienge. Empresa e credor saem de `erp.codigos_externos` (`sienge`, `empresas` e `pessoas`).
+- `erp.sienge_envios`: a fila. `erp.sienge_enfileirar()` põe os aprovados; `erp.sienge_pedido(título)` monta o corpo do `POST /bills` e as parcelas, ou recusa dizendo o que falta; `erp.sienge_registrar(título, id)` guarda o id do Sienge na fila e em `codigos_externos`. Tudo só pelo sistema.
+- O corpo: `debtorId` (empresa), `creditorId`, documento (NFSE, NFE, FAT, BLT, GUIA, REC pelo tipo da nota), número (número-série, até 20), emissão, `billDate` = dia do lançamento, `baseDate` = competência, `dueDate` = primeiro vencimento, `indexId` 0, valor, `budgetCategories` agrupadas por centro e conta com 2 casas somando 100 (a diferença do arredondamento vai à maior linha) e `notes` começando com o **marcador** `ERP <id do título>`.
+
+**O programa** (`servicos/sienge-escrita/`): `envio.ts` fala com o Sienge, `fila.ts` cuida da fila, `index.ts` é a Edge Function `sienge-escrita` (pg_cron a cada minuto, `supabase/dev/sienge_escrita_agenda.sql`, chave `x-escrita-chave`). Cada chamada enfileira e envia **um** título vencido:
+
+1. **Reserva:** `update ... where titulo_id = (select ... for update skip locked)` adia a próxima tentativa em 15 minutos, para outra chamada não pegar o mesmo título (S-044).
+2. **Achar ou criar:** sem id na fila, procura no Sienge (`GET /bills` por empresa, credor, número e emissão até hoje) o título com o marcador. Achou: é o nosso (o programa caiu entre o POST e o registro) e não cria outro. Achou só título do mesmo credor e número **sem** o marcador: lançado fora do ERP, vai para `manual`. Não achou (404): `POST /bills`, lê o id no `Location` e registra **antes** de seguir.
+3. **Parcelas:** lê as do Sienge e compara com as nossas. Quantidade ou valor diferente: `manual` (o valor não se corrige pela API). Vencimento diferente: `PATCH` da parcela.
+4. **Pagamento:** `PATCH` PIX (sempre `isUsingCreditorData` N, chave com a máscara do Sienge) ou boleto (código de barras calculado da linha, `paymentTypeId` 1 se o banco do boleto é o de uma conta da empresa, senão 2). Sobrescreve, então repetir não duplica.
+5. Fim: `enviado`. Erro de rede, recusa do Sienge, 429 ou pedido recusado pelo banco: `erro`, nova tentativa em 1, 2, 4... minutos, até 6 horas; se o Sienge mandar `Retry-After` (429 ou 503), espera o maior dos dois. Recusa 4xx (menos 408 e 429) três vezes seguidas: `manual`, porque o pedido está errado e repetir não resolve. Divergência: `manual`, ninguém tenta de novo.
+
+Toda gravação passa por `gravarComTrava()`; em teste, a lista de "criados pelo teste" é a dos ids da fila, então um id errado nunca alcança título de fora dela. Cada `PATCH` custa uma leitura a mais (a trava lê a empresa no título). Um título de 3 parcelas gasta cerca de 12 chamadas.
+
+**Ainda não feito:** instalar a função e o pg_cron no `bkm_dev` (segredos e `grant erp_sistema` ao usuário da conexão); conferir antes do envio se a conta está liberada no centro (parâmetro 665; hoje o Sienge recusa e o título fica em `erro` com a mensagem); anexo do PDF; nota com retenção (falta a filial); aviso a quem lançou quando o envio vai para `erro` ou `manual`; tela da fila.
