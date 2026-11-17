@@ -143,7 +143,7 @@ Decisões do Moises de 16/nov/2026, ainda sem código. O detalhe está no [plano
 - ✅ **Empreendimento beneficiado**, em dois modos:
   - **Só gestão**: o custo fica na empresa que pagou e só aponta o empreendimento (caso do consórcio);
   - **A reembolsar**: o custo é da SPE. O sistema gera a conta a pagar da SPE para a holding, com a natureza original, e mostra o saldo a reembolsar de cada SPE, com aviso de atraso.
-- ✅ **PDV** é cadastrado com as SPEs que atende e o percentual fixo de cada uma, por vigência. Todo título do PDV se divide sozinho, e pode cair em mais de uma SPE. A natureza "Custo fixo de PDV" deixa de existir. Se a SPE alugar o PDV no nome dela, cada conta usa o centro PDV com a natureza normal: aluguel, condomínio, energia... O custo fixo do PDV sai de um filtro desse centro, com a abertura por conta. O histórico da conta 2010503 do Sienge vai para "Repasse de custo do PDV entre empresas", que serve só para o histórico.
+- ✅ **PDV** é cadastrado com as SPEs que atende e o percentual fixo de cada uma, por vigência. Todo título do PDV se divide sozinho pelos percentuais: entre núcleos da mesma empresa, por rateio; entre empresas diferentes, por repasse. A natureza "Custo fixo de PDV" deixa de existir. Se a SPE alugar o PDV no nome dela, cada conta usa o centro PDV com a natureza normal: aluguel, condomínio, energia... O custo fixo do PDV sai de um filtro desse centro, com a abertura por conta. O histórico da conta 2010503 do Sienge vai para "Repasse de custo do PDV entre empresas", que serve só para o histórico.
 
 ### Despesa paga por uma empresa do grupo em nome de outra
 
