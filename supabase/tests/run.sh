@@ -14,8 +14,20 @@ $RUN initdb -D "$DIR" -U postgres -A trust -E UTF8 --locale=C >/dev/null
 $RUN pg_ctl -D "$DIR" -o "-p $PORT -k /tmp" -l "$DIR/log" start -w >/dev/null
 PSQL="psql -h /tmp -p $PORT -U postgres -d postgres -v ON_ERROR_STOP=1 -q"
 $PSQL -f supabase/tests/shim_supabase.sql
+# Migrations do espelho do Sienge rodam no pior caso dos privilégios padrão do Supabase (tudo o que o
+# postgres cria nasce aberto aos papéis da API), para o teste provar que a migration fecha o que cria.
+PADRAO_ABERTO="alter default privileges for role postgres grant all on tables to anon, authenticated, service_role;
+alter default privileges for role postgres grant all on sequences to anon, authenticated, service_role;
+alter default privileges for role postgres grant all on functions to anon, authenticated, service_role;"
+PADRAO_FECHADO="alter default privileges for role postgres revoke all on tables from anon, authenticated, service_role;
+alter default privileges for role postgres revoke all on sequences from anon, authenticated, service_role;
+alter default privileges for role postgres revoke all on functions from anon, authenticated, service_role;"
 for f in supabase/migrations/*.sql; do
   echo "migration: $(basename "$f")"
-  $PSQL -f "$f"
+  case "$f" in
+    *sienge*) $PSQL -c "$PADRAO_ABERTO"; $PSQL -f "$f"; $PSQL -c "$PADRAO_FECHADO" ;;
+    *) $PSQL -f "$f" ;;
+  esac
 done
+$PSQL -f supabase/tests/sienge.sql 2>&1 | sed "s/^psql:[^ ]* NOTICE:  //" | grep -E "^(ok |# |FALHOU|TODOS)|ERROR"
 $PSQL -f supabase/tests/erp.sql 2>&1 | sed "s/^psql:[^ ]* NOTICE:  //" | grep -E "^(ok |# |FALHOU|TODOS)|ERROR"

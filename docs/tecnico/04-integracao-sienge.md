@@ -105,6 +105,20 @@ Três pernas, porque o aviso sozinho não basta:
 - Saldo, autorização e baixas das parcelas a pagar só vêm pela massa `/outcome`. Títulos a receber só se listam por cliente (usar a massa `/income`). Indexador só traz o último valor (guardar o de cada dia).
 - Primeira carga com todo o histórico: uma vez, aos poucos, fora do horário de uso.
 
+## 4.6.1 Programa de carga do histórico [Construído, 17/nov/2026; em teste no `bkm_dev`]
+
+Código em `servicos/sienge-carga/` (`index.ts` e `logica.ts`; testes de `logica.ts` em `logica.test.ts`, `node --test --experimental-strip-types`). Roda como Edge Function `sienge-carga` do Supabase, porque o banco e o Sienge são alcançáveis de lá. O pg_cron chama a função a cada minuto (`supabase/dev/sienge_carga_agenda.sql`, só no `bkm_dev`; não é migration, pela regra de portabilidade).
+
+- **Só lê o Sienge:** a única chamada de rede é `lerSienge`, sempre GET. Credencial nos segredos `SIENGE_USUARIO` e `SIENGE_SENHA` da função; a consulta gravada nunca leva credencial.
+- **Um passo por chamada:** pega a primeira carga pendente ou rodando e vencida (`for update skip locked`) e faz um passo do modo assíncrono da massa: pedir (`_async=true`, pedaços de 8.192), acompanhar o andamento a cada minuto, baixar cada pedaço (grava em `sienge_bruto` e carrega no espelho na mesma transação) e concluir (marca ausentes).
+- **Cota de massa:** guarda `X-Ratelimit-Remaining-Day` a cada resposta e para quando sobram 6 (`SIENGE_RESERVA_MASSA`), deixando-as para o CRM; volta às 00:05Z. Num 429, espera o `Retry-After`.
+- **Falhas:** pedido expirado (404 no assíncrono) recomeça do zero; "Failed" da massa espera 30 minutos; massa "Finished" sem pedaços é erro (não conclui); outro erro espera 5 minutos e, na 5ª tentativa, a carga fica em `erro`.
+- **Quem chama:** a função não pede JWT; confere o cabeçalho `x-carga-chave` contra o segredo `sienge_carga_chave` do Vault, em tempo constante.
+- **Custo da carga de todo o contas a pagar (2000 a 2026):** cerca de 7 chamadas de massa (1 pedido, 1 a 4 andamentos, 2 pedaços), das 20 do dia.
+- Um erro conta na carga daquele passo; um passo bem-sucedido zera as tentativas.
+- Ao concluir, só a carga por emissão (`selectionType` I), sem filtro e com `startDate`/`endDate` chama `marcar_ausentes_pagar` (`marcaAusentes` em `logica.ts`); as outras concluem sem marcar nada.
+- **Primeira execução no `bkm_dev` [Testado, 17/nov/2026]:** 08h59 recusada com 401 (credencial; sem cabeçalho de cota, não gastou); 09h03 pedido aceito; um 502 do Sienge no andamento, refeito sozinho; 4 pedaços (3.243 + 889 da Muchmore, 3.537, 3.338, 643 linhas; o pedaço não chega a 8.192 linhas, o corte é por outro critério); concluída às 09h15. Gastou 5 das 20 chamadas de massa. 10.761 parcelas de 6.922 títulos, 11.204 rateios (todos somam 100%), 8.813 autorizações, 8.400 baixas, 6.239 movimentos. Batem com o arquivo de 16/11 (10.736 sem a Muchmore) mais 25 parcelas lançadas depois; os títulos 8300 a 8510 conferidos um a um.
+
 ## 4.7 Envio ao Sienge [Desenhado]
 
 Fila no banco (pedido de envio com estado pendente, enviado, erro, e o id devolvido pelo Sienge), processada pelo adaptador no servidor, respeitando 200/min e com nova tentativa. Antes de criar título, procurar o mesmo credor + número no espelho e na fila. Credenciais lidas do Secret Manager do Google Cloud (não do Vault do Supabase, regra de portabilidade de 14/nov/2026). Nenhum desses componentes existe ainda.

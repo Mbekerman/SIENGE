@@ -31,4 +31,15 @@ jobs:
             sudo apt-get update -qq -o Acquire::Retries=3
             sudo apt-get install -y -qq postgresql-16
           fi
-      - run: bash supabase/tests/run.sh | tee saida.txt && grep -q "TODOS OS TESTES PASSARAM" saida.txt
+      - run: bash supabase/tests/run.sh | tee saida.txt && grep -q "TODOS OS TESTES DO ESPELHO PASSARAM" saida.txt && grep -q "TODOS OS TESTES PASSARAM" saida.txt
+
+  carga:
+    name: Programa de carga do Sienge (regras)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test --experimental-strip-types servicos/sienge-carga/logica.test.ts

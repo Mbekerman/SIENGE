@@ -65,6 +65,9 @@ Regra do Moises (8/nov/2026): controles, segurança da informação e SLA são a
 
 | Id | Gravidade | Onde | Desde |
 | --- | --- | --- | --- |
+| S-116 | Média (dados reais no `bkm_dev`) | Espelho do Sienge no banco de desenvolvimento | 17/nov/2026 |
+| S-115 | Média (desenho) | Credencial do Sienge como segredo da Edge Function | 17/nov/2026 |
+| S-114 | Baixa | Edge Function `sienge-carga` e chave do pg_cron | 17/nov/2026 |
 | S-092 | Baixa (API) | Funções `security definer` com EXECUTE que respondem sobre qualquer id | 15/nov/2026 |
 | S-068 | Média (desenho) | Janela da competência ancorada na emissão digitada | 14/nov/2026 |
 | S-050 | Baixa | Deploy do `bkm_dev` colado à mão | 14/nov/2026 |
@@ -123,6 +126,9 @@ Ainda não há código para revisar nestes pontos; ficam como requisito para que
 
 | Id | Gravidade | Falha | Correção | Conferido |
 | --- | --- | --- | --- | --- |
+| S-119 | Baixa (testes) | 7 de 17 mutações do espelho sobreviviam (janela, `selectionType`, resposta não processada, resposta não 200, travas de credencial juntas, Muchmore no carregar, revoke dos papéis da API), e corpo em lista pura entrava sem o filtro da Muchmore | Testes separados para cada trava; migration do espelho testada com privilégios padrão abertos (`run.sh`); lista pura e massa sem `data` recusadas | PR #67, 17/nov/2026: 18 mutações, 18 mortas |
+| S-118 | Baixa | O erro do passo caía na carga de menor id, e `tentativas` nunca voltava a zero | Erro na carga do passo (`cargaId`); sucesso zera `tentativas`; massa "Failed" também para na 5ª | PR #67, 17/nov/2026 (programa; sem teste automático do `index.ts`) |
+| S-117 | Média | `marcar_ausentes_pagar` marcava removido o que não foi: carga com filtro de empresa, centro ou obra; janela das colunas e não a pedida; cargas intercaladas | Recusa carga com filtro; janela de `startDate`/`endDate`; presença por carga em `sienge.pagar_presencas` | PR #67, 17/nov/2026: testes de filtro, janela (início e fim) e cargas intercaladas; mutações mortas |
 | S-113 | Média (testes) | Camada `bi`: 4 de 21 mutações passavam sem teste falhar (filtro de título com linha restrita em `f_pagamentos` e `f_titulo_etiquetas`, filtro de linha em `f_parcelas`, rascunho). | Testes novos; `estender_calendario` sem EXECUTE para authenticated. | 21 de 21 mortas; PR #54, `f53e51e`. |
 | S-112 | Baixa (desenho) | Quem lançava criava, renomeava e desativava qualquer etiqueta, inclusive as dos outros. | Por decisão do Moises, só AF, AD e o master; política e gatilho. | 8 de 8 mutações mortas; PR #53, `5d6d7d2`. |
 | S-111 | Média (testes) | Níveis da divisão e etiquetas: 21 de 48 mutações passavam sem teste falhar, inclusive subnível desativado, troca só do subnível e a leitura das etiquetas do título. | Testes novos. | 18 de 19 mortas na reconferência (a viva só adianta um erro que o `_aplicar` repete); PR #48, `e25982e`. |
@@ -276,3 +282,5 @@ Ainda não há código para revisar nestes pontos; ficam como requisito para que
 | 15/nov/2026 | PR #48, níveis da divisão e etiquetas (`b87e87a` a `e25982e`; 1110 testes; juntado em `dcefd5f`): 48 mutações, 21 vivas na primeira rodada (S-111), corrigidas; achada a S-112 (quem renomeia etiqueta; com o Moises). |
 | 15/nov/2026 | PR #53, etiquetas só por AF, AD e master (`6523d4d` e `5d6d7d2`; 1118 testes; juntado em `3c8295c`): 8 mutações, 1 viva na primeira rodada (AD sem teste), morta depois; S-112 corrigida. |
 | 15/nov/2026 | PR #54, camada `bi` (`2dd323d` a `f53e51e`; 1162 testes; juntado em `f8b8071`): 21 mutações (invoker, restrita, filtro de linha, calendário, grants, sinal da DRE, feriados), 4 vivas na primeira rodada (S-113), todas mortas depois. |
+| 17/nov/2026 | Espelho do Sienge (`sienge_bruto`, `sienge`; migration `20261117000100`) e programa de carga (`servicos/sienge-carga`, Edge Function): RLS forçado em todas as tabelas, política só para `sienge_carga` (sem login), nenhum privilégio para `anon`, `authenticated`, `service_role`, `authenticator` ou `PUBLIC`, nenhuma função `security definer`, bruto só insere, TRUNCATE recusado, consulta com credencial recusada no banco e no programa, cabeçalhos de autenticação nunca guardados, só GET ao Sienge, chamador conferido pela chave do Vault em tempo constante. Mutação: tirar a recusa de carga sem resposta (que marcaria todo o histórico como removido) é pega. CI ganha o job do programa (`actions/setup-node@v4`, Node 22, sem segredo) e passa a exigir a linha final do espelho. Abertas S-114, S-115 e S-116 | 33 do espelho + 9 do programa |
+| 17/nov/2026 | Revisão do PR #67 pela thread técnica: S-117 (média; ausente marcado com filtro, com a janela das colunas e com cargas intercaladas), S-118 (baixa; erro caía na carga de menor id e tentativas nunca zerava), S-119 (baixa; 7 de 17 mutações vivas) e corpo em lista pura gravado cru. Corrigidas no mesmo PR: presença por carga (`sienge.pagar_presencas`), recusa de filtro, janela do pedido, erro na carga do passo, tentativas zeradas no sucesso, lista pura e massa sem `data` recusadas, migration testada no pior caso dos privilégios padrão do Supabase. 18 mutações, 18 mortas | 46 do espelho + 9 do programa |
