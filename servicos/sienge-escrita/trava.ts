@@ -1,34 +1,55 @@
-// Trava de empresa para toda gravação no Sienge (pedido do Moises, 17/nov/2026).
+// Trava de toda gravação no Sienge (pedido do Moises, 17/nov/2026; S-120 e S-121 aprovadas por ele no mesmo dia).
 //
 // O usuário de API do Sienge não tem trava por empresa: a mesma credencial grava em todas,
-// inclusive na Muchmore (ver docs/tecnico/04-integracao-sienge.md, "Área de testes"). Por isso
-// a trava mora no nosso código. Todo POST, PUT, PATCH ou DELETE ao Sienge passa antes por
-// conferirGravacao(); se ela recusar, a chamada não sai.
+// inclusive na Muchmore (docs/tecnico/04-integracao-sienge.md, "Área de testes"). Por isso a trava
+// mora no nosso código. Todo POST, PUT, PATCH ou DELETE ao Sienge passa antes por gravarComTrava();
+// se ela recusar, a chamada não sai.
 //
-// Regra:
-// - Fora de produção (desenvolvimento, teste, qualquer valor diferente de "producao", inclusive
-//   ambiente não informado), só se grava nas empresas de teste: hoje só a 11, "BKM TESTES - NAO USAR".
-// - Em produção, nunca se grava numa empresa de teste nem numa empresa fora do ERP (Muchmore, 1).
-// - A empresa vem do corpo (debtorId ou companyId) ou é informada por quem chama, quando a rota
-//   não a traz no corpo (PATCH de parcela, anexo...). Sem empresa conhecida, recusa.
+// Regras:
+// 1. Ambiente: só a palavra exata "producao" é produção. Qualquer outro valor, inclusive ausente, é teste.
+// 2. Credor (rotas /creditors): o credor vale para todas as empresas, então não tem empresa para conferir.
+//    - PIX e conta bancária de credor nunca se gravam pela API, em ambiente nenhum (regra de 6/nov/2026).
+//    - Em teste, nenhuma gravação em credor. O credor de teste é criado à mão, pela tela.
+//    - Em produção, só a inclusão de credor novo (POST /creditors); o resto do cadastro é pela tela.
+// 3. Registro que já existe (rota com id: parcela, PIX ou boleto da parcela, anexo, autorizar, DELETE...):
+//    a empresa vem do próprio registro, lida no Sienge antes da gravação (lerEmpresa), nunca só do que
+//    quem chama declara. Se quem chama também informar a empresa e ela divergir, recusa. Recurso sem
+//    leitura conhecida recusa (hoje só /bills tem). Em teste, o registro também tem de estar na lista
+//    dos criados pelo próprio teste (criadosPeloTeste), para um id digitado errado não alcançar
+//    um registro de outra empresa nem um registro antigo da 11.
+// 4. Registro novo (POST na coleção, sem id): a empresa vem do corpo (debtorId ou companyId).
+//    Em teste, o credor do corpo (creditorId) tem de ser um credor de teste.
+// 5. Empresa: em teste, só as empresas de teste (hoje a 11). Em produção, nunca as de teste nem as
+//    fora do ERP (Muchmore, 1). Sem empresa conhecida, ou com empresas divergentes, recusa.
 //
-// Funções puras, sem rede nem banco (testadas em trava.test.ts).
+// conferirGravacao() é pura (testada em trava.test.ts); gravarComTrava() faz a leitura da empresa
+// do registro com a função que recebe e só então chama conferirGravacao().
 
 export const EMPRESAS_TESTE = [11] as const;
 export const EMPRESAS_FORA = [1] as const; // Muchmore: não entra no ERP (Moises, 15/11/2026)
 
-export type Ambiente = 'producao' | string | undefined;
+export type Ambiente = string | undefined;
 
 export type Pedido = {
   metodo: string;
-  caminho: string;
+  caminho: string; // sem a base, ex.: /bills/8547/installments/1/payment-information/pix
   corpo?: unknown;
-  empresa?: number | null; // obrigatória quando o corpo não traz debtorId nem companyId
+  empresa?: number | null; // a que quem chama declara; nunca basta sozinha num registro existente
+};
+
+export type Contexto = {
+  empresaDoRegistro?: number | null; // lida no Sienge para o registro do caminho
+  criadosPeloTeste?: ReadonlySet<string>; // chaves "recurso:id", ex.: "bills:8547"
+  credoresTeste?: ReadonlySet<number>;
 };
 
 export type Decisao = { ok: true; empresa: number | null } | { ok: false; motivo: string };
 
 const LEITURA = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+export function ehProducao(ambiente: Ambiente): boolean {
+  return ambiente === 'producao';
+}
 
 function inteiro(v: unknown): number | null {
   if (typeof v === 'number' && Number.isInteger(v)) return v;
@@ -36,8 +57,18 @@ function inteiro(v: unknown): number | null {
   return null;
 }
 
-// Empresa do corpo: debtorId (títulos a pagar) ou companyId (o resto). Se o corpo trouxer as
-// duas e elas divergirem, ou se o corpo for uma lista com empresas diferentes, devolve 'conflito'.
+function semConsulta(caminho: string): string {
+  return caminho.split('?')[0].replace(/\/+$/, '');
+}
+
+// Recurso e id do registro do caminho (/bills/8547/... → bills, 8547). Sem id → registro novo.
+export function registroDoCaminho(caminho: string): { recurso: string; id: string } | null {
+  const partes = semConsulta(caminho).split('/').filter(Boolean);
+  if (partes.length < 2) return null;
+  return { recurso: partes[0], id: partes[1] };
+}
+
+// Empresa do corpo: debtorId (títulos a pagar) ou companyId (o resto). Divergente ou ilegível → 'conflito'.
 export function empresaDoCorpo(corpo: unknown): number | null | 'conflito' {
   const itens = Array.isArray(corpo) ? corpo : [corpo];
   let achada: number | null = null;
@@ -55,9 +86,43 @@ export function empresaDoCorpo(corpo: unknown): number | null | 'conflito' {
   return achada;
 }
 
-export function conferirGravacao(p: Pedido, ambiente: Ambiente): Decisao {
+function credoresDoCorpo(corpo: unknown): (number | null)[] {
+  const itens = Array.isArray(corpo) ? corpo : [corpo];
+  const out: (number | null)[] = [];
+  for (const it of itens) {
+    if (it && typeof it === 'object' && 'creditorId' in (it as object)) out.push(inteiro((it as Record<string, unknown>).creditorId));
+  }
+  return out;
+}
+
+function conferirEmpresa(empresa: number, ambiente: Ambiente): Decisao {
+  const teste = (EMPRESAS_TESTE as readonly number[]).includes(empresa);
+  if (ehProducao(ambiente)) {
+    if (teste) return { ok: false, motivo: `empresa ${empresa} é de teste; produção não grava nela` };
+    if ((EMPRESAS_FORA as readonly number[]).includes(empresa)) return { ok: false, motivo: `empresa ${empresa} está fora do ERP` };
+    return { ok: true, empresa };
+  }
+  if (!teste) return { ok: false, motivo: `fora de produção só se grava nas empresas de teste (${EMPRESAS_TESTE.join(', ')}); pedida a ${empresa}` };
+  return { ok: true, empresa };
+}
+
+function conferirCredor(p: Pedido, metodo: string, ambiente: Ambiente): Decisao {
+  const partes = semConsulta(p.caminho).split('/').filter(Boolean);
+  if (partes.some((x) => x === 'pix-informations' || x === 'bank-informations')) {
+    return { ok: false, motivo: 'PIX e conta bancária de credor não se gravam pela API' };
+  }
+  if (!ehProducao(ambiente)) return { ok: false, motivo: 'em teste não se grava em credor (o credor de teste é criado pela tela)' };
+  if (metodo === 'POST' && partes.length === 1) return { ok: true, empresa: null };
+  return { ok: false, motivo: `${metodo} ${p.caminho}: só a inclusão de credor novo é feita pela API` };
+}
+
+export function conferirGravacao(p: Pedido, ambiente: Ambiente, ctx: Contexto = {}): Decisao {
   const metodo = p.metodo.toUpperCase();
   if (LEITURA.has(metodo)) return { ok: true, empresa: null };
+
+  const reg = registroDoCaminho(p.caminho);
+  const recurso = reg?.recurso ?? semConsulta(p.caminho).split('/').filter(Boolean)[0];
+  if (recurso === 'creditors') return conferirCredor(p, metodo, ambiente);
 
   const doCorpo = empresaDoCorpo(p.corpo);
   if (doCorpo === 'conflito') return { ok: false, motivo: 'empresa ilegível ou divergente no corpo' };
@@ -65,19 +130,56 @@ export function conferirGravacao(p: Pedido, ambiente: Ambiente): Decisao {
   if (doCorpo !== null && informada !== null && doCorpo !== informada) {
     return { ok: false, motivo: `empresa do corpo (${doCorpo}) diferente da informada (${informada})` };
   }
-  const empresa = doCorpo ?? informada;
-  if (empresa === null) return { ok: false, motivo: `${metodo} ${p.caminho} sem empresa conhecida` };
 
-  const teste = (EMPRESAS_TESTE as readonly number[]).includes(empresa);
-  if (ambiente === 'producao') {
-    if (teste) return { ok: false, motivo: `empresa ${empresa} é de teste; produção não grava nela` };
-    if ((EMPRESAS_FORA as readonly number[]).includes(empresa)) {
-      return { ok: false, motivo: `empresa ${empresa} está fora do ERP` };
+  let empresa: number | null;
+  if (reg) {
+    // registro que já existe: vale a empresa lida nele
+    const doRegistro = ctx.empresaDoRegistro ?? null;
+    if (doRegistro === null) return { ok: false, motivo: `${metodo} ${p.caminho}: empresa do registro não lida no Sienge` };
+    const declarada = doCorpo ?? informada;
+    if (declarada !== null && declarada !== doRegistro) {
+      return { ok: false, motivo: `empresa declarada (${declarada}) diferente da do registro (${doRegistro})` };
     }
-    return { ok: true, empresa };
+    if (!ehProducao(ambiente) && !(ctx.criadosPeloTeste?.has(`${reg.recurso}:${reg.id}`) ?? false)) {
+      return { ok: false, motivo: `${reg.recurso} ${reg.id} não foi criado pelo teste` };
+    }
+    empresa = doRegistro;
+  } else {
+    empresa = doCorpo ?? informada;
+    if (empresa === null) return { ok: false, motivo: `${metodo} ${p.caminho} sem empresa conhecida` };
+    if (!ehProducao(ambiente)) {
+      for (const c of credoresDoCorpo(p.corpo)) {
+        if (c === null || !(ctx.credoresTeste?.has(c) ?? false)) return { ok: false, motivo: `credor ${c ?? '?'} não é credor de teste` };
+      }
+    }
   }
-  if (!teste) {
-    return { ok: false, motivo: `fora de produção só se grava nas empresas de teste (${EMPRESAS_TESTE.join(', ')}); pedida a ${empresa}` };
+  return conferirEmpresa(empresa, ambiente);
+}
+
+// Leitura da empresa de um registro existente, por recurso. Recurso fora da lista → sem leitura → recusa.
+export const LEITURA_EMPRESA: Record<string, { caminho: (id: string) => string; campo: string }> = {
+  bills: { caminho: (id) => `/bills/${encodeURIComponent(id)}`, campo: 'debtorId' },
+};
+
+export type LerJson = (caminho: string) => Promise<unknown>;
+
+export async function gravarComTrava<T>(
+  p: Pedido,
+  ambiente: Ambiente,
+  ler: LerJson,
+  gravar: () => Promise<T>,
+  ctx: Omit<Contexto, 'empresaDoRegistro'> = {},
+): Promise<T> {
+  let empresaDoRegistro: number | null = null;
+  const reg = registroDoCaminho(p.caminho);
+  if (!LEITURA.has(p.metodo.toUpperCase()) && reg && reg.recurso !== 'creditors') {
+    const l = LEITURA_EMPRESA[reg.recurso];
+    if (l) {
+      const r = await ler(l.caminho(reg.id));
+      empresaDoRegistro = r && typeof r === 'object' ? inteiro((r as Record<string, unknown>)[l.campo]) : null;
+    }
   }
-  return { ok: true, empresa };
+  const d = conferirGravacao(p, ambiente, { ...ctx, empresaDoRegistro });
+  if (!d.ok) throw new Error(`trava do Sienge: ${d.motivo}`);
+  return await gravar();
 }

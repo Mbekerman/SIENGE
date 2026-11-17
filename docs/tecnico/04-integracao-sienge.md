@@ -66,7 +66,13 @@ Fonte de verdade da API: os YAMLs em `Mbekerman/sienge-api-docs/oficial/yaml-fil
 - Cota: três vezes, entre 11h22 e 11h27, a primeira chamada voltou 429 com `X-Ratelimit-Remaining-Minute: 0`. Outro sistema, provavelmente o CRM, esgota os 200 por minuto. O cliente tem de esperar o `Ratelimit-Reset` e tentar de novo, com a idempotência da S-021.
 - A API não apaga título: o 8547 fica na empresa 11 até alguém apagar pela tela.
 
-**Trava de empresa no código (17/nov/2026, pedido do Moises).** Como a credencial grava em qualquer empresa, toda gravação ao Sienge (POST, PUT, PATCH, DELETE) passa antes por `conferirGravacao()` em `servicos/sienge-escrita/trava.ts`, e a chamada não sai se ela recusar. Fora de produção (variável de ambiente diferente de `producao`, inclusive ausente) só grava nas empresas de teste (hoje só a 11). Em produção recusa a empresa de teste e as empresas fora do ERP (Muchmore, 1). A empresa vem do `debtorId` ou `companyId` do corpo, ou é informada por quem chama quando a rota não a traz (PATCH de parcela, anexo). Sem empresa conhecida, ou com empresas divergentes, recusa. O adaptador do passo 1 ainda não existe: quando existir, todo envio dele passa por essa função (testes em `trava.test.ts`, no CI).
+**Trava de gravação no código (17/nov/2026, pedido do Moises; S-120 e S-121 aprovadas por ele).** Como a credencial grava em qualquer empresa, toda gravação ao Sienge (POST, PUT, PATCH, DELETE e qualquer método que não seja leitura) passa antes por `gravarComTrava()` em `servicos/sienge-escrita/trava.ts`, e a chamada não sai se ela recusar. Só a palavra exata `producao` é produção; qualquer outro valor, inclusive ausente, é teste.
+- **Empresa:** em teste, só as empresas de teste (hoje a 11). Em produção, nunca a 11 nem a Muchmore (1). Sem empresa conhecida ou com empresas divergentes, recusa.
+- **Registro novo** (POST na coleção): a empresa vem do corpo (`debtorId` ou `companyId`). Em teste, o `creditorId` tem de ser um credor de teste, criado à mão pela tela.
+- **Registro que já existe** (rota com id: parcela, PIX ou boleto da parcela, anexo, autorizar, DELETE): a empresa é lida no próprio registro no Sienge antes da gravação (hoje só `/bills`, pelo `debtorId`), nunca só a declarada por quem chama. Recurso sem leitura conhecida recusa. Em teste, o registro também tem de estar na lista dos criados pelo próprio teste, para um id digitado errado não alcançar outro título.
+- **Credor:** PIX e conta bancária de credor nunca se gravam pela API, em ambiente nenhum. Em teste, nenhuma gravação em credor. Em produção, só a inclusão de credor novo (`POST /creditors`).
+
+O adaptador do passo 1 ainda não existe: quando existir, todo envio dele passa por essa função (testes em `trava.test.ts`, no CI).
 
 Testes feitos em 6/nov/2026 no contrato de teste **CTP/28**: empresa 2 (BKM Incorporadora e Construtora S.A.), obra 13 (Escritório Central BKMSP), credor 27, item 1 "vb" a R$ 1,00 por unidade.
 
