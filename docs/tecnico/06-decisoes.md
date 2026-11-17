@@ -2,6 +2,13 @@
 
 Decisões que mudam a arquitetura ou o código, da mais recente para a mais antiga. Quem decide é o Moises; "proposta" é sugestão ainda não confirmada por ele. Decisões de negócio detalhadas (regras para o usuário) ficam no manual do usuário; aqui só o que o desenvolvedor precisa saber.
 
+## 17/nov/2026
+
+- **Carga de teste do histórico com dados reais no `bkm_dev`** (Moises, 17/nov, 08h43: "quero colocar o programa rodando em teste agora, em desenvolvimento, pra depois subirmos pra produção"). É exceção à regra de 14/nov de só dados de teste no `bkm_dev` (ver S-116). A carga na produção precisa de outro ok do Moises.
+- **Programa de carga como Edge Function chamada pelo pg_cron** (proposta, por ora só no desenvolvimento): o ambiente do Claude não alcança o Supabase pela rede e não há conta do Google Cloud ligada. Na produção, o mesmo código pode rodar em outro lugar (Cloud Run com Cloud Scheduler); a regra de negócio ficou no banco e em `logica.ts`.
+- **Espelho guarda o original do Sienge, sem tradução:** conta e centro de custo originais em cada rateio; o de-para para naturezas e centros fica na camada de cima (thread do de-para). O que estiver mal classificado entra como está.
+- **Muchmore (empresa 1) fica de fora** já na gravação do bruto (Moises, 15/nov/2026).
+
 ## 16/nov/2026
 
 Decisões do Moises, ainda sem código (relatadas pela thread do de-para):

@@ -65,6 +65,9 @@ Regra do Moises (8/nov/2026): controles, segurança da informação e SLA são a
 
 | Id | Gravidade | Onde | Desde |
 | --- | --- | --- | --- |
+| S-116 | Média (dados reais no `bkm_dev`) | Espelho do Sienge no banco de desenvolvimento | 17/nov/2026 |
+| S-115 | Média (desenho) | Credencial do Sienge como segredo da Edge Function | 17/nov/2026 |
+| S-114 | Baixa | Edge Function `sienge-carga` e chave do pg_cron | 17/nov/2026 |
 | S-092 | Baixa (API) | Funções `security definer` com EXECUTE que respondem sobre qualquer id | 15/nov/2026 |
 | S-068 | Média (desenho) | Janela da competência ancorada na emissão digitada | 14/nov/2026 |
 | S-050 | Baixa | Deploy do `bkm_dev` colado à mão | 14/nov/2026 |
@@ -276,3 +279,4 @@ Ainda não há código para revisar nestes pontos; ficam como requisito para que
 | 15/nov/2026 | PR #48, níveis da divisão e etiquetas (`b87e87a` a `e25982e`; 1110 testes; juntado em `dcefd5f`): 48 mutações, 21 vivas na primeira rodada (S-111), corrigidas; achada a S-112 (quem renomeia etiqueta; com o Moises). |
 | 15/nov/2026 | PR #53, etiquetas só por AF, AD e master (`6523d4d` e `5d6d7d2`; 1118 testes; juntado em `3c8295c`): 8 mutações, 1 viva na primeira rodada (AD sem teste), morta depois; S-112 corrigida. |
 | 15/nov/2026 | PR #54, camada `bi` (`2dd323d` a `f53e51e`; 1162 testes; juntado em `f8b8071`): 21 mutações (invoker, restrita, filtro de linha, calendário, grants, sinal da DRE, feriados), 4 vivas na primeira rodada (S-113), todas mortas depois. |
+| 17/nov/2026 | Espelho do Sienge (`sienge_bruto`, `sienge`; migration `20261117000100`) e programa de carga (`servicos/sienge-carga`, Edge Function): RLS forçado em todas as tabelas, política só para `sienge_carga` (sem login), nenhum privilégio para `anon`, `authenticated`, `service_role`, `authenticator` ou `PUBLIC`, nenhuma função `security definer`, bruto só insere, TRUNCATE recusado, consulta com credencial recusada no banco e no programa, cabeçalhos de autenticação nunca guardados, só GET ao Sienge, chamador conferido pela chave do Vault em tempo constante. Mutação: tirar a recusa de carga sem resposta (que marcaria todo o histórico como removido) é pega. CI ganha o job do programa (`actions/setup-node@v4`, Node 22, sem segredo) e passa a exigir a linha final do espelho. Abertas S-114, S-115 e S-116 | 33 do espelho + 9 do programa |

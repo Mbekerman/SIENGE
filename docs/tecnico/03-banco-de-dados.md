@@ -92,9 +92,22 @@ Enquanto nenhum banco de produção tiver recebido estas migrations, elas podem 
 
 O mesmo modelo está nos PRs do BKM Terrenos (#243) e do monitor de mercado (#10).
 
-## 3.2 Esquemas `sienge_bruto` e `sienge` [Desenhado, aprovado em 7/nov/2026]
+## 3.2 Esquemas `sienge_bruto` e `sienge` [Construído para contas a pagar, 17/nov/2026; o resto Desenhado, aprovado em 7/nov/2026]
 
-Desenho completo: [Banco espelho do Sienge](https://claude.ai/artifact/EgDt6HJJREERJBsYKrvLsE). Resumo do que vale para quem for construir:
+### O que existe (migration `20261117000100_sienge_espelho.sql`, testes em `supabase/tests/sienge.sql`, 33 testes)
+
+- `sienge_bruto.respostas`: cada resposta do Sienge inteira (`corpo` jsonb), com a consulta (sem credencial; o banco recusa consulta com `senha`, `password`, `authorization`, `token` ou `usuario`), os cabeçalhos de cota, o `sha256`, quantas linhas e quantas ficaram de fora. Só insere; a única coluna que muda é `processado_em`.
+- `sienge.empresas_fora`: empresas do Sienge que não entram (hoje a 1, Muchmore, decisão do Moises de 15/nov/2026). `sienge.gravar_resposta` tira as linhas delas antes de gravar (por `companyId` ou `debtorId`).
+- `sienge.cargas` (fila das cargas, com o pedido assíncrono, pedaços lidos, tentativas, último erro e `retomar_depois`) e `sienge.cota_api` (última cota lida, por tipo).
+- Contas a pagar pela massa `/outcome`: `pagar_parcelas` (chave título + parcela), `pagar_rateios` (conta do plano financeiro e centro de custo **originais** do Sienge, com o percentual), `pagar_rateios_obra`, `pagar_rateios_departamento`, `pagar_autorizacoes`, `pagar_baixas` (chave pela ordem da baixa, porque o `sequencialNumber` do Sienge se repete) e `pagar_baixa_movimentos`. O que não vira coluna fica em `dados`.
+- `sienge.carregar_parcelas_pagar(resposta)`: compara pela impressão `md5`; o que mudou vai antes para `sienge.historico` (só insere) e a parcela é regravada com os filhos. Devolve novas, mudadas e iguais.
+- `sienge.marcar_ausentes_pagar(carga)`: depois de uma carga por emissão (`selectionType` I) concluída e inteira, marca `removido_em` nas parcelas da janela que não vieram. Recusa carga sem nenhuma resposta. Nada se apaga.
+- Segurança: RLS forçado em todas as tabelas, política só para o papel `sienge_carga` (sem login), nenhum privilégio para os papéis da API do Supabase, TRUNCATE recusado por gatilho.
+- A classificação (de-para para as naturezas e centros do `erp`) **não** mora aqui: o espelho guarda o que o Sienge tem, inclusive o que estiver mal classificado.
+
+### Desenho completo
+
+[Banco espelho do Sienge](https://claude.ai/artifact/EgDt6HJJREERJBsYKrvLsE). Resumo do que vale para quem for construir:
 
 - `sienge_bruto`: a resposta de cada chamada, inteira, com data e hora. Nunca se altera; serve para reprocessar.
 - `sienge`: cerca de 60 tabelas em 6 grupos (cadastros básicos, contas a pagar, suprimentos, engenharia, comercial e contas a receber, bancos e contabilidade). Cada tabela usa **os nomes da API** (minúsculas, com `_`), as chaves do Sienge e os campos principais (chaves, ligações, datas, valores, situação) em colunas; o resto num JSON da linha.

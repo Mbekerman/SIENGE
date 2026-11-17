@@ -59,6 +59,8 @@ Nenhum valor de segredo é escrito no repositório, em documento ou no chat.
 | --- | --- | --- | --- |
 | Usuário e senha da API do Sienge | Autenticação Basic nas chamadas à API | Segredo do tipo **Basic** no ambiente de nuvem do Claude (Project settings › ambiente), restrito ao host `api.sienge.com.br` e ao prefixo `/bkmincorporadora/`. O proxy do ambiente injeta a autenticação; a senha nunca passa pela sessão | Vault do Supabase, lido só pelo adaptador **[Desenhado]** |
 | Token do webhook do Sienge | Conferir que o aviso veio do Sienge | Não criado | Secret Manager do Google Cloud (regra de portabilidade de 14/nov; não o Vault do Supabase). A documentação não diz como o token chega ao nosso servidor: testar ao cadastrar o primeiro webhook |
+| `SIENGE_USUARIO`, `SIENGE_SENHA` (teste da carga) | GET do programa de carga do histórico | Segredos da Edge Function `sienge-carga` no `bkm_dev` (Edge Functions › Secrets), criados pelo Moises em 17/nov/2026 | Cofre do projeto de produção do ERP (ver S-115) |
+| `sienge_carga_chave` | Chave com que o pg_cron chama a função `sienge-carga` | Vault do `bkm_dev`, gerada aleatória pelo próprio SQL (nunca escrita em lugar nenhum) | Idem na produção |
 | Chaves do Supabase, do Google e de leitura de PDF por IA | | Não criadas | A definir com o servidor |
 
 ### Dados da conta de API do Sienge (sem segredo)

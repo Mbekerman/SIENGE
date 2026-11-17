@@ -12,6 +12,8 @@
 | Gravar `tax-information` muda o valor retido do título? | Se impostos podem ser completados depois da liberação | 6/nov |
 | Como a BKM paga hoje (remessa, integração bancária, internet banking)? | O que o sistema enxerga entre autorizado e pago | 6/nov |
 | Qual é o CRM e como ligar a venda dele ao contrato de venda do Sienge (`externalId`?) | Esquemas `crm` e a ponte de vendas | 6/nov |
+| Carga do histórico na produção: onde roda o programa (Edge Function do projeto do ERP ou Cloud Run) e o ok do Moises | Passo da carga real | 17/nov |
+| Os 104 recursos restantes do histórico (cerca de 45 mil chamadas REST no pacote Start) e a cópia do banco pela Softplan | Plano no doc "Histórico do Sienge: inventário e plano de carga" | 15/nov |
 | Pagamento de competência já fechada: travar ou lançar no primeiro mês aberto? | Regra no `erp` | 7/nov |
 | As 4 divergências da árvore em relação à viabilidade (impostos em Deduções, custo de capital só orçado, taxas de gestão intercompany, ITBI e registro de vendas em Comerciais) | Carga inicial (o v0 usa a proposta) | 7/nov |
 | Onde fica o fluxo de aprovação do contas a pagar (esquema `pagar` do plano ou `erp`) | Organização dos esquemas | 7/nov |
