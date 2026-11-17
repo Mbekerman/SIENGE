@@ -25,6 +25,10 @@ function banco(item: ItemFila | null, ped: PedidoTitulo | Error = pedido(), conf
     terminar: async (_t, r) => { fim.push(r); },
     pegarConferencia: async () => conferir,
     marcarApagado: async (id) => { apagados.push(id); },
+    pegarCruzamento: async () => null,
+    prvNossas: async () => [],
+    recriarPrv: async () => { throw new Error('não recria'); },
+    terminarCruzamento: async () => { throw new Error('não cruza'); },
   };
   return { b, fim, reg, apagados };
 }
@@ -149,6 +153,9 @@ test('banco: todo passo roda numa transação como erp_sistema', async () => {
     if (/erp\.sienge_pegar_conferencia\(\)/.test(partes.join(''))) return Promise.resolve([{ item_id: T, sienge_id: 7 }]);
     if (/erp\.sienge_ids\(\)/.test(partes.join(''))) return Promise.resolve([{ sienge_id: 5 }]);
     if (/erp\.sienge_pedido_item/.test(partes.join(''))) return Promise.resolve([{ p: pedido() }]);
+    if (/erp\.sienge_pegar_cruzamento\(\)/.test(partes.join(''))) return Promise.resolve([{ empresa_sienge: 11, desde: '2026-11-01' }]);
+    if (/erp\.sienge_prv_nossas/.test(partes.join(''))) return Promise.resolve([{ sienge_id: 7, previsao_id: T, esperada: true }]);
+    if (/erp\.sienge_terminar_cruzamento/.test(partes.join(''))) return Promise.resolve([{ n: 3 }]);
     return Promise.resolve([]);
   };
   const sql = { begin: async (f: (t: unknown) => Promise<unknown>) => { atual = []; log.push(atual); return await f(tx); } };
@@ -161,9 +168,14 @@ test('banco: todo passo roda numa transação como erp_sistema', async () => {
   await bp.terminar(T, { situacao: 'erro', erro: 'x', tentativas: 1, proxima: new Date() });
   assert.deepEqual(await bp.pegarConferencia(), { item_id: T, sienge_id: 7 });
   await bp.marcarApagado(T);
-  assert.equal(log.length, 8);
+  assert.deepEqual(await bp.pegarCruzamento(), { empresa: 11, desde: '2026-11-01' });
+  assert.deepEqual(await bp.prvNossas(11), [{ sienge_id: 7, previsao_id: T, esperada: true }]);
+  await bp.recriarPrv(T, 7, 'm');
+  assert.equal(await bp.terminarCruzamento(11, [], {}), 3);
+  assert.equal(log.length, 12);
   const sqls = log.map((p) => p[1]);
-  for (const f of ['sienge_enfileirar', 'sienge_pegar()', 'sienge_pedido_item', 'sienge_registrar_item', 'sienge_ids()', 'sienge_terminar', 'sienge_pegar_conferencia()', 'sienge_marcar_apagado'])
+  for (const f of ['sienge_enfileirar', 'sienge_pegar()', 'sienge_pedido_item', 'sienge_registrar_item', 'sienge_ids()', 'sienge_terminar', 'sienge_pegar_conferencia()', 'sienge_marcar_apagado',
+                   'sienge_pegar_cruzamento()', 'sienge_prv_nossas', 'sienge_recriar_prv', 'sienge_terminar_cruzamento'])
     assert.ok(sqls.some((q) => q.includes(`erp.${f}`)), f);
   for (const passo of log) assert.equal(passo[0], 'set local role erp_sistema');
 });
@@ -225,4 +237,110 @@ test('fila vazia confere a linha PRV a apagar: 404 marca apagada; outro erro nã
   const h500: Http = { ler: async () => { throw new ErroSienge(500, 'fora do ar', null); }, enviar: async () => { throw new Error('não grava'); } };
   assert.equal((await processarUm(caiu.b, h500, cfg)).passo, 'nada a fazer');
   assert.deepEqual(caiu.apagados, []);
+});
+
+// Cruzamento: fila vazia e nada a conferir
+function cruzamento(nossas: { sienge_id: number; previsao_id: string; esperada: boolean }[]) {
+  const recriadas: [string, number][] = [];
+  const fins: { empresa: number; estranhas: unknown[]; resumo: Record<string, number>; erro?: string | null }[] = [];
+  const x = banco(null);
+  x.b.pegarCruzamento = async () => ({ empresa: 11, desde: '2026-11-01' });
+  x.b.prvNossas = async () => nossas;
+  x.b.recriarPrv = async (p, s) => { recriadas.push([p, s]); };
+  x.b.terminarCruzamento = async (empresa, estranhas, resumo, erro) => { fins.push({ empresa, estranhas, resumo, erro }); return estranhas.length; };
+  return { b: x.b, recriadas, fins };
+}
+const P1 = '00000000-0000-0000-0000-0000000000b1', P2 = '00000000-0000-0000-0000-0000000000b2', P3 = '00000000-0000-0000-0000-0000000000b3';
+
+test('cruzamento: recria a esperada que sumiu (fora da lista e 404) e aponta as estranhas', async () => {
+  const c = cruzamento([
+    { sienge_id: 7001, previsao_id: P1, esperada: true },  // na lista: fica
+    { sienge_id: 7002, previsao_id: P2, esperada: true },  // fora da lista, 404: recria
+    { sienge_id: 7003, previsao_id: P3, esperada: true },  // fora da lista, mas o GET acha: não mexe
+    { sienge_id: 7004, previsao_id: P1, esperada: false }, // trocada/apagar: conhecida, não é estranha
+    { sienge_id: 7005, previsao_id: P3, esperada: false }, // não esperada e fora da lista: nem consulta
+    { sienge_id: 7006, previsao_id: P3, esperada: true },  // fora da lista, GET com 500: não mexe
+  ]);
+  const lidos: string[] = [];
+  const h: Http = {
+    ler: async (q) => {
+      lidos.push(q);
+      if (q.startsWith('/bills?')) return { resultSetMetadata: { total: 4 }, results: [
+        { id: 7001, documentNumber: 'PRV-1', notes: `ERP ${P1} · Previsão` },
+        { id: 7004, documentNumber: 'PRV-4' },
+        { id: 8000, documentNumber: 'X', issueDate: '2026-10-01', totalInvoiceAmount: 5, notes: 'lançada à mão' },
+        { id: 8001, documentNumber: 'PRV-9', notes: `ERP ${P2} · Previsão` },
+      ] };
+      if (q === '/bills/7002') throw new ErroSienge(404, 'não existe', null);
+      if (q === '/bills/7003') return { id: 7003 };
+      if (q === '/bills/7006') throw new ErroSienge(500, 'fora do ar', null);
+      throw new Error(q);
+    },
+    enviar: async () => { throw new Error('cruzamento não grava no Sienge'); },
+  };
+  const r = await processarUm(c.b, h, cfg);
+  assert.deepEqual(r, { passo: 'cruzado', empresa: 11, lidas: 4, recriadas: 1, estranhas: 2, novas: 2, enfileirados: 1 });
+  assert.deepEqual(c.recriadas, [[P2, 7002]]);
+  const q = new URLSearchParams(lidos[0].split('?')[1]);
+  assert.deepEqual([q.get('startDate'), q.get('endDate'), q.get('debtorId'), q.get('documentsIdentificationId'), q.get('limit'), q.get('offset')],
+                   ['2026-11-01', '2026-11-17', '11', 'PRV', '200', '0']);
+  assert.deepEqual(lidos.slice(1), ['/bills/7002', '/bills/7003', '/bills/7006']);
+  const est = c.fins[0].estranhas as { sienge_id: number; motivo: string; valor: number | null; emissao: string | null }[];
+  assert.deepEqual(est.map((e) => e.sienge_id), [8000, 8001]);
+  assert.equal(est[0].motivo, 'sem a marca do ERP');
+  assert.deepEqual([est[0].valor, est[0].emissao], [5, '2026-10-01']);
+  assert.match(est[1].motivo, /duplicada/);
+  assert.deepEqual(c.fins[0].resumo, { lidas: 4, recriadas: 1, nao_confirmadas: 2 });
+  assert.equal(c.fins[0].erro, undefined);
+});
+
+test('cruzamento: lista vazia (404) recria as esperadas que somem; páginas seguem até o total', async () => {
+  const c = cruzamento([{ sienge_id: 7002, previsao_id: P2, esperada: true }]);
+  const h: Http = { ler: async () => { throw new ErroSienge(404, 'Resource not found', null); }, enviar: async () => { throw new Error('não'); } };
+  assert.equal((await processarUm(c.b, h, cfg)).passo, 'cruzado');
+  assert.deepEqual(c.recriadas, [[P2, 7002]]);
+
+  const d = cruzamento([]);
+  const offsets: string[] = [];
+  const pag: Http = {
+    ler: async (q) => {
+      const o = Number(new URLSearchParams(q.split('?')[1]).get('offset'));
+      offsets.push(String(o));
+      const n = o === 0 ? 200 : 3;
+      return { resultSetMetadata: { total: 203 }, results: Array.from({ length: n }, (_, i) => ({ id: 10000 + o + i })) };
+    },
+    enviar: async () => { throw new Error('não'); },
+  };
+  const r = await processarUm(d.b, pag, cfg);
+  assert.deepEqual(offsets, ['0', '200']);
+  assert.equal((r as { lidas: number }).lidas, 203);
+
+  // sem o total, a página incompleta encerra
+  const e = cruzamento([]);
+  let chamadas = 0;
+  const curta: Http = { ler: async () => { chamadas++; return { results: [{ id: 1 }, { id: 2 }] }; }, enviar: async () => { throw new Error('não'); } };
+  assert.equal(((await processarUm(e.b, curta, cfg)) as { lidas: number }).lidas, 2);
+  assert.equal(chamadas, 1);
+});
+
+test('cruzamento: erro do Sienge na lista fecha a passada com erro, sem recriar nem apontar', async () => {
+  const c = cruzamento([{ sienge_id: 7002, previsao_id: P2, esperada: true }]);
+  const h: Http = { ler: async () => { throw new ErroSienge(429, 'cota', 60); }, enviar: async () => { throw new Error('não'); } };
+  const r = await processarUm(c.b, h, cfg);
+  assert.equal(r.passo, 'cruzamento com erro');
+  assert.deepEqual(c.recriadas, []);
+  assert.deepEqual(c.fins.map((f) => [f.estranhas.length, typeof f.erro]), [[0, 'string']]);
+  // 404 na segunda página é erro, não lista vazia
+  const d = cruzamento([]);
+  const h2: Http = { ler: async (q) => {
+    if (q.includes('offset=0')) return { results: Array.from({ length: 200 }, (_, i) => ({ id: i + 1 })) };
+    throw new ErroSienge(404, 'x', null);
+  }, enviar: async () => { throw new Error('não'); } };
+  assert.equal((await processarUm(d.b, h2, cfg)).passo, 'cruzamento com erro');
+});
+
+test('cruzamento: sem empresa para cruzar (fora da madrugada ou feito), nada a fazer e nenhuma chamada', async () => {
+  const x = banco(null);
+  const h: Http = { ler: async () => { throw new Error('não chama'); }, enviar: async () => { throw new Error('não'); } };
+  assert.deepEqual(await processarUm(x.b, h, cfg), { passo: 'nada a fazer', enfileirados: 1 });
 });
