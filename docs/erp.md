@@ -71,7 +71,9 @@ A carga inicial é o rascunho v0 do doc, com 11 grupos e 4 níveis em Marketing.
 |---|---|---|
 | `compromissos` | O acordo que gera gasto: contrato, pedido, assinatura recorrente, avulsa, guia ou folha | A assinatura exige periodicidade e valor por período, e substitui o contrato fictício. O contrato traz o percentual de caução |
 | `compromisso_rateios` | O rateio do compromisso por núcleo econômico, centro de custo, divisão e natureza | Natureza do último nível e ativa. Despesa exige núcleo e centro de custo, e o centro precisa estar ligado no núcleo |
-| `previsoes` | O gasto esperado que ainda não é dívida | Não se edita: cancela-se e cria-se outra. É consumida pelos títulos e substitui o título de previsão |
+| `previsoes` | O gasto esperado que ainda não é dívida | Não se edita: cancela-se e cria-se outra. É consumida pelos títulos e substitui o título de previsão. A do contrato vale aprovada com o contrato aprovado; a lançada à mão passa pela alçada do título; a aprovada conta no acumulado do mês |
+| `compromisso_aprovacoes` | Os votos do contrato e da assinatura, por versão (gestor do centro + AF ou AO) | Só por `decidir_compromisso`; mudança no valor, credor, datas ou rateio abre versão nova; quem criou ou alterou por último não vota |
+| `previsao_alcadas`, `previsao_aprovacoes` | A alçada da previsão lançada à mão e os votos | Fixada ao lançar, como a do título; só por `decidir_previsao`; recusa cancela a previsão |
 | `documentos_fiscais` | A nota, o boleto ou a guia que chegou, com o valor bruto e a caução retida | Não aceita nota repetida do mesmo emitente (mesmo tipo, número e série), uma trava que o Sienge não tem. Depois de lançada, não se edita |
 | `documento_retencoes` | Os impostos retidos na nota (ISS, INSS, IR, PIS, COFINS, CSLL) e o órgão que recebe cada um | |
 | `documento_rateios` | O rateio da nota | |

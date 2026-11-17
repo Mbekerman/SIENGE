@@ -38,6 +38,15 @@ Desenho aceito como direção (6/nov/2026): **previsões e contratos do dia a di
 
 Processo de aprovação da BKM hoje (Moises, 6/nov/2026): medição → aprovação de 2 gestores → analista faz a liberação (é ali que entram a nota e os impostos) → financeiro. No desenho, os 2 gestores aprovam no nosso sistema e a autorização no Sienge é consequência.
 
+## 5.2.1 Aprovação do contrato recorrente e da previsão [Construído, 17/nov/2026]
+
+Decisões do Moises (8, 14 e 17/nov/2026). Só a previsão aprovada vai ao Sienge (o envio como título PRV vem no próximo passo).
+
+- **Contrato e assinatura** (`compromissos` dos tipos contrato e assinatura): aprovam o gestor do centro (vaga AREA) e alguém da AF ou da AO (vaga FIN), em `compromisso_aprovacoes`, por versão. Mudar empresa, tipo, credor, datas, valores, periodicidade, vencimento, caução ou o rateio (salvo só a natureza) abre uma versão nova, que pede aprovação de novo. Quem criou ou alterou por último não aprova; ninguém ocupa as duas vagas; o master aprova tudo de uma vez. `decidir_compromisso(contrato, aprovar, justificativa)`.
+- **Previsão do contrato** nasce aprovada pelo contrato aprovado (`previsao_aprovada` segue `compromisso_aprovado`).
+- **Previsão lançada à mão**: passa pela alçada do título (`previsao_alcadas`, `previsao_aprovacoes`), com as faixas do centro e da divisão, paralelo ou em sequência; sem faixa, vai ao master com evento. Quem lançou não aprova; recusar exige justificativa e cancela a previsão. `decidir_previsao(previsão, aprovar, justificativa, centro, divisão)`.
+- **Acumulado do mês**: a previsão aprovada conta no mês dela; a nota que a consome conta só o que passa dela (o consumo vem antes de fixar a alçada do título).
+
 ## 5.3 "Lançar nota fiscal" [Desenhado]
 
 Experiência pedida pelo Moises (6/nov/2026), com o que cada passo exige tecnicamente:
