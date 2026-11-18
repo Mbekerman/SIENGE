@@ -2,6 +2,7 @@
 
 React 18 + TypeScript + Vite, TanStack Query, react-router e supabase-js, sem biblioteca de UI (a mesma base do BKM Terrenos).
 O desenho é o do protótipo aprovado pelo Moises em 15/11/2026 (linha F, versão 35); `src/styles.css` é o `tpl.css` dele.
+Revisão de design de 18/11/2026 (pedido do Moises: cards baixos, título grande, muito vazio ao lado do menu), no fim de `src/app.css`: abas no lugar do título, página a 24 px do menu, contadores com o total em R$, uma cor por situação, cabeçalho das colunas fixo, grupos em quadros, gaveta que empurra a lista em vez de cobrir (tela cheia no celular). Imagens em `imagens/`.
 
 ## Rodar
 
