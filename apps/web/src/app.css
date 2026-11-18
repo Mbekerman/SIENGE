@@ -1,0 +1,36 @@
+/* Estilos só do app React, que o protótipo (styles.css) não tem. */
+/* entrada (do BKM Terrenos, apps/web/src/app.css › .m-auth) */
+.m-auth{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--m-sc-low);padding:16px}
+.m-auth-card{width:100%;max-width:448px;background:var(--m-card);border-radius:28px;padding:40px;display:flex;flex-direction:column;align-items:flex-start;gap:8px}
+.m-auth-card h1{font-size:32px;line-height:40px;font-weight:400;margin:24px 0 0}
+.m-auth-txt{color:var(--m-on-var);margin:0 0 24px}
+.m-auth-erro{width:100%;padding:12px 16px;border-radius:12px;background:var(--cr-c);color:var(--cr);margin-bottom:16px}
+.m-google{align-self:flex-end;color:var(--m-on-surface)}
+
+/* busca de verdade na barra de cima (no protótipo era só desenho) */
+.busca input{flex:1;min-width:0;border:0;background:none;outline:none;height:100%}
+.busca input::placeholder{color:var(--m-on-var)}
+.busca .icb{width:32px;height:32px}
+.fabr-vaga{height:12px}
+
+/* perfil */
+.dir{position:relative}
+.perfil-btn{border:0;overflow:hidden;padding:0}
+.perfil-foto{width:100%;height:100%;object-fit:cover;display:block}
+.perfil-menu{position:absolute;right:0;top:44px;z-index:70;background:var(--m-card);border-radius:16px;box-shadow:0 2px 6px rgba(0,0,0,.15),0 6px 20px rgba(0,0,0,.1);padding:20px 16px 12px 24px;min-width:260px;display:flex;flex-direction:column;gap:4px}
+.perfil-nome{font-size:16px;line-height:24px}
+.perfil-menu .btn{align-self:flex-end;margin-top:12px}
+
+/* abas como links (no protótipo eram botões) */
+.f-abas a{display:inline-flex;align-items:center;height:32px;padding:0 16px;border-radius:8px;border:1px solid #c4c7c5;background:#fff;font-size:14px;font-weight:500;color:var(--m-on-var);white-space:nowrap;text-decoration:none}
+.f-abas a.on{background:#c2e7ff;border-color:transparent;color:#001d35}
+.ri{text-decoration:none}
+
+.vazio{padding:24px 0}
+@container app (max-width:900px){ .vazio{padding:24px 16px} .tiles .tile .tn{font-size:28px;line-height:36px} }
+.chips-l{display:flex;flex-wrap:wrap;gap:6px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;word-break:break-all}
+/* colunas iguais entre os grupos (tpl.js › fG com colgroup); com a gaveta, as colunas f-x somem e a tabela volta ao automático */
+.f-tab.fx{table-layout:fixed}
+.f-tab.fx td{overflow:hidden;text-overflow:ellipsis}
+@container app (min-width:901px){ .com-gav .f-tab.fx{table-layout:auto} .com-gav .f-tab.fx col{width:auto !important} }
