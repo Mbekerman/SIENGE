@@ -210,6 +210,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
   - título de **imposto retido**: aprovação da **AF**;
   - título de **movimento entre sócios** (a parte a pagar): aprovação da **AD**;
   - linha **sem núcleo e sem centro** (como 10.01 Bens da empresa, que hoje só o master lança): **AF e AO juntos**, em qualquer ordem, **ou a AD sozinha**. Vale também para a previsão sem centro. O título que tem linhas com centro e sem centro passa pelas duas aprovações.
+- ✅ **PJ só com o master e quem ele designar** (Moises, 18/nov/2026). O título ou a previsão com alguma linha de natureza restrita (folha PJ, pró-labore) tem uma aprovação só, a do **master ou de um designado**, em qualquer valor. AF, AO, AD, diretor e gestor da área não veem nem aprovam. O PJ **não entra no acumulado do mês** do centro (escolha do Moises, 18/nov/2026), e os avisos sobre ele só vão a quem vê o PJ. A previsão PJ **não vai ao Sienge** como PRV. O título PJ aprovado ainda vai ao Sienge para ser pago, e lá quem tem acesso ao financeiro o vê (limitação da transição).
 - ✅ **A AD sempre pode fazer a aprovação da AF ou da AO** (Moises, 18/nov/2026). Quando a mesma faixa tem a vaga da AD e a da AF, quem está na AD aprova primeiro na vaga dela.
 - Recusar o título de imposto cancela a nota inteira, como recusar o título do fornecedor.
 - **Acumulado:** o do **mês de competência**, por centro de custo, somando todos os núcleos e empresas, já contando o próprio título.
@@ -321,7 +322,7 @@ O item **Admin** do menu tem sete seções. A seção Etapa dos núcleos, que ap
 
 ✅ Decidido pelo Moises em 14/nov/2026:
 
-- **Toda mudança de acesso fica pendente até ser aprovada.** Vale para modelos, atribuições, exceções, gestor e diretor da área, AF, AO, AD, tipos de núcleo, marca de natureza restrita e mudança do tipo de um núcleo.
+- **Toda mudança de acesso fica pendente até ser aprovada.** Vale para modelos, atribuições, exceções, gestor e diretor da área, AF, AO, AD, tipos de núcleo, marca de natureza restrita (esta só com a aprovação do master, mesmo que as outras sejam dispensadas) e mudança do tipo de um núcleo.
 - Aprovam os **aprovadores de acesso**, uma lista configurável com um mínimo de aprovações. Quem pediu e quem ganha o acesso não aprovam.
 - **O master** muda a lista de aprovadores sozinho; os outros só a mudam com a unanimidade da própria lista. Só o master cria e administra administradores, e só ele define o grupo de sucessão.
 - **Tudo o que o master faz vale na hora**, sem aprovação. Ele escolhe, tipo a tipo, quais mudanças de acesso pedidas pelo administrador precisam de aprovação; todas começam exigindo.
