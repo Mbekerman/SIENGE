@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f8fafd" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,300..700&display=swap" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- o servidor web troca pelos valores do ambiente (como no BKM Terrenos); no npm run dev valem as VITE_* -->
+    <meta name="supabase-url" content='{% env "SUPABASE_URL" %}' />
+    <meta name="supabase-key" content='{% env "SUPABASE_KEY" %}' />
+    <meta name="bkm-ambiente" content='{% env "AMBIENTE" %}' />
+    <title>ERP BKM</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
