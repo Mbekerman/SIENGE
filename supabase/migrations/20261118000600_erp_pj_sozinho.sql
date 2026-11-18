@@ -5,13 +5,22 @@
 -- PJ pequena, e o título inteiro iria só à vaga PJ, sem gestor, AF ou AO (revisão de segurança do
 -- PR #84). A conferência é feita a cada linha gravada; a natureza que vira restrita depois não
 -- revalida os rateios já gravados (a marca restrita só muda com o master).
+-- Vale também para a linha que muda de título, nota ou contrato (update do pai). Duas gravações em
+-- paralelo no mesmo pai esperam uma pela outra (trava consultiva pelo id do pai), senão cada uma só
+-- veria a própria linha. A trava conta com READ COMMITTED (o padrão do Supabase): o SELECT depois
+-- dela pega um retrato novo; em REPEATABLE READ ou SERIALIZABLE ela não protege.
 -- A conferência é definer do erp_conferencia: lê todas as linhas do rateio, também as que o RLS
--- esconde de quem grava (quem não vê o PJ não pode juntar linha comum a um título PJ sem ser barrado).
+-- esconde de quem grava. Hoje quem grava no rateio vê o título inteiro (a RLS do título esconde o
+-- que tem linha que ele não vê), então o definer é defesa em profundidade.
 -- Portabilidade: SQL puro.
 
 create function erp.tg_rateio_sem_mistura_pj() returns trigger language plpgsql as $$
-declare v_misto boolean;
+declare v_misto boolean; v_pai uuid;
 begin
+  v_pai := (to_jsonb(new) ->> case tg_table_name when 'titulo_rateios' then 'titulo_id'
+                                                 when 'documento_rateios' then 'documento_id'
+                                                 else 'compromisso_id' end)::uuid;
+  perform pg_advisory_xact_lock(hashtext('erp.rateio_pj:' || tg_table_name || ':' || v_pai::text));
   if tg_table_name = 'titulo_rateios' then
     select bool_or(erp.natureza_restrita(natureza_id)) and not bool_and(erp.natureza_restrita(natureza_id)) into v_misto
       from erp.titulo_rateios where titulo_id = new.titulo_id;
@@ -28,11 +37,11 @@ begin
   return null;
 end $$;
 
-create trigger t_rateio_sem_mistura_pj after insert or update of natureza_id on erp.titulo_rateios
+create trigger t_rateio_sem_mistura_pj after insert or update of natureza_id, titulo_id on erp.titulo_rateios
   for each row execute function erp.tg_rateio_sem_mistura_pj();
-create trigger t_rateio_sem_mistura_pj after insert or update of natureza_id on erp.documento_rateios
+create trigger t_rateio_sem_mistura_pj after insert or update of natureza_id, documento_id on erp.documento_rateios
   for each row execute function erp.tg_rateio_sem_mistura_pj();
-create trigger t_rateio_sem_mistura_pj after insert or update of natureza_id on erp.compromisso_rateios
+create trigger t_rateio_sem_mistura_pj after insert or update of natureza_id, compromisso_id on erp.compromisso_rateios
   for each row execute function erp.tg_rateio_sem_mistura_pj();
 
 alter function erp.tg_rateio_sem_mistura_pj() security definer set search_path = erp, pg_catalog, pg_temp;
