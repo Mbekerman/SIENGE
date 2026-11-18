@@ -14,8 +14,10 @@ O único código escrito é o esquema `erp` v0 (SQL e testes), integrado na `dev
 | Acesso à API do Sienge da BKM (usuário de API, segredo no ambiente de nuvem do Claude) | Construído e testado |
 | Testes manuais da API no contrato CTP/28 (6/nov/2026) | Feitos; resultados em [04-integracao-sienge.md](04-integracao-sienge.md) |
 | Núcleo do ERP BKM (esquema `erp`, antes `nucleo`: tabelas, regras em funções, 1162 testes) | Construído e integrado na `develop` em 14/nov/2026 (PR #1, merge `64c9af0`; PR #4, merge `086c08a`; PR #7, merge `ee7acf9`; PR #8, merge `dadf8db`; PRs #9, #10, #12, #13, #14, #16, #17, #19, #21, #23, #25, #27, #28, #30, #31, #34, #36, #37, #40, #41, #44, #46, #48, #53 e #54, `develop` em `f8b8071`); uma versão anterior foi aplicada no banco de desenvolvimento `bkm_dev` em 14/nov, a `develop` atual ainda não; produção não tem o esquema |
-| Banco espelho do Sienge (camadas `sienge_bruto` e `sienge`) | Desenhado e aprovado pelo Moises (7/nov/2026); não criado |
-| Contas a pagar: envio ao Sienge, leitura de PDF, aprovação, telas | Desenhado; não construído |
+| Banco espelho do Sienge (camadas `sienge_bruto` e `sienge`) | Contas a pagar construído (17/nov/2026, migration `20261117000100`) e em teste no `bkm_dev` com dados reais; o resto desenhado |
+| Programa de carga do histórico (`servicos/sienge-carga`) | Construído (17/nov/2026); Edge Function no `bkm_dev`, chamada pelo pg_cron a cada minuto |
+| Envio do título aprovado ao Sienge (`servicos/sienge-escrita`, migration `20261117000200`) | Construído e testado de ponta a ponta na empresa 11 (17/nov/2026); ainda não instalado como Edge Function |
+| Contas a pagar: leitura de PDF, telas | Desenhado; não construído |
 | CI (testes do banco a cada push e PR) | Construído em `.github/workflows/ci.yml` (7/nov/2026) |
 | Banco Supabase, adaptador (servidor), front, deploy | Nada criado |
 

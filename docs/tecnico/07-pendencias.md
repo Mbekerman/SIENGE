@@ -5,13 +5,16 @@
 | Pergunta | Afeta | Desde |
 | --- | --- | --- |
 | Qual pacote de API a BKM tem? | Se a cópia diária cabe na cota; frequência da sincronização | 6/nov |
-| Código da filial da empresa 2 no Sienge | `tax-information` (dados fiscais de serviço) | 6/nov |
+| Código da filial da empresa 2 no Sienge | `tax-information` (dados fiscais de serviço). Em 17/nov as empresas 2 e 11 não tinham filial cadastrada (Apoio › Fiscal › Filiais); sem filial, o envio recusa nota com retenção. Criar uma filial de teste na 11? | 6/nov |
+| Onde instalar o programa de envio (`sienge-escrita`) na produção e com qual credencial; papel de login próprio para as funções, com `grant erp_sistema ... with inherit false, set true` (no `bkm_dev`, desde 18/nov, a conexão é o `postgres` com esse grant) | Envio automático na produção | 17/nov |
 | Existe base de testes do Sienge? | Onde rodar testes de escrita (hoje é produção) | 6/nov |
 | Notas de contrato por medição ou por título avulso? | Fluxo de envio ao Sienge ([05](05-contas-a-pagar.md)) | 6/nov |
 | Suporte do Sienge: liberação automática de medição, API de liberação, de ciência e de autorização de pagamento? | Quantos passos manuais sobram | 6/nov |
 | Gravar `tax-information` muda o valor retido do título? | Se impostos podem ser completados depois da liberação | 6/nov |
 | Como a BKM paga hoje (remessa, integração bancária, internet banking)? | O que o sistema enxerga entre autorizado e pago | 6/nov |
 | Qual é o CRM e como ligar a venda dele ao contrato de venda do Sienge (`externalId`?) | Esquemas `crm` e a ponte de vendas | 6/nov |
+| Carga do histórico na produção: onde roda o programa (Edge Function do projeto do ERP ou Cloud Run) e o ok do Moises | Passo da carga real | 17/nov |
+| Os 104 recursos restantes do histórico (cerca de 45 mil chamadas REST no pacote Start) e a cópia do banco pela Softplan | Plano no doc "Histórico do Sienge: inventário e plano de carga" | 15/nov |
 | Pagamento de competência já fechada: travar ou lançar no primeiro mês aberto? | Regra no `erp` | 7/nov |
 | As 4 divergências da árvore em relação à viabilidade (impostos em Deduções, custo de capital só orçado, taxas de gestão intercompany, ITBI e registro de vendas em Comerciais) | Carga inicial (o v0 usa a proposta) | 7/nov |
 | Onde fica o fluxo de aprovação do contas a pagar (esquema `pagar` do plano ou `erp`) | Organização dos esquemas | 7/nov |
@@ -43,4 +46,13 @@ Criado em 6/nov/2026, pode ser apagado à mão no Sienge (a API não apaga):
 | Título 8417 | Gerado pela liberação da medição 2; ficou NFSE 112, vencimento 10/12/2026 |
 | Título 8422 | PRV, R$ 1,00, vencimento 10/03/2027, criado pela API, "TESTE API Claude" |
 
-A medição 1 do CTP/28 (R$ 8,33) não é de teste nosso e não foi tocada.
+A medição 1 do CTP/28 (R$ 8,33) não é de teste nosso e não foi tocada. O título 8422 foi apagado em 17/nov; a medição 2 e o 8417 ficam (Moises, 17/nov).
+
+Na área de testes (empresa 11, credor 823 "CREDOR TESTE API - NAO PAGAR"), criados pela API em 17/nov/2026, podem ficar:
+
+| Registro | Detalhe |
+| --- | --- |
+| Título 8547 | PRV TESTEAPI11, R$ 1,00, credor 27 (primeiro teste de gravação) |
+| Título 8558 | NFSE E2E1, R$ 2,00 em 2 parcelas (PIX e boleto), envio de ponta a ponta |
+| Título 8559 | NFSE E2E2, R$ 1,00 em 3 parcelas, só para ver o arredondamento |
+| Título 8560 | NFSE E2E3, R$ 1,00 em 3 parcelas com vencimentos corrigidos (PIX, boleto, PIX com CNPJ), envio de ponta a ponta |

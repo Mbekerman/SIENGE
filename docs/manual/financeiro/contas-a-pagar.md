@@ -80,7 +80,7 @@ Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depo
 - O ERP BKM cria cada previsão no Sienge como **título de previsão**, pela API, para abastecer o fluxo de caixa do Sienge. Assim não é preciso uma tela de fluxo de caixa no ERP BKM agora.
 - **Cada título de previsão do Sienge fica ligado à previsão do ERP BKM.**
 - Quando a nota chega, o pedido de pagamento cria no Sienge o título definitivo, e a previsão é dada como **substituída**. A previsão também pode ser **excluída** no ERP BKM.
-- Nos dois casos, o ERP BKM avisa o financeiro qual título de previsão apagar no Sienge, numa **planilha do Google** com esses títulos.
+- Nos dois casos, o ERP BKM avisa o financeiro qual título de previsão apagar no Sienge, numa **página** com esses títulos (no lugar da planilha do Google; Moises, 18/nov/2026).
 
 > ⚠️ **Passo manual no Sienge:** apagar o título de previsão que foi substituído ou excluído. A API não apaga título, e o título criado por ela só aceita mudar o vencimento e o PIX (testes de 6 e 8/nov/2026). Ver [O que ainda é feito à mão no Sienge](../transversais/passos-manuais-no-sienge.md).
 
@@ -89,11 +89,10 @@ Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depo
 - O título de previsão vai ao Sienge **sem forma de pagamento**, só como previsão, para não ser pago por engano.
 - **O Sienge é monitorado:** a leitura diária aponta os títulos de previsão que deveriam ter sido apagados e continuam lá, com aviso também por **e-mail**.
 - **Quando o Sienge é verificado:** a cada 30 minutos no horário comercial, mais uma conferência completa de madrugada. Motivo: o limite de 200 consultas por minuto da API do Sienge é dividido com o CRM (Moises, 14/nov/2026, 14h35).
-- **A planilha é só de leitura** para as pessoas. Ninguém marca "apagado": o próprio ERP BKM marca, na verificação diária do Sienge, quando o título foi de fato apagado (Moises, 14/nov/2026, 14h32).
-- **A planilha se refaz sozinha:** todo dia o ERP BKM puxa a lista dos títulos que devem ser apagados, cruza com a planilha e grava de novo o que estiver faltando. Se alguém apagar uma linha, ela volta no dia seguinte.
-- Cada linha traz o **número do título**, o **tipo de documento de previsão** e o **link para a previsão** no ERP BKM. O financeiro confere o tipo antes de apagar.
-- Se sumir do Sienge um título que **não estava na planilha**, a leitura diária avisa a **AF**.
-- **Linha incluída à mão na planilha** (defesa caso a permissão de leitura seja mudada): o mesmo cruzamento diário marca como **inválida** a linha que não existe no ERP BKM e avisa a **AF**. Assim ninguém leva o financeiro a apagar um título definitivo acrescentando uma linha (Moises, 14/nov/2026, 14h30).
+- **Página das PRV a apagar** (Moises, 18/nov/2026, no lugar da planilha do Google): abre com **qualquer conta Google da BKM** (@bkm.com.br), mesmo de quem não tem usuário no ERP BKM; ninguém de fora entra. Quem abre vê **todas** as PRV a apagar, de todas as empresas e centros, sem as permissões do ERP BKM (confirmado pelo Moises, 18/nov/2026, 9h53). Mostra empresa, número do título no Sienge, documento (PRV-…), valor, data prevista, desde quando está na lista, a última conferência e a situação da previsão.
+- **A página é só de leitura.** Ninguém marca "apagado": o próprio ERP BKM confere o Sienge e a linha some da página sozinha quando o título foi de fato apagado (Moises, 14/nov/2026, 14h32). Quando o Sienge avisa a exclusão, isso leva segundos; senão, a conferência a cada 30 minutos marca.
+- **Ninguém inclui nem tira linha à mão:** a lista vem direto do ERP BKM a cada abertura (e a cada 5 minutos, com a página aberta). Por isso a defesa da planilha contra linha incluída à mão deixou de ser necessária.
+- Se sumir do Sienge um título que **não estava na lista**, a leitura diária avisa a **AF**.
 
 ✅ **A previsão aprovada é o pedido** (Moises, 14/nov/2026, respondendo ao diretor financeiro). A previsão passa pelas mesmas regras de aprovação do pedido de pagamento e é a autorização para contratar o serviço ou fazer a compra, antes da nota. Não se chama "pedido de compra", porque não passa por suprimentos, mas faz o mesmo papel. A nota que chega sem previsão aprovada pede uma aprovação a mais (a AD, por padrão), salvo a **verba livre** do centro de custo.
 

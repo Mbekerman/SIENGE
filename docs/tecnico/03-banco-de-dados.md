@@ -4,6 +4,7 @@ O banco é um Postgres do Supabase, num projeto próprio do ERP (decisão de 7/n
 
 | Esquema | Papel | Situação |
 | --- | --- | --- |
+| `pagina` | Funções para páginas fora do ERP, expostas na API do Supabase (Exposed schemas); o `erp` continua fora. Hoje só `pagina.prv_apagar()`, a lista da página das PRV a apagar | **[Construído]** 18/nov/2026, migration `20261118000100_erp_pagina_prv.sql` |
 | `erp` | Modelo da BKM, neutro em relação ao ERP | **[Construído]** v0, 7/nov/2026, integrado na `develop` em 14/nov/2026 (PR #1), ainda não aplicado em nenhum banco |
 | `sienge` | Espelho do Sienge: uma tabela por entidade da API | **[Desenhado]**, aprovado pelo Moises em 7/nov/2026 |
 | `sienge_bruto` | Resposta inteira de cada chamada à API, nunca alterada | **[Desenhado]**, aprovado em 7/nov/2026 |
@@ -26,6 +27,9 @@ Onde está: branch `claude/project-thread-dknc98` deste repositório (commits `6
 | `supabase/migrations/20261107000700_erp_config.sql` | Mudança da configuração de dinheiro por pedido (15/nov/2026): AF, AD e administrador pedem, a lista de cada tabela aprova (o master define), modo livre até X% em N meses nas faixas de alçada; eventos (`erp.tipos_evento`, `erp.eventos`, `erp.registrar_evento`) de toda mudança nessas tabelas; papéis `erp_config` e `erp_eventos` (ver `docs/erp.md`, "Mudança da configuração de dinheiro") |
 | `supabase/migrations/20261107000800_erp_notificacoes.sql` | Notificações (15/nov/2026): painel de quem recebe cada tipo de evento (`regras_notificacao`, mudado pelo pedido de mudança da configuração ou pelo master), preferências de cada pessoa (`preferencias_notificacao`; aviso crítico não sai do sino nem do e-mail, só do WhatsApp), o sino (`notificacoes`, cada um lê só as suas) e a fila de envio (`envios_notificacao`, sem acesso pela API), distribuídos por gatilho em `erp.eventos` na mesma transação da mudança; eventos críticos das listas AF/AO/AD, dos aprovadores, do administrador e do próprio painel; papel `erp_notificacoes` |
 | `supabase/migrations/20261107000900_erp_bi.sql` | Camada de leitura `bi` (15/nov/2026, PR #54): calendário único `bi.d_calendario` (de 2015 a 15 anos à frente, feriados bancários nacionais, dias úteis; `bi.estender_calendario` só pelo sistema, todo dia 1 pelo pg_cron), dimensões (`d_empresa`, `d_nucleo`, `d_nucleo_atributos`, `d_centro_custo`, `d_divisao` com os níveis, `d_etiqueta`, `d_linha_dre`, `d_natureza`, `d_pessoa`, `d_usuario`) e fatos (`f_livro`, `f_parcelas`, `f_pagamentos`, `f_adiantamentos`, `f_titulo_eventos`, `f_titulo_etiquetas`); coluna `erp.linhas_dre.subtrai` (sinal do `valor_dre`) com auditoria |
+| `supabase/migrations/20261117000200_erp_envio_sienge.sql` | Envio ao Sienge (17/nov/2026): forma de pagamento por parcela (`parcela_pagamentos`, com `linha_digitavel_valida` e `chave_pix_valida`), de-para (`sienge_centros`, `sienge_contas`), fila (`sienge_envios`), `titulo_aprovado`, `sienge_enfileirar`, `sienge_pedido`, `sienge_registrar`; centavo da divisão das parcelas passa para a primeira (`_criar_titulo`). Revoga tudo de `public`, `anon`, `service_role` e `authenticated` antes de dar os grants (o `run.sh` abre os privilégios padrão em migration com "sienge" no nome) |
+| `supabase/migrations/20261118000100_erp_pagina_prv.sql` | Página das PRV a apagar (18/nov/2026): `erp.login_bkm()` (verdadeiro só para login Google com e-mail `@bkm.com.br`, lido das claims do pedido, sem `auth.uid()`), `erp.prv_apagar_pagina()` (security definer do `erp_conferencia`, a mesma lista de `erp.v_sienge_prv_apagar`, recusa com 42501 quem não passa) e o esquema `pagina` com `pagina.prv_apagar()`; só `authenticated` executa |
+| `supabase/migrations/20261118000200_erp_nada_sem_aprovador.sql` | Nada é aprovado sem aprovador (18/11/2026): `_definir_alcada` e `tg_previsao_alcada` passam a fixar a alçada do centro sem gestor e sem faixas próprias (faixas gerais; a vaga do gestor vai ao master); `previsao_alcadas.alcada_id` sem chave estrangeira |
 | `supabase/tests/erp.sql` | 1162 testes de regra, rodando como o usuário logado sob RLS (os de acesso incluem função `security definer` e catálogo de privilégios) |
 | `supabase/tests/run.sh` | Sobe um Postgres 16 temporário, aplica `shim_supabase.sql` + migrations e roda os testes |
 | `supabase/tests/shim_supabase.sql` | Imita o mínimo do Supabase (`auth.uid()` lido de `request.jwt.claim.sub`) |
@@ -92,9 +96,22 @@ Enquanto nenhum banco de produção tiver recebido estas migrations, elas podem 
 
 O mesmo modelo está nos PRs do BKM Terrenos (#243) e do monitor de mercado (#10).
 
-## 3.2 Esquemas `sienge_bruto` e `sienge` [Desenhado, aprovado em 7/nov/2026]
+## 3.2 Esquemas `sienge_bruto` e `sienge` [Construído para contas a pagar, 17/nov/2026; o resto Desenhado, aprovado em 7/nov/2026]
 
-Desenho completo: [Banco espelho do Sienge](https://claude.ai/artifact/EgDt6HJJREERJBsYKrvLsE). Resumo do que vale para quem for construir:
+### O que existe (migration `20261117000100_sienge_espelho.sql`, testes em `supabase/tests/sienge.sql`, 46 testes)
+
+- `sienge_bruto.respostas`: cada resposta do Sienge inteira (`corpo` jsonb), com a consulta (sem credencial; o banco recusa consulta com `senha`, `password`, `authorization`, `token` ou `usuario`), os cabeçalhos de cota, o `sha256`, quantas linhas e quantas ficaram de fora. Só insere; a única coluna que muda é `processado_em`.
+- `sienge.empresas_fora`: empresas do Sienge que não entram (hoje a 1, Muchmore, decisão do Moises de 15/nov/2026). `sienge.gravar_resposta` tira as linhas delas antes de gravar (por `companyId` ou `debtorId`).
+- `sienge.cargas` (fila das cargas, com o pedido assíncrono, pedaços lidos, tentativas, último erro e `retomar_depois`) e `sienge.cota_api` (última cota lida, por tipo).
+- Contas a pagar pela massa `/outcome`: `pagar_parcelas` (chave título + parcela), `pagar_rateios` (conta do plano financeiro e centro de custo **originais** do Sienge, com o percentual), `pagar_rateios_obra`, `pagar_rateios_departamento`, `pagar_autorizacoes`, `pagar_baixas` (chave pela ordem da baixa, porque o `sequencialNumber` do Sienge se repete) e `pagar_baixa_movimentos`. O que não vira coluna fica em `dados`.
+- `sienge.carregar_parcelas_pagar(resposta)`: compara pela impressão `md5`; o que mudou vai antes para `sienge.historico` (só insere) e a parcela é regravada com os filhos. Devolve novas, mudadas e iguais.
+- `sienge.marcar_ausentes_pagar(carga)`: depois de uma carga por emissão (`selectionType` I) concluída, sem filtro (empresa, centro, obra) e inteira, marca `removido_em` nas parcelas da janela **pedida ao Sienge** (`startDate`/`endDate` dos parâmetros) que não vieram nela. Quem veio em cada carga fica em `sienge.pagar_presencas`, porque a última resposta de uma parcela pode ser de outra carga. Recusa carga sem nenhuma resposta. Nada se apaga.
+- Segurança: RLS forçado em todas as tabelas, política só para o papel `sienge_carga` (sem login), nenhum privilégio para os papéis da API do Supabase, TRUNCATE recusado por gatilho.
+- A classificação (de-para para as naturezas e centros do `erp`) **não** mora aqui: o espelho guarda o que o Sienge tem, inclusive o que estiver mal classificado.
+
+### Desenho completo
+
+[Banco espelho do Sienge](https://claude.ai/artifact/EgDt6HJJREERJBsYKrvLsE). Resumo do que vale para quem for construir:
 
 - `sienge_bruto`: a resposta de cada chamada, inteira, com data e hora. Nunca se altera; serve para reprocessar.
 - `sienge`: cerca de 60 tabelas em 6 grupos (cadastros básicos, contas a pagar, suprimentos, engenharia, comercial e contas a receber, bancos e contabilidade). Cada tabela usa **os nomes da API** (minúsculas, com `_`), as chaves do Sienge e os campos principais (chaves, ligações, datas, valores, situação) em colunas; o resto num JSON da linha.

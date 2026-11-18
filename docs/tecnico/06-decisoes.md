@@ -2,6 +2,29 @@
 
 Decisões que mudam a arquitetura ou o código, da mais recente para a mais antiga. Quem decide é o Moises; "proposta" é sugestão ainda não confirmada por ele. Decisões de negócio detalhadas (regras para o usuário) ficam no manual do usuário; aqui só o que o desenvolvedor precisa saber.
 
+## 17/nov/2026
+
+- **Envio ao Sienge pelo título avulso** (Moises, 17/nov: "Faça a adaptação da escrita"; 14h12: "caminhar com o app com dados de teste e somente mandar títulos pro Sienge, nada de puxar histórico ainda"). A nota aprovada vira `POST /bills` com as parcelas e a forma de pagamento; medição fica para depois. A escolha entre medição e título avulso para notas de contrato (05, 5.2) continua aberta.
+- **Centavo da divisão das parcelas na primeira parcela**, como o Sienge (antes, na última). O `POST /bills` não leva o valor de cada parcela e o Sienge não deixa mudar o valor depois; com a regra antiga, toda nota de valor que não divide igual iria para "manual".
+- **Forma de pagamento trava no primeiro voto da alçada** (proposta, seguindo a regra de 8/nov de o aprovador ver o destino do dinheiro): quem lança informa PIX ou boleto antes; depois do primeiro voto, só pela revisão do título.
+- **Primeira versão recusa nota com retenção ou caução** no envio: o `tax-information` exige o código da filial, e as empresas 2 e 11 não têm filial cadastrada (conferido na tela em 17/nov).
+- **Programa de envio como Edge Function chamada pelo pg_cron** (proposta, mesmo caminho da carga; ver 4.7): a credencial é segredo da função, contra o desenho do Secret Manager (S-115).
+- **Carga de teste do histórico com dados reais no `bkm_dev`** (Moises, 17/nov, 08h43: "quero colocar o programa rodando em teste agora, em desenvolvimento, pra depois subirmos pra produção"). É exceção à regra de 14/nov de só dados de teste no `bkm_dev` (ver S-116). A carga na produção precisa de outro ok do Moises.
+- **Programa de carga como Edge Function chamada pelo pg_cron** (proposta, por ora só no desenvolvimento): o ambiente do Claude não alcança o Supabase pela rede e não há conta do Google Cloud ligada. Na produção, o mesmo código pode rodar em outro lugar (Cloud Run com Cloud Scheduler); a regra de negócio ficou no banco e em `logica.ts`.
+- **Espelho guarda o original do Sienge, sem tradução:** conta e centro de custo originais em cada rateio; o de-para para naturezas e centros fica na camada de cima (thread do de-para). O que estiver mal classificado entra como está.
+- **Muchmore (empresa 1) fica de fora** já na gravação do bruto (Moises, 15/nov/2026).
+
+## 16/nov/2026
+
+Decisões do Moises, ainda sem código (relatadas pela thread do de-para):
+
+- **Cartas de consórcio** num cadastro próprio: administradora, grupo, cota, crédito, núcleo beneficiado e financiamento.
+- **Empreendimento beneficiado** na divisão e no título, com o modo `gestao` ou `reembolsar` e uma lista de núcleos com %. No modo `reembolsar`, nasce um par de títulos entre empresas: uma conta a pagar na SPE, com a natureza original, e a parte da holding como movimentação. O saldo a reembolsar fica por SPE. A revisar quando houver código: cada título do par tem de passar pela alçada e pelas permissões do próprio núcleo, e quem lança na holding não deve ganhar escrita na SPE por isso.
+- **Dois tratamentos por natureza** (Moises, 13h16): o tipo na DRE gerencial e o tratamento contábil, que podem ser diferentes. Exemplo: as taxas mensais do investidor, DFM1 (2030308) e DFM2 (2030309), são despesa financeira no gerencial e distribuição de lucro na contabilidade. O plano passa a ter 208 naturezas.
+- **Centro Alavancagem**, com uma divisão por investidor (VERSI IV, SR IV e os que vierem). Consórcios continua centro próprio.
+- **Agente que revisa a classificação de nota, pedido e contrato fica para a fase 2** (Moises, 14h41). Primeiro rodam regras fixas: histórico do credor, NCM, código de serviço da NFS-e e CNAE do fornecedor. O modelo de IA só entra quando as regras não bastam e só sugere natureza, centro e divisão, com o motivo; nunca muda nada sozinho. O aprovador vê um selo quando a classificação diverge da sugestão. O agente também pode revisar o histórico importado do Sienge. Cuidados: retenção zero no modelo externo, a regra de acesso de quem lança e uma camada nossa na frente do modelo. A revisar quando houver código: o texto da nota vem do fornecedor e pode trazer instruções ao modelo, então ele deve ser tratado como dado; e a sugestão nunca pode pesar na alçada. **Para agora:** guardar o NCM dos itens da NF-e, o código de serviço da NFS-e e o CNAE do fornecedor, para a fase 2 não precisar de nova carga.
+- **PDV** num cadastro próprio, com rateio entre SPEs por vigência (% fixo), aplicado sozinho nos títulos. Com o rateio, a aprovação continua separada por centro (S-096).
+
 ## 15/nov/2026
 
 - **Camada `bi` para relatórios e painéis do sistema** (Moises, 15/nov; PR #54, na `develop` em `f8b8071`, 1162 testes): esquema estrela só de leitura sobre o `erp`, com o acesso de quem consulta, calendário único sempre 15 anos à frente e eventos do título com quem e quando. A soma do PJ por centro aparece só a quem tem a natureza PJ liberada (Moises, 15/nov 19h50). Sem metas nem KPIs por ora. Substitui o desenho de 8/nov para o Power BI (S-022 sem efeito).
