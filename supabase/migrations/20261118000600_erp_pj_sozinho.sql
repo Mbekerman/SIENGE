@@ -7,7 +7,8 @@
 -- revalida os rateios já gravados (a marca restrita só muda com o master).
 -- Vale também para a linha que muda de título, nota ou contrato (update do pai). Duas gravações em
 -- paralelo no mesmo pai esperam uma pela outra (trava consultiva pelo id do pai), senão cada uma só
--- veria a própria linha.
+-- veria a própria linha. A trava conta com READ COMMITTED (o padrão do Supabase): o SELECT depois
+-- dela pega um retrato novo; em REPEATABLE READ ou SERIALIZABLE ela não protege.
 -- A conferência é definer do erp_conferencia: lê todas as linhas do rateio, também as que o RLS
 -- esconde de quem grava. Hoje quem grava no rateio vê o título inteiro (a RLS do título esconde o
 -- que tem linha que ele não vê), então o definer é defesa em profundidade.
