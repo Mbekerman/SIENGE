@@ -1,6 +1,7 @@
 // Peças comuns das telas, no desenho da linha F do protótipo aprovado (tpl.js: ic, dTiles, fCab, fAbas, fGrupo, gavB, kvB, ch).
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { NavLink } from 'react-router-dom';
+import { useEffect, useRef, useState, type KeyboardEvent as TeclaReact, type ReactNode } from 'react';
+import { NavLink, useLocation, useParams } from 'react-router-dom';
+import { ondeEstou } from '../lib/modulos';
 import { P, type NomeIcone } from '../lib/icones';
 import { AMBIENTE } from '../lib/config';
 
@@ -43,26 +44,52 @@ export function Chip({ t, c }: { t: string; c: CorChip }) {
 
 /** Abas da página de pedidos (tpl.js › fAbas). */
 export function Abas() {
-  const abas: [string, string][] = [['/titulos', 'Títulos'], ['/previsoes', 'Previsões'], ['/contratos', 'Contas recorrentes']];
+  const abas: [string, string][] = [['/contas-a-pagar', 'Visão geral'], ['/titulos', 'Títulos'], ['/previsoes', 'Previsões'], ['/contratos', 'Contas recorrentes']];
   return <nav className="f-abas">{abas.map(([to, r]) => <NavLink key={to} to={to} className={({ isActive }) => (isActive ? 'on' : '')}>{r}</NavLink>)}</nav>;
 }
 
+/** Cores de cada estado: faixa e ponto (`c`) e o texto sobre branco (`t`, versão escura, contraste AA). Uma cor por estado. */
+export const COR = {
+  cinza: { c: '#747775', t: '#5f6368' }, azul: { c: '#0094fe', t: '#0062b8' }, roxo: { c: '#863d8f', t: '#863d8f' },
+  verde: { c: '#7d8a3e', t: '#5c6a22' }, terra: { c: '#c67355', t: '#9c4b2e' },
+} as const;
+export type Cor = (typeof COR)[keyof typeof COR];
+
+/** Linha de cabeçalho compacta: as abas no lugar do título grande (o h1 fica só para leitor de tela) e as ações à direita. */
 export function Cab({ t, children }: { t: string; children?: ReactNode }) {
-  return <div className="f-cab"><h1>{t}</h1><span className="esp" />{children}</div>;
+  useEffect(() => { document.title = `${t} · ERP BKM`; }, [t]);
+  const { m, s } = ondeEstou(useLocation().pathname);
+  return (
+    <>
+      {m && s && <nav className="f-trilha" aria-label="Onde estou"><span>{m.r}</span><Ic n="chev" s={16} />{s.to ? <NavLink to={s.to} end><b>{s.r}</b></NavLink> : <b>{s.r}</b>}</nav>}
+      <div className="f-head"><h1 className="sr-only">{t}</h1><Abas /><span className="esp" />{children}</div>
+    </>
+  );
 }
 
-/** Contadores que filtram (tpl.js › dTiles): o clique no ligado volta para "todos". */
-export function Tiles<K extends string>({ itens, on, mudar }: { itens: { k: K; r: string; n: number; alerta?: boolean }[]; on: K | null; mudar: (k: K | null) => void }) {
-  const cores = ['var(--azul-bkm)', 'var(--roxo)', 'var(--terracota)', 'var(--verde)'];
+/** Contadores que filtram (tpl.js › dTiles): o clique no ligado volta para "todos". A cor é a do grupo, nunca a da posição. */
+export function Tiles<K extends string>({ itens, on, mudar }: { itens: { k: K; r: string; n: number; cor: Cor; v?: ReactNode; alerta?: boolean }[]; on: K | null; mudar: (k: K | null) => void }) {
   return (
     <div className="tiles">
-      {itens.map((t, i) => (
-        <button key={t.k} className={`tile ${t.k === on ? 'on' : ''}`} style={{ ['--fx' as string]: cores[i % 4] }} onClick={() => mudar(t.k === on ? null : t.k)} aria-pressed={t.k === on}>
-          <span className="tl">{t.r}</span>
-          <span className="tn num" style={t.alerta && t.n > 0 ? { color: 'var(--cr)' } : undefined}>{t.n}</span>
+      {itens.map(t => (
+        <button key={t.k} className={`tile ${t.k === on ? 'on' : ''}`} style={{ ['--fx' as string]: t.cor.c }} onClick={() => mudar(t.k === on ? null : t.k)} aria-pressed={t.k === on}>
+          <span className="tl">{t.k === on && <Ic n="check" s={18} />}{t.r}</span>
+          <span className="tv"><span className="tn num" style={t.alerta && t.n > 0 ? { color: 'var(--cr)' } : undefined}>{t.n}</span>{t.v != null && <span className="tr num">{t.v}</span>}</span>
         </button>
       ))}
     </div>
+  );
+}
+
+/** Rótulos das colunas, uma vez acima dos grupos, com as mesmas larguras (`x` some com a gaveta, `r` à direita). */
+export function Colunas({ cols, rot }: { cols: number[]; rot: { t: string; r?: boolean; x?: boolean }[] }) {
+  const gav = !!useParams().id;
+  const vis = rot.map((c, i) => ({ ...c, w: cols[i] })).filter(c => !(gav && c.x));
+  cols = vis.map(c => c.w); rot = vis;
+  return (
+    <table className="f-tab fx f-cols" aria-hidden="true"><colgroup>{cols.map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}</colgroup>
+      <thead><tr>{rot.map((c, i) => <th key={i} className={[c.r ? 'r' : '', c.x ? 'f-x' : ''].join(' ').trim() || undefined}>{c.t}</th>)}</tr></thead>
+    </table>
   );
 }
 
@@ -77,34 +104,40 @@ export interface Linha {
   cor?: string;
 }
 
-/** Grupo com marcador de cor, contagem e total (tpl.js › fGrupo / fG); fecha e abre pelo título. */
-export function Grupo({ nome, cor, linhas, total, sel, abrir, fechado = false, cols }: { nome: string; cor: string; linhas: Linha[]; total?: ReactNode; sel?: string; abrir: (id: string) => void; fechado?: boolean; cols?: number[] }) {
+/** Grupo num card: ponto de cor, nome, contagem e total alinhado à coluna Valor; fecha e abre pelo cabeçalho (tpl.js › fGrupo). */
+export function Grupo({ nome, cor, linhas, total, sel, abrir, fechado = false, cols }: { nome: string; cor: Cor; linhas: Linha[]; total?: ReactNode; sel?: string; abrir: (id: string) => void; fechado?: boolean; cols?: number[] }) {
   const [ab, setAb] = useState(!fechado);
+  // com a gaveta aberta, as colunas `x` saem da tabela (e da largura), para os grupos e o cabeçalho continuarem alinhados
+  const gav = !!useParams().id;
   if (!linhas.length) return null;
+  if (gav && cols) {
+    const fica = [true, ...linhas[0].cels.map(c => !c.x)];
+    cols = cols.filter((_, i) => fica[i] ?? true);
+    linhas = linhas.map(l => ({ ...l, cels: l.cels.filter(c => !c.x) }));
+  }
+  const tecla = (id: string) => (e: TeclaReact) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrir(id); } };
   return (
-    <section className="f-g">
+    <section className={`f-g ${ab ? 'ab' : ''}`}>
       <button className="f-gh" onClick={() => setAb(!ab)} aria-expanded={ab}>
-        <span style={{ color: cor, display: 'inline-flex' }}><Ic n={ab ? 'seta' : 'chev'} s={18} /></span>
-        <b style={{ color: cor }}>{nome}</b><span className="sec">{linhas.length}</span><span className="esp" /><span className="num sec">{total}</span>
+        <span className="sec" style={{ display: 'inline-flex' }}><Ic n={ab ? 'seta' : 'chev'} s={18} /></span>
+        <span className="f-pt" style={{ background: cor.c }} />
+        <b style={{ color: cor.t }}>{nome}</b><span className="f-qt">{linhas.length}</span><span className="esp" /><span className="num f-tot">{total}</span>
       </button>
       {ab && (
         <>
           <table className={`f-tab ${cols ? 'fx' : ''}`}>{cols && <colgroup>{cols.map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}</colgroup>}<tbody>
             {linhas.map(l => (
-              <tr key={l.id} className={sel === l.id ? 'sel' : ''} onClick={() => abrir(l.id)}>
-                <td className="f-nome"><span className="f-mk" style={{ background: l.cor ?? cor }} />{l.titulo}</td>
+              <tr key={l.id} className={sel === l.id ? 'sel' : ''} onClick={() => abrir(l.id)} tabIndex={0} onKeyDown={tecla(l.id)}>
+                <td className="f-nome">{l.titulo}</td>
                 {l.cels.map((c, i) => <td key={i} className={[c.r ? 'r num' : '', c.x ? 'f-x' : ''].join(' ').trim() || undefined}>{c.c}</td>)}
               </tr>
             ))}
           </tbody></table>
           <div className="f-lst">
             {linhas.map(l => (
-              <div key={l.id} className="f-it" onClick={() => abrir(l.id)} role="button" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') abrir(l.id); }}>
-                <span className="f-mk" style={{ background: l.cor ?? cor }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="e-it-l"><span>{l.titulo}</span><span className="num">{l.valor}</span></div>
-                  <div className="e-it-l sec peq" style={{ marginTop: 6 }}>{l.sub}</div>
-                </div>
+              <div key={l.id} className={`f-it ${sel === l.id ? 'sel' : ''}`} onClick={() => abrir(l.id)} role="button" tabIndex={0} onKeyDown={tecla(l.id)}>
+                <div className="e-it-l"><span className="f-it-n">{l.titulo}</span><span className="num f-it-v">{l.valor}</span></div>
+                <div className="e-it-l sec f-it-s">{l.sub}</div>
               </div>
             ))}
           </div>
@@ -125,9 +158,11 @@ export function Gaveta({ titulo, sub, fechar, children, pe }: { titulo: ReactNod
   return (
     <aside className={`gav f-gav ${cheia ? 'g-full' : ''}`} aria-label="Detalhe">
       <div className="gav-h">
-        <div className="t"><b>{titulo}</b>{sub && <div className="sec peq">{sub}</div>}</div>
+        <button className="icb gav-volta" title="Voltar" onClick={fechar}><Ic n="back" /></button>
+        <div className="t"><b>{titulo}</b></div>
+        {sub && <span className="gav-sub">{sub}</span>}
         <button className="icb oc-mm" title={cheia ? 'Voltar à gaveta' : 'Abrir na largura toda'} onClick={() => setCheia(!cheia)}><Ic n={cheia ? 'telaSair' : 'tela'} /></button>
-        <button className="icb" title="Fechar (Esc)" onClick={fechar}><Ic n="close" /></button>
+        <button className="icb gav-x" title="Fechar (Esc)" onClick={fechar}><Ic n="close" /></button>
       </div>
       <div className="gav-b">{children}</div>
       {pe && <div className="gav-f">{pe}</div>}
@@ -153,7 +188,12 @@ export function Alerta({ c, t }: { c: 'cr' | 'at'; t: ReactNode }) {
   return <div className={`al ${c}`}><Ic n={c === 'cr' ? 'warn' : 'info'} s={18} /><span>{t}</span></div>;
 }
 
-/** Estado de lista vazia, carregando ou erro, sem texto explicativo além do necessário. */
-export function Vazio({ t }: { t: string }) {
-  return <p className="sec vazio">{t}</p>;
+/** Estado de lista vazia ou erro, centrado, com a ação de limpar quando há filtro ou busca. */
+export function Vazio({ t, limpar }: { t: string; limpar?: () => void }) {
+  return <div className="vazio"><Ic n="doc" s={40} /><p>{t}</p>{limpar && <button className="btn t" onClick={limpar}>Limpar filtro e busca</button>}</div>;
+}
+
+/** Carregando: três linhas-esqueleto no lugar do texto. */
+export function Carregando() {
+  return <div className="esq" aria-label="Carregando" role="status"><span /><span /><span /></div>;
 }

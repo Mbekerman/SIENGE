@@ -1,9 +1,10 @@
 // Moldura do ERP: barra de cima, menu lateral (barra de baixo no celular) e a área da página.
 // Desenho do protótipo aprovado (tpl.js › moldura); comportamento do BKM Terrenos (components/Moldura.tsx).
-import { useCallback, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { NavLink, useLocation, useSearchParams } from 'react-router-dom';
 import { useSessao } from '../lib/sessao';
-import { BASE, Ic, Logo, useFora } from './Comum';
+import { Ic, Logo, useFora } from './Comum';
+import { MODULOS, ondeEstou, type Modulo } from '../lib/modulos';
 
 const PAPEL: Record<string, string> = { diretor: 'Diretor', gestor: 'Gestor', analista: 'Analista', leitura: 'Leitura' };
 
@@ -17,7 +18,7 @@ export function Moldura({ children }: { children: ReactNode }) {
   const busca = q.get('q') ?? '';
   const comGaveta = /^\/(titulos|previsoes|contratos)\/[^/]+/.test(loc.pathname);
   const foto = sessao?.user.user_metadata?.avatar_url as string | undefined;
-  const pedidos = ['/titulos', '/previsoes', '/contratos'].some(p => loc.pathname.startsWith(p));
+  const atual = ondeEstou(loc.pathname);
 
   function buscar(v: string) {
     const n = new URLSearchParams(q);
@@ -50,14 +51,58 @@ export function Moldura({ children }: { children: ReactNode }) {
             )}
           </div>
         </header>
-        <nav className="rail">
-          <span className="fabr-vaga" />
-          <NavLink to={`/titulos${loc.search}`} className={`ri ${pedidos ? 'on' : ''}`}>
-            <span className="pil"><img src={`${BASE}marca/icone-documento.svg`} alt="" /></span>Pedidos
-          </NavLink>
-        </nav>
+        <Menu atual={atual.m?.k} sub={atual.s?.r} />
         <main className={`main ${comGaveta ? 'com-gav' : ''}`}>{children}</main>
       </div>
+    </div>
+  );
+}
+
+/** Menu lateral com os módulos; o submódulo abre numa coluna ao lado (clique, ou o mouse parado 0,3 s), que fecha ao sair. */
+function Menu({ atual, sub }: { atual?: string; sub?: string }) {
+  const [aberto, setAberto] = useState<string | null>(null);
+  const t = useRef<number>();
+  const fechar = useCallback(() => setAberto(null), []);
+  const ref = useFora<HTMLDivElement>(aberto != null, fechar);
+  const loc = useLocation();
+  useEffect(() => setAberto(null), [loc.pathname]);
+  useEffect(() => () => window.clearTimeout(t.current), []);
+  const m = MODULOS.find(x => x.k === aberto);
+  // Submódulo com filhos abre uma segunda coluna ao lado (como no Business Manager da Meta), no clique ou no mouse.
+  const [pai, setPai] = useState<string | null>(null);
+  useEffect(() => setPai(null), [aberto]);
+  const filhos = m?.subs.find(x => x.r === pai)?.filhos;
+  function agendar(k: string | null, ms: number) { window.clearTimeout(t.current); t.current = window.setTimeout(() => setAberto(k), ms); }
+  function item(x: Modulo) {
+    const conteudo = <><span className="pil"><Ic n={x.ic} s={22} /></span>{x.r}</>;
+    const cls = `ri ${x.k === atual ? 'on' : ''} ${x.k === aberto ? 'ab' : ''}`;
+    if (!x.subs.length) return <span key={x.k} className={`${cls} off`} title="Em breve">{conteudo}</span>;
+    return (
+      <button key={x.k} className={cls} aria-expanded={x.k === aberto} onClick={() => setAberto(x.k === aberto ? null : x.k)}
+        onMouseEnter={() => agendar(x.k, aberto ? 0 : 150)} onMouseLeave={() => window.clearTimeout(t.current)}>{conteudo}</button>
+    );
+  }
+  return (
+    <div className="nav-w" ref={ref} onMouseLeave={() => aberto && agendar(null, 400)} onMouseEnter={() => aberto && window.clearTimeout(t.current)}>
+      <nav className="rail" aria-label="Módulos">{MODULOS.map(item)}</nav>
+      {m && (
+        <div className="subm" role="menu" aria-label={m.r}>
+          <div className="subm-t">{m.r}</div>
+          {m.subs.map(s => !s.to
+            ? <span key={s.r} className="subm-i off" role="menuitem" aria-disabled="true" onMouseEnter={() => setPai(null)}>{s.r}<span className="subm-eb">Em breve</span></span>
+            : s.filhos
+              ? <NavLink key={s.r} to={s.to} role="menuitem" aria-haspopup="menu" aria-expanded={s.r === pai}
+                  className={`subm-i subm-pai ${s.r === sub && m.k === atual ? 'at' : ''} ${s.r === pai ? 'ab' : ''}`}
+                  onMouseEnter={() => setPai(s.r)} onFocus={() => setPai(s.r)}>{s.r}<Ic n="chev" s={18} /></NavLink>
+              : <NavLink key={s.r} to={s.to} role="menuitem" onMouseEnter={() => setPai(null)} className={`subm-i ${s.r === sub && m.k === atual ? 'on' : ''}`}>{s.r}</NavLink>)}
+        </div>
+      )}
+      {m && pai && filhos && (
+        <div className="subm subm2" role="menu" aria-label={pai}>
+          <div className="subm-t">{pai}</div>
+          {filhos.map(f => <NavLink key={f.to} to={f.to} end role="menuitem" className={({ isActive }) => `subm-i ${isActive ? 'on' : ''}`}>{f.r}</NavLink>)}
+        </div>
+      )}
     </div>
   );
 }

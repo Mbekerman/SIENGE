@@ -1,5 +1,9 @@
 // Ícones de linha do protótipo do ERP (fontes/icones.ts, que copia os do BKM Terrenos, mais os de tpl.js). Não editar à mão.
 export const P = {
+  "repetir": "M4 12a8 8 0 0 1 14-5.3M20 4v4h-4M20 12a8 8 0 0 1-14 5.3M4 20v-4h4",
+  "casa": "M4 11 12 4l8 7M6 9.5V20h12V9.5M10 20v-5h4v5",
+  "escudo": "M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z",
+  "grafico": "M4 20h16M7 16v-4M12 16V8M17 16v-7",
   "fwd": "M5 12h14M13 6l6 6-6 6",
   "edit": "M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4",
   "recolher": "M13 6l-6 6 6 6M19 6l-6 6 6 6",
