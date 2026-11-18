@@ -149,8 +149,10 @@ test('Retry-After do Sienge empurra a próxima tentativa (S-044)', async () => {
 test('banco: todo passo roda numa transação como erp_sistema', async () => {
   const log: string[][] = [];
   let atual: string[] = [];
-  const tx = (partes: TemplateStringsArray) => {
+  const valores: unknown[][] = [];
+  const tx = Object.assign((partes: TemplateStringsArray, ...v: unknown[]) => {
     atual.push(partes.join('?').replace(/\s+/g, ' ').trim());
+    valores.push(v);
     if (/sienge_enfileirar/.test(partes.join(''))) return Promise.resolve([{ n: 2 }]);
     if (/erp\.sienge_pegar\(\)/.test(partes.join(''))) return Promise.resolve([{ item_id: T, sienge_id: null, tentativas: 0 }]);
     if (/erp\.sienge_pegar_conferencia\(\)/.test(partes.join(''))) return Promise.resolve([{ item_id: T, sienge_id: 7 }]);
@@ -161,7 +163,7 @@ test('banco: todo passo roda numa transação como erp_sistema', async () => {
     if (/erp\.sienge_terminar_cruzamento/.test(partes.join(''))) return Promise.resolve([{ n: 3 }]);
     if (/erp\.sienge_pegar_aviso\(\)/.test(partes.join(''))) return Promise.resolve([{ evento_id: T, bill_id: 7, previsao_id: T, tipo: 'apagar' }]);
     return Promise.resolve([]);
-  };
+  }, { json: (j: unknown) => ({ comoJson: j }) });
   const sql = { begin: async (f: (t: unknown) => Promise<unknown>) => { atual = []; log.push(atual); return await f(tx); } };
   const bp = bancoPostgres(sql);
   assert.equal(await bp.enfileirar(), 2);
@@ -176,6 +178,8 @@ test('banco: todo passo roda numa transação como erp_sistema', async () => {
   assert.deepEqual(await bp.prvNossas(11), [{ sienge_id: 7, previsao_id: T, esperada: true }]);
   await bp.recriarPrv(T, 7, 'm');
   assert.equal(await bp.terminarCruzamento(11, [], {}), 3);
+  // JSON pelo tx.json, nunca JSON.stringify (chegaria como jsonb do tipo string; achado no bkm_dev, 18/11)
+  assert.deepEqual(valores.at(-1)!.slice(1, 3), [{ comoJson: [] }, { comoJson: {} }]);
   assert.deepEqual(await bp.linhasApagar(), []);
   assert.deepEqual(await bp.pegarAviso(), { evento_id: T, bill_id: 7, previsao_id: T, tipo: 'apagar' });
   await bp.terminarAviso(T, 'r', false);

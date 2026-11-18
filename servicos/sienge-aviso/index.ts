@@ -3,9 +3,10 @@
 // com verify_jwt desligado: o Sienge não manda o JWT do Supabase; quem autentica é o token (logica.ts).
 // SUPABASE_DB_URL vem do Supabase.
 import postgres from 'npm:postgres@3.4.4';
-import { receber, temBearer } from './logica.ts';
+import { receber, registrarNoBanco, temBearer } from './logica.ts';
 
 const sql = postgres(Deno.env.get('SUPABASE_DB_URL')!, { max: 1, prepare: false });
+const registrar = registrarNoBanco(sql);
 
 // O token fica em memória por 5 minutos (S-136): um POST sem cara de aviso nem chega ao banco.
 let cache: { token: string | null; ate: number } | null = null;
@@ -24,10 +25,5 @@ Deno.serve(async (req) => {
   } catch {
     return new Response('erro ao ler o token', { status: 500 });
   }
-  return await receber(req, token, (a) => sql.begin(async (tx: any) => {
-    await tx`set local role erp_sistema`;
-    const [r] = await tx`select erp.sienge_registrar_aviso(${a.eventoId}::uuid, ${a.evento}::text, ${a.hook}::text,
-                                                            ${JSON.stringify(a.corpo)}::jsonb) as novo`;
-    return r.novo as boolean;
-  }));
+  return await receber(req, token, registrar);
 });
