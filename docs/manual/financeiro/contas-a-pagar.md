@@ -133,6 +133,38 @@ Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depo
 
 ![Pedidos, ficha do pedido, Novo pedido, Adiantamento sem nota, Contas recorrentes, Nova conta (os dois tipos), No Sienge e Campanhas](../imagens/financeiro/contas-a-pagar-telas.png)
 
+#### Consultar títulos, previsões e contas recorrentes (PR #85)
+
+🟡 **Primeira tela de verdade, no PR #85, que espera o ok do Moises.** Ela só consulta; as telas de lançar vêm nos próximos PRs. O pedido do Moises, de 18/nov/2026, foi começar pelas telas de lançar título, previsões e contratos recorrentes, e pela de consultar.
+
+**Entrada:** pela conta Google @bkm.com.br. Quem não tem cadastro no ERP vê "Sem acesso ao ERP".
+
+**Menu Pedidos**, com três abas:
+
+1. **Títulos**
+   - **Contadores:** Rascunhos, Em aprovação, No Sienge e Pagos. Um clique filtra, e o segundo clique volta a mostrar tudo.
+   - **Grupos:** os títulos ficam agrupados, com o total de cada grupo. Os cancelados ficam num grupo fechado, no fim.
+   - **Etapas:** Rascunho, Em revisão, Recusado, Em aprovação, Aprovado, No Sienge, Não chegou ao Sienge, Pago e Cancelado.
+   - **Gaveta:** clicar na linha abre a gaveta do título. No topo vêm o valor, as etiquetas e os avisos: a recusa (quem recusou e por quê), o erro no envio e "Esperando …". Depois vêm os dados (fornecedor, documento, emissão, competência, empresa, número no Sienge e quem lançou), as parcelas com o PIX ou o boleto e onde o gasto entra (o rateio). Por último aparecem as retenções e a caução, as previsões consumidas e os votos.
+2. **Previsões**
+   - **Contadores:** Esperando aprovação, Abertas, Consumidas e Encerradas ou canceladas.
+   - **Saldo:** a previsão aberta mostra quanto ainda resta.
+   - **Gaveta:** data, competência, fornecedor ("Sem fornecedor" quando falta), onde entra, natureza, núcleo, origem, contrato e número no Sienge.
+3. **Contas recorrentes**
+   - **Contadores:** Ativas, Em aprovação, Vencem em 60 dias e Encerradas.
+   - **Grupos:** Contratos de serviço e Assinaturas, com o total por mês. A conta de consumo ainda não existe no banco.
+
+**Nas três abas:**
+- A busca na barra de cima procura fornecedor, nota ou número.
+- O link copiado abre a mesma tela, com o filtro aplicado.
+- Título e previsão de PJ só aparecem para o master e para quem ele designou.
+
+![Títulos no computador](../imagens/financeiro/consulta-titulos-desk.png)
+
+![Gaveta de um título em aprovação](../imagens/financeiro/consulta-titulo-gaveta-desk.png)
+
+![Títulos no celular](../imagens/financeiro/consulta-titulos-cel.png)
+
 #### O que muda nas telas com o piloto do Marketing
 
 > ✅ Telas aprovadas pelo Moises em 15/nov/2026 (protótipo, versão 35), ainda sem código. As imagens são de versões um pouco anteriores.
