@@ -11,6 +11,11 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export type Aviso = { eventoId: string; evento: string; hook: string | null; corpo: Record<string, unknown> };
 export type Registrar = (a: Aviso) => Promise<boolean>;
 
+// Triagem antes de ler o token: sem "Bearer" com pelo menos 32 caracteres não há o que comparar.
+export function temBearer(req: Request): boolean {
+  return /^Bearer \S{32,}$/.test(req.headers.get('authorization') ?? '');
+}
+
 export function iguais(a: string, b: string): boolean {
   const ea = new TextEncoder().encode(a), eb = new TextEncoder().encode(b);
   let d = ea.length ^ eb.length;

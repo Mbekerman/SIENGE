@@ -1,7 +1,7 @@
 // node --test --experimental-strip-types servicos/sienge-aviso/logica.test.ts
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CORPO_MAX, iguais, receber, type Aviso } from './logica.ts';
+import { CORPO_MAX, iguais, receber, temBearer, type Aviso } from './logica.ts';
 
 const TOKEN = 'k'.repeat(40);
 const ID = '0f8fad5b-d9cb-469f-a165-70867728950e';
@@ -95,4 +95,11 @@ test('comparação do token', () => {
   assert.ok(!iguais('', 'a'));
   assert.ok(!iguais('\u00e9', 'e\u0301'));
   assert.ok(!iguais('a', 'a\u0000'));
+});
+
+test('triagem antes do banco: só Bearer com 32 caracteres ou mais', () => {
+  const com = (aut?: string) => new Request('https://x', { method: 'POST', headers: aut === undefined ? {} : { authorization: aut } });
+  assert.ok(temBearer(com(`Bearer ${'a'.repeat(32)}`)));
+  for (const aut of [undefined, '', 'Bearer ', `Bearer ${'a'.repeat(31)}`, `bearer ${'a'.repeat(40)}`, `Basic ${'a'.repeat(40)}`, `Bearer ${'a'.repeat(20)} ${'b'.repeat(20)}`])
+    assert.ok(!temBearer(com(aut)), String(aut));
 });

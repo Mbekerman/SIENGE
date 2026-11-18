@@ -3,15 +3,24 @@
 // com verify_jwt desligado: o Sienge não manda o JWT do Supabase; quem autentica é o token (logica.ts).
 // SUPABASE_DB_URL vem do Supabase.
 import postgres from 'npm:postgres@3.4.4';
-import { receber } from './logica.ts';
+import { receber, temBearer } from './logica.ts';
 
 const sql = postgres(Deno.env.get('SUPABASE_DB_URL')!, { max: 1, prepare: false });
 
+// O token fica em memória por 5 minutos (S-136): um POST sem cara de aviso nem chega ao banco.
+let cache: { token: string | null; ate: number } | null = null;
+async function tokenGuardado(): Promise<string | null> {
+  if (cache && cache.ate > Date.now()) return cache.token;
+  const [k] = await sql`select decrypted_secret as v from vault.decrypted_secrets where name = 'sienge_aviso_token'`;
+  cache = { token: k?.v ?? null, ate: Date.now() + 5 * 60_000 };
+  return cache.token;
+}
+
 Deno.serve(async (req) => {
-  let token: string | null = null;
+  if (req.method !== 'POST' || !temBearer(req)) return new Response('não autorizado', { status: 401 });
+  let token: string | null;
   try {
-    const [k] = await sql`select decrypted_secret as v from vault.decrypted_secrets where name = 'sienge_aviso_token'`;
-    token = k?.v ?? null;
+    token = await tokenGuardado();
   } catch {
     return new Response('erro ao ler o token', { status: 500 });
   }
