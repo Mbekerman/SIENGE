@@ -205,7 +205,13 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 ✅ Decidida pelo Moises em 14/nov/2026; no banco desde o PR #14.
 
 - **Onde vale:** no piloto, Marketing. A alçada vale para todo título a pagar e toda previsão lançada à mão, em todo centro de custo.
-- ✅ **Nada é aprovado sem aprovador** (Moises, 18/nov/2026): centro sem gestor da área e sem faixas próprias **não aprova sozinho**. Ele segue as faixas gerais; a fase do gestor, que o centro não tem, vai ao **master**, com aviso de falta de aprovadores. Antes, o título desse centro ficava fora da alçada e a previsão nascia aprovada. Exceções que continuam sem alçada: títulos de **imposto** e **societário**, e a linha **sem núcleo e sem centro** (como 10.01 Bens da empresa), que hoje só o master lança.
+- ✅ **Nada é aprovado sem aprovador** (Moises, 18/nov/2026): centro sem gestor da área e sem faixas próprias **não aprova sozinho**. Ele segue as faixas gerais; a fase do gestor, que o centro não tem, vai ao **master**, com aviso de falta de aprovadores. Antes, o título desse centro ficava fora da alçada e a previsão nascia aprovada.
+- ✅ **Imposto, sócios e linha sem centro também passam por aprovação** (Moises, 18/nov/2026), em qualquer valor:
+  - título de **imposto retido**: aprovação da **AF**;
+  - título de **movimento entre sócios** (a parte a pagar): aprovação da **AD**;
+  - linha **sem núcleo e sem centro** (como 10.01 Bens da empresa, que hoje só o master lança): **AF e AO juntos**, em qualquer ordem, **ou a AD sozinha**. Vale também para a previsão sem centro. O título que tem linhas com centro e sem centro passa pelas duas aprovações.
+- ✅ **A AD sempre pode fazer a aprovação da AF ou da AO** (Moises, 18/nov/2026). Quando a mesma faixa tem a vaga da AD e a da AF, quem está na AD aprova primeiro na vaga dela.
+- Recusar o título de imposto cancela a nota inteira, como recusar o título do fornecedor.
 - **Acumulado:** o do **mês de competência**, por centro de custo, somando todos os núcleos e empresas, já contando o próprio título.
 - **Faixas:**
   - até R$ 50 mil no acumulado: aprovam o gestor da área e depois a AF;
@@ -213,7 +219,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 - ✅ O acumulado soma também o que **o mesmo fornecedor** tem no mês em outros centros de custo, para não escapar da alçada repartindo o gasto. O administrador pode desligar (Moises, 14/nov/2026).
 - **Configuração:** as faixas e o modo de somar (grupo, empresa ou núcleo) são valores iniciais; o administrador muda, com registro.
 - **Regras do código** (a conferir com o Moises): a alçada é fixada na confirmação do título, e um título lançado depois não muda a de um anterior; as fases de aprovação correm em sequência; quem lançou não aprova e cada pessoa aprova uma fase de aprovação só; sem a alçada completa, o título não é pago; quem aprova vê os títulos do mês que formaram o acumulado.
-- **Fora da alçada:** imposto retido e movimento entre sócios.
+- **Imposto retido** pede a AF; **movimento entre sócios** pede a AD (desde 18/nov/2026).
 
 **Alçada por centro de custo** (Moises, 15/nov/2026; no código a partir do PR #37):
 

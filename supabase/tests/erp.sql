@@ -662,7 +662,8 @@ select pg_temp.falha($$delete from erp.quitacoes$$, 'quitação não se apaga');
 select pg_temp.falha($$delete from erp.lancamentos$$, 'o livro não apaga linhas');
 select pg_temp.falha($$update erp.lancamentos set valor = 1$$, 'o livro não se edita');
 
--- pagar o ISS pelo atalho
+-- pagar o ISS pelo atalho (o imposto passa pela AF desde 18/11/2026)
+select pg_temp.aprova((select id from erp.titulos where tipo = 'imposto'), :'diretor');
 select erp.pagar_parcela((select p.id from erp.parcelas p join erp.titulos t on t.id = p.titulo_id where t.tipo = 'imposto'),
                             :'conta_spe', '2026-03-10') is not null as x \gset
 select pg_temp.ok((select situacao from erp.titulos where tipo = 'imposto') = 'quitado', 'atalho paga a parcela inteira');
@@ -691,6 +692,11 @@ select pg_temp.ok((select count(*) from erp.titulos t join erp.movimentos_societ
   'aporte vira par ligado: a pagar na incorporadora, a receber na SPE');
 select pg_temp.ok((select sum(l.valor) from erp.lancamentos l join erp.movimentos_societarios m on l.titulo_id in (m.titulo_pagar_id, m.titulo_receber_id) where m.id = :'ms') = 0,
   'no consolidado do grupo o par se anula');
+select pg_temp.sis();
+select pg_temp.ok((select count(*) = 1 and bool_and(a.centro_custo_id is null and a.fases = '{AD}' and a.basta is null and a.titulo_id = m.titulo_pagar_id)
+                   from erp.titulo_alcadas a join erp.movimentos_societarios m on a.titulo_id in (m.titulo_pagar_id, m.titulo_receber_id) where m.id = :'ms'),
+  'movimento entre sócios: o título a pagar pede a AD, sem centro; o a receber não tem alçada (18/11/2026)');
+select pg_temp.volta();
 select pg_temp.como(nullif(:'quem_antes', ''));
 
 -- ---------------------------------------------------------------------
@@ -994,7 +1000,9 @@ select pg_temp.ok(not has_function_privilege('authenticated', 'erp._aplicar_muda
                   and not has_function_privilege('authenticated', 'erp.registrar_evento(text, text, text, uuid, uuid, jsonb)', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp._executar_config(text, text, jsonb)', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp._contexto_mudanca_config(text)', 'EXECUTE')
-                  and not has_function_privilege('authenticated', 'erp._criar_titulo(uuid, text, text, uuid, uuid, uuid, date, date, numeric, date[], text, uuid, text)', 'EXECUTE'),
+                  and not has_function_privilege('authenticated', 'erp._criar_titulo(uuid, text, text, uuid, uuid, uuid, date, date, numeric, date[], text, uuid, text)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp._fixar_alcada_sem_centro(erp.titulos, text[], text, numeric)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp._fixar_alcada_previsao_sem_centro(erp.previsoes)', 'EXECUTE'),
   'catálogo: o que aplica sem conferir, os saldos internos e as rotinas do servidor ficam sem EXECUTE para a API');
 -- S-079: nenhuma função que recebe a pessoa (p_user) é executável pela API
 select pg_temp.ok(not exists (
@@ -1819,9 +1827,136 @@ select pg_temp.como(:'gestor');
 select pg_temp.ok(erp.decidir_titulo('82000000-0000-0000-0000-000000000001', true) = 'pendente', 'alçada: o gestor da área aprova a fase dele');
 select pg_temp.erro_igual($$select erp.decidir_titulo('82000000-0000-0000-0000-000000000001', true)$$,
   'Você já aprovou uma fase de aprovação deste título', 'alçada: a mesma pessoa não aprova duas fases (o gestor também está no AF)');
-select pg_temp.como(:'diretor2');
+select pg_temp.como(:'analista2');
 select pg_temp.erro_igual($$select erp.decidir_titulo('82000000-0000-0000-0000-000000000001', true)$$,
   'Esta fase de aprovação é de quem está em AF', 'alçada: AF vem depois do gestor, em sequência');
+-- a AD sempre pode fazer a aprovação da AF ou da AO (Moises, 18/11/2026)
+savepoint ad_no_af;
+select pg_temp.como(:'diretor2');
+select erp.decidir_titulo('82000000-0000-0000-0000-000000000001', true) as r_ad \gset
+select pg_temp.ok(:'r_ad' = 'aprovado'
+                  and (select por = :'diretor2'::uuid and lista = 'AF' from erp.titulo_aprovacoes
+                        where titulo_id = '82000000-0000-0000-0000-000000000001' and fase = 2),
+  'alçada: a AD aprova na vaga da AF (18/11/2026)');
+rollback to savepoint ad_no_af;
+-- linha sem centro (movimentação): AO + AF juntos, ou a AD sozinha, em qualquer valor (Moises, 18/11/2026)
+savepoint sem_centro;
+select pg_temp.como(:'diretor');   -- só o master lança linha sem núcleo e sem centro
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('82000000-0000-0000-0000-0000000000a1', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-05-05', '2026-05-01', 1000);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('82000000-0000-0000-0000-0000000000a1', 1, '2026-05-20', 1000);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('82000000-0000-0000-0000-0000000000a1', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 60),
+  ('82000000-0000-0000-0000-0000000000a1', null, null, pg_temp.nat('11.02'), 40);
+select erp.confirmar_titulo('82000000-0000-0000-0000-0000000000a1');
+select pg_temp.ok((select count(*) = 2
+                          and count(*) filter (where centro_custo_id is null and fases = '{AF,AO}' and basta = 'AD' and paralelo
+                                                 and alcada_id is null and not falta_aprovadores) = 1
+                          and count(*) filter (where centro_custo_id = :'cc_mkt' and basta is null) = 1
+                   from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-0000000000a1'),
+  'sem centro: o título misto tem a alçada do centro e a alçada sem centro (AF e AO, ou a AD)');
+select pg_temp.ok((select basta = 'AD' from erp.v_titulo_alcadas where titulo_id = '82000000-0000-0000-0000-0000000000a1' and centro_custo_id is null),
+  'sem centro: a visão das alçadas mostra a alçada sem centro');
+-- o centro aprova pelo gestor (AREA), pela AF e pela AD; depois a alçada sem centro
+select pg_temp.como(:'gestor');
+select pg_temp.ok(erp.decidir_titulo('82000000-0000-0000-0000-0000000000a1', true, null, false, :'cc_mkt') = 'pendente', 'sem centro: o gestor aprova o centro');
+select pg_temp.como(:'contador');
+select pg_temp.ok(erp.decidir_titulo('82000000-0000-0000-0000-0000000000a1', true, null, false, :'cc_mkt') = 'pendente', 'sem centro: a AF aprova o centro');
+select pg_temp.como(:'diretor2');
+select pg_temp.ok(erp.decidir_titulo('82000000-0000-0000-0000-0000000000a1', true, null, false, :'cc_mkt') = 'pendente', 'sem centro: a AD fecha o centro');
+select pg_temp.sis();
+select pg_temp.ok((select count(*) = 1 and bool_and(centro_custo_id is null) from erp.titulo_alcadas a
+                    where a.titulo_id = '82000000-0000-0000-0000-0000000000a1' and erp._fase_da_alcada(a) is not null),
+  'sem centro: falta só a alçada sem centro (' || (select string_agg(coalesce(centro_custo_id::text,'-') || array_to_string(fases, ','), ' ') from erp.titulo_alcadas a
+    where a.titulo_id = '82000000-0000-0000-0000-0000000000a1' and erp._fase_da_alcada(a) is not null) || ')');
+select pg_temp.volta();
+savepoint sem_centro_ad;
+select pg_temp.como(:'diretor2');
+select erp.decidir_titulo('82000000-0000-0000-0000-0000000000a1', true) as r_sc \gset
+select pg_temp.ok(:'r_sc' = 'aprovado'
+                  and (select count(*) = 2 and bool_and(lista = 'AD' and por = :'diretor2'::uuid) from erp.titulo_aprovacoes v
+                        join erp.titulo_alcadas a on a.id = v.alcada_id
+                        where v.titulo_id = '82000000-0000-0000-0000-0000000000a1' and a.centro_custo_id is null),
+  'sem centro: o voto da AD sozinho aprova a alçada sem centro');
+rollback to savepoint sem_centro_ad;
+select pg_temp.como(:'gestor');   -- AF (já aprovou o centro como gestor: na alçada sem centro, vota de novo)
+select pg_temp.ok(erp.decidir_titulo('82000000-0000-0000-0000-0000000000a1', true) = 'pendente', 'sem centro: a AF sozinha não basta');
+select pg_temp.erro_igual($$select erp.decidir_titulo('82000000-0000-0000-0000-0000000000a1', true)$$,
+  'Você já aprovou uma fase de aprovação deste título', 'sem centro: a AF não ocupa as duas vagas');
+select pg_temp.como(:'analista');  -- AO
+select pg_temp.ok(erp.decidir_titulo('82000000-0000-0000-0000-0000000000a1', true) = 'aprovado', 'sem centro: AF + AO aprovam');
+rollback to savepoint sem_centro;
+-- sem ninguém na AF e na AO, com uma pessoa só na AD (que não preenche as duas vagas): não falta
+-- aprovador, porque a AD sozinha basta
+savepoint sem_centro_sem_ao;
+select pg_temp.sis(); delete from erp.listas_financeiro where lista in ('AF','AO'); select pg_temp.volta();
+select pg_temp.como(:'diretor');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('82000000-0000-0000-0000-0000000000a3', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-05-05', '2026-05-01', 10);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('82000000-0000-0000-0000-0000000000a3', 1, '2026-05-20', 10);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('82000000-0000-0000-0000-0000000000a3', null, null, pg_temp.nat('11.02'), 100);
+select erp.confirmar_titulo('82000000-0000-0000-0000-0000000000a3');
+select pg_temp.sis();
+select pg_temp.ok((select not falta_aprovadores from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-0000000000a3')
+                  and not exists (select 1 from erp.eventos where tipo = 'alcada_falta_aprovadores' and registro = '82000000-0000-0000-0000-0000000000a3'),
+  'sem centro: sem AF e AO, com uma pessoa na AD, não falta aprovador nem vai ao master');
+select pg_temp.volta();
+rollback to savepoint sem_centro_sem_ao;
+-- sem AO e sem AD (com a AF): falta aprovador
+savepoint sem_centro_sem_ao_ad;
+select pg_temp.sis(); delete from erp.listas_financeiro where lista in ('AO','AD') and user_id <> :'diretor'; select pg_temp.volta();
+select pg_temp.como(:'diretor');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('82000000-0000-0000-0000-0000000000a4', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-05-05', '2026-05-01', 10);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('82000000-0000-0000-0000-0000000000a4', 1, '2026-05-20', 10);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('82000000-0000-0000-0000-0000000000a4', null, null, pg_temp.nat('11.02'), 100);
+select erp.confirmar_titulo('82000000-0000-0000-0000-0000000000a4');
+select pg_temp.sis();
+select pg_temp.ok((select falta_aprovadores and vagas_sem_gente = '{AO}' from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-0000000000a4')
+                  and exists (select 1 from erp.eventos where tipo = 'alcada_falta_aprovadores' and registro = '82000000-0000-0000-0000-0000000000a4'),
+  'sem centro: sem AO e sem AD, falta aprovador e vai ao master');
+select pg_temp.volta();
+rollback to savepoint sem_centro_sem_ao_ad;
+-- sem centro, sem ninguém na AF e na AO e com a AD vazia: vai ao master, com o aviso
+savepoint sem_centro_falta;
+select pg_temp.sis(); delete from erp.listas_financeiro where lista in ('AF','AO','AD') and user_id <> :'diretor'; select pg_temp.volta();
+select pg_temp.como(:'diretor');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('82000000-0000-0000-0000-0000000000a2', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-05-05', '2026-05-01', 10);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('82000000-0000-0000-0000-0000000000a2', 1, '2026-05-20', 10);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('82000000-0000-0000-0000-0000000000a2', null, null, pg_temp.nat('11.02'), 100);
+select erp.confirmar_titulo('82000000-0000-0000-0000-0000000000a2');
+select pg_temp.sis();
+select pg_temp.ok((select falta_aprovadores from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-0000000000a2')
+                  and exists (select 1 from erp.eventos where tipo = 'alcada_falta_aprovadores' and registro = '82000000-0000-0000-0000-0000000000a2'),
+  'sem centro: sem AF, AO nem AD, vai ao master com o aviso');
+rollback to savepoint sem_centro_falta;
+-- a previsão sem centro segue a mesma regra: AO + AF, ou a AD sozinha
+savepoint prev_sem_centro;
+select pg_temp.como(:'diretor');
+insert into erp.previsoes (id, empresa_id, origem, pessoa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor) values
+  ('68000000-0000-0000-0000-0000000000a1', :'spe', 'manual', '10000000-0000-0000-0000-000000000007', null, null, pg_temp.nat('11.02'), '2026-05-01', '2026-05-20', 500);
+select pg_temp.sis();
+select pg_temp.ok((select count(*) = 1 and bool_and(centro_custo_id is null and fases = '{AF,AO}' and basta = 'AD')
+                   from erp.previsao_alcadas where previsao_id = '68000000-0000-0000-0000-0000000000a1'),
+  'sem centro: a previsão sem centro pede AF e AO, ou a AD');
+select pg_temp.volta();
+savepoint prev_sem_centro_ad;
+select pg_temp.como(:'diretor2');
+select erp.decidir_previsao('68000000-0000-0000-0000-0000000000a1', true) as r_psc \gset
+select pg_temp.sis();
+select pg_temp.ok(:'r_psc' = 'aprovado' and erp.previsao_aprovada('68000000-0000-0000-0000-0000000000a1'),
+  'sem centro: a AD sozinha aprova a previsão sem centro');
+select pg_temp.volta();
+rollback to savepoint prev_sem_centro_ad;
+select pg_temp.como(:'gestor');
+select pg_temp.ok(erp.decidir_previsao('68000000-0000-0000-0000-0000000000a1', true) = 'pendente', 'sem centro: na previsão, a AF sozinha não basta');
+select pg_temp.como(:'analista');
+select pg_temp.ok(erp.decidir_previsao('68000000-0000-0000-0000-0000000000a1', true) = 'aprovado', 'sem centro: na previsão, AF + AO aprovam');
+rollback to savepoint prev_sem_centro;
 select pg_temp.como(:'contador');
 select pg_temp.ok(erp.decidir_titulo('82000000-0000-0000-0000-000000000001', true) = 'aprovado', 'alçada: AF aprova e o título fica liberado');
 select pg_temp.como(:'analista');
@@ -1929,10 +2064,12 @@ values ('70000000-0000-0000-0000-000000000650', :'ne_vm', :'cc_mkt', pg_temp.nat
 insert into erp.documento_retencoes (documento_id, imposto, valor, orgao_id, vencimento)
 values ('70000000-0000-0000-0000-000000000650', 'iss', 50, '10000000-0000-0000-0000-000000000006', '2026-08-10');
 select erp.lancar_documento('70000000-0000-0000-0000-000000000650', array['2026-07-20']::date[]) is not null as lancou \gset
-select pg_temp.ok((select count(*) filter (where t.tipo = 'fornecedor') = 1 and count(*) filter (where t.tipo = 'imposto') = 0
+select pg_temp.ok((select count(*) filter (where t.tipo = 'fornecedor' and a.centro_custo_id is not null) = 1
+                          and count(*) filter (where t.tipo = 'imposto' and a.centro_custo_id is null and a.fases = '{AF}' and a.basta is null) = 1
+                          and count(*) = 2
                    from erp.titulo_alcadas a join erp.titulos t on t.id = a.titulo_id
                    where t.documento_id = '70000000-0000-0000-0000-000000000650'),
-  'alçada: o título do fornecedor entra; o imposto retido não');
+  'alçada: o título do fornecedor pela alçada do centro; o imposto retido pelo AF, sem centro');
 -- sem faixa que cubra o acumulado, o título não se confirma
 select pg_temp.como(:'diretor');
 delete from erp.alcadas_pagamento where ate is null;
@@ -2646,6 +2783,7 @@ select pg_temp.ok(erp.caucao_saldo('60000000-0000-0000-0000-000000000002') = :'c
   'recusa: (antes) a nota retém caução e consome a previsão');
 select pg_temp.como(:'analista');
 select pg_temp.erro_igual(format($$do $y$ begin
+    perform pg_temp.aprova((select id from erp.titulos where documento_id = '70000000-0000-0000-0000-000000000660' and tipo = 'imposto'), %L);
     insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values
       ('83000000-0000-0000-0000-000000000660', %L, %L, '10000000-0000-0000-0000-000000000006', %L, %L, '2027-02-10', 50);
     insert into erp.quitacoes (pagamento_id, parcela_id, principal)
@@ -2653,7 +2791,7 @@ select pg_temp.erro_igual(format($$do $y$ begin
        where t.documento_id = '70000000-0000-0000-0000-000000000660' and t.tipo = 'imposto';
     perform pg_temp.como(%L);
     perform erp.decidir_titulo(%L, false, 'serviço não medido');
-  end $y$ $$, :'spe', :'conta_spe', :'ne_vm', :'cc_obra', :'diretor2', :'tit660'),
+  end $y$ $$, :'gestor', :'spe', :'conta_spe', :'ne_vm', :'cc_obra', :'diretor2', :'tit660'),
   'O título ou a nota dele já tem pagamento; o estorno do pagamento fica para o módulo de bancos',
   'recusa: com o imposto da nota já pago, a nota não se desfaz');
 select pg_temp.como(:'diretor2');
@@ -3491,12 +3629,20 @@ select pg_temp.ok(exists (select 1 from erp.lancamentos where titulo_id = :'ta')
 select pg_temp.como(:'u4');
 select pg_temp.ok(exists (select 1 from erp.lancamentos where titulo_id = :'td'), 'acesso: com o PJ liberado, vê o PJ no livro');
 select pg_temp.como(:'u7');
--- desde 18/11/2026 a Obra (sem gestor) também tem alçada, pelas faixas gerais: a AD vê o C, em que aprova
-select pg_temp.ok(pg_temp.vejo_tits() = 'BC', 'acesso: quem aprova na AD vê os títulos das alçadas dele, e só eles (vê ' || pg_temp.vejo_tits() || ')');
+-- desde 18/11/2026 a Obra (sem gestor) também tem alçada, pelas faixas gerais (a AD vê o C), e a AD ocupa
+-- as vagas do AF e do AO (vê o A e o D, que pedem o AF); o E, que ninguém confirmou, fica de fora
+select pg_temp.ok(pg_temp.vejo_tits() = 'ABCD', 'acesso: quem aprova na AD vê os títulos das alçadas dele, e só eles (vê ' || pg_temp.vejo_tits() || ')');
+-- S-062: sem as alçadas do A e do D, a AD deixa de vê-los e eles vão para a linha sem detalhe
+savepoint s062;
+select pg_temp.sis(); set local session_replication_role = replica;
+delete from erp.titulo_alcadas where titulo_id in (:'ta', :'td');
+set local session_replication_role = origin; select pg_temp.volta();
+select pg_temp.como(:'u7');
 select pg_temp.ok((select count(*) = 2 and count(*) filter (where titulo_id = :'tb') = 1
                      and bool_or(titulo_id is null and pessoa = 'Outros 2 títulos (sem acesso)' and valor_no_centro = 21000 and empresa_id is null)
                    from erp.titulos_do_acumulado(:'tb')),
   'S-062: no acumulado, quem aprova vê em detalhe o que vê e o resto numa linha só, com a soma');
+rollback to savepoint s062;
 select pg_temp.como(:'u3');
 select pg_temp.erro_igual(format($$select erp.pedir_reclassificacao(%L, %L, 'x')$$, pg_temp.nat('05.01.04'), pg_temp.nat('05.01.02')),
   'O pedido leva lançamentos fora do seu acesso (núcleo, centro ou natureza); filtre pelo que você lança',
@@ -4013,6 +4159,22 @@ select pg_temp.erro_igual($$select erp.decidir_titulo('84000000-0000-0000-0000-0
   'Você já aprovou uma fase de aprovação deste título', 'alçada por centro: em paralelo, a mesma pessoa não aprova duas vagas');
 select pg_temp.como(:'contador');
 select pg_temp.ok(erp.decidir_titulo('84000000-0000-0000-0000-000000000002', true) = 'aprovado', 'alçada por centro: em paralelo, com as duas vagas, o título fica aprovado');
+-- em paralelo, a AD aprova na vaga dela, não na da AF que ela também ocupa (18/11/2026)
+savepoint par_ad;
+select pg_temp.sis();
+insert into erp.listas_financeiro (lista, user_id) values ('AD', :'diretor2') on conflict do nothing;
+update erp.alcadas_pagamento set fases = '{AF,AD}' where id = '86000000-0000-0000-0000-000000000002';
+select pg_temp.volta();
+select pg_temp.como(:'analista');
+select pg_temp.tit('84000000-0000-0000-0000-0000000000a0', :'cc_mkt', '05.01.04', 3000);
+select pg_temp.como(:'diretor2');
+select erp.decidir_titulo('84000000-0000-0000-0000-0000000000a0', true) as r_pad \gset
+select pg_temp.ok(:'r_pad' = 'pendente'
+                  and exists (select 1 from erp.titulo_aprovacoes where titulo_id = '84000000-0000-0000-0000-0000000000a0' and fase = 2 and lista = 'AD' and por = :'diretor2'),
+  'alçada por centro: em paralelo, a AD aprova a vaga dela antes da vaga da AF');
+select pg_temp.como(:'contador');
+select pg_temp.ok(erp.decidir_titulo('84000000-0000-0000-0000-0000000000a0', true) = 'aprovado', 'alçada por centro: e a AF fecha');
+rollback to savepoint par_ad;
 -- em sequência, com o diretor da área
 select pg_temp.como(:'analista');
 select pg_temp.tit('84000000-0000-0000-0000-000000000005', :'cc_mkt', '05.01.04', 150000);
