@@ -1,7 +1,7 @@
 // node --test --experimental-strip-types servicos/sienge-escrita/fila.test.ts
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bancoPostgres, dataSaoPaulo, httpSienge, processarUm, TENTATIVAS_4XX, type Banco, type Http, type ItemFila } from './fila.ts';
+import { bancoPostgres, dataSaoPaulo, httpSienge, processarAvisos, processarUm, TENTATIVAS_4XX, type Banco, type Http, type ItemFila } from './fila.ts';
 import { ErroSienge, type PedidoTitulo } from './envio.ts';
 
 const T = '00000000-0000-0000-0000-0000000000aa';
@@ -436,4 +436,24 @@ test('aviso: o item da fila vem antes do aviso', async () => {
   const r = await processarUm(x.b, sienge().h, cfg);
   assert.equal(r.passo, 'enviado');
   assert.deepEqual(x.fechados, []);
+});
+
+test('só avisos (chamado pelo recebedor): processa o aviso sem enfileirar, enviar título nem conferir', async () => {
+  const x = comAviso('apagar', { item_id: 'outra', sienge_id: 1 });
+  x.b.enfileirar = async () => { throw new Error('não enfileira'); };
+  x.b.pegar = async () => { throw new Error('não pega título'); };
+  const l = leitor(404);
+  const r = await processarAvisos(x.b, l.h);
+  assert.deepEqual(r, [{ passo: 'aviso', evento: 'ev1', siengeId: 7301, resultado: 'apagado no Sienge (404): linha marcada como apagada', enfileirados: 0 }]);
+  assert.deepEqual(x.apagados, ['p1']);
+  assert.deepEqual(l.chamadas, ['/bills/7301']);
+});
+
+test('só avisos: sem aviso pendente, nada; e para no máximo pedido', async () => {
+  const x = banco(null);
+  assert.deepEqual(await processarAvisos(x.b, leitor(404).h), []);
+  let n = 0;
+  x.b.pegarAviso = async () => ({ evento_id: `ev${++n}`, bill_id: 7301, previsao_id: 'p1', tipo: 'apagar' as const });
+  x.b.terminarAviso = async () => {};
+  assert.equal((await processarAvisos(x.b, leitor('ok').h, 3)).length, 3);
 });
