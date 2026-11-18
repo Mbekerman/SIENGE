@@ -1001,7 +1001,7 @@ select pg_temp.ok(not exists (
        'cancelar_reclassificacao','pedir_mudanca_acesso','decidir_mudanca_acesso','cancelar_mudanca_acesso','passar_master',
        'pedir_sucessao_master','decidir_sucessao_master','vetar_sucessao_master','efetivar_sucessao_master',
        'pedir_mudanca_config','decidir_mudanca_config','cancelar_mudanca_config','marcar_notificacoes_lidas',
-       'designar_pj','retirar_pj')),
+       'designar_pj','retirar_pj','previsao_aprovada_vista','contrato_aprovado_visto')),
   'catálogo: das funções security definer, authenticated só executa as da lista (RPCs e conferências de quem está logado)');
 select pg_temp.ok(not has_function_privilege('authenticated', 'erp._aplicar_mudanca_acesso(uuid)', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp.gerar_avisos_sucessao()', 'EXECUTE')
@@ -7195,6 +7195,92 @@ select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('naturezas', 
   'Só o master muda o que é PJ (a marca restrita da natureza)', 'PJ: levar uma natureza para dentro do galho PJ também só com o master');
 select pg_temp.como(null);
 rollback;
+
+-- ---------------------------------------------------------------------
+\echo '# api das telas (esquema api, 18/11/2026)'
+-- A tela vê exatamente o que o RLS do erp deixa: compara, para cada usuário, o que a função da API devolve com
+-- o que a mesma pessoa lê direto nas tabelas.
+select pg_temp.como(null);
+begin;
+-- um título com natureza restrita (como a folha PJ), lançado pelo master, que os outros não veem
+select pg_temp.como(:'diretor');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('8a000000-0000-0000-0000-000000000001', :'spe', 'avulso', '10000000-0000-0000-0000-000000000005', '2026-11-01', '2026-11-01', 777);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('8a000000-0000-0000-0000-000000000001', 1, '2026-11-30', 777);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('8a000000-0000-0000-0000-000000000001', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), 100);
+select pg_temp.sis(); update erp.naturezas set restrita = true where codigo = '04.01'; select pg_temp.volta();
+create temp table api_usuarios as select unnest(array[:'diretor', :'diretor2', :'gestor', :'analista', :'leitor', :'contador', :'analista2', :'ti']::text[]) u;
+grant select on api_usuarios to authenticated;
+do $$
+declare r record; v_api bigint; v_erp bigint;
+begin
+  for r in select u from api_usuarios loop
+    perform pg_temp.como(r.u);
+    select count(*) into v_api from api.titulos();
+    select count(*) into v_erp from erp.titulos where sentido = 'pagar';
+    if v_api <> v_erp or exists (select id from api.titulos() except select id from erp.titulos where sentido = 'pagar') then
+      raise exception 'FALHOU: api.titulos difere do RLS para %', r.u;
+    end if;
+    if exists (select id from api.previsoes() except select id from erp.previsoes where sentido = 'pagar')
+       or exists (select id from erp.previsoes where sentido = 'pagar' except select id from api.previsoes()) then
+      raise exception 'FALHOU: api.previsoes difere do RLS para %', r.u;
+    end if;
+    if exists (select id from api.contratos() except select id from erp.compromissos where tipo in ('contrato','assinatura'))
+       or exists (select id from erp.compromissos where tipo in ('contrato','assinatura') except select id from api.contratos()) then
+      raise exception 'FALHOU: api.contratos difere do RLS para %', r.u;
+    end if;
+  end loop;
+  perform pg_temp.como(null);
+end $$;
+select pg_temp.ok(true, 'api: títulos, previsões e contratos são, para cada usuário, os mesmos que o RLS do erp deixa ler');
+select pg_temp.como(:'diretor');
+select pg_temp.ok((select count(*) from api.titulos()) >= 5 and (select count(*) from api.previsoes()) >= 3
+                  and (select count(*) from api.contratos()) >= 2 and (select count(distinct etapa) from api.titulos()) >= 3,
+  'api: a comparação acima não é vazia (o master vê títulos em várias etapas, previsões e contratos)');
+insert into erp.previsoes (id, empresa_id, origem, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+values ('8a000000-0000-0000-0000-0000000000a1', :'spe', 'manual', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2026-12-01', '2026-12-10', 55);
+select pg_temp.ok((select aprovacao = 'esperando' from api.previsoes() where id = '8a000000-0000-0000-0000-0000000000a1')
+                  or not exists (select 1 from erp.previsao_alcadas where previsao_id = '8a000000-0000-0000-0000-0000000000a1'),
+  'api: previsão manual com alçada aparece esperando aprovação');
+select erp.decidir_previsao('8a000000-0000-0000-0000-0000000000a1', true)
+ where exists (select 1 from erp.previsao_alcadas where previsao_id = '8a000000-0000-0000-0000-0000000000a1');
+select pg_temp.ok((select aprovacao = 'aprovada' and saldo = 55 from api.previsoes() where id = '8a000000-0000-0000-0000-0000000000a1'),
+  'api: aprovada pelo master, a previsão aparece aprovada, com o saldo');
+select pg_temp.ok((select etapa = 'rascunho' and valor = 777 and fornecedor = 'Construtora Alfa' and meu and parcelas = 1
+                          and areas = 'Obra' and vencimento = '2026-11-30' from api.titulos() where id = '8a000000-0000-0000-0000-000000000001'),
+  'api: o master vê o título restrito, com etapa, valor, fornecedor, área e vencimento');
+select pg_temp.ok((select (j->>'valor')::numeric = 777 and jsonb_array_length(j->'parcelas') = 1 and jsonb_array_length(j->'rateio') = 1
+                          and j->'rateio'->0->>'area' = 'Obra' from api.titulo('8a000000-0000-0000-0000-000000000001') j),
+  'api: a gaveta traz parcelas e rateio');
+select pg_temp.como(:'analista');
+select pg_temp.ok(not exists (select 1 from api.titulos() where id = '8a000000-0000-0000-0000-000000000001')
+                  and api.titulo('8a000000-0000-0000-0000-000000000001') is null,
+  'api: natureza restrita (folha PJ) não aparece na lista nem na gaveta de quem não a tem liberada');
+select pg_temp.ok((select (j->>'nome') = 'Rafael' and (j->>'papel') = 'analista' and (j->'listas') = '["AO"]'::jsonb and (j->>'escreve')::boolean
+                     from api.eu() j), 'api: eu() traz nome, papel e listas de quem está logado');
+select pg_temp.como('login-sem-cadastro');
+select pg_temp.ok(api.eu() is null and not exists (select 1 from api.titulos()) and not exists (select 1 from api.previsoes())
+                  and not exists (select 1 from api.contratos()),
+  'api: login sem cadastro no ERP não tem perfil nem lê nada');
+select pg_temp.como(null);
+rollback;
+-- a conferência da aprovação só responde sobre o que a pessoa vê (S-126)
+select pg_temp.como(:'analista');
+select pg_temp.ok(erp.previsao_aprovada_vista('00000000-0000-0000-0000-000000000000') is null
+                  and erp.contrato_aprovado_visto('00000000-0000-0000-0000-000000000000') is null,
+  'api: aprovação de previsão ou contrato que a pessoa não vê volta nula');
+select pg_temp.como(null);
+-- catálogo: o esquema api é todo invoker, e só authenticated executa
+select pg_temp.ok(not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                               where n.nspname = 'api' and p.prosecdef),
+  'api: nenhuma função do esquema api passa por cima do RLS (todas são invoker)');
+select pg_temp.ok(not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                               where n.nspname = 'api' and (has_function_privilege('anon', p.oid, 'EXECUTE')
+                                                            or has_function_privilege('service_role', p.oid, 'EXECUTE')))
+                  and not has_schema_privilege('anon', 'api', 'USAGE')
+                  and not exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'api'),
+  'api: anon e service_role não executam nada do esquema api, e ele não tem tabela nem visão');
 
 \echo '# fim'
 do $$ begin raise notice 'TODOS OS TESTES PASSARAM'; end $$;

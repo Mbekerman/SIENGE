@@ -161,3 +161,14 @@ Também decidido (7/nov/2026): **os pagamentos PJ continuam passando pelo Sienge
 **[A decidir]**: conta bancária separada para a folha PJ; dois masters. Limitação da transição em [08](08-seguranca.md), S-010.
 
 O que a revisão de segurança pede antes de construir está em [08-seguranca.md](08-seguranca.md), S-007.
+
+## 3.4 Esquema `api` das telas [Construído, 18/nov/2026; PR das telas de consulta]
+
+O front (`apps/web`) só fala com o esquema `api` (migration `20261118000500_api_telas.sql`). O `erp` continua fora da API do Supabase. No projeto, `api` precisa entrar em **Settings › API › Exposed schemas** (o `erp` nunca).
+
+- Só funções, nenhuma tabela ou view. Todas `security invoker` com `search_path` fixo: rodam com o login de quem chama e com o RLS do `erp`. A tela vê exatamente o que a pessoa veria lendo o `erp` direto; o teste compara linha a linha para cada perfil (master, diretor, gestor, analista, leitura, contador, TI).
+- `execute` só para `authenticated`; `anon` e `service_role` sem uso do esquema e sem `execute` (o teste do catálogo confere).
+- Funções: `api.eu()` (quem sou: nome, papel, master, listas AF/AO/AD, se escreve; nulo sem cadastro), `api.titulos()`, `api.titulo(id)` (detalhe da gaveta: parcelas com PIX ou boleto, rateio, retenções, votos da rodada atual, etiquetas, previsões consumidas, erro do envio), `api.previsoes()` e `api.contratos()`.
+- A aprovação da previsão e do contrato (`erp.previsao_aprovada`, `erp.compromisso_aprovado`) é `security definer` sem `execute` para a API (S-126). As telas usam `erp.previsao_aprovada_vista` e `erp.contrato_aprovado_visto`, que conferem `vejo_previsao`/`vejo_compromisso` antes e devolvem nulo para o que a pessoa não vê.
+- PJ: a natureza restrita fica de fora pelo próprio RLS; o teste confere que o analista não vê o título PJ nem na lista nem na gaveta, e que o master vê.
+- Etapa do título (`erp.etapa_titulo`): rascunho, revisão, recusado, aprovação, aprovado, no Sienge, não chegou ao Sienge, pago, cancelado.
