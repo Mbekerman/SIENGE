@@ -990,7 +990,8 @@ select pg_temp.ok(not exists (
        'registrar_movimento_societario','fechar_mes','reabrir_mes','pedir_reclassificacao','decidir_reclassificacao','avisos_forma_pagamento','decidir_compromisso','decidir_previsao','encerrar_previsao','gerar_previsoes_assinatura',
        'cancelar_reclassificacao','pedir_mudanca_acesso','decidir_mudanca_acesso','cancelar_mudanca_acesso','passar_master',
        'pedir_sucessao_master','decidir_sucessao_master','vetar_sucessao_master','efetivar_sucessao_master',
-       'pedir_mudanca_config','decidir_mudanca_config','cancelar_mudanca_config','marcar_notificacoes_lidas')),
+       'pedir_mudanca_config','decidir_mudanca_config','cancelar_mudanca_config','marcar_notificacoes_lidas',
+       'designar_pj','retirar_pj')),
   'catálogo: das funções security definer, authenticated só executa as da lista (RPCs e conferências de quem está logado)');
 select pg_temp.ok(not has_function_privilege('authenticated', 'erp._aplicar_mudanca_acesso(uuid)', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp.gerar_avisos_sucessao()', 'EXECUTE')
@@ -2935,20 +2936,29 @@ select pg_temp.ok((select not ve_tudo and lanca from pg_temp.acesso(:'analista',
 
 -- naturezas: liberação e bloqueio da pessoa
 insert into erp.excecoes_natureza (user_id, natureza_id, centro_custo_id, efeito) values (:'analista', pg_temp.nat('05.01.04'), :'cc_mkt', 'liberar');
+-- desde 18/11/2026 a exceção não libera natureza restrita (PJ): só o master e os designados por ele
+select pg_temp.ok(not pg_temp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'))
+                  and not pg_temp.ve_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), :'gestor'),
+  'PJ: a exceção de natureza não libera a natureza restrita');
+insert into erp.designados_pj (user_id, motivo, por) values (:'analista', 'teste', :'gestor');
 select pg_temp.ok(pg_temp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'))
-                  and not pg_temp.ve_linha(:'analista', :'ne_vm', :'cc_obra', pg_temp.nat('05.01.04'), :'gestor'),
-  'perfis: natureza restrita liberada só no centro da liberação');
+                  and pg_temp.ve_linha(:'analista', :'ne_vm', :'cc_obra', pg_temp.nat('05.01.04'), :'gestor')
+                  and not pg_temp.lanca_linha(:'analista', :'ne_vm', :'cc_obra', pg_temp.nat('05.01.04')),
+  'PJ: o designado vê o PJ em qualquer centro e lança só onde lança');
 insert into erp.excecoes_natureza (user_id, natureza_id, centro_custo_id, efeito) values (:'analista', pg_temp.nat('05.01'), null, 'bloquear');
 select pg_temp.ok(not pg_temp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.01'))
                   and not pg_temp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04')),
   'perfis: bloqueio do galho vence a liberação e vale nas naturezas de baixo');
+select pg_temp.ok(not pg_temp.ve_linha(:'analista', :'ne_vm', :'cc_obra', pg_temp.nat('05.01.04'), :'gestor'),
+  'PJ: o bloqueio da pessoa vale também para o designado');
+delete from erp.designados_pj where user_id = :'analista';
 
 -- modelo que libera natureza restrita: só nos centros do modelo
 insert into erp.atribuicoes (id, user_id, perfil_id, escopo) values ('a1000000-0000-0000-0000-000000000004', :'leitor', 'a0000000-0000-0000-0000-000000000004', 'lista');
 insert into erp.atribuicao_nucleos values ('a1000000-0000-0000-0000-000000000004', :'ne_vm', true);
-select pg_temp.ok(pg_temp.lanca_linha(:'leitor', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'))
-                  and not pg_temp.natureza_liberada(:'leitor', :'ne_vm', :'cc_obra', pg_temp.nat('05.01.04')),
-  'perfis: o modelo libera a natureza restrita só nos centros dele');
+select pg_temp.ok(not pg_temp.lanca_linha(:'leitor', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'))
+                  and not pg_temp.natureza_liberada(:'leitor', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04')),
+  'PJ: o modelo de acesso não libera a natureza restrita (sem acesso por papel, Moises 18/11/2026)');
 
 -- lista com os marcados agora + os futuros dos tipos escolhidos (foto na hora)
 insert into erp.atribuicoes (id, user_id, perfil_id, escopo) values ('a1000000-0000-0000-0000-000000000005', :'gestor', 'a0000000-0000-0000-0000-000000000003', 'lista');
@@ -2996,8 +3006,9 @@ select pg_temp.ok((select not ve_tudo and lanca from pg_temp.acesso(:'contador',
 
 -- exceção de natureza vencida deixa de valer (bloquear e liberar)
 update erp.excecoes_natureza set fim = current_date - 1 where user_id = :'analista' and efeito = 'bloquear';
+-- (a 05.01.04 é restrita: sem designação do master, a liberação da exceção não vale)
 select pg_temp.ok(pg_temp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.01'))
-                  and pg_temp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04')),
+                  and not pg_temp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04')),
   'perfis: bloqueio de natureza vencido deixa de valer');
 update erp.excecoes_natureza set fim = current_date - 1 where user_id = :'analista' and efeito = 'liberar';
 select pg_temp.ok(not pg_temp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04')),
@@ -3124,10 +3135,16 @@ select pg_temp.ok((select situacao = 'cancelada' from erp.mudancas_acesso where 
 select erp.pedir_mudanca_acesso('naturezas', 'alterar', jsonb_build_object('id', pg_temp.nat('05.01.04'), 'restrita', false), 'Agência deixa de ser restrita') as m_res \gset
 select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('naturezas', 'alterar', jsonb_build_object('id', %L, 'nome', 'x'), 'x')$$, pg_temp.nat('05.01.04')),
   'O pedido de natureza só muda a marca restrita e o galho', 'acesso: o pedido de natureza não muda outras colunas');
+-- desde 18/11/2026 a marca restrita (o que é PJ) só muda com o voto do master
+select pg_temp.ok((select aprovacao = 'master' and minimo = 1 from erp.mudancas_acesso where id = :'m_res'),
+  'PJ: o pedido que muda a marca restrita vai ao master');
 select pg_temp.como(:'leitor');
 select pg_temp.erro_igual(format($$select erp.decidir_mudanca_acesso(%L, true)$$, :'m_res'),
-  'Quem ganha acesso com a mudança não a aprova', 'acesso: quem tem acesso a algum centro não aprova tirar a marca restrita');
+  'Só o master decide este pedido', 'PJ: aprovador de acesso não decide a marca restrita');
 select pg_temp.como(:'diretor2');
+select pg_temp.erro_igual(format($$select erp.decidir_mudanca_acesso(%L, true)$$, :'m_res'),
+  'Só o master decide este pedido', 'PJ: nem outro diretor decide a marca restrita');
+select pg_temp.como(:'diretor');
 select erp.decidir_mudanca_acesso(:'m_res', true);
 select pg_temp.ok(not (select restrita from erp.naturezas where codigo = '05.01.04'), 'acesso: a marca restrita muda pelo pedido aprovado');
 select pg_temp.como(null);
@@ -3530,7 +3547,9 @@ insert into erp.perfil_centros values
   ('a1000000-0000-0000-0000-000000000001', :'cc_mkt', 'leitor'), ('a1000000-0000-0000-0000-000000000002', :'cc_mkt', 'lancador_restrito'),
   ('a1000000-0000-0000-0000-000000000003', :'cc_obra', 'lancador'), ('a1000000-0000-0000-0000-000000000004', :'cc_mkt', 'lancador'),
   ('a1000000-0000-0000-0000-000000000009', :'cc_mkt', 'lancador');
+-- o modelo com a natureza PJ não libera o PJ (Moises, 18/11/2026): quem vê o PJ é o designado pelo master
 insert into erp.perfil_naturezas values ('a1000000-0000-0000-0000-000000000004', pg_temp.nat('06.07'));
+insert into erp.designados_pj (user_id, motivo, por) values (:'u4', 'Lança a folha PJ do Marketing', :'u7');
 insert into erp.atribuicoes (id, user_id, perfil_id, escopo) values
   ('a2000000-0000-0000-0000-000000000001', :'u1', 'a1000000-0000-0000-0000-000000000001', 'todos'),
   ('a2000000-0000-0000-0000-000000000002', :'u2', 'a1000000-0000-0000-0000-000000000002', 'todos'),
@@ -3630,16 +3649,27 @@ select pg_temp.como(:'u4');
 select pg_temp.ok(exists (select 1 from erp.lancamentos where titulo_id = :'td'), 'acesso: com o PJ liberado, vê o PJ no livro');
 select pg_temp.como(:'u7');
 -- desde 18/11/2026 a Obra (sem gestor) também tem alçada, pelas faixas gerais (a AD vê o C), e a AD ocupa
--- as vagas do AF e do AO (vê o A e o D, que pedem o AF); o E, que ninguém confirmou, fica de fora
-select pg_temp.ok(pg_temp.vejo_tits() = 'ABCD', 'acesso: quem aprova na AD vê os títulos das alçadas dele, e só eles (vê ' || pg_temp.vejo_tits() || ')');
--- S-062: sem as alçadas do A e do D, a AD deixa de vê-los e eles vão para a linha sem detalhe
+-- as vagas do AF e do AO (vê o A); o D é PJ e só o master e os designados o veem e aprovam (Moises,
+-- 18/11/2026); o E, que ninguém confirmou, fica de fora
+select pg_temp.ok(pg_temp.vejo_tits() = 'ABC', 'acesso: quem aprova na AD vê os títulos das alçadas dele, e só eles, sem o PJ (vê ' || pg_temp.vejo_tits() || ')');
+select pg_temp.sis();
+select pg_temp.ok((select fases = '{PJ}' and centro_custo_id is null from erp.titulo_alcadas where titulo_id = :'td')
+                  and not exists (select 1 from erp.titulo_alcadas where titulo_id = :'td' and fases <> '{PJ}'),
+  'PJ: o título PJ tem uma alçada só, a vaga PJ, sem as vagas de papel');
+select pg_temp.volta(); select pg_temp.como(:'u7');
+select pg_temp.erro_igual(format($$select erp.decidir_titulo(%L, true)$$, :'td'), 'Esta fase de aprovação é de quem está em PJ',
+  'PJ: a AD não aprova o título PJ');
+select pg_temp.como(:'u1');
+select pg_temp.ok(not erp.aprovo_titulo(:'td'), 'PJ: quem não vê o PJ não é aprovador dele');
+-- S-062: sem a alçada do A, a AD deixa de vê-lo e ele vai para a linha sem detalhe; o D (PJ) nem entra
+-- no acumulado do centro (Moises, 18/11/2026)
 savepoint s062;
 select pg_temp.sis(); set local session_replication_role = replica;
 delete from erp.titulo_alcadas where titulo_id in (:'ta', :'td');
 set local session_replication_role = origin; select pg_temp.volta();
 select pg_temp.como(:'u7');
 select pg_temp.ok((select count(*) = 2 and count(*) filter (where titulo_id = :'tb') = 1
-                     and bool_or(titulo_id is null and pessoa = 'Outros 2 títulos (sem acesso)' and valor_no_centro = 21000 and empresa_id is null)
+                     and bool_or(titulo_id is null and pessoa = 'Outros 1 títulos (sem acesso)' and valor_no_centro = 1000 and empresa_id is null)
                    from erp.titulos_do_acumulado(:'tb')),
   'S-062: no acumulado, quem aprova vê em detalhe o que vê e o resto numa linha só, com a soma');
 rollback to savepoint s062;
@@ -3668,9 +3698,12 @@ select pg_temp.ok(not exists (select 1 from erp.grupo_sucessao) and not exists (
 select pg_temp.erro_igual(format($$select erp.efetivar_sucessao_master(%L)$$, :'suc_v'),
   'Só o grupo de sucessão ou o indicado efetivam a sucessão', 'acesso: quem está fora do grupo não efetiva a sucessão');
 -- pagamento carimbado no Marketing que quita o título PJ: some para quem não vê o PJ
-select pg_temp.como(:'gestor'); select erp.decidir_titulo(:'td', true);
+select pg_temp.como(:'gestor');
+select pg_temp.erro_igual(format($$select erp.decidir_titulo(%L, true)$$, :'td'), 'Esta fase de aprovação é de quem está em PJ',
+  'PJ: o gestor do centro não aprova o título PJ');
+select pg_temp.como(:'diretor');
+select pg_temp.ok(erp.decidir_titulo(:'td', true) = 'aprovado', 'PJ: o master aprova o título PJ');
 select pg_temp.sis(); insert into erp.listas_financeiro (lista, user_id) values ('AF', :'contador') on conflict do nothing; select pg_temp.volta();
-select pg_temp.como(:'contador'); select erp.decidir_titulo(:'td', true);
 select pg_temp.como(:'u4');
 insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values
   ('c2000000-0000-0000-0000-0000000000d1', :'incorp', :'conta_inc', '10000000-0000-0000-0000-0000000000c1', :'ne_corp', :'cc_mkt', '2027-10-10', 20000);
@@ -3680,6 +3713,9 @@ select pg_temp.como(:'u9');
 select pg_temp.ok(not exists (select 1 from erp.pagamentos where id = 'c2000000-0000-0000-0000-0000000000d1')
                   and not exists (select 1 from erp.quitacoes where pagamento_id = 'c2000000-0000-0000-0000-0000000000d1'),
   'acesso: o pagamento que quita título PJ some para quem vê o centro mas não o PJ');
+select pg_temp.como(:'u7');
+select pg_temp.ok(not exists (select 1 from erp.pagamentos where id = 'c2000000-0000-0000-0000-0000000000d1'),
+  'PJ: nem o financeiro (AD) vê o pagamento que quita título PJ');
 -- S-093: cada trava das políticas com o seu teste
 select pg_temp.como(:'u7');
 select pg_temp.ok(not erp.vejo(null, null, pg_temp.nat('06.07'), null) and erp.vejo(null, null, pg_temp.nat('05.01.04'), null),
@@ -3818,8 +3854,12 @@ select pg_temp.ok(true, 'S-090: o master muda a alçada');
 -- quem lançou o pagamento continua vendo, mesmo sem o perfil
 select pg_temp.sis(); delete from erp.atribuicoes where user_id = :'u4'; delete from erp.listas_financeiro where user_id = :'u4'; select pg_temp.volta();
 select pg_temp.como(:'u4');
-select pg_temp.ok(exists (select 1 from erp.pagamentos where id = 'c2000000-0000-0000-0000-0000000000d1') and pg_temp.vejo_tits() = '',
-  'acesso: sem o perfil, quem lançou o pagamento ainda o vê, e não vê mais os títulos');
+select pg_temp.ok(exists (select 1 from erp.pagamentos where id = 'c2000000-0000-0000-0000-0000000000d1') and pg_temp.vejo_tits() = 'DE',
+  'acesso: sem o perfil, quem lançou o pagamento ainda o vê, e só vê os títulos PJ (designado pelo master)');
+select pg_temp.sis(); delete from erp.designados_pj where user_id = :'u4'; select pg_temp.volta();
+select pg_temp.como(:'u4');
+select pg_temp.ok(not exists (select 1 from erp.pagamentos where id = 'c2000000-0000-0000-0000-0000000000d1') and pg_temp.vejo_tits() = '',
+  'PJ: retirado da designação, nem quem lançou vê o pagamento que quita título PJ');
 select pg_temp.como(null);
 rollback;
 
@@ -4717,9 +4757,10 @@ select pg_temp.volta();
 create function pg_temp.lib_d(u uuid, n uuid, c uuid, nat uuid, d uuid, out lib boolean, out lanca boolean) language plpgsql as $$
 declare r text := pg_temp.dono_ini();
 begin lib := erp.natureza_liberada(u, n, c, nat, d); lanca := erp.lanca_linha(u, n, c, null, d); perform set_config('role', r, false); end $$;
-select pg_temp.ok((select lib and lanca from pg_temp.lib_d(:'analista2', :'ne1', :'cc_mkt', pg_temp.nat('05.01.02'), :'dv_pdv'))
+-- desde 18/11/2026 o modelo não libera a restrita (PJ, só o master e os designados); o lançar segue a divisão
+select pg_temp.ok((select not lib and lanca from pg_temp.lib_d(:'analista2', :'ne1', :'cc_mkt', pg_temp.nat('05.01.02'), :'dv_pdv'))
                   and (select not lib and not lanca from pg_temp.lib_d(:'analista2', :'ne1', :'cc_mkt', pg_temp.nat('05.01.02'), :'dv_onl')),
-  'divisão: a restrita liberada pelo modelo e o lançar valem só nas divisões que ele dá (S-102)');
+  'divisão: o lançar vale só nas divisões que o modelo dá, e o modelo não libera a restrita (S-102)');
 select pg_temp.sis(); delete from erp.perfil_naturezas where perfil_id = :'m_pdv'; update erp.naturezas set restrita = false where codigo = '05.01.02'; select pg_temp.volta();
 -- exceção da divisão vence a do centro
 select pg_temp.sis();
@@ -5822,8 +5863,13 @@ select pg_temp.como(:'bi1');
 select pg_temp.ok(pg_temp.bi_soma() = -1000 and not exists (select 1 from bi.f_livro where restrita),
   'bi: quem vê o Marketing sem a natureza PJ soma só o Marketing, sem o PJ (soma ' || pg_temp.bi_soma() || ')');
 select pg_temp.como(:'bi2');
+select pg_temp.ok(pg_temp.bi_soma() = -1000 and not exists (select 1 from bi.f_livro where restrita),
+  'bi: o modelo com a natureza PJ não mostra o PJ (só o master e os designados; soma ' || pg_temp.bi_soma() || ')');
+select pg_temp.como(null);
+insert into erp.designados_pj (user_id, motivo, por) values (:'bi2', 'BI do PJ', :'diretor');
+select pg_temp.como(:'bi2');
 select pg_temp.ok(pg_temp.bi_soma() = -9000 and (select count(*) from bi.f_livro where restrita and competencia = '2031-01-01') = 1,
-  'bi: com a natureza PJ liberada, vê o PJ do centro somado no mês (soma ' || pg_temp.bi_soma() || ')');
+  'bi: designado pelo master, vê o PJ do centro somado no mês (soma ' || pg_temp.bi_soma() || ')');
 select pg_temp.como(:'bi3');
 select pg_temp.ok(pg_temp.bi_soma() = -2000, 'bi: quem vê a Obra não soma o Marketing (soma ' || pg_temp.bi_soma() || ')');
 select pg_temp.como(:'bi4');
@@ -6858,6 +6904,13 @@ select pg_temp.login('{"role":"authenticated","email":"fulano@bkm.com.br","app_m
 select pg_temp.ok(not exists (select 1 from pagina.prv_apagar() where titulo_sienge = 7202),
   'página PRV: linha já apagada no Sienge sai da página');
 rollback to savepoint pagina_apagada;
+savepoint pagina_pj;
+select pg_temp.sis();
+update erp.naturezas set restrita = true where codigo = '05.01.04';
+select pg_temp.login('{"role":"authenticated","email":"fulano@bkm.com.br","app_metadata":{"provider":"google"}}');
+select pg_temp.ok(not exists (select 1 from pagina.prv_apagar() where titulo_sienge = 7202),
+  'página PRV: a PRV de natureza que virou PJ sai da página');
+rollback to savepoint pagina_pj;
 select pg_temp.login('{"role":"authenticated","email":"fulano@bkmxcom.br","app_metadata":{"provider":"google"}}');
 select pg_temp.erro_igual($$select * from pagina.prv_apagar()$$, 'Entre com a conta Google da BKM', 'página PRV: domínio parecido (bkmxcom.br) não entra');
 select pg_temp.login('{"role":"authenticated","email":"fulano@bkm-com.br","app_metadata":{"provider":"google"}}');
@@ -6984,6 +7037,115 @@ select set_config('role', 'erp_situacao', false);
 select pg_temp.erro_igual($$select erp.sienge_registrar_aviso('a1000000-0000-0000-0000-000000000099', 'PAYMENT_INSTALLMENT_REMOVED', 'h', '{"billId": 7201}')$$,
   'Só o sistema registra aviso do Sienge', 'aviso: fora do sistema, registrar é recusado');
 select pg_temp.erro_igual($$select * from erp.sienge_pegar_aviso()$$, 'Só o sistema processa aviso do Sienge', 'aviso: fora do sistema, pegar é recusado');
+select pg_temp.como(null);
+rollback;
+
+\echo '# PJ: só o master e quem ele designar (Moises, 18/11/2026)'
+begin;
+select pg_temp.sis();
+update erp.naturezas set restrita = true where codigo = '05.01.03';
+insert into erp.regras_notificacao (tipo, destino, user_id, email, whatsapp) values ('alcada_falta_aprovadores', 'pessoa', :'gestor', false, false);
+select pg_temp.volta();
+-- designar: só o master, com motivo e histórico
+select pg_temp.como(:'diretor2');
+select pg_temp.erro_igual(format($$select erp.designar_pj(%L, 'x')$$, :'analista'), 'Só o master designa quem vê o PJ',
+  'PJ: quem não é master não designa');
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual(format($$select erp.designar_pj(%L, ' ')$$, :'analista'), 'Designar para o PJ precisa de motivo',
+  'PJ: designar sem motivo é recusado');
+select erp.designar_pj(:'analista', 'Lança a folha PJ');
+select pg_temp.ok(exists (select 1 from erp.designados_pj where user_id = :'analista')
+                  and exists (select 1 from erp.designados_pj_historico where user_id = :'analista' and acao = 'designado' and por = :'diretor'),
+  'PJ: o master designa, com o histórico');
+select pg_temp.como(:'gestor');
+select pg_temp.ok(not exists (select 1 from erp.designados_pj) and not exists (select 1 from erp.designados_pj_historico),
+  'PJ: quem não é master nem o designado não vê a lista');
+select pg_temp.falha(format($$insert into erp.designados_pj (user_id, motivo, por) values (%L, 'x', %L)$$, :'gestor', :'gestor'),
+  'PJ: ninguém se designa pela tabela');
+-- a previsão PJ: lançada pelo designado, alçada só da vaga PJ
+select pg_temp.como(:'analista');
+insert into erp.previsoes (id, empresa_id, origem, pessoa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor) values
+  ('6a000000-0000-0000-0000-0000000000a1', :'spe', 'manual', null, :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.03'), '2026-12-01', '2026-12-10', 700),
+  ('6a000000-0000-0000-0000-0000000000a2', :'spe', 'manual', null, :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2026-12-01', '2026-12-10', 30);
+select pg_temp.ok(exists (select 1 from erp.previsoes where id = '6a000000-0000-0000-0000-0000000000a1'), 'PJ: o designado lança e vê a previsão PJ');
+select pg_temp.sis();
+select pg_temp.ok((select count(*) = 1 and bool_and(fases = '{PJ}' and centro_custo_id is null and not falta_aprovadores)
+                   from erp.previsao_alcadas where previsao_id = '6a000000-0000-0000-0000-0000000000a1'),
+  'PJ: a previsão PJ tem só a vaga PJ (o master aprova)');
+select pg_temp.ok(erp.registro_pj('previsoes', '6a000000-0000-0000-0000-0000000000a1') and not erp.registro_pj('previsoes', '6a000000-0000-0000-0000-0000000000a2')
+                  and not erp.registro_pj('titulos', 'x'),
+  'PJ: o evento sabe se o registro é PJ');
+select pg_temp.volta();
+select pg_temp.como(:'gestor');
+select pg_temp.ok(not exists (select 1 from erp.previsoes where id = '6a000000-0000-0000-0000-0000000000a1'),
+  'PJ: o AF não vê a previsão PJ');
+select pg_temp.erro_igual($$select erp.decidir_previsao('6a000000-0000-0000-0000-0000000000a1', true)$$, 'Previsão não existe',
+  'PJ: o AF não aprova a previsão PJ');
+select pg_temp.como(:'diretor2');
+select pg_temp.ok(not exists (select 1 from erp.previsoes where id = '6a000000-0000-0000-0000-0000000000a1'),
+  'PJ: nem a AD vê a previsão PJ');
+-- o aviso: o da previsão PJ não vai ao AF; o mesmo aviso de outra previsão vai
+select pg_temp.sis();
+select erp.registrar_evento('alcada_falta_aprovadores', 'previsoes', '6a000000-0000-0000-0000-0000000000a1', :'ne_vm', :'cc_mkt', '{}');
+select erp.registrar_evento('alcada_falta_aprovadores', 'previsoes', '6a000000-0000-0000-0000-0000000000a2', :'ne_vm', :'cc_mkt', '{}');
+select max(id) filter (where registro = '6a000000-0000-0000-0000-0000000000a1') as ev_pj,
+       max(id) filter (where registro = '6a000000-0000-0000-0000-0000000000a2') as ev_comum from erp.eventos \gset
+select pg_temp.ok(exists (select 1 from erp.notificacoes n where n.evento_id = :'ev_comum' and not erp.ve_pj(n.user_id))
+                  and not exists (select 1 from erp.notificacoes n where n.evento_id = :'ev_pj' and not erp.ve_pj(n.user_id)),
+  'PJ: o aviso de título ou previsão PJ só vai a quem vê o PJ');
+-- o PJ fica fora do acumulado: a previsão PJ não soma no acumulado das outras
+select erp._previsoes_no_acumulado(:'spe', null, '2026-12-01', :'cc_mkt', null, :'ne_vm', '6a000000-0000-0000-0000-0000000000a2') as acum_sem \gset
+update erp.naturezas set restrita = false where codigo = '05.01.03';
+select pg_temp.ok(erp._previsoes_no_acumulado(:'spe', null, '2026-12-01', :'cc_mkt', null, :'ne_vm', '6a000000-0000-0000-0000-0000000000a2') = :'acum_sem'::numeric + 700,
+  'PJ: a previsão PJ não entra no acumulado do mês (sem a marca, entraria)');
+update erp.naturezas set restrita = true where codigo = '05.01.03';
+-- o designado vê o PJ mesmo em centro em que não tem acesso
+savepoint pj_sem_acesso;
+insert into erp.designados_pj (user_id, motivo, por) values (:'ti', 'Teste', :'diretor');
+select pg_temp.ok(not erp.ve_linha(:'ti', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), :'diretor')
+                  and erp.ve_linha(:'ti', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.03'), :'diretor'),
+  'PJ: o designado vê o PJ num centro em que não tem acesso, e só o PJ');
+rollback to savepoint pj_sem_acesso;
+-- designado inativo ou só da sucessão não vê o PJ
+savepoint pj_inativo;
+update erp.usuarios set ativo = false where id = :'analista';
+select pg_temp.ok(not erp.ve_pj(:'analista'), 'PJ: designado inativo não vê o PJ');
+rollback to savepoint pj_inativo;
+savepoint pj_sucessao;
+set local session_replication_role = replica;
+update erp.usuarios set so_sucessao = true, papel = 'leitura' where id = :'analista';
+set local session_replication_role = origin;
+select pg_temp.ok(not erp.ve_pj(:'analista'), 'PJ: designado só da sucessão não vê o PJ');
+rollback to savepoint pj_sucessao;
+select pg_temp.ok(erp.ve_pj(:'analista'), 'PJ: designado ativo vê o PJ');
+-- aprovada pelo master, a previsão PJ não vira linha PRV no Sienge
+select pg_temp.volta(); select pg_temp.como(:'diretor');
+select pg_temp.ok(erp.decidir_previsao('6a000000-0000-0000-0000-0000000000a1', true) = 'aprovado', 'PJ: o master aprova a previsão PJ');
+select pg_temp.sis();
+select erp.sienge_enfileirar();
+select pg_temp.ok(not exists (select 1 from erp.sienge_previsoes where previsao_id = '6a000000-0000-0000-0000-0000000000a1'),
+  'PJ: a previsão PJ não vai ao Sienge como linha PRV');
+select pg_temp.volta();
+-- retirado, o designado deixa de ver
+select pg_temp.como(:'diretor2');
+select pg_temp.erro_igual(format($$select erp.retirar_pj(%L, 'x')$$, :'analista'), 'Só o master retira quem vê o PJ',
+  'PJ: quem não é master não retira');
+select pg_temp.como(:'diretor');
+select erp.retirar_pj(:'analista', 'Mudou de área');
+select pg_temp.como(:'analista');
+select pg_temp.ok(not exists (select 1 from erp.previsoes where id = '6a000000-0000-0000-0000-0000000000a1'),
+  'PJ: retirado, deixa de ver o PJ');
+select pg_temp.sis();
+select pg_temp.ok((select count(*) = 2 from erp.designados_pj_historico where user_id = :'analista'), 'PJ: designar e retirar ficam no histórico');
+-- mudar a marca restrita: sem o master, nem pelo pedido dispensado
+update erp.regras_mudanca_acesso set exige_aprovacao = false where tabela = 'naturezas';
+select pg_temp.volta();
+select pg_temp.como(:'ti');
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('naturezas', 'alterar', jsonb_build_object('id', %L, 'restrita', false), 'x')$$, pg_temp.nat('05.01.03')),
+  'Só o master muda o que é PJ (a marca restrita da natureza)', 'PJ: com o pedido de natureza dispensado, a marca restrita continua só com o master');
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('naturezas', 'alterar', jsonb_build_object('id', %L, 'mae_id', %L), 'x')$$,
+                                  pg_temp.nat('05.01.04'), pg_temp.nat('05.01.03')),
+  'Só o master muda o que é PJ (a marca restrita da natureza)', 'PJ: levar uma natureza para dentro do galho PJ também só com o master');
 select pg_temp.como(null);
 rollback;
 

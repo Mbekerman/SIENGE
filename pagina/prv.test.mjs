@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { lerConfig, novoVerificador, desafio, urlEntrar, enderecoDaPagina, conteudoDoToken, sessaoDaResposta,
   precisaRenovar, dataBr, linhaDaPagina, mensagemDeErro, urlRealtime, msgEntrar, msgBatida, msgToken, lerMensagem, esperaDaVez,
-  ouvir, CANAL, ESPERAS_MS } from './prv.js';
+  ouvir, CANAL, ESPERAS_MS, motivoDaRecusa } from './prv.js';
 
 const CFG = { url: 'https://abcdefghijklmnopqrst.supabase.co', chave: 'sb_publishable_AbC-12_x' };
 
@@ -123,4 +123,20 @@ test('tempo real: liga, entra, relê no aviso e manda o token novo', async () =>
   assert.equal(enviados.filter((x) => x.event === 'access_token').length, 1);
   parar();
   sock.onclose();   // fechado depois de parar: não religa
+});
+
+test('tempo real: a tela sabe se está ligado e por que foi recusado', async () => {
+  let sock;
+  class FakeWs { constructor() { this.readyState = 1; sock = this; } send(t) { this.ultimo = JSON.parse(t); } close() {} }
+  const estados = [];
+  const { parar } = ouvir(CFG, async () => 'T', () => {}, FakeWs, (ligada, motivo) => estados.push([ligada, motivo]));
+  await new Promise((r) => setTimeout(r, 0));
+  sock.onopen();
+  const ref = sock.ultimo.ref;
+  sock.onmessage({ data: JSON.stringify({ topic: CANAL, event: 'phx_reply', ref, payload: { status: 'ok' } }) });
+  sock.onmessage({ data: JSON.stringify({ topic: CANAL, event: 'phx_reply', ref, payload: { status: 'error', response: { reason: 'Unauthorized' } } }) });
+  assert.deepEqual(estados, [[true, undefined], [false, 'Unauthorized']]);
+  assert.equal(motivoDaRecusa('não é json'), '');
+  assert.equal(motivoDaRecusa(JSON.stringify({ payload: { message: 'x'.repeat(300) } })).length, 200);
+  parar();
 });

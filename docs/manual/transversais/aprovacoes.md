@@ -137,7 +137,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 
 ✅ **Já vale agora, com o Sienge** (Moises, 7/nov/2026): os títulos dos fornecedores PJ copiados do Sienge ficam numa **área restrita** do ERP BKM. Relatórios e BI mostram só a soma por núcleo econômico e mês, sem valor por pessoa. Os centros de custo pequenos **não** são juntados (Moises, 7/nov/2026). Consequência: num centro de custo com um PJ só, a soma do mês é o valor dele. No próprio Sienge, nome e valor continuam visíveis.
 
-✅ O pagamento dos PJ **não tem aprovação própria**: a aprovação são os dois "ok" do mês sobre as tabelas (Moises, 7/nov/2026).
+✅ Desde 18/nov/2026 (Moises), o título PJ tem uma aprovação: a do **master** ou de quem ele designou para o PJ. Os dois "ok" do mês sobre as tabelas continuam (Moises, 18/nov/2026): um do **RH**, que confere tudo menos a remuneração, e um do **master**, que confere a remuneração. Ainda sem código.
 
 > 🔜 **Futuro.** Os pagamentos PJ ainda passam pelo Sienge, e a remessa e o extrato vão pelo Nexxera (Moises, 7/nov/2026). Enquanto for assim, o nome e o valor de cada PJ continuam visíveis no Sienge, e **todo o fluxo abaixo (anonimização, conferência com dois "ok", portal de notas e portal do contador) fica para quando o Sienge sair desse fluxo**. Ver [O que ainda é feito à mão no Sienge](passos-manuais-no-sienge.md). A conciliação automática depende do módulo de Bancos, que não foi desenhado.
 
@@ -210,6 +210,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
   - título de **imposto retido**: aprovação da **AF**;
   - título de **movimento entre sócios** (a parte a pagar): aprovação da **AD**;
   - linha **sem núcleo e sem centro** (como 10.01 Bens da empresa, que hoje só o master lança): **AF e AO juntos**, em qualquer ordem, **ou a AD sozinha**. Vale também para a previsão sem centro. O título que tem linhas com centro e sem centro passa pelas duas aprovações.
+- ✅ **PJ só com o master e quem ele designar** (Moises, 18/nov/2026). O título ou a previsão com alguma linha de natureza restrita (folha PJ, pró-labore) tem uma aprovação só, a do **master ou de um designado**, em qualquer valor. AF, AO, AD, diretor e gestor da área não veem nem aprovam. O PJ **não entra no acumulado do mês** do centro (escolha do Moises, 18/nov/2026), e os avisos sobre ele só vão a quem vê o PJ. A previsão PJ **não vai ao Sienge** como PRV. O título PJ aprovado ainda vai ao Sienge para ser pago, e lá quem tem acesso ao financeiro o vê (limitação da transição).
 - ✅ **A AD sempre pode fazer a aprovação da AF ou da AO** (Moises, 18/nov/2026). Quando a mesma faixa tem a vaga da AD e a da AF, quem está na AD aprova primeiro na vaga dela.
 - Recusar o título de imposto cancela a nota inteira, como recusar o título do fornecedor.
 - **Acumulado:** o do **mês de competência**, por centro de custo, somando todos os núcleos e empresas, já contando o próprio título.
@@ -263,7 +264,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 5. A aprovação vale só para o que foi aprovado, **inclusive a conta bancária e o PIX do fornecedor**. Se o título, os dados bancários ou o arquivo do lote mudarem depois, é preciso aprovar de novo.
 6. **Trocar os dados bancários de um fornecedor** é um ato que outra pessoa aprova. O fornecedor é avisado pelo contato que já estava cadastrado, e os títulos abertos dele voltam para aprovação. (É o golpe mais comum: um e-mail falso pedindo a troca da conta.)
 7. O lote só aceita título aprovado e sem nenhuma mudança depois da aprovação.
-8. Todo pagamento tem pelo menos uma aprovação. No PJ, a aprovação são os dois "ok" do mês.
+8. Todo pagamento tem pelo menos uma aprovação. No PJ, a do master ou de quem ele designou (desde 18/nov/2026).
 9. Toda mudança de configuração fica registrada.
 
 ✅ Travas novas, autorizadas pelo Moises em 14/nov/2026 (S-053 a S-055), também no banco e sem tela que as desligue:
@@ -321,7 +322,7 @@ O item **Admin** do menu tem sete seções. A seção Etapa dos núcleos, que ap
 
 ✅ Decidido pelo Moises em 14/nov/2026:
 
-- **Toda mudança de acesso fica pendente até ser aprovada.** Vale para modelos, atribuições, exceções, gestor e diretor da área, AF, AO, AD, tipos de núcleo, marca de natureza restrita e mudança do tipo de um núcleo.
+- **Toda mudança de acesso fica pendente até ser aprovada.** Vale para modelos, atribuições, exceções, gestor e diretor da área, AF, AO, AD, tipos de núcleo, marca de natureza restrita (esta só com a aprovação do master, mesmo que as outras sejam dispensadas) e mudança do tipo de um núcleo.
 - Aprovam os **aprovadores de acesso**, uma lista configurável com um mínimo de aprovações. Quem pediu e quem ganha o acesso não aprovam.
 - **O master** muda a lista de aprovadores sozinho; os outros só a mudam com a unanimidade da própria lista. Só o master cria e administra administradores, e só ele define o grupo de sucessão.
 - **Tudo o que o master faz vale na hora**, sem aprovação. Ele escolhe, tipo a tipo, quais mudanças de acesso pedidas pelo administrador precisam de aprovação; todas começam exigindo.
