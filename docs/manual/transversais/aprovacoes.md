@@ -204,7 +204,8 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 
 ✅ Decidida pelo Moises em 14/nov/2026; no banco desde o PR #14.
 
-- **Onde vale:** no piloto, Marketing. A alçada vale para o título a pagar com rateio num centro de custo que tem **gestor da área** cadastrado pelo administrador. Centro sem gestor cadastrado fica fora.
+- **Onde vale:** no piloto, Marketing. A alçada vale para todo título a pagar e toda previsão lançada à mão, em todo centro de custo.
+- ✅ **Nada é aprovado sem aprovador** (Moises, 18/nov/2026): centro sem gestor da área e sem faixas próprias **não aprova sozinho**. Ele segue as faixas gerais; a fase do gestor, que o centro não tem, vai ao **master**, com aviso de falta de aprovadores. Antes, o título desse centro ficava fora da alçada e a previsão nascia aprovada. Exceções que continuam sem alçada: títulos de **imposto** e **societário**, e a linha **sem núcleo e sem centro** (como 10.01 Bens da empresa), que hoje só o master lança.
 - **Acumulado:** o do **mês de competência**, por centro de custo, somando todos os núcleos e empresas, já contando o próprio título.
 - **Faixas:**
   - até R$ 50 mil no acumulado: aprovam o gestor da área e depois a AF;
