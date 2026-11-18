@@ -6904,6 +6904,13 @@ select pg_temp.login('{"role":"authenticated","email":"fulano@bkm.com.br","app_m
 select pg_temp.ok(not exists (select 1 from pagina.prv_apagar() where titulo_sienge = 7202),
   'página PRV: linha já apagada no Sienge sai da página');
 rollback to savepoint pagina_apagada;
+savepoint pagina_pj;
+select pg_temp.sis();
+update erp.naturezas set restrita = true where codigo = '05.01.04';
+select pg_temp.login('{"role":"authenticated","email":"fulano@bkm.com.br","app_metadata":{"provider":"google"}}');
+select pg_temp.ok(not exists (select 1 from pagina.prv_apagar() where titulo_sienge = 7202),
+  'página PRV: a PRV de natureza que virou PJ sai da página');
+rollback to savepoint pagina_pj;
 select pg_temp.login('{"role":"authenticated","email":"fulano@bkmxcom.br","app_metadata":{"provider":"google"}}');
 select pg_temp.erro_igual($$select * from pagina.prv_apagar()$$, 'Entre com a conta Google da BKM', 'página PRV: domínio parecido (bkmxcom.br) não entra');
 select pg_temp.login('{"role":"authenticated","email":"fulano@bkm-com.br","app_metadata":{"provider":"google"}}');
@@ -7086,6 +7093,31 @@ select max(id) filter (where registro = '6a000000-0000-0000-0000-0000000000a1') 
 select pg_temp.ok(exists (select 1 from erp.notificacoes n where n.evento_id = :'ev_comum' and not erp.ve_pj(n.user_id))
                   and not exists (select 1 from erp.notificacoes n where n.evento_id = :'ev_pj' and not erp.ve_pj(n.user_id)),
   'PJ: o aviso de título ou previsão PJ só vai a quem vê o PJ');
+-- o PJ fica fora do acumulado: a previsão PJ não soma no acumulado das outras
+select erp._previsoes_no_acumulado(:'spe', null, '2026-12-01', :'cc_mkt', null, :'ne_vm', '6a000000-0000-0000-0000-0000000000a2') as acum_sem \gset
+update erp.naturezas set restrita = false where codigo = '05.01.03';
+select pg_temp.ok(erp._previsoes_no_acumulado(:'spe', null, '2026-12-01', :'cc_mkt', null, :'ne_vm', '6a000000-0000-0000-0000-0000000000a2') = :'acum_sem'::numeric + 700,
+  'PJ: a previsão PJ não entra no acumulado do mês (sem a marca, entraria)');
+update erp.naturezas set restrita = true where codigo = '05.01.03';
+-- o designado vê o PJ mesmo em centro em que não tem acesso
+savepoint pj_sem_acesso;
+insert into erp.designados_pj (user_id, motivo, por) values (:'ti', 'Teste', :'diretor');
+select pg_temp.ok(not erp.ve_linha(:'ti', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), :'diretor')
+                  and erp.ve_linha(:'ti', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.03'), :'diretor'),
+  'PJ: o designado vê o PJ num centro em que não tem acesso, e só o PJ');
+rollback to savepoint pj_sem_acesso;
+-- designado inativo ou só da sucessão não vê o PJ
+savepoint pj_inativo;
+update erp.usuarios set ativo = false where id = :'analista';
+select pg_temp.ok(not erp.ve_pj(:'analista'), 'PJ: designado inativo não vê o PJ');
+rollback to savepoint pj_inativo;
+savepoint pj_sucessao;
+set local session_replication_role = replica;
+update erp.usuarios set so_sucessao = true, papel = 'leitura' where id = :'analista';
+set local session_replication_role = origin;
+select pg_temp.ok(not erp.ve_pj(:'analista'), 'PJ: designado só da sucessão não vê o PJ');
+rollback to savepoint pj_sucessao;
+select pg_temp.ok(erp.ve_pj(:'analista'), 'PJ: designado ativo vê o PJ');
 -- aprovada pelo master, a previsão PJ não vira linha PRV no Sienge
 select pg_temp.volta(); select pg_temp.como(:'diretor');
 select pg_temp.ok(erp.decidir_previsao('6a000000-0000-0000-0000-0000000000a1', true) = 'aprovado', 'PJ: o master aprova a previsão PJ');
@@ -7111,6 +7143,9 @@ select pg_temp.volta();
 select pg_temp.como(:'ti');
 select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('naturezas', 'alterar', jsonb_build_object('id', %L, 'restrita', false), 'x')$$, pg_temp.nat('05.01.03')),
   'Só o master muda o que é PJ (a marca restrita da natureza)', 'PJ: com o pedido de natureza dispensado, a marca restrita continua só com o master');
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('naturezas', 'alterar', jsonb_build_object('id', %L, 'mae_id', %L), 'x')$$,
+                                  pg_temp.nat('05.01.04'), pg_temp.nat('05.01.03')),
+  'Só o master muda o que é PJ (a marca restrita da natureza)', 'PJ: levar uma natureza para dentro do galho PJ também só com o master');
 select pg_temp.como(null);
 rollback;
 
