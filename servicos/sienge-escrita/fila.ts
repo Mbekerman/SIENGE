@@ -250,7 +250,8 @@ export function httpSienge(base: string, autorizacao: string, buscar: typeof fet
 }
 
 // O banco pelo postgres.js (Deno: npm:postgres; Node: postgres). Cada passo numa transação curta como
-// erp_sistema, para o id do Sienge ficar gravado assim que o POST responde.
+// erp_sistema, para o id do Sienge ficar gravado assim que o POST responde. JSON vai sempre por tx.json:
+// JSON.stringify com ::jsonb chega ao banco como texto JSON (jsonb do tipo string), não como objeto.
 // deno-lint-ignore no-explicit-any
 type Sql = any;
 export function bancoPostgres(sql: Sql): Banco {
@@ -285,7 +286,7 @@ export function bancoPostgres(sql: Sql): Banco {
         .map((r: { sienge_id: number; previsao_id: string; esperada: boolean }) => ({ ...r }))),
     recriarPrv: (p, s, m) => comoSistema(async (tx) => { await tx`select erp.sienge_recriar_prv(${p}::uuid, ${s}::int, ${m}::text)`; }),
     terminarCruzamento: (e, est, resumo, erro) => comoSistema(async (tx) =>
-      (await tx`select erp.sienge_terminar_cruzamento(${e}::int, ${JSON.stringify(est)}::jsonb, ${JSON.stringify(resumo)}::jsonb,
+      (await tx`select erp.sienge_terminar_cruzamento(${e}::int, ${tx.json(est)}::jsonb, ${tx.json(resumo)}::jsonb,
                                                       ${erro ?? null}::text) as n`)[0].n),
     linhasApagar: () => comoSistema(async (tx) =>
       (await tx`select previsao_id::text as previsao_id, sienge_id, empresa_sienge, data_prevista::text as data_prevista,

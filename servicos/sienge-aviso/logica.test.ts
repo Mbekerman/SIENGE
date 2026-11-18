@@ -1,7 +1,7 @@
 // node --test --experimental-strip-types servicos/sienge-aviso/logica.test.ts
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CORPO_MAX, iguais, receber, temBearer, type Aviso } from './logica.ts';
+import { CORPO_MAX, iguais, receber, registrarNoBanco, temBearer, type Aviso } from './logica.ts';
 
 const TOKEN = 'k'.repeat(40);
 const ID = '0f8fad5b-d9cb-469f-a165-70867728950e';
@@ -102,4 +102,18 @@ test('triagem antes do banco: só Bearer com 32 caracteres ou mais', () => {
   assert.ok(temBearer(com(`Bearer ${'a'.repeat(32)}`)));
   for (const aut of [undefined, '', 'Bearer ', `Bearer ${'a'.repeat(31)}`, `bearer ${'a'.repeat(40)}`, `Basic ${'a'.repeat(40)}`, `Bearer ${'a'.repeat(20)} ${'b'.repeat(20)}`])
     assert.ok(!temBearer(com(aut)), String(aut));
+});
+
+test('registro no banco: como erp_sistema e o corpo por tx.json, nunca como texto', async () => {
+  const passos: { q: string; v: unknown[] }[] = [];
+  const tx = Object.assign((partes: TemplateStringsArray, ...v: unknown[]) => {
+    passos.push({ q: partes.join('?').replace(/\s+/g, ' ').trim(), v });
+    return Promise.resolve([{ novo: true }]);
+  }, { json: (j: unknown) => ({ comoJson: j }) });
+  const sql = { begin: async (f: (t: unknown) => Promise<unknown>) => await f(tx) };
+  const corpo = { billId: 7301, installmentId: 1 };
+  assert.equal(await registrarNoBanco(sql)({ eventoId: ID, evento: 'PAYMENT_INSTALLMENT_REMOVED', hook: 'h1', corpo }), true);
+  assert.equal(passos[0].q, 'set local role erp_sistema');
+  assert.ok(passos[1].q.includes('erp.sienge_registrar_aviso'));
+  assert.deepEqual(passos[1].v, [ID, 'PAYMENT_INSTALLMENT_REMOVED', 'h1', { comoJson: corpo }]);
 });

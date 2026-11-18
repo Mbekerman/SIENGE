@@ -55,3 +55,16 @@ export async function receber(req: Request, token: string | null | undefined, re
     return new Response('erro ao registrar', { status: 500 });
   }
 }
+
+// O registro no banco, pelo postgres.js, numa transação como erp_sistema. O corpo vai por tx.json: com
+// JSON.stringify e ::jsonb ele chegaria como jsonb do tipo string e todo aviso seria recusado (bkm_dev, 18/11).
+// deno-lint-ignore no-explicit-any
+export function registrarNoBanco(sql: any): Registrar {
+  // deno-lint-ignore no-explicit-any
+  return (a) => sql.begin(async (tx: any) => {
+    await tx`set local role erp_sistema`;
+    const [r] = await tx`select erp.sienge_registrar_aviso(${a.eventoId}::uuid, ${a.evento}::text, ${a.hook}::text,
+                                                            ${tx.json(a.corpo)}::jsonb) as novo`;
+    return r.novo as boolean;
+  });
+}
