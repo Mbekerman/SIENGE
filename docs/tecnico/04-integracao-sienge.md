@@ -220,7 +220,7 @@ Decisão do Moises (14/nov/2026): o cruzamento recria a linha PRV que falta e ma
 
 **A conferir no Sienge:** se a lista filtra mesmo pelo `documentsIdentificationId` (lido de volta com espaço à direita, "PRV ") e se o `issueDate` volta como foi enviado (o `baseDate` volta no dia 1 do mês).
 
-## 4.7.3 Aviso do Sienge para a linha PRV apagada [Construído, 17/nov/2026; testado no banco e no programa, não instalado]
+## 4.7.3 Aviso do Sienge para a linha PRV apagada [Ligado no `bkm_dev` em 18/nov/2026]
 
 Pedido do Moises (17/nov/2026, depois do teste do webhook): marcar a PRV apagada na hora, pelo aviso `PAYMENT_INSTALLMENT_REMOVED`, sem tirar a conferência de 30 minutos nem o cruzamento da madrugada (aviso perdido não volta).
 
@@ -231,3 +231,5 @@ Pedido do Moises (17/nov/2026, depois do teste do webhook): marcar a PRV apagada
 **Para ligar (com o ok do Moises):** instalar `sienge-aviso` no `bkm_dev` sem `verify_jwt`; criar no Vault `sienge_aviso_token` (aleatório, 48 caracteres ou mais); cadastrar no Sienge `POST /hooks` com a URL da função, o mesmo token e só o evento `PAYMENT_INSTALLMENT_REMOVED` (mudança de configuração no Sienge de produção; o aviso vem de todas as empresas, e o de título que não é nosso só fica registrado).
 
 **Instalado no `bkm_dev` (18/nov/2026), sem cadastro no Sienge:** o recebedor responde 401 sem token ou com token errado e 400 com cabeçalho inválido. O primeiro aviso de verdade, mandado pelo próprio banco, voltou 500: o corpo ia como `JSON.stringify(...)::jsonb`, e o postgres.js o manda como texto JSON, que vira jsonb do tipo string, então `erp.sienge_registrar_aviso` recusava todo aviso. O mesmo erro estava em `terminarCruzamento` (a lista das estranhas chegaria como string e todo cruzamento iria para erro). Os dois passam o JSON por `tx.json`, com teste que derruba a volta do `JSON.stringify` (PR #78).
+
+**Cadastrado no Sienge (18/nov/2026, 02h22 UTC, ok do Moises no mesmo dia):** `POST /hooks` respondeu 201, só `PAYMENT_INSTALLMENT_REMOVED`, para a URL do `sienge-aviso` do `bkm_dev` (a URL e o id do hook ficam no registro do `bkm_dev`, fora do repositório), token = `sienge_aviso_token` do Vault. Os outros 6 hooks do subdomínio são do CV CRM. Visto no mesmo dia: `GET /hooks` e `GET /hooks/{id}` não devolvem o token, nem o nosso nem o dos hooks do CRM; o exemplo da especificação mostra o campo, a resposta real não. Para desligar: `DELETE /hooks/{id}` com o id do registro; a conferência de 30 minutos e o cruzamento continuam.
