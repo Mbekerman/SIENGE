@@ -353,6 +353,8 @@ O título tem uma **Conversa**: uma linha do tempo com o lançamento, as aprova�
 | Não dá | Por quê |
 | --- | --- |
 | Lançar a mesma nota duas vezes (mesmo emitente, tipo, número e série) | Trava do ERP BKM. O Sienge da BKM aceita número repetido, então a trava é nossa (teste de 6/nov/2026) |
+| Juntar notas, faturas ou boletos diferentes num título só | Um título por documento, por motivo (Moises, 18/nov/2026). Cada nota gera o próprio título; o boleto precisa ter o valor da parcela. A mesma nota continua podendo ser dividida entre centros e divisões |
+| Pôr uma natureza de PJ junto com outra natureza no mesmo título, nota ou contrato | O pagamento de PJ sobe sozinho (Moises, 18/nov/2026) |
 | Editar uma nota ou um título depois de confirmado | O título só muda de situação pelas baixas. Corrigir é cancelar e lançar de novo |
 | Baixar mais do que o saldo da parcela ou do que o saldo do pagamento | Trava do banco de dados |
 | Usar o adiantamento de um fornecedor para baixar título de outro, ou de outra empresa | A baixa só vale para a mesma empresa e a mesma pessoa |

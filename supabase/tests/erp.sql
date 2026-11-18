@@ -387,6 +387,16 @@ select erp.lancar_documento('70000000-0000-0000-0000-000000000001', array['2026-
 select pg_temp.aprova(:'tit', :'diretor');
 select pg_temp.ok((select valor from erp.titulos where id = :'tit') = 9000, 'título do fornecedor pelo líquido: 10.000 − 500 de ISS − 500 de caução');
 select pg_temp.ok((select count(*) = 2 and sum(valor) = 9000 from erp.parcelas where titulo_id = :'tit'), 'em 2 parcelas');
+-- um título por nota, fatura ou boleto (Moises, 18/11/2026): a nota gera um título só do fornecedor,
+-- em parcelas; não se lança de novo; o mesmo número do mesmo emitente não entra duas vezes
+select pg_temp.ok((select count(*) from erp.titulos where documento_id = '70000000-0000-0000-0000-000000000001' and tipo = 'fornecedor') = 1,
+  'um título por nota: a nota gera um título só do fornecedor');
+select pg_temp.erro_igual($$select erp.lancar_documento('70000000-0000-0000-0000-000000000001', array['2026-04-20']::date[])$$,
+  'O documento já foi lançado', 'um título por nota: a nota lançada não gera outro título');
+select pg_temp.erro_igual(format($$insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+  values (%L, '10000000-0000-0000-0000-000000000005', 'nfse', '101', '2026-02-05', '2026-02-01', 10)$$, :'spe'),
+  'duplicate key value violates unique constraint "documentos_fiscais_unico"',
+  'um título por nota: a mesma nota não entra duas vezes');
 select pg_temp.ok((select pessoa_id = '10000000-0000-0000-0000-000000000006' and valor = 500 from erp.titulos
                    where documento_id = '70000000-0000-0000-0000-000000000001' and tipo = 'imposto'), 'título do ISS contra a prefeitura');
 select pg_temp.ok(erp.caucao_saldo('60000000-0000-0000-0000-000000000002') = 500, 'caução de 5% do contrato no extrato');
@@ -3585,8 +3595,8 @@ select pg_temp.tit(:'u2', :'ta', :'incorp', 1000, jsonb_build_array(jsonb_build_
 select pg_temp.tit(:'u9', :'tb', :'incorp', 40000, jsonb_build_array(jsonb_build_object('n', :'ne_corp', 'c', :'cc_mkt', 'nat', '05.01.04', 'p', 100)));
 select pg_temp.tit(:'u3', :'tc', :'spe', 3000, jsonb_build_array(jsonb_build_object('n', :'ne_vm', 'c', :'cc_obra', 'nat', '04.01', 'p', 100)));
 select pg_temp.tit(:'u4', :'td', :'incorp', 20000, jsonb_build_array(jsonb_build_object('n', :'ne_corp', 'c', :'cc_mkt', 'nat', '06.07', 'p', 100)));
-select pg_temp.tit(:'u4', :'te', :'incorp', 2000, jsonb_build_array(
-  jsonb_build_object('n', :'ne_corp', 'c', :'cc_mkt', 'nat', '05.01.04', 'p', 50), jsonb_build_object('n', :'ne_corp', 'c', :'cc_mkt', 'nat', '06.07', 'p', 50)));
+-- o E já misturou Marketing e PJ; desde 18/11/2026 o PJ sobe sozinho, então o E é só PJ
+select pg_temp.tit(:'u4', :'te', :'incorp', 2000, jsonb_build_array(jsonb_build_object('n', :'ne_corp', 'c', :'cc_mkt', 'nat', '06.07', 'p', 100)));
 select pg_temp.ok(true, 'acesso: cada um lança o título nas linhas em que lança');
 
 create function pg_temp.vejo_tits() returns text language sql as $$
@@ -7118,6 +7128,43 @@ set local session_replication_role = origin;
 select pg_temp.ok(not erp.ve_pj(:'analista'), 'PJ: designado só da sucessão não vê o PJ');
 rollback to savepoint pj_sucessao;
 select pg_temp.ok(erp.ve_pj(:'analista'), 'PJ: designado ativo vê o PJ');
+-- o pagamento de PJ sobe sozinho: o rateio não mistura PJ com outra natureza (Moises, 18/11/2026)
+select pg_temp.sis();
+savepoint pj_sozinho;
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('6b000000-0000-0000-0000-000000000001', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-12-01', '2026-12-01', 100);
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto) values
+  ('6b000000-0000-0000-0000-000000000002', :'spe', '10000000-0000-0000-0000-000000000007', 'recibo', 'PJ-1', '2026-12-01', '2026-12-01', 100);
+insert into erp.compromissos (id, empresa_id, tipo, pessoa_id, descricao, inicio, valor_total) values
+  ('6b000000-0000-0000-0000-000000000003', :'spe', 'avulsa', '10000000-0000-0000-0000-000000000007', 'Teste PJ', '2026-12-01', 100);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('6b000000-0000-0000-0000-000000000001', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 50);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('6b000000-0000-0000-0000-000000000002', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 50);
+insert into erp.compromisso_rateios (compromisso_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('6b000000-0000-0000-0000-000000000003', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 50);
+select pg_temp.erro_igual(format($$insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+  values ('6b000000-0000-0000-0000-000000000001', %L, %L, pg_temp.nat('05.01.03'), 50)$$, :'ne_vm', :'cc_mkt'),
+  'O pagamento de PJ sobe sozinho: o rateio não mistura natureza PJ com outra natureza', 'PJ: o título não mistura linha PJ com linha comum');
+select pg_temp.erro_igual(format($$insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+  values ('6b000000-0000-0000-0000-000000000002', %L, %L, pg_temp.nat('05.01.03'), 50)$$, :'ne_vm', :'cc_mkt'),
+  'O pagamento de PJ sobe sozinho: o rateio não mistura natureza PJ com outra natureza', 'PJ: a nota não mistura linha PJ com linha comum');
+select pg_temp.erro_igual(format($$insert into erp.compromisso_rateios (compromisso_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+  values ('6b000000-0000-0000-0000-000000000003', %L, %L, pg_temp.nat('05.01.03'), 50)$$, :'ne_vm', :'cc_mkt'),
+  'O pagamento de PJ sobe sozinho: o rateio não mistura natureza PJ com outra natureza', 'PJ: o contrato não mistura linha PJ com linha comum');
+-- trocar a natureza da linha comum para PJ, com outra linha comum no título, também é recusado
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('6b000000-0000-0000-0000-000000000001', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), 50);
+select pg_temp.erro_igual($$update erp.titulo_rateios set natureza_id = pg_temp.nat('05.01.03') where titulo_id = '6b000000-0000-0000-0000-000000000001' and natureza_id = pg_temp.nat('04.01')$$,
+  'O pagamento de PJ sobe sozinho: o rateio não mistura natureza PJ com outra natureza', 'PJ: trocar uma linha para PJ ao lado de linha comum é recusado');
+-- só PJ, em mais de uma linha, passa
+delete from erp.titulo_rateios where titulo_id = '6b000000-0000-0000-0000-000000000001';
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('6b000000-0000-0000-0000-000000000001', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.03'), 50),
+  ('6b000000-0000-0000-0000-000000000001', :'ne_vm', :'cc_obra', pg_temp.nat('05.01.03'), 50);
+select pg_temp.ok((select count(*) from erp.titulo_rateios where titulo_id = '6b000000-0000-0000-0000-000000000001') = 2,
+  'PJ: título só de PJ, em mais de uma linha, passa');
+rollback to savepoint pj_sozinho;
 -- aprovada pelo master, a previsão PJ não vira linha PRV no Sienge
 select pg_temp.volta(); select pg_temp.como(:'diretor');
 select pg_temp.ok(erp.decidir_previsao('6a000000-0000-0000-0000-0000000000a1', true) = 'aprovado', 'PJ: o master aprova a previsão PJ');
