@@ -159,6 +159,17 @@ Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depo
 - O link copiado abre a mesma tela, com o filtro aplicado.
 - Título e previsão de PJ só aparecem para o master e para quem ele designou.
 
+🟡 **Revisão visual no PR #90, que espera o ok do Moises.** As regras não mudam; muda o visual:
+- as abas ficam no lugar do título da página;
+- os contadores mostram o total em R$;
+- o cabeçalho das colunas fica fixo;
+- os grupos viram quadros;
+- a gaveta empurra a lista em vez de cobri-la, e no celular ocupa a tela inteira, com uma seta de voltar;
+- a lista vazia ganha o botão "Limpar filtro e busca";
+- o contador "Encerradas ou canceladas" passa a se chamar "Encerradas".
+
+As imagens abaixo são as do PR #85 e serão trocadas quando o #90 for juntado.
+
 ![Títulos no computador](../imagens/financeiro/consulta-titulos-desk.png)
 
 ![Gaveta de um título em aprovação](../imagens/financeiro/consulta-titulo-gaveta-desk.png)
