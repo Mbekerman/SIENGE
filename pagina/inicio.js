@@ -5,5 +5,5 @@ try { cfg = (await import('./config.js')).default; } catch { /* sem config.js: l
 const $ = (id) => document.getElementById(id);
 iniciar(cfg, {
   raiz: $('raiz'), aviso: $('aviso'), entrar: $('entrar'), sair: $('sair'), quem: $('quem'), atualizar: $('atualizar'),
-  total: $('total'), lido: $('lido'), vazio: $('vazio'), tabela: $('tabela'),
+  total: $('total'), lido: $('lido'), vivo: $('vivo'), vazio: $('vazio'), tabela: $('tabela'),
 });

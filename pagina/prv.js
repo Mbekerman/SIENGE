@@ -113,11 +113,21 @@ export function lerMensagem(texto, refEntrada) {
   return null;
 }
 
+// O motivo que o Realtime dá ao recusar o canal, para mostrar na tela (sem dado nenhum da lista).
+export function motivoDaRecusa(texto) {
+  try {
+    const p = JSON.parse(texto)?.payload ?? {};
+    const m = p.response?.reason ?? p.message ?? p.reason ?? '';
+    return typeof m === 'string' ? m.slice(0, 200) : '';
+  } catch { return ''; }
+}
+
 export const esperaDaVez = (n) => ESPERAS_MS[Math.min(n, ESPERAS_MS.length - 1)];
 
 // Liga o canal e se religa sozinho. token() devolve o token atual (ou null: fora do login, não liga).
 // Devolve trocarToken(), para mandar o token renovado sem religar, e parar().
-export function ouvir(cfg, token, aoMudar, Ws = globalThis.WebSocket) {
+// aoEstado(ligada, motivo): avisa a tela se a atualização automática está ligada e, desligada, por quê.
+export function ouvir(cfg, token, aoMudar, Ws = globalThis.WebSocket, aoEstado = () => {}) {
   let ws = null, batida = null, falhas = 0, ref = 0, enviado = null, entrada = null, parado = false, volta = null;
   const proximo = () => String(++ref);
   const religar = () => { if (!parado) volta = setTimeout(abrir, esperaDaVez(falhas++)); };
@@ -134,11 +144,11 @@ export function ouvir(cfg, token, aoMudar, Ws = globalThis.WebSocket) {
     };
     ws.onmessage = (e) => {
       const o = lerMensagem(e.data, entrada);
-      if (o === 'entrou') { falhas = 0; aoMudar(); }
+      if (o === 'entrou') { falhas = 0; aoEstado(true); aoMudar(); }
       else if (o === 'mudou') aoMudar();
-      else if (o === 'recusado') ws.close();
+      else if (o === 'recusado') { aoEstado(false, motivoDaRecusa(e.data)); ws.close(); }
     };
-    ws.onclose = () => { clearInterval(batida); ws = null; religar(); };
+    ws.onclose = () => { clearInterval(batida); ws = null; aoEstado(false); religar(); };
   }
   abrir();
   return {
@@ -234,7 +244,12 @@ export async function iniciar(cfgBruta, el) {
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && ler(CHAVE_SESSAO)) carregar(); });
   await carregar();
   if (ler(CHAVE_SESSAO) && globalThis.WebSocket) {
-    const canal = ouvir(cfg, async () => (await sessao())?.acesso ?? null, logo);
+    const canal = ouvir(cfg, async () => (await sessao())?.acesso ?? null, logo, globalThis.WebSocket, (ligada, motivo) => {
+      if (ligada) el.vivo.textContent = 'Atualização automática ligada';
+      else if (motivo) el.vivo.textContent = `Atualização automática desligada (${motivo}); a lista é relida a cada minuto`;
+      else if (!el.vivo.textContent.startsWith('Atualização automática desligada (')) el.vivo.textContent = 'Atualização automática religando; a lista é relida a cada minuto';
+      if (!ligada) console.warn('Tempo real da página das PRV:', motivo || 'conexão caiu');
+    });
     setInterval(canal.trocarToken, 5 * 60_000);
   }
 }
