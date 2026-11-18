@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useSessao } from './lib/sessao';
 import { configurado, mensagemErro } from './lib/supabase';
+import { CHAVE_RECUSADA } from './lib/config';
 import { Entrar, SemCadastro } from './pages/Entrar';
 import { Moldura } from './components/Moldura';
 import { Titulos } from './pages/Titulos';
@@ -9,6 +10,7 @@ import { Contratos } from './pages/Contratos';
 
 export function App() {
   const { sessao, carregando, eu, euCarregando, euErro } = useSessao();
+  if (CHAVE_RECUSADA) return <Aviso texto="A chave configurada no servidor não é a publicável. O sistema não abre com ela: avise o TI." />;
   if (!configurado) return <Aviso texto="Falta configurar o endereço e a chave do Supabase (SUPABASE_URL e SUPABASE_KEY)." />;
   if (carregando) return <Aviso texto="Carregando…" />;
   if (!sessao) return <Entrar />;

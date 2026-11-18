@@ -9,7 +9,23 @@ function meta(nome: string): string | undefined {
 }
 
 export const SUPABASE_URL = meta('supabase-url') ?? (import.meta.env.VITE_SUPABASE_URL as string | undefined);
-export const SUPABASE_KEY = meta('supabase-key') ?? (import.meta.env.VITE_SUPABASE_KEY as string | undefined);
+const CHAVE = meta('supabase-key') ?? (import.meta.env.VITE_SUPABASE_KEY as string | undefined);
+
+/** Só a chave publicável vai ao navegador: `sb_publishable_…` ou o JWT antigo com role anon. Qualquer outra
+ *  (a service_role por engano no servidor, por exemplo) é recusada e a tela mostra o erro, sem chamar o banco.
+ *  Mesma regra da página das PRV (pagina/prv.js). */
+export function chavePublicavel(k: string | undefined): boolean {
+  if (!k) return false;
+  if (/^sb_publishable_[A-Za-z0-9_-]+$/.test(k)) return true;
+  const partes = k.split('.');
+  if (partes.length !== 3) return false;
+  try {
+    const corpo = JSON.parse(atob(partes[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return corpo?.role === 'anon';
+  } catch { return false; }
+}
+export const CHAVE_RECUSADA = Boolean(CHAVE) && !chavePublicavel(CHAVE);
+export const SUPABASE_KEY = CHAVE_RECUSADA ? undefined : CHAVE;
 /** 'dev' no ambiente de desenvolvimento; vazio em produção. */
 export const AMBIENTE = meta('bkm-ambiente') ?? (import.meta.env.VITE_AMBIENTE as string | undefined) ?? '';
 /** Domínio do Google Workspace que entra no sistema. */
