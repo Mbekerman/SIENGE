@@ -1000,7 +1000,9 @@ select pg_temp.ok(not has_function_privilege('authenticated', 'erp._aplicar_muda
                   and not has_function_privilege('authenticated', 'erp.registrar_evento(text, text, text, uuid, uuid, jsonb)', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp._executar_config(text, text, jsonb)', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp._contexto_mudanca_config(text)', 'EXECUTE')
-                  and not has_function_privilege('authenticated', 'erp._criar_titulo(uuid, text, text, uuid, uuid, uuid, date, date, numeric, date[], text, uuid, text)', 'EXECUTE'),
+                  and not has_function_privilege('authenticated', 'erp._criar_titulo(uuid, text, text, uuid, uuid, uuid, date, date, numeric, date[], text, uuid, text)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp._fixar_alcada_sem_centro(erp.titulos, text[], text, numeric)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp._fixar_alcada_previsao_sem_centro(erp.previsoes)', 'EXECUTE'),
   'catálogo: o que aplica sem conferir, os saldos internos e as rotinas do servidor ficam sem EXECUTE para a API');
 -- S-079: nenhuma função que recebe a pessoa (p_user) é executável pela API
 select pg_temp.ok(not exists (
@@ -1884,6 +1886,39 @@ select pg_temp.erro_igual($$select erp.decidir_titulo('82000000-0000-0000-0000-0
 select pg_temp.como(:'analista');  -- AO
 select pg_temp.ok(erp.decidir_titulo('82000000-0000-0000-0000-0000000000a1', true) = 'aprovado', 'sem centro: AF + AO aprovam');
 rollback to savepoint sem_centro;
+-- sem ninguém na AF e na AO, com uma pessoa só na AD (que não preenche as duas vagas): não falta
+-- aprovador, porque a AD sozinha basta
+savepoint sem_centro_sem_ao;
+select pg_temp.sis(); delete from erp.listas_financeiro where lista in ('AF','AO'); select pg_temp.volta();
+select pg_temp.como(:'diretor');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('82000000-0000-0000-0000-0000000000a3', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-05-05', '2026-05-01', 10);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('82000000-0000-0000-0000-0000000000a3', 1, '2026-05-20', 10);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('82000000-0000-0000-0000-0000000000a3', null, null, pg_temp.nat('11.02'), 100);
+select erp.confirmar_titulo('82000000-0000-0000-0000-0000000000a3');
+select pg_temp.sis();
+select pg_temp.ok((select not falta_aprovadores from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-0000000000a3')
+                  and not exists (select 1 from erp.eventos where tipo = 'alcada_falta_aprovadores' and registro = '82000000-0000-0000-0000-0000000000a3'),
+  'sem centro: sem AF e AO, com uma pessoa na AD, não falta aprovador nem vai ao master');
+select pg_temp.volta();
+rollback to savepoint sem_centro_sem_ao;
+-- sem AO e sem AD (com a AF): falta aprovador
+savepoint sem_centro_sem_ao_ad;
+select pg_temp.sis(); delete from erp.listas_financeiro where lista in ('AO','AD') and user_id <> :'diretor'; select pg_temp.volta();
+select pg_temp.como(:'diretor');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('82000000-0000-0000-0000-0000000000a4', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-05-05', '2026-05-01', 10);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('82000000-0000-0000-0000-0000000000a4', 1, '2026-05-20', 10);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('82000000-0000-0000-0000-0000000000a4', null, null, pg_temp.nat('11.02'), 100);
+select erp.confirmar_titulo('82000000-0000-0000-0000-0000000000a4');
+select pg_temp.sis();
+select pg_temp.ok((select falta_aprovadores and vagas_sem_gente = '{AO}' from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-0000000000a4')
+                  and exists (select 1 from erp.eventos where tipo = 'alcada_falta_aprovadores' and registro = '82000000-0000-0000-0000-0000000000a4'),
+  'sem centro: sem AO e sem AD, falta aprovador e vai ao master');
+select pg_temp.volta();
+rollback to savepoint sem_centro_sem_ao_ad;
 -- sem centro, sem ninguém na AF e na AO e com a AD vazia: vai ao master, com o aviso
 savepoint sem_centro_falta;
 select pg_temp.sis(); delete from erp.listas_financeiro where lista in ('AF','AO','AD') and user_id <> :'diretor'; select pg_temp.volta();
