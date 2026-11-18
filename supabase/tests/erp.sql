@@ -4635,6 +4635,19 @@ select pg_temp.ok((select centro_id = :'cc_mkt' from erp.eventos where tipo = 'a
   'divisão: no delete, o evento leva o centro da faixa apagada (S-100)');
 insert into erp.alcadas_pagamento (id, centro_custo_id, divisao_id, ate, fases, passa_pelo_centro) values
   ('86000000-0000-0000-0000-0000000000d1', :'cc_mkt', :'dv_pdv', 5000, array['P:' || :'analista2'], false);
+-- previsão na divisão com faixas próprias: a faixa que manda passar pelo centro leva também à alçada do centro (18/11/2026)
+savepoint div_prev_centro;
+insert into erp.previsoes (id, empresa_id, origem, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, competencia, data_prevista, valor) values
+  ('68000000-0000-0000-0000-0000000000f2', '20000000-0000-0000-0000-000000000003', 'manual', :'ne1', :'cc_mkt', :'dv_pdv', pg_temp.nat('05.01.04'), '2026-12-01', '2026-12-20', 50);
+insert into erp.previsoes (id, empresa_id, origem, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, competencia, data_prevista, valor) values
+  ('68000000-0000-0000-0000-0000000000f3', '20000000-0000-0000-0000-000000000003', 'manual', :'ne1', :'cc_mkt', :'dv_pdv', pg_temp.nat('05.01.04'), '2026-12-01', '2026-12-20', 6000);
+select pg_temp.ok((select array_agg(divisao_id is null order by divisao_id is null) = '{f}' from erp.previsao_alcadas
+                    where previsao_id = '68000000-0000-0000-0000-0000000000f2'),
+  'previsão: na divisão com faixa que não passa pelo centro, só a alçada da divisão');
+select pg_temp.ok((select array_agg(divisao_id is null order by divisao_id is null) = '{f,t}' from erp.previsao_alcadas
+                    where previsao_id = '68000000-0000-0000-0000-0000000000f3'),
+  'previsão: na divisão com faixa que passa pelo centro, a alçada da divisão e a do centro');
+rollback to savepoint div_prev_centro;
 select pg_temp.falha($$insert into erp.alcadas_pagamento (ate, fases, passa_pelo_centro) values (7, '{AF}', true)$$,
   'divisão: só a faixa da divisão passa pelo centro');
 select pg_temp.falha(format($$insert into erp.alcadas_pagamento (centro_custo_id, divisao_id, ate, fases) values (%L, %L, 7, '{AF}')$$, :'cc_obra', :'dv_pdv'),
