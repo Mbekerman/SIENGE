@@ -25,7 +25,9 @@ export function iguais(a: string, b: string): boolean {
 
 // Resposta 2xx só quando o aviso foi registrado (ou é repetido ou de evento que não usamos); erro do banco
 // responde 500 para o Sienge tentar de novo (10 min, 30 min, 1 h, 3 h e 5 h).
-export async function receber(req: Request, token: string | null | undefined, registrar: Registrar): Promise<Response> {
+// depois: chamado (sem esperar) quando o aviso é novo, para processar já em vez de esperar a rotina de minuto.
+export async function receber(req: Request, token: string | null | undefined, registrar: Registrar,
+                              depois?: () => void): Promise<Response> {
   if (req.method !== 'POST') return new Response('só POST', { status: 405 });
   // Sem token guardado, ninguém entra (nunca comparar com vazio).
   if (!token || token.length < 32) return new Response('recebedor sem token', { status: 503 });
@@ -49,6 +51,7 @@ export async function receber(req: Request, token: string | null | undefined, re
 
   try {
     const novo = await registrar({ eventoId: eventoId.toLowerCase(), evento, hook, corpo: corpo as Record<string, unknown> });
+    if (novo && depois) { try { depois(); } catch { /* a rotina de minuto pega o aviso */ } }
     return Response.json({ ok: true, novo });
   } catch {
     // o erro do banco não vai para quem chamou

@@ -7,8 +7,9 @@
 // A chave de quem chama fica no Vault do banco (sienge_escrita_chave), lida aqui e pelo pg_cron.
 // Com o corpo {"tarefa": "planilha"}, em vez de enviar, reescreve a planilha do Google das linhas PRV a
 // apagar (planilha.ts; segredos GOOGLE_PLANILHA_CHAVE, o JSON da conta de serviço, e PLANILHA_PRV_ID).
+// Com {"tarefa": "avisos"}, só processa os avisos do Sienge pendentes (chamado pelo recebedor, sienge-aviso).
 import postgres from 'npm:postgres@3.4.4';
-import { bancoPostgres, httpSienge, processarUm } from './fila.ts';
+import { bancoPostgres, httpSienge, processarAvisos, processarUm } from './fila.ts';
 import { atualizarPlanilha, idPlanilha, lerChave } from './planilha.ts';
 
 const SUB = Deno.env.get('SIENGE_SUBDOMINIO') ?? 'bkmincorporadora';
@@ -37,6 +38,9 @@ Deno.serve(async (req) => {
       const banco = bancoPostgres(sql);
       return Response.json(await atualizarPlanilha(() => banco.linhasApagar(), lerChave(Deno.env.get('GOOGLE_PLANILHA_CHAVE')),
         idPlanilha(Deno.env.get('PLANILHA_PRV_ID')), new Date()));
+    }
+    if (pedido?.tarefa === 'avisos') {
+      return Response.json({ avisos: await processarAvisos(bancoPostgres(sql), httpSienge(BASE, credencial())) });
     }
     const credores = (Deno.env.get('SIENGE_CREDORES_TESTE') ?? '823').split(',').map((x) => Number(x.trim())).filter(Number.isInteger);
     const r = await processarUm(bancoPostgres(sql), httpSienge(BASE, credencial()), {

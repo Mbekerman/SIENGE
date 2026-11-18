@@ -104,6 +104,19 @@ export async function processarUm(banco: Banco, http: Http, cfg: Config): Promis
   }
 }
 
+// Só os avisos pendentes, sem enfileirar nem enviar título: o recebedor (servicos/sienge-aviso) chama
+// logo depois de gravar um aviso novo, para a linha apagada sair da página em segundos, sem esperar a
+// rotina de minuto (pedido do Moises, 18/11/2026). A rotina continua pegando o que sobrar.
+export async function processarAvisos(banco: Banco, http: Http, max = 5): Promise<Resultado[]> {
+  const feitos: Resultado[] = [];
+  for (let i = 0; i < max; i++) {
+    const r = await processarAviso(banco, http, 0);
+    if (!r) break;
+    feitos.push(r);
+  }
+  return feitos;
+}
+
 // O aviso do Sienge é só um dado (qualquer um pode mandar um POST ao recebedor): só o 404 do GET do
 // título, lido aqui, faz agir. Linha da lista do que apagar → apagada; linha esperada de previsão aberta →
 // a previsão volta à fila e vai outra linha. Título que ainda existe fecha o aviso sem mexer em nada;
