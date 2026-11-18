@@ -29,7 +29,6 @@ function banco(item: ItemFila | null, ped: PedidoTitulo | Error = pedido(), conf
     prvNossas: async () => [],
     recriarPrv: async () => { throw new Error('não recria'); },
     terminarCruzamento: async () => { throw new Error('não cruza'); },
-    linhasApagar: async () => [],
     pegarAviso: async () => null,
     terminarAviso: async () => { throw new Error('não há aviso'); },
   };
@@ -180,13 +179,12 @@ test('banco: todo passo roda numa transação como erp_sistema', async () => {
   assert.equal(await bp.terminarCruzamento(11, [], {}), 3);
   // JSON pelo tx.json, nunca JSON.stringify (chegaria como jsonb do tipo string; achado no bkm_dev, 18/11)
   assert.deepEqual(valores.at(-1)!.slice(1, 3), [{ comoJson: [] }, { comoJson: {} }]);
-  assert.deepEqual(await bp.linhasApagar(), []);
   assert.deepEqual(await bp.pegarAviso(), { evento_id: T, bill_id: 7, previsao_id: T, tipo: 'apagar' });
   await bp.terminarAviso(T, 'r', false);
-  assert.equal(log.length, 15);
+  assert.equal(log.length, 14);
   const sqls = log.map((p) => p[1]);
   for (const f of ['sienge_enfileirar', 'sienge_pegar()', 'sienge_pedido_item', 'sienge_registrar_item', 'sienge_ids()', 'sienge_terminar', 'sienge_pegar_conferencia()', 'sienge_marcar_apagado',
-                   'sienge_pegar_cruzamento()', 'sienge_prv_nossas', 'sienge_recriar_prv', 'sienge_terminar_cruzamento', 'v_sienge_prv_apagar',
+                   'sienge_pegar_cruzamento()', 'sienge_prv_nossas', 'sienge_recriar_prv', 'sienge_terminar_cruzamento',
                    'sienge_pegar_aviso()', 'sienge_terminar_aviso'])
     assert.ok(sqls.some((q) => q.includes(`erp.${f}`)), f);
   for (const passo of log) assert.equal(passo[0], 'set local role erp_sistema');
