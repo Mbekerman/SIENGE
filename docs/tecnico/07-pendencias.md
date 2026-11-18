@@ -7,6 +7,7 @@
 | Qual pacote de API a BKM tem? | Se a cópia diária cabe na cota; frequência da sincronização | 6/nov |
 | Código da filial da empresa 2 no Sienge | `tax-information` (dados fiscais de serviço). Em 17/nov as empresas 2 e 11 não tinham filial cadastrada (Apoio › Fiscal › Filiais); sem filial, o envio recusa nota com retenção. Criar uma filial de teste na 11? | 6/nov |
 | Onde instalar o programa de envio (`sienge-escrita`) na produção e com qual credencial; papel de login próprio para as funções, com `grant erp_sistema ... with inherit false, set true` (no `bkm_dev`, desde 18/nov, a conexão é o `postgres` com esse grant) | Envio automático na produção | 17/nov |
+| Testes das migrations com um papel não superusuário, como o `postgres` do Supabase (o `run.sh` roda como superusuário e não pegou, em 18/nov, a troca de dono que exige CREATE no esquema) | Instalação no `bkm_dev` e na produção | 18/nov |
 | Existe base de testes do Sienge? | Onde rodar testes de escrita (hoje é produção) | 6/nov |
 | Notas de contrato por medição ou por título avulso? | Fluxo de envio ao Sienge ([05](05-contas-a-pagar.md)) | 6/nov |
 | Suporte do Sienge: liberação automática de medição, API de liberação, de ciência e de autorização de pagamento? | Quantos passos manuais sobram | 6/nov |
