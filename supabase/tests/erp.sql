@@ -66,6 +66,15 @@ create function pg_temp.sis() returns void language sql as
             set_config('request.jwt.claim.sub', '', false), set_config('role', 'none', false) $$;
 create function pg_temp.volta() returns void language sql as
   $$ select pg_temp.como(nullif(current_setting('teste.antes', true), '')) $$;
+-- Nada é aprovado sem aprovador (18/11/2026): o título de centro sem gestor vai ao master. Nos testes
+-- que não tratam de aprovação, o master aprova o que falta e o papel de antes volta.
+create function pg_temp.aprova(t uuid, m text) returns void language plpgsql as $$
+declare antes text := coalesce(current_setting('request.jwt.claim.sub', true), ''); r text := current_setting('role');
+begin
+  perform pg_temp.como(m);
+  for i in 1..10 loop exit when erp.alcada_fase(t) is null; perform erp.decidir_titulo(t, true); end loop;
+  perform set_config('request.jwt.claim.sub', antes, false); perform set_config('role', r, false);
+end $$;
 -- As funções de acesso que recebem a pessoa não têm EXECUTE para a API (S-079); os testes delas
 -- chamam pelo dono e voltam ao papel de antes.
 create function pg_temp.dono_ini() returns text language plpgsql as
@@ -370,10 +379,12 @@ select pg_temp.falha($$select erp.lancar_documento('70000000-0000-0000-0000-0000
 select pg_temp.falha($$select erp.lancar_documento('70000000-0000-0000-0000-000000000009', array['2026-02-20']::date[], array['68000000-0000-0000-0000-000000000005'::uuid])$$,
   'previsão de outra natureza não casa');
 select erp.lancar_documento('70000000-0000-0000-0000-000000000009', array['2026-02-20']::date[], array['68000000-0000-0000-0000-000000000006'::uuid]) as tit9 \gset
+select pg_temp.aprova(:'tit9', :'diretor');
 select pg_temp.ok((select sum(valor) from erp.titulo_previsoes where titulo_id = :'tit9') = 50,
   'previsão sem fornecedor casa, e só consome a parte do rateio igual a ela (50 de 100)');
 rollback;
 select erp.lancar_documento('70000000-0000-0000-0000-000000000001', array['2026-02-20','2026-03-20']::date[]) as tit \gset
+select pg_temp.aprova(:'tit', :'diretor');
 select pg_temp.ok((select valor from erp.titulos where id = :'tit') = 9000, 'título do fornecedor pelo líquido: 10.000 − 500 de ISS − 500 de caução');
 select pg_temp.ok((select count(*) = 2 and sum(valor) = 9000 from erp.parcelas where titulo_id = :'tit'), 'em 2 parcelas');
 select pg_temp.ok((select pessoa_id = '10000000-0000-0000-0000-000000000006' and valor = 500 from erp.titulos
@@ -449,6 +460,7 @@ insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('8100000
 insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
   ('81000000-0000-0000-0000-000000000001', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), 100);
 select erp.confirmar_titulo('81000000-0000-0000-0000-000000000001');
+select pg_temp.aprova('81000000-0000-0000-0000-000000000001', :'diretor');
 insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, compromisso_id, nucleo_economico_id, centro_custo_id, data, valor, adiantamento_id) values
   ('80000000-0000-0000-0000-000000000003', :'spe', :'conta_spe', '10000000-0000-0000-0000-000000000005',
    '60000000-0000-0000-0000-000000000002', :'ne_vm', :'cc_obra', '2026-03-01', 6000, '81000000-0000-0000-0000-000000000001');
@@ -527,18 +539,21 @@ values ('70000000-0000-0000-0000-000000000008', :'spe', '10000000-0000-0000-0000
 insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
   ('70000000-0000-0000-0000-000000000008', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
 select erp.lancar_documento('70000000-0000-0000-0000-000000000008', array['2026-03-20']::date[]) as tit8 \gset
+select pg_temp.aprova(:'tit8', :'diretor');
 select id as p8 from erp.parcelas where titulo_id = :'tit8' \gset
 insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
 values ('70000000-0000-0000-0000-000000000007', :'spe', '10000000-0000-0000-0000-000000000005', 'nfse', '107', '2026-03-05', '2026-03-01', 100);
 insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
   ('70000000-0000-0000-0000-000000000007', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
 select erp.lancar_documento('70000000-0000-0000-0000-000000000007', array['2026-03-20']::date[]) as tit7 \gset
+select pg_temp.aprova(:'tit7', :'diretor');
 select id as p7 from erp.parcelas where titulo_id = :'tit7' \gset
 insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
 values ('70000000-0000-0000-0000-000000000006', :'spe', '10000000-0000-0000-0000-000000000005', 'nfse', '106', '2026-03-05', '2026-03-01', 100);
 insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
   ('70000000-0000-0000-0000-000000000006', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), 100);
 select erp.lancar_documento('70000000-0000-0000-0000-000000000006', array['2026-03-20']::date[]) as tit6 \gset
+select pg_temp.aprova(:'tit6', :'diretor');
 select id as p6 from erp.parcelas where titulo_id = :'tit6' \gset
 select pg_temp.falha(format($$insert into erp.quitacoes (pagamento_id, parcela_id, principal) values ('80000000-0000-0000-0000-000000000003', %L, 100)$$, :'p8'),
   'adiantamento de um centro de custo não abate título de outro centro sem aprovação');
@@ -586,6 +601,7 @@ values ('70000000-0000-0000-0000-000000000008', :'spe', '10000000-0000-0000-0000
 insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
   ('70000000-0000-0000-0000-000000000008', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
 select erp.lancar_documento('70000000-0000-0000-0000-000000000008', array['2026-03-20']::date[]) as tit8 \gset
+select pg_temp.aprova(:'tit8', :'diretor');
 select id as p8 from erp.parcelas where titulo_id = :'tit8' \gset
 select pg_temp.falha(format($$insert into erp.liberacoes_sem_abater (titulo_id, justificativa) values (%L, 'x')$$, :'tit8'),
   'quem lançou o título não libera pagá-lo sem abater');
@@ -603,6 +619,7 @@ values ('70000000-0000-0000-0000-000000000008', :'spe', '10000000-0000-0000-0000
 insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
   ('70000000-0000-0000-0000-000000000008', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
 select erp.lancar_documento('70000000-0000-0000-0000-000000000008', array['2026-03-20']::date[]) as tit8 \gset
+select pg_temp.aprova(:'tit8', :'diretor');
 select id as p8 from erp.parcelas where titulo_id = :'tit8' \gset
 select pg_temp.como(:'diretor2');
 insert into erp.liberacoes_sem_abater (titulo_id, justificativa) values (:'tit8', 'Liberado antes do adiantamento novo');
@@ -622,6 +639,7 @@ values ('70000000-0000-0000-0000-000000000005', :'spe', '10000000-0000-0000-0000
 insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
   ('70000000-0000-0000-0000-000000000005', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), 100);
 select erp.lancar_documento('70000000-0000-0000-0000-000000000005', array['2026-03-20']::date[]) as tit5 \gset
+select pg_temp.aprova(:'tit5', :'diretor');
 select id as p5 from erp.parcelas where titulo_id = :'tit5' \gset
 select erp.pagar_parcela(:'p5', :'conta_spe', '2026-03-20') is not null as pagou \gset
 select pg_temp.ok(:'pagou', 'adiantamento do fornecedor em outra empresa não trava o pagamento nesta');
@@ -635,6 +653,7 @@ values ('70000000-0000-0000-0000-000000000008', :'spe', '10000000-0000-0000-0000
 insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
   ('70000000-0000-0000-0000-000000000008', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
 select erp.lancar_documento('70000000-0000-0000-0000-000000000008', array['2026-03-20']::date[]) as tit8 \gset
+select pg_temp.aprova(:'tit8', :'diretor');
 select id as p8 from erp.parcelas where titulo_id = :'tit8' \gset
 insert into erp.quitacoes (pagamento_id, parcela_id, principal) values ('80000000-0000-0000-0000-000000000003', :'p8', 100);
 select pg_temp.ok(erp.parcela_saldo(:'p8') = 0, 'com a trava desligada pelo administrador, o abatimento cruzado passa');
@@ -1230,6 +1249,7 @@ values ('70000000-0000-0000-0000-000000000008', :'spe', '10000000-0000-0000-0000
 insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
   ('70000000-0000-0000-0000-000000000008', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
 select erp.lancar_documento('70000000-0000-0000-0000-000000000008', array['2026-03-20']::date[]) as tit8 \gset
+select pg_temp.aprova(:'tit8', :'diretor');
 select id as p8 from erp.parcelas where titulo_id = :'tit8' \gset
 select set_config('teste.p8', :'p8', true);
 set local role erp_teste_perfil;
@@ -1612,6 +1632,7 @@ select pg_temp.erro_igual($$insert into erp.quitacoes (pagamento_id, parcela_id,
 select pg_temp.erro_igual($$select erp.confirmar_titulo('80000000-0000-0000-0000-000000000592')$$,
   'As parcelas não somam o valor do título', 'S-059: parcelas precisam somar o título');
 select erp.confirmar_titulo('80000000-0000-0000-0000-000000000591');
+select pg_temp.aprova('80000000-0000-0000-0000-000000000591', :'diretor');
 select pg_temp.erro_igual($$insert into erp.quitacoes (pagamento_id, parcela_id, principal) values ('80000000-0000-0000-0000-000000000001', '81000000-0000-0000-0000-000000000591', 10)$$,
   'Pagamento e título são de empresas diferentes', 'S-059: pagamento da SPE não quita título da Incorporadora');
 select pg_temp.erro_igual($$update erp.titulo_rateios set percentual = 50 where titulo_id = '80000000-0000-0000-0000-000000000591'$$,
@@ -1766,8 +1787,13 @@ select pg_temp.sis(); update erp.regra_alcada_pagamento set excecao_competencia 
 select pg_temp.erro_igual($$insert into erp.excecoes_competencia (titulo_id, justificativa) values ('82000000-0000-0000-0000-000000000091', 'x')$$,
   'Quem lançou não aprova o próprio lançamento', 'S-088: sem a AD na lista, a marca da AD não aprova o próprio lançamento');
 rollback to savepoint proprio;
-select pg_temp.ok(not exists (select 1 from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-000000000004'),
-  'alçada: centro sem gestor aprovador (fora do piloto) não tem alçada');
+select pg_temp.sis();
+select pg_temp.ok((select falta_aprovadores and 'AREA' = any (vagas_sem_gente) from erp.titulo_alcadas
+                    where titulo_id = '82000000-0000-0000-0000-000000000004')
+                  and erp.alcada_pendente('82000000-0000-0000-0000-000000000004') is not null
+                  and exists (select 1 from erp.eventos where tipo = 'alcada_falta_aprovadores' and registro = '82000000-0000-0000-0000-000000000004'),
+  'alçada: centro sem gestor aprovador (fora do piloto) não aprova sozinho: vai ao master, com o aviso (18/11/2026)');
+select pg_temp.volta();
 select pg_temp.erro_igual($$insert into erp.titulo_aprovacoes (titulo_id, fase, lista, aprovado, por) values ('82000000-0000-0000-0000-000000000001', 1, 'AREA', true, '00000000-0000-0000-0000-00000000000e')$$,
   'A alçada do título só se grava pela confirmação e pela aprovação', 'alçada: aprovação não entra por INSERT direto');
 select pg_temp.erro_igual($$delete from erp.titulo_alcadas$$, 'A alçada do título não se altera nem se apaga', 'alçada: não se apaga');
@@ -3465,7 +3491,8 @@ select pg_temp.ok(exists (select 1 from erp.lancamentos where titulo_id = :'ta')
 select pg_temp.como(:'u4');
 select pg_temp.ok(exists (select 1 from erp.lancamentos where titulo_id = :'td'), 'acesso: com o PJ liberado, vê o PJ no livro');
 select pg_temp.como(:'u7');
-select pg_temp.ok(pg_temp.vejo_tits() = 'B', 'acesso: quem aprova na AD vê o título da alçada dele, e só ele (vê ' || pg_temp.vejo_tits() || ')');
+-- desde 18/11/2026 a Obra (sem gestor) também tem alçada, pelas faixas gerais: a AD vê o C, em que aprova
+select pg_temp.ok(pg_temp.vejo_tits() = 'BC', 'acesso: quem aprova na AD vê os títulos das alçadas dele, e só eles (vê ' || pg_temp.vejo_tits() || ')');
 select pg_temp.ok((select count(*) = 2 and count(*) filter (where titulo_id = :'tb') = 1
                      and bool_or(titulo_id is null and pessoa = 'Outros 2 títulos (sem acesso)' and valor_no_centro = 21000 and empresa_id is null)
                    from erp.titulos_do_acumulado(:'tb')),
@@ -4330,11 +4357,13 @@ insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id,
 values ('88000000-0000-0000-0000-000000000001', :'ne1', :'cc_mkt', :'dv_pdv', pg_temp.nat('05.01.04'), 100);
 insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('88000000-0000-0000-0000-000000000001', 1, '2026-09-20', 100);
 select erp.confirmar_titulo('88000000-0000-0000-0000-000000000001');
+select pg_temp.aprova('88000000-0000-0000-0000-000000000001', :'diretor');
 select pg_temp.ok((select bool_and(divisao_id = :'dv_pdv') and count(*) > 0 from erp.lancamentos where titulo_id = '88000000-0000-0000-0000-000000000001'),
   'divisão: o livro leva a divisão da linha');
 -- pagamento e adiantamento saem carimbados também com a divisão (Moises, 15/11/2026) — num savepoint, para não somar no acumulado da alçada adiante
 savepoint div_pagamento;
 select pg_temp.tit_div('8a000000-0000-0000-0000-0000000000a4', 30, :'dv_onl');
+select pg_temp.aprova('8a000000-0000-0000-0000-0000000000a4', :'diretor');
 select erp.pagar_parcela((select id from erp.parcelas where titulo_id = '8a000000-0000-0000-0000-0000000000a4'),
                          '50000000-0000-0000-0000-000000000001', '2026-09-04') as pg_a4 \gset
 select pg_temp.ok((select divisao_id = :'dv_onl' from erp.pagamentos where id = :'pg_a4'),
@@ -4345,6 +4374,7 @@ insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('8a00000
 insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, percentual)
 values ('8a000000-0000-0000-0000-0000000000a1', :'ne1', :'cc_mkt', :'dv_pdv', pg_temp.nat('05.01.04'), 100);
 select erp.confirmar_titulo('8a000000-0000-0000-0000-0000000000a1');
+select pg_temp.aprova('8a000000-0000-0000-0000-0000000000a1', :'diretor');
 select pg_temp.erro_igual(format($$insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor, adiantamento_id) values
   ('20000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000007', %L, %L, '2026-09-05', 500,
    '8a000000-0000-0000-0000-0000000000a1')$$, :'ne1', :'cc_mkt'),
@@ -4366,6 +4396,7 @@ select pg_temp.ok((select divisao_id = :'dv_pdv' from erp.v_adiantamentos where 
   'divisão: a lista de adiantamentos mostra a divisão');
 -- abate só na mesma divisão; em outra, como em outro centro, só com aprovação
 select pg_temp.tit_div('8a000000-0000-0000-0000-0000000000a2', 50, :'dv_onl');
+select pg_temp.aprova('8a000000-0000-0000-0000-0000000000a2', :'diretor');
 select pg_temp.erro_igual($$insert into erp.quitacoes (pagamento_id, parcela_id, principal)
   select '8a000000-0000-0000-0000-0000000000b1', id, 50 from erp.parcelas where titulo_id = '8a000000-0000-0000-0000-0000000000a2'$$,
   'Este pagamento é de outra divisão do mesmo centro; abater aqui precisa de aprovação do gestor do centro ou de AF, AO, AD',
@@ -4378,6 +4409,7 @@ select b as gst from unnest(erp._beneficiarios_acesso('divisoes', jsonb_build_ob
 -- S-103: com uma linha fora do carimbo, o título todo pede a aprovação; o gestor só aprova se tudo é do centro dele
 select pg_temp.como(:'analista');
 select pg_temp.tit_div('8a000000-0000-0000-0000-0000000000a7', 60, :'dv_pdv', 50, :'dv_onl');
+select pg_temp.aprova('8a000000-0000-0000-0000-0000000000a7', :'diretor');
 insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
   ('8a000000-0000-0000-0000-0000000000a6', '20000000-0000-0000-0000-000000000003', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-09-02', '2026-09-01', 60);
 insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('8a000000-0000-0000-0000-0000000000a6', 1, '2026-09-20', 60);
@@ -4385,6 +4417,7 @@ insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id,
   ('8a000000-0000-0000-0000-0000000000a6', :'ne1', :'cc_mkt', :'dv_pdv', pg_temp.nat('05.01.04'), 99),
   ('8a000000-0000-0000-0000-0000000000a6', :'ne1', :'cc_obra', :'dv_obra', pg_temp.nat('04.01'), 1);
 select erp.confirmar_titulo('8a000000-0000-0000-0000-0000000000a6');
+select pg_temp.aprova('8a000000-0000-0000-0000-0000000000a6', :'diretor');
 select pg_temp.erro_igual($$insert into erp.quitacoes (pagamento_id, parcela_id, principal)
   select '8a000000-0000-0000-0000-0000000000b1', id, 60 from erp.parcelas where titulo_id = '8a000000-0000-0000-0000-0000000000a6'$$,
   'Este pagamento é de outro núcleo ou centro de custo; abater aqui precisa de aprovação de AF, AO, AD',
@@ -4405,6 +4438,7 @@ insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id,
   ('8a000000-0000-0000-0000-0000000000a8', :'ne1', :'cc_mkt', :'dv_pdv', pg_temp.nat('05.01.04'), 99),
   ('8a000000-0000-0000-0000-0000000000a8', '40000000-0000-0000-0000-0000000000d1', :'cc_mkt', :'dv_pdv', pg_temp.nat('05.01.04'), 1);
 select erp.confirmar_titulo('8a000000-0000-0000-0000-0000000000a8');
+select pg_temp.aprova('8a000000-0000-0000-0000-0000000000a8', :'diretor');
 select pg_temp.erro_igual($$insert into erp.quitacoes (pagamento_id, parcela_id, principal)
   select '8a000000-0000-0000-0000-0000000000b1', id, 60 from erp.parcelas where titulo_id = '8a000000-0000-0000-0000-0000000000a8'$$,
   'Este pagamento é de outro núcleo ou centro de custo; abater aqui precisa de aprovação de AF, AO, AD',
@@ -4440,8 +4474,11 @@ insert into erp.quitacoes (pagamento_id, parcela_id, principal)
   select '8a000000-0000-0000-0000-0000000000b1', id, 50 from erp.parcelas where titulo_id = '8a000000-0000-0000-0000-0000000000a2';
 select pg_temp.ok(erp.parcela_saldo((select id from erp.parcelas where titulo_id = '8a000000-0000-0000-0000-0000000000a2')) = 0,
   'divisão: com a aprovação do gestor do centro, o adiantamento abate o título da outra divisão');
+-- o gestor só sai sem título esperando por ele: o master aprova os desta parte antes
+select pg_temp.sis(); select pg_temp.aprova(id, :'diretor') from erp.titulos where id::text like '8a000000-%' and erp.alcada_fase(id) is not null; select pg_temp.volta();
 select pg_temp.sis(); delete from erp.centro_aprovadores where centro_custo_id = :'cc_mkt' and user_id = :'gst'; select pg_temp.volta();
 select pg_temp.tit_div('8a000000-0000-0000-0000-0000000000a3', 80, :'dv_pdv');
+select pg_temp.aprova('8a000000-0000-0000-0000-0000000000a3', :'diretor');
 select pg_temp.ok((select coalesce(sum(valor), 0) = 80 from erp.titulo_coberturas where titulo_id = '8a000000-0000-0000-0000-0000000000a3')
                   and not exists (select 1 from erp.titulo_coberturas where titulo_id = '8a000000-0000-0000-0000-0000000000a2'),
   'divisão: o adiantamento cobre só o título da mesma divisão');
@@ -5640,7 +5677,10 @@ select pg_temp.ok(exists (select 1 from erp.parcelas where titulo_id = 'c2000000
                   and not exists (select 1 from bi.f_parcelas where titulo_id = 'c2000000-0000-0000-0000-0000000000b1'),
   'bi: título em rascunho não entra nas parcelas');
 -- quem vê o título só por ter votado na alçada (sem perfil) não vê, nas parcelas, as linhas que não vê
-select t.id as bi_tit_alc, t.rodada as bi_rod, (select r.centro_custo_id from erp.titulo_rateios r where r.titulo_id = t.id limit 1) as bi_cc_alc
+-- (a alçada inventada vai num centro em que o título ainda não tem alçada: desde 18/11/2026 todo centro do rateio tem)
+select t.id as bi_tit_alc, t.rodada as bi_rod,
+       (select c.id from erp.centros_custo c where not exists (select 1 from erp.titulo_alcadas a where a.titulo_id = t.id and a.rodada = t.rodada
+                                                                  and a.centro_custo_id = c.id and a.divisao_id is null) order by c.id limit 1) as bi_cc_alc
   from erp.titulos t where t.situacao <> 'rascunho' and exists (select 1 from erp.parcelas p where p.titulo_id = t.id)
    and exists (select 1 from erp.titulo_rateios r where r.titulo_id = t.id and r.centro_custo_id is not null)
  order by t.criado_em limit 1 \gset
@@ -6123,6 +6163,29 @@ select pg_temp.ok(erp.decidir_previsao('68000000-0000-0000-0000-0000000000a1', t
 select pg_temp.sis();
 select pg_temp.ok(erp.previsao_aprovada('68000000-0000-0000-0000-0000000000a1'), 'previsão: aprovada');
 select pg_temp.volta();
+-- nada é aprovado sem aprovador (Moises, 18/11/2026): centro sem gestor e sem faixas próprias não aprova sozinho
+savepoint sem_aprovador;
+select pg_temp.sis();
+select c.id as cc_sem from erp.centros_custo c join erp.nucleo_centros nc on nc.centro_custo_id = c.id and nc.nucleo_economico_id = :'ne_vm'
+ where not exists (select 1 from erp.centro_aprovadores a where a.centro_custo_id = c.id)
+   and not exists (select 1 from erp.alcadas_pagamento ap where ap.centro_custo_id = c.id)
+   and not exists (select 1 from erp.divisoes d where d.centro_custo_id = c.id)
+ order by c.id limit 1 \gset
+select pg_temp.como_dono(:'analista');
+insert into erp.previsoes (id, empresa_id, origem, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor, descricao)
+values ('68000000-0000-0000-0000-0000000000f1', :'spe', 'manual', :'ne_vm', :'cc_sem', pg_temp.nat('05.01.04'), '2026-09-01', '2026-09-20', 100, 'Sem gestor');
+select pg_temp.sis();
+select pg_temp.ok((select falta_aprovadores and 'AREA' = any (vagas_sem_gente) from erp.previsao_alcadas
+                    where previsao_id = '68000000-0000-0000-0000-0000000000f1' and centro_custo_id = :'cc_sem' and divisao_id is null)
+                  and not erp.previsao_aprovada('68000000-0000-0000-0000-0000000000f1')
+                  and exists (select 1 from erp.eventos where tipo = 'alcada_falta_aprovadores' and registro = '68000000-0000-0000-0000-0000000000f1'),
+  'previsão: centro sem gestor e sem faixas próprias não nasce aprovada; vai ao master, com o aviso');
+select pg_temp.como(:'diretor');
+select pg_temp.ok(erp.decidir_previsao('68000000-0000-0000-0000-0000000000f1', true) = 'aprovado', 'previsão: o master aprova a do centro sem gestor');
+select pg_temp.sis();
+select pg_temp.ok(erp.previsao_aprovada('68000000-0000-0000-0000-0000000000f1'), 'previsão: do centro sem gestor, aprovada só pelo master');
+select pg_temp.volta();
+rollback to savepoint sem_aprovador;
 select pg_temp.erro_igual($$select erp.decidir_previsao('68000000-0000-0000-0000-0000000000a1', true)$$,
   'A previsão já foi aprovada', 'previsão: aprovada não se decide de novo');
 
