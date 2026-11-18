@@ -64,8 +64,10 @@ Nenhum valor de segredo é escrito no repositório, em documento ou no chat.
 | `SIENGE_USUARIO`, `SIENGE_SENHA` (envio) | Gravação do título, das parcelas e da forma de pagamento (`servicos/sienge-escrita`) | Ainda não criados para a função `sienge-escrita`; o teste de 17/nov rodou no ambiente de nuvem do Claude (proxy) | Cofre do projeto de produção do ERP (ver S-115) |
 | `SIENGE_AMBIENTE` (não é segredo) | Só a palavra exata `producao` libera gravar fora da empresa de teste; ausente ou outra palavra é teste | Não definido em lugar nenhum (teste) | Só na produção |
 | `SIENGE_CREDORES_TESTE` (não é segredo) | Credores de teste aceitos pela trava em teste, separados por vírgula | Padrão 823 no código | |
-| `GOOGLE_PLANILHA_CHAVE` | JSON da chave da conta de serviço do Google `erp-planilha-prv` (projeto bkm-terrenos, sem papel no projeto), que só escreve na planilha das linhas PRV a apagar, compartilhada com ela como Editor | Segredo da função `sienge-escrita` no `bkm_dev`, criado pelo Moises (pendente em 17/nov/2026) | Trocar a chave na conta de serviço e apagar a antiga |
-| `PLANILHA_PRV_ID` (não é segredo) | O id (ou o link) da planilha "PRV a apagar no Sienge"; a aba se chama `PRV a apagar` | Pendente | |
+| `GOOGLE_PLANILHA_CHAVE` | Era o JSON da chave da conta de serviço da planilha das PRV a apagar | **Não será criado**: a planilha foi trocada pela página (18/nov/2026) | |
+| `PLANILHA_PRV_ID` (não é segredo) | Era o id da planilha das PRV a apagar | **Não será criado** (18/nov/2026) | |
+| `PAGINA_SUPABASE_URL`, `PAGINA_SUPABASE_CHAVE` (não são segredo) | Endereço do Supabase e chave **publicável** (`sb_publishable_…`) que a página das PRV a apagar usa no navegador; o workflow `pagina.yml` recusa outro formato (chave secreta ou `service_role` não passam) | Variáveis do repositório no GitHub (Settings › Secrets and variables › Actions › Variables), a criar pelo Moises | Idem, apontando para a produção |
+| Cliente OAuth do Google (id e segredo) | Login Google da página das PRV no Supabase Auth | O cliente "Interno" do Workspace no projeto `bkm-terrenos` do Google Cloud; o segredo fica só em Authentication › Providers › Google do `bkm_dev`, colado pelo Moises | Idem na produção |
 | `sienge_escrita_chave` | Chave com que o pg_cron chama a função `sienge-escrita` | Ainda não criada (`supabase/dev/sienge_escrita_agenda.sql` cria) | Idem na produção |
 | Chaves do Supabase, do Google e de leitura de PDF por IA | | Não criadas | A definir com o servidor |
 

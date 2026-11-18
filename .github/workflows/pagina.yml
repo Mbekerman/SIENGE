@@ -1,0 +1,53 @@
+name: Página das PRV
+# Publica a página das linhas PRV a apagar à mão no Sienge (pagina/) no GitHub Pages (Moises, 18/11/2026).
+# Só a develop publica, e só quando a pasta pagina/ muda (ou à mão). O endereço do Supabase e a chave
+# publicável vêm das variáveis do repositório (Settings › Secrets and variables › Actions › Variables),
+# nunca de arquivo: o config.js só existe no site publicado. A chave publicável não é segredo (vai para
+# o navegador); quem decide o acesso é o banco (pagina.prv_apagar recusa quem não é Google da BKM).
+on:
+  push:
+    branches: [develop]
+    paths: ['pagina/**', '.github/workflows/pagina.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pagina
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test pagina/prv.test.mjs
+      - name: Monta o site
+        env:
+          URL_SUPABASE: ${{ vars.PAGINA_SUPABASE_URL }}
+          CHAVE: ${{ vars.PAGINA_SUPABASE_CHAVE }}
+        run: |
+          [[ "$URL_SUPABASE" =~ ^https://[a-z0-9]{20}\.supabase\.co$ ]] || { echo "PAGINA_SUPABASE_URL ausente ou inválida"; exit 1; }
+          [[ "$CHAVE" =~ ^sb_publishable_[A-Za-z0-9_-]+$ ]] || { echo "PAGINA_SUPABASE_CHAVE ausente ou não é publicável"; exit 1; }
+          mkdir site
+          cp pagina/index.html pagina/inicio.js pagina/prv.js pagina/estilo.css site/
+          printf "export default { url: '%s', chave: '%s' };\n" "$URL_SUPABASE" "$CHAVE" > site/config.js
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4

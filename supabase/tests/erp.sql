@@ -959,7 +959,7 @@ select pg_temp.ok(not exists (
        'previsao_saldo','parcela_saldo','pagamento_saldo',
        'regra_adiantamento_atual','autor_lancamento','abatimento_aprovado','gestor_abate_divisao','adiantamento_anterior_em_aberto','centro_ligado','natureza_presa',
        'checar_natureza','checar_centro','em_revisao','pode_ajustar','_ajustavel','_nota_ajustavel','_titulo_em_revisao_da_nota',
-       'cadeia_titulo','conferir_ajuste','alcada_fase','alcada_pendente','alcada_recusada','titulos_do_acumulado',
+       'cadeia_titulo','conferir_ajuste','prv_apagar_pagina','alcada_fase','alcada_pendente','alcada_recusada','titulos_do_acumulado',
        'checar_competencia','_registrar_ajuste','recusar_so_sucessao','recusar_admin_aprovador','_beneficiarios_acesso',
        'confirmar_titulo','lancar_documento','liberar_caucao','publicar_orcamento','decidir_titulo','reenviar_titulo',
        'registrar_movimento_societario','fechar_mes','reabrir_mes','pedir_reclassificacao','decidir_reclassificacao','avisos_forma_pagamento','decidir_compromisso','decidir_previsao','encerrar_previsao','gerar_previsoes_assinatura',
@@ -6603,6 +6603,51 @@ select erp.sienge_terminar('6c000000-0000-0000-0000-0000000000d1', 'enviado', 'p
 select erp.sienge_registrar_item('6c000000-0000-0000-0000-0000000000d2', 7202);
 select erp.sienge_terminar('6c000000-0000-0000-0000-0000000000d2', 'enviado', 'pagamento', null, 1, now());
 update erp.sienge_previsoes set apagar_desde = now() where previsao_id = '6c000000-0000-0000-0000-0000000000d2';
+-- a página das PRV a apagar (pagina.prv_apagar): só login Google com e-mail @bkm.com.br
+create function pg_temp.login(c text) returns void language sql as
+  $$ select set_config('request.jwt.claim.sub', '', false), set_config('request.jwt.claims', coalesce(c, ''), false),
+            set_config('role', 'authenticated', false) $$;
+select pg_temp.login('{"role":"authenticated","email":"Fulano.Tal@BKM.com.br","app_metadata":{"provider":"google"}}');
+select pg_temp.ok((select count(*) = 1 and bool_and(empresa_sienge = '11' and valor = 42 and data_prevista = '2026-12-10'
+                                                     and documento = 'PRV-6C0000000000' and na_lista_desde is not null)
+                     from pagina.prv_apagar() where titulo_sienge = 7202)
+                  and not exists (select 1 from pagina.prv_apagar() where titulo_sienge = 7201),
+  'página PRV: login Google da BKM vê a linha a apagar (e só ela), sem cadastro no ERP');
+savepoint pagina_apagada;
+select pg_temp.sis();
+select erp.sienge_marcar_apagado('6c000000-0000-0000-0000-0000000000d2');
+select pg_temp.login('{"role":"authenticated","email":"fulano@bkm.com.br","app_metadata":{"provider":"google"}}');
+select pg_temp.ok(not exists (select 1 from pagina.prv_apagar() where titulo_sienge = 7202),
+  'página PRV: linha já apagada no Sienge sai da página');
+rollback to savepoint pagina_apagada;
+select pg_temp.login('{"role":"authenticated","email":"fulano@bkmxcom.br","app_metadata":{"provider":"google"}}');
+select pg_temp.erro_igual($$select * from pagina.prv_apagar()$$, 'Entre com a conta Google da BKM', 'página PRV: domínio parecido (bkmxcom.br) não entra');
+select pg_temp.login('{"role":"authenticated","email":"fulano@bkm-com.br","app_metadata":{"provider":"google"}}');
+select pg_temp.erro_igual($$select * from pagina.prv_apagar()$$, 'Entre com a conta Google da BKM', 'página PRV: domínio parecido (bkm-com.br) não entra');
+select pg_temp.login('{"role":"authenticated","email":"fulano@bkm.com.br","app_metadata":{"provider":"email"}}');
+select pg_temp.erro_igual($$select * from pagina.prv_apagar()$$, 'Entre com a conta Google da BKM', 'página PRV: e-mail da BKM com senha não entra');
+select pg_temp.login('{"role":"authenticated","email":"fulano@gmail.com","app_metadata":{"provider":"google"}}');
+select pg_temp.erro_igual($$select * from pagina.prv_apagar()$$, 'Entre com a conta Google da BKM', 'página PRV: Google de fora da BKM não entra');
+select pg_temp.login('{"role":"authenticated","email":"fulano@bkm.com.br.outro.com","app_metadata":{"provider":"google"}}');
+select pg_temp.erro_igual($$select * from pagina.prv_apagar()$$, 'Entre com a conta Google da BKM', 'página PRV: domínio que só começa com bkm.com.br não entra');
+select pg_temp.login('{"role":"authenticated","email":"fulano@sub.bkm.com.br","app_metadata":{"provider":"google"}}');
+select pg_temp.erro_igual($$select * from pagina.prv_apagar()$$, 'Entre com a conta Google da BKM', 'página PRV: subdomínio não entra');
+select pg_temp.login('{"role":"anon","email":"fulano@bkm.com.br","app_metadata":{"provider":"google"}}');
+select pg_temp.erro_igual($$select * from pagina.prv_apagar()$$, 'Entre com a conta Google da BKM', 'página PRV: claims sem papel authenticated não entram');
+select pg_temp.login('{"role":"authenticated","email":"fulano@bkm.com.br","user_metadata":{"provider":"google"}}');
+select pg_temp.erro_igual($$select * from pagina.prv_apagar()$$, 'Entre com a conta Google da BKM', 'página PRV: provider fora do app_metadata não vale');
+select pg_temp.login(null);
+select pg_temp.erro_igual($$select * from pagina.prv_apagar()$$, 'Entre com a conta Google da BKM', 'página PRV: sem login não entra');
+select set_config('request.jwt.claims', '', false), set_config('role', 'none', false);
+select pg_temp.ok(not has_function_privilege('anon', 'pagina.prv_apagar()', 'EXECUTE')
+                  and not has_schema_privilege('anon', 'pagina', 'USAGE')
+                  and not has_function_privilege('anon', 'erp.prv_apagar_pagina()', 'EXECUTE')
+                  and not has_function_privilege('service_role', 'erp.prv_apagar_pagina()', 'EXECUTE')
+                  and has_function_privilege('authenticated', 'pagina.prv_apagar()', 'EXECUTE')
+                  and (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'pagina') = 1
+                  and not exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'pagina'),
+  'página PRV: anon não chega ao esquema; o `pagina` só tem a função, sem tabela');
+select pg_temp.sis();
 select pg_temp.ok(not has_function_privilege('authenticated', 'erp.sienge_registrar_aviso(uuid, text, text, jsonb)', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp.sienge_pegar_aviso(timestamptz, int)', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp.sienge_terminar_aviso(uuid, text, boolean)', 'EXECUTE')
