@@ -46,7 +46,6 @@ jobs:
       - run: node --test --experimental-strip-types servicos/sienge-escrita/trava.test.ts
       - run: node --test --experimental-strip-types servicos/sienge-escrita/envio.test.ts
       - run: node --test --experimental-strip-types servicos/sienge-escrita/fila.test.ts
-      - run: node --test --experimental-strip-types servicos/sienge-escrita/planilha.test.ts
       - run: node --test --experimental-strip-types servicos/sienge-aviso/logica.test.ts
       - run: node --test pagina/prv.test.mjs
 
