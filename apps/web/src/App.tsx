@@ -7,6 +7,7 @@ import { Moldura } from './components/Moldura';
 import { Titulos } from './pages/Titulos';
 import { Previsoes } from './pages/Previsoes';
 import { Contratos } from './pages/Contratos';
+import { ContasPagar } from './pages/ContasPagar';
 
 export function App() {
   const { sessao, carregando, eu, euCarregando, euErro } = useSessao();
@@ -20,11 +21,12 @@ export function App() {
   return (
     <Moldura>
       <Routes>
-        <Route path="/" element={<Navigate to="/titulos" replace />} />
+        <Route path="/" element={<Navigate to="/contas-a-pagar" replace />} />
+        <Route path="/contas-a-pagar" element={<ContasPagar />} />
         <Route path="/titulos/:id?" element={<Titulos />} />
         <Route path="/previsoes/:id?" element={<Previsoes />} />
         <Route path="/contratos/:id?" element={<Contratos />} />
-        <Route path="*" element={<Navigate to="/titulos" replace />} />
+        <Route path="*" element={<Navigate to="/contas-a-pagar" replace />} />
       </Routes>
     </Moldura>
   );

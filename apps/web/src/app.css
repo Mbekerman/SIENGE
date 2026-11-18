@@ -157,3 +157,68 @@
   .f-gav .kv .v{font-size:16px;line-height:24px;border-bottom:0 !important;min-height:0 !important;padding:0}
   .f-gav .gav-f{padding:12px 16px calc(12px + env(safe-area-inset-bottom))}
 }
+
+/* ---------- Navegação em três níveis (18/11/2026): módulo no menu, submódulo na coluna ao lado, abas na página ---------- */
+.nav-w{display:contents}
+button.ri{cursor:pointer;font:inherit;font-size:11px;font-weight:500}
+.ri .pil{color:var(--m-on-var)}
+.ri.on .pil{color:#001d35}
+.ri.ab:not(.on) .pil{background:rgba(31,31,31,.08)}
+.ri.off{opacity:.38;cursor:default}
+.ri.off:hover .pil{background:none}
+.subm{position:fixed;left:80px;top:72px;z-index:80;width:264px;background:#fff;border:1px solid #e3e7ec;border-radius:16px;box-shadow:0 4px 16px rgba(60,64,67,.16);padding:8px 0 12px}
+.subm-t{font-size:14px;font-weight:500;color:var(--m-on-surface);padding:10px 24px 8px}
+.subm-i{display:flex;align-items:center;justify-content:space-between;gap:8px;height:44px;margin:0 8px;padding:0 16px;border-radius:22px;font-size:14px;color:var(--m-on-surface);text-decoration:none}
+a.subm-i:hover{background:rgba(31,31,31,.06)}
+.subm-i.on{background:#c2e7ff;color:#001d35;font-weight:500}
+.subm-i.off{color:#8e918f;cursor:default}
+.subm-eb{font-size:11px;color:#8e918f}
+.f-trilha{display:flex;align-items:center;gap:2px;font-size:13px;color:#5f6368;height:28px;padding-top:8px}
+.f-trilha b{font-weight:500;color:var(--m-on-surface)}
+.f-trilha .ic{color:#8e918f}
+@container app (max-width:900px){
+  .subm{left:8px;right:8px;top:auto;bottom:88px;width:auto}
+  .f-trilha{padding:8px 16px 0}
+  .ri{font-size:11px}
+}
+.subm-pai{width:calc(100% - 16px);border:0;background:none;font:inherit;font-size:14px;cursor:pointer;text-align:left}
+.subm-pai:hover{background:rgba(31,31,31,.06)}
+.subm-pai.at{font-weight:500}
+.subm-pai .ic{color:#5f6368}
+.subm-pai.ab{background:rgba(31,31,31,.08)}
+.subm2{left:352px;width:240px}
+@container app (max-width:900px){ .subm2{left:8px;z-index:81} }
+.f-trilha a{color:inherit;text-decoration:none}
+.f-trilha a:not(.active):hover b{text-decoration:underline}
+
+/* ---------- Visão geral de Contas a pagar (18/11/2026) ---------- */
+.cp-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-bottom:32px}
+.cp-kpi{display:flex;flex-direction:column;gap:4px;padding:20px 24px;background:#fff;border:1px solid #e3e7ec;border-radius:16px;text-decoration:none;color:inherit;min-height:120px}
+.cp-kpi:hover{border-color:#c4c7c5;background:#fbfcfe}
+.cp-kr{font-size:14px;color:#444746}
+.cp-kv{font-size:32px;line-height:40px;font-weight:300;color:var(--m-on-surface);margin-top:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cp-kv.atras{color:var(--cr)}
+.cp-kn{font-size:13px;color:#5f6368}
+.cp-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px}
+.cp-card{display:flex;flex-direction:column;gap:12px;padding:28px 28px 24px;background:#fff;border:1px solid #e3e7ec;border-radius:24px;text-decoration:none;color:inherit;transition:box-shadow .15s,border-color .15s}
+.cp-card:hover{border-color:transparent;box-shadow:0 1px 3px rgba(60,64,67,.15),0 4px 12px rgba(60,64,67,.12)}
+.cp-ic{width:64px;height:64px;border-radius:20px;display:grid;place-items:center;color:var(--ct);background:color-mix(in srgb,var(--cc) 14%,#fff);margin-bottom:8px}
+.cp-t{display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:22px;line-height:28px;font-weight:400;color:var(--m-on-surface)}
+.cp-num{font-size:13px;font-weight:500;color:var(--ct);white-space:nowrap}
+.cp-txt{font-size:14px;line-height:22px;color:#444746}
+.cp-faz{display:flex;flex-direction:column;gap:8px;padding:12px 0 4px;border-top:1px solid #eef0f3;margin-top:4px}
+.cp-faz span{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--m-on-surface)}
+.cp-faz .ic{color:var(--ct);flex:none}
+.cp-ir{display:flex;align-items:center;gap:6px;margin-top:auto;padding-top:12px;font-size:14px;font-weight:500;color:#0b57d0}
+.cp-card:hover .cp-ir .ic{transform:translateX(3px)}
+.cp-ir .ic{transition:transform .15s}
+@container app (max-width:1279px){ .cp-kpis{grid-template-columns:repeat(2,minmax(0,1fr))} }
+@container app (max-width:1100px){ .cp-cards{grid-template-columns:minmax(0,1fr)} .cp-card{display:grid;grid-template-columns:64px minmax(0,1fr);column-gap:20px} .cp-card>*:not(.cp-ic){grid-column:2} .cp-ic{grid-row:1/span 5;margin:0} }
+@container app (max-width:900px){
+  .cp .cp-kpis,.cp .cp-cards{padding:0 16px}
+  .cp-kpis{gap:12px;margin-bottom:24px}
+  .cp-kpi{padding:16px;min-height:104px;border-radius:12px}
+  .cp-kv{font-size:24px;line-height:32px}
+  .cp-card{display:flex;padding:24px 20px;border-radius:16px}
+  .cp-cards{gap:16px}
+}

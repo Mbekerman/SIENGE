@@ -1,6 +1,7 @@
 // Peças comuns das telas, no desenho da linha F do protótipo aprovado (tpl.js: ic, dTiles, fCab, fAbas, fGrupo, gavB, kvB, ch).
 import { useEffect, useRef, useState, type KeyboardEvent as TeclaReact, type ReactNode } from 'react';
-import { NavLink, useParams } from 'react-router-dom';
+import { NavLink, useLocation, useParams } from 'react-router-dom';
+import { ondeEstou } from '../lib/modulos';
 import { P, type NomeIcone } from '../lib/icones';
 import { AMBIENTE } from '../lib/config';
 
@@ -43,7 +44,7 @@ export function Chip({ t, c }: { t: string; c: CorChip }) {
 
 /** Abas da página de pedidos (tpl.js › fAbas). */
 export function Abas() {
-  const abas: [string, string][] = [['/titulos', 'Títulos'], ['/previsoes', 'Previsões'], ['/contratos', 'Contas recorrentes']];
+  const abas: [string, string][] = [['/contas-a-pagar', 'Visão geral'], ['/titulos', 'Títulos'], ['/previsoes', 'Previsões'], ['/contratos', 'Contas recorrentes']];
   return <nav className="f-abas">{abas.map(([to, r]) => <NavLink key={to} to={to} className={({ isActive }) => (isActive ? 'on' : '')}>{r}</NavLink>)}</nav>;
 }
 
@@ -57,7 +58,13 @@ export type Cor = (typeof COR)[keyof typeof COR];
 /** Linha de cabeçalho compacta: as abas no lugar do título grande (o h1 fica só para leitor de tela) e as ações à direita. */
 export function Cab({ t, children }: { t: string; children?: ReactNode }) {
   useEffect(() => { document.title = `${t} · ERP BKM`; }, [t]);
-  return <div className="f-head"><h1 className="sr-only">{t}</h1><Abas /><span className="esp" />{children}</div>;
+  const { m, s } = ondeEstou(useLocation().pathname);
+  return (
+    <>
+      {m && s && <nav className="f-trilha" aria-label="Onde estou"><span>{m.r}</span><Ic n="chev" s={16} />{s.to ? <NavLink to={s.to} end><b>{s.r}</b></NavLink> : <b>{s.r}</b>}</nav>}
+      <div className="f-head"><h1 className="sr-only">{t}</h1><Abas /><span className="esp" />{children}</div>
+    </>
+  );
 }
 
 /** Contadores que filtram (tpl.js › dTiles): o clique no ligado volta para "todos". A cor é a do grupo, nunca a da posição. */
