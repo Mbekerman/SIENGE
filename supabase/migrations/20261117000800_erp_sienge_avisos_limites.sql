@@ -10,6 +10,10 @@ create table erp.sienge_avisos_excesso (
   pegos     int not null
 );
 
+-- as duas buscas do limite (por título e por hora) sem varrer a tabela
+create index sienge_avisos_bill_pegado on erp.sienge_avisos (bill_id, pegado_em) where pegado_em is not null;
+create index sienge_avisos_pegado on erp.sienge_avisos (pegado_em) where pegado_em is not null;
+
 insert into erp.tipos_evento (codigo, rotulo, modulo, critico) values
   ('sienge_avisos_excesso', 'Avisos do Sienge acima do limite por hora', 'pagar', true);
 insert into erp.regras_notificacao (tipo, destino, lista) values ('sienge_avisos_excesso', 'lista', 'AF');
