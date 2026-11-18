@@ -980,6 +980,8 @@ select pg_temp.ok(not has_table_privilege('authenticated', 'erp.lancamentos', 'I
                   and not has_table_privilege('authenticated', 'erp.mudancas_acesso', 'INSERT,UPDATE,DELETE')
                   and not has_table_privilege('authenticated', 'erp.atribuicoes', 'INSERT,UPDATE,DELETE'),
   'catálogo: livro, auditoria, caução e acesso não têm gravação direta pela API');
+select pg_temp.ok(not exists (select 1 from pg_roles where rolname like 'erp\_%' and has_schema_privilege(rolname, 'erp', 'CREATE')),
+  'catálogo: nenhum papel erp_* fica com CREATE no esquema erp (dado só durante a troca de dono)');
 -- EXECUTE: as invoker (rodam com o RLS de quem chama) e, das definer, só a lista abaixo
 select pg_temp.ok(not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -7157,6 +7159,25 @@ insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id,
   ('6b000000-0000-0000-0000-000000000001', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), 50);
 select pg_temp.erro_igual($$update erp.titulo_rateios set natureza_id = pg_temp.nat('05.01.03') where titulo_id = '6b000000-0000-0000-0000-000000000001' and natureza_id = pg_temp.nat('04.01')$$,
   'O pagamento de PJ sobe sozinho: o rateio não mistura natureza PJ com outra natureza', 'PJ: trocar uma linha para PJ ao lado de linha comum é recusado');
+-- levar uma linha PJ de um pai só PJ para um pai com linha comum também é recusado (revisão do #86)
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('6b000000-0000-0000-0000-000000000004', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-12-01', '2026-12-01', 100);
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto) values
+  ('6b000000-0000-0000-0000-000000000005', :'spe', '10000000-0000-0000-0000-000000000007', 'recibo', 'PJ-2', '2026-12-01', '2026-12-01', 100);
+insert into erp.compromissos (id, empresa_id, tipo, pessoa_id, descricao, inicio, valor_total) values
+  ('6b000000-0000-0000-0000-000000000006', :'spe', 'avulsa', '10000000-0000-0000-0000-000000000007', 'Teste PJ 2', '2026-12-01', 100);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('6b000000-0000-0000-0000-000000000004', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.03'), 100);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('6b000000-0000-0000-0000-000000000005', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.03'), 100);
+insert into erp.compromisso_rateios (compromisso_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('6b000000-0000-0000-0000-000000000006', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.03'), 100);
+select pg_temp.erro_igual($$update erp.titulo_rateios set titulo_id = '6b000000-0000-0000-0000-000000000001' where titulo_id = '6b000000-0000-0000-0000-000000000004'$$,
+  'O pagamento de PJ sobe sozinho: o rateio não mistura natureza PJ com outra natureza', 'PJ: levar a linha PJ para um título com linha comum é recusado');
+select pg_temp.erro_igual($$update erp.documento_rateios set documento_id = '6b000000-0000-0000-0000-000000000002' where documento_id = '6b000000-0000-0000-0000-000000000005'$$,
+  'O pagamento de PJ sobe sozinho: o rateio não mistura natureza PJ com outra natureza', 'PJ: levar a linha PJ para uma nota com linha comum é recusado');
+select pg_temp.erro_igual($$update erp.compromisso_rateios set compromisso_id = '6b000000-0000-0000-0000-000000000003' where compromisso_id = '6b000000-0000-0000-0000-000000000006'$$,
+  'O pagamento de PJ sobe sozinho: o rateio não mistura natureza PJ com outra natureza', 'PJ: levar a linha PJ para um contrato com linha comum é recusado');
 -- só PJ, em mais de uma linha, passa
 delete from erp.titulo_rateios where titulo_id = '6b000000-0000-0000-0000-000000000001';
 insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
