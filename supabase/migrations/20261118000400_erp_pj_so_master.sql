@@ -508,7 +508,13 @@ begin
     execute format('grant execute on function %s to erp_sistema, erp_conferencia, erp_situacao, erp_reclassificacao, erp_acesso, erp_config', f);
   end loop;
 end $$;
--- donos: a leitura (erp_conferencia lê tudo); designar e retirar gravam (erp_acesso); os gatilhos
+-- donos: a leitura (erp_conferencia lê tudo); designar e retirar gravam (erp_acesso); os gatilhos (o novo dono precisa de CREATE no esquema para receber a função: dado só aqui e tirado logo depois,
+-- se ele não tinha; no Supabase o postgres não é superusuário)
+create temp table _pj_create_dado as
+  select r from unnest(array['erp_conferencia', 'erp_acesso']) r where not has_schema_privilege(r, 'erp', 'create');
+do $$ declare v text; begin
+  for v in select r from _pj_create_dado loop execute format('grant create on schema erp to %I', v); end loop;
+end $$;
 alter function erp.ve_pj(uuid) owner to erp_conferencia;
 alter function erp.titulo_pj(uuid) owner to erp_conferencia;
 alter function erp.previsao_pj(uuid) owner to erp_conferencia;
@@ -517,6 +523,10 @@ alter function erp.tg_sienge_previsao_pj() owner to erp_conferencia;
 alter function erp.tg_mudanca_pj() owner to erp_conferencia;
 alter function erp.designar_pj(uuid, text) owner to erp_acesso;
 alter function erp.retirar_pj(uuid, text) owner to erp_acesso;
+do $$ declare v text; begin
+  for v in select r from _pj_create_dado loop execute format('revoke create on schema erp from %I', v); end loop;
+end $$;
+drop table _pj_create_dado;
 -- o sino lê quem vê o PJ; o master designa pela API; cada um lê a própria designação, o master todas
 grant execute on function erp.ve_pj(uuid), erp.registro_pj(text, text) to erp_notificacoes;
 grant execute on function erp.designar_pj(uuid, text), erp.retirar_pj(uuid, text) to authenticated;
