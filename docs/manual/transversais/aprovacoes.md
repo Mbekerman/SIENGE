@@ -137,7 +137,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 
 ✅ **Já vale agora, com o Sienge** (Moises, 7/nov/2026): os títulos dos fornecedores PJ copiados do Sienge ficam numa **área restrita** do ERP BKM. Relatórios e BI mostram só a soma por núcleo econômico e mês, sem valor por pessoa. Os centros de custo pequenos **não** são juntados (Moises, 7/nov/2026). Consequência: num centro de custo com um PJ só, a soma do mês é o valor dele. No próprio Sienge, nome e valor continuam visíveis.
 
-✅ O pagamento dos PJ **não tem aprovação própria**: a aprovação são os dois "ok" do mês sobre as tabelas (Moises, 7/nov/2026).
+✅ Desde 18/nov/2026 (Moises), o título PJ tem uma aprovação: a do **master** ou de quem ele designou para o PJ. Os dois "ok" do mês sobre as tabelas (Moises, 7/nov/2026) seguem como conferência das tabelas, sem código ainda; 🟡 a confirmar com o Moises se continuam.
 
 > 🔜 **Futuro.** Os pagamentos PJ ainda passam pelo Sienge, e a remessa e o extrato vão pelo Nexxera (Moises, 7/nov/2026). Enquanto for assim, o nome e o valor de cada PJ continuam visíveis no Sienge, e **todo o fluxo abaixo (anonimização, conferência com dois "ok", portal de notas e portal do contador) fica para quando o Sienge sair desse fluxo**. Ver [O que ainda é feito à mão no Sienge](passos-manuais-no-sienge.md). A conciliação automática depende do módulo de Bancos, que não foi desenhado.
 
@@ -264,7 +264,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 5. A aprovação vale só para o que foi aprovado, **inclusive a conta bancária e o PIX do fornecedor**. Se o título, os dados bancários ou o arquivo do lote mudarem depois, é preciso aprovar de novo.
 6. **Trocar os dados bancários de um fornecedor** é um ato que outra pessoa aprova. O fornecedor é avisado pelo contato que já estava cadastrado, e os títulos abertos dele voltam para aprovação. (É o golpe mais comum: um e-mail falso pedindo a troca da conta.)
 7. O lote só aceita título aprovado e sem nenhuma mudança depois da aprovação.
-8. Todo pagamento tem pelo menos uma aprovação. No PJ, a aprovação são os dois "ok" do mês.
+8. Todo pagamento tem pelo menos uma aprovação. No PJ, a do master ou de quem ele designou (desde 18/nov/2026).
 9. Toda mudança de configuração fica registrada.
 
 ✅ Travas novas, autorizadas pelo Moises em 14/nov/2026 (S-053 a S-055), também no banco e sem tela que as desligue:
