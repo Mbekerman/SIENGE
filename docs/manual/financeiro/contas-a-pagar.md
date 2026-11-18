@@ -168,6 +168,16 @@ Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depo
 - a lista vazia ganha o botão "Limpar filtro e busca";
 - o contador "Encerradas ou canceladas" passa a se chamar "Encerradas".
 
+O #90 também traz a navegação nova (Moises, 18/nov/2026):
+- **Menu em três níveis.** O menu lateral mostra os módulos: Início, Financeiro, Cadastros, Relatórios e Admin. Parar o mouse sobre um módulo abre uma gaveta com os submódulos; parar sobre um submódulo abre outra gaveta com as páginas. Em Financeiro › Contas a pagar, as páginas são Visão geral, Títulos, Previsões e Contas recorrentes. O que ainda não existe aparece apagado, com "Em breve". No alto da página ficam a trilha ("Financeiro › Contas a pagar") e as abas.
+- **Visão geral de Contas a pagar**, a página que abre primeiro. No topo ficam quatro números:
+  - quanto há a pagar nos próximos 7 dias;
+  - quanto venceu sem pagamento;
+  - quantos títulos e previsões esperam aprovação;
+  - quanto as contas recorrentes somam por mês.
+
+  Embaixo vem um cartão por seção, que explica o que se encontra nela e o que dá para fazer.
+
 As imagens abaixo são as do PR #85 e serão trocadas quando o #90 for juntado.
 
 ![Títulos no computador](../imagens/financeiro/consulta-titulos-desk.png)
