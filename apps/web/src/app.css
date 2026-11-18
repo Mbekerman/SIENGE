@@ -222,3 +222,74 @@ a.subm-i:hover{background:rgba(31,31,31,.06)}
   .cp-card{display:flex;padding:24px 20px;border-radius:16px}
   .cp-cards{gap:16px}
 }
+
+/* ---------- Rastro do título (18/11/2026): botões na gaveta e popups ---------- */
+.rs-bar{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 4px}
+.rs-b{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px 0 10px;border:1px solid #c4c7c5;border-radius:8px;background:#fff;font:inherit;font-size:13px;font-weight:500;color:#444746;cursor:pointer}
+.rs-b:hover{background:#f1f4f9}
+.rs-b .ic{color:#0b57d0}
+.rs-n{min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#e8eef7;color:#0b57d0;font-size:11px;line-height:18px;text-align:center}
+.pp-veu{position:fixed;inset:0;z-index:120;background:rgba(31,31,31,.32);display:grid;place-items:center;padding:24px}
+.pp{width:min(760px,100%);max-height:min(86vh,880px);display:flex;flex-direction:column;background:#fff;border-radius:28px;box-shadow:0 8px 32px rgba(0,0,0,.2);overflow:hidden}
+.pp-h{display:flex;align-items:center;gap:8px;padding:20px 16px 4px 28px}
+.pp-h h2{flex:1;margin:0;font-size:22px;line-height:28px;font-weight:400}
+.rs-tabs{display:flex;gap:4px;padding:8px 20px 0;border-bottom:1px solid #e3e7ec;overflow-x:auto;scrollbar-width:none;flex:none}
+.rs-tabs button{flex:none;border:0;background:none;font:inherit;font-size:14px;font-weight:500;color:#444746;padding:10px 12px 12px;border-bottom:3px solid transparent;cursor:pointer;border-radius:0}
+.rs-tabs button.on{color:#0b57d0;border-bottom-color:#0b57d0}
+.rs-tabs button:hover{background:#f6f8fc}
+.pp-b{overflow:auto;padding:20px 28px 28px;display:flex;flex-direction:column;gap:16px}
+.rs-nada{text-align:center;padding:32px 0}
+.rs-card{border:1px solid #e3e7ec;border-radius:16px;padding:16px 20px;display:flex;flex-direction:column;gap:8px}
+.rs-card .kv{margin:0}
+.rs-ch{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.rs-ch b{font-size:15px;font-weight:500}
+.rs-li{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-top:1px solid #f1f3f4}
+.rs-cad{list-style:none;margin:0;padding:0;display:flex;align-items:stretch;gap:0;overflow-x:auto}
+.rs-cad li{flex:1;min-width:120px;position:relative;padding:12px 16px 12px 14px;background:#f1f4f9;display:flex;flex-direction:column;gap:2px;font-size:13px;clip-path:polygon(0 0,calc(100% - 12px) 0,100% 50%,calc(100% - 12px) 100%,0 100%,12px 50%)}
+.rs-cad li:first-child{clip-path:polygon(0 0,calc(100% - 12px) 0,100% 50%,calc(100% - 12px) 100%,0 100%);border-radius:12px 0 0 12px}
+.rs-cad li+li{margin-left:-6px;padding-left:24px}
+.rs-cad li span{color:#5f6368;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rs-cad li.eu{background:#c2e7ff;color:#001d35}
+.rs-sec h3,.rs-h3{margin:0 0 4px;font-size:14px;font-weight:500;color:#444746}
+.rs-ev{display:grid;grid-template-columns:36px minmax(0,1fr) auto;gap:12px;align-items:start;padding:12px 0;border-bottom:1px solid #f1f3f4}
+.rs-av{width:36px;height:36px;border-radius:50%;background:#e8eef7;color:#0b57d0;display:grid;place-items:center;font-weight:500}
+.rs-evc{display:flex;flex-direction:column;gap:2px}
+.rs-q{background:#f6f8fc;border-radius:8px;padding:8px 12px;font-size:14px;margin-top:4px}
+.rs-resp{display:flex;align-items:center;gap:8px;font-size:14px}
+.rs-tab{width:100%;border-collapse:collapse;font-size:13px}
+.rs-tab th{text-align:left;font-weight:500;color:#5f6368;padding:8px 8px;border-bottom:1px solid #e3e7ec}
+.rs-tab td{padding:10px 8px;border-bottom:1px solid #f1f3f4;vertical-align:middle}
+.rs-tab .r{text-align:right}
+.rs-tab tr.eu td{background:#eef4fe}
+.rs-antes{color:#b3261e;text-decoration:line-through}
+.rs-tl{list-style:none;margin:0;padding:0 0 0 12px;border-left:2px solid #e3e7ec}
+.rs-tl li{position:relative;display:grid;grid-template-columns:132px minmax(0,1fr);gap:12px;padding:8px 0 8px 12px;font-size:14px}
+.rs-tl li::before{content:"";position:absolute;left:-19px;top:14px;width:10px;height:10px;border-radius:50%;background:#fff;border:2px solid #0b57d0}
+.rs-anx{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+.rs-ax{display:flex;flex-direction:column;gap:2px;padding:10px;border:1px solid #e3e7ec;border-radius:12px;background:#fff;text-decoration:none;color:inherit;font:inherit;text-align:left;cursor:pointer;min-width:0}
+.rs-ax:hover{background:#f6f8fc}
+.rs-ax b{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rs-th{height:96px;border-radius:8px;background:#eef1f5;color:#5f6368;display:grid;place-items:center;position:relative;margin-bottom:6px}
+.rs-th.pdf{background:#fde8e6;color:#b3261e}
+.rs-th.img{background:linear-gradient(135deg,#c2e7ff,#e6f4ea);color:#0b57d0}
+.rs-ext{position:absolute;right:6px;bottom:6px;font-size:10px;font-weight:600;background:rgba(255,255,255,.85);border-radius:4px;padding:1px 5px}
+.rs-add{border-style:dashed;align-items:center;justify-content:center;text-align:center;color:#0b57d0;min-height:160px}
+.rs-nums{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.rs-nums div{display:flex;flex-direction:column;gap:2px;background:#f6f8fc;border-radius:12px;padding:12px 14px}
+.rs-nums span{font-size:12px;color:#5f6368}
+.rs-nums b{font-size:18px;font-weight:400}
+.rs-barra{height:10px;border-radius:5px;background:#e8eaed;position:relative;overflow:hidden}
+.rs-barra span{position:absolute;left:0;top:0;bottom:0;border-radius:5px}
+.rs-barra .lan{background:#a8c7fa}.rs-barra .pag{background:#0b57d0}
+.rs-leg{display:flex;gap:16px}.rs-leg i{display:inline-block;width:10px;height:10px;border-radius:3px;background:#e8eaed;margin-right:6px;vertical-align:-1px}
+.rs-leg i.pag{background:#0b57d0}.rs-leg i.lan{background:#a8c7fa}
+@container app (max-width:900px){
+  .pp-veu{padding:0}
+  .pp{width:100%;height:100%;max-height:none;border-radius:0}
+  .pp-h{padding:12px 8px 0 20px}
+  .pp-b{padding:16px 16px 24px}
+  .rs-nums{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .rs-tl li{grid-template-columns:minmax(0,1fr);gap:0}
+  .rs-tab{font-size:12px}
+}
+.pp-b>*{flex:none}
