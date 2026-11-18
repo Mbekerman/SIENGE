@@ -6613,6 +6613,17 @@ select pg_temp.ok((select count(*) = 1 and bool_and(empresa_sienge = '11' and va
                      from pagina.prv_apagar() where titulo_sienge = 7202)
                   and not exists (select 1 from pagina.prv_apagar() where titulo_sienge = 7201),
   'página PRV: login Google da BKM vê a linha a apagar (e só ela), sem cadastro no ERP');
+savepoint pagina_apagada;
+select pg_temp.sis();
+select erp.sienge_marcar_apagado('6c000000-0000-0000-0000-0000000000d2');
+select pg_temp.login('{"role":"authenticated","email":"fulano@bkm.com.br","app_metadata":{"provider":"google"}}');
+select pg_temp.ok(not exists (select 1 from pagina.prv_apagar() where titulo_sienge = 7202),
+  'página PRV: linha já apagada no Sienge sai da página');
+rollback to savepoint pagina_apagada;
+select pg_temp.login('{"role":"authenticated","email":"fulano@bkmxcom.br","app_metadata":{"provider":"google"}}');
+select pg_temp.erro_igual($$select * from pagina.prv_apagar()$$, 'Entre com a conta Google da BKM', 'página PRV: domínio parecido (bkmxcom.br) não entra');
+select pg_temp.login('{"role":"authenticated","email":"fulano@bkm-com.br","app_metadata":{"provider":"google"}}');
+select pg_temp.erro_igual($$select * from pagina.prv_apagar()$$, 'Entre com a conta Google da BKM', 'página PRV: domínio parecido (bkm-com.br) não entra');
 select pg_temp.login('{"role":"authenticated","email":"fulano@bkm.com.br","app_metadata":{"provider":"email"}}');
 select pg_temp.erro_igual($$select * from pagina.prv_apagar()$$, 'Entre com a conta Google da BKM', 'página PRV: e-mail da BKM com senha não entra');
 select pg_temp.login('{"role":"authenticated","email":"fulano@gmail.com","app_metadata":{"provider":"google"}}');
