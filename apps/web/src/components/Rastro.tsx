@@ -104,7 +104,7 @@ function Origem({ r, ir }: { r: R; ir: (a: Aba) => void }) {
       )}
       {o.nota && (
         <div className="rs-card">
-          <div className="rs-ch"><b>{NOTA[o.nota.tipo]} {o.nota.numero}{o.nota.serie ? ` série ${o.nota.serie}` : ''}</b><button className="btn t" onClick={() => ir('anexos')}>Ver arquivo</button></div>
+          <div className="rs-ch"><b>{NOTA[o.nota.tipo]} {o.nota.numero}{o.nota.serie ? ` série ${o.nota.serie}` : ''}</b>{r.anexos.length > 0 && <button className="btn t" onClick={() => ir('anexos')}>Ver arquivo</button>}</div>
           <Kv l={[['Emissão', data(o.nota.emissao)], ['Valor bruto', reais(o.nota.valor_bruto)], ['Lançada por', o.nota.lancada_por && `${o.nota.lancada_por} · ${dataHora(o.nota.lancada_em)}`]]} />
         </div>
       )}
@@ -158,12 +158,22 @@ function Alteracoes({ r }: { r: R }) {
             : <div className="rs-resp sec"><Ic n="clock" s={16} />Esperando quem lançou</div>}
           {a.ajustes.length > 0 && (
             <table className="rs-tab"><thead><tr><th>Campo</th><th>Antes</th><th>Depois</th></tr></thead>
-              <tbody>{a.ajustes.map((x, j) => <tr key={j}><td>{x.campo}</td><td className="rs-antes">{x.antes ?? '—'}</td><td>{x.depois ?? '—'}</td></tr>)}</tbody></table>
+              <tbody>{a.ajustes.map((x, j) => <tr key={j}><td>{x.campo}</td><td className="rs-antes">{valorCampo(x.campo, x.antes)}</td><td>{valorCampo(x.campo, x.depois)}</td></tr>)}</tbody></table>
           )}
         </div>
       ))}
     </>
   );
+}
+
+/** Valor do ajuste como a pessoa lê: data em dd/mm/aaaa, dinheiro em R$, percentual com %. */
+function valorCampo(campo: string, v: string | null) {
+  if (v == null || v === '') return '—';
+  if (/^\d{4}-\d{2}-01$/.test(v) && /compet/i.test(campo)) return mes(v);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return data(v);
+  if (/valor/i.test(campo) && !isNaN(Number(v))) return reais(Number(v));
+  if (/percentual/i.test(campo) && !isNaN(Number(v))) return `${Number(v).toLocaleString('pt-BR')}%`;
+  return v;
 }
 
 function Historico({ r }: { r: R }) {
@@ -191,8 +201,9 @@ function Anexos({ r }: { r: R }) {
             <span className="sec peq">{a.por} · {data(a.em)}</span>
           </a>
         ))}
-        <button className="rs-ax rs-add"><Ic n="upload" s={28} /><b>Adicionar anexo</b><span className="sec peq">Nota, contrato, foto ou vídeo</span></button>
+        <button className="rs-ax rs-add" disabled title="Em breve"><Ic n="upload" s={28} /><b>Adicionar anexo</b><span className="sec peq">Em breve: nota, contrato, foto ou vídeo</span></button>
       </div>
+      {!r.anexos.length && <Nada t="Nenhum anexo ainda. Guardar arquivos no título chega na próxima entrega." />}
     </>
   );
 }
@@ -234,6 +245,7 @@ function Fornecedor({ r }: { r: R }) {
         <div><span>Lançado em 12 meses</span><b className="num">{reais(f.total_12m)}</b></div>
         <div><span>Contratos ativos</span><b className="num">{f.contratos_ativos}</b></div>
       </div>
+      <p className="sec peq">Os números e a lista contam só os títulos que você pode ver.</p>
       <Kv l={[['E-mail', f.email], ['Telefone', f.telefone], ['Endereço', f.endereco], ['Contas', f.contas.length ? f.contas.map(c => c.descricao).join(' · ') : null]]} />
       <h3 className="rs-h3">Últimos títulos</h3>
       <table className="rs-tab"><thead><tr><th>Emissão</th><th>Documento</th><th>Área</th><th>Situação</th><th className="r">Valor</th></tr></thead>

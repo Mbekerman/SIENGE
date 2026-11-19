@@ -293,3 +293,4 @@ a.subm-i:hover{background:rgba(31,31,31,.06)}
   .rs-tab{font-size:12px}
 }
 .pp-b>*{flex:none}
+.rs-add:disabled{cursor:default;color:#8e918f}.rs-add:disabled:hover{background:#fff}
