@@ -7629,6 +7629,108 @@ select pg_temp.ok((select jsonb_array_length(j->'repetido_em') = 0 from api.regi
 select pg_temp.como(null);
 rollback;
 
+\echo '# tela Para aprovar (api.aprovacoes e api.decidir, 19/11/2026)'
+select pg_temp.como(null);
+begin;
+select pg_temp.sis();
+insert into erp.pessoa_papeis values ('10000000-0000-0000-0000-000000000007', 'fornecedor') on conflict do nothing;
+select pg_temp.volta();
+select pg_temp.como(:'analista');
+select n.id as nat_ap from api.naturezas_lancaveis(:'ne_vm', :'cc_mkt', null) n order by n.codigo limit 1 \gset
+select api.lancar_titulo(jsonb_build_object(
+  'empresa', :'spe', 'fornecedor', '10000000-0000-0000-0000-000000000007', 'tipo', 'nfse', 'numero', 'AP-1',
+  'emissao', '2026-11-05', 'competencia', '2026-11-01', 'valor', 900,
+  'rateio', jsonb_build_array(jsonb_build_object('nucleo', :'ne_vm', 'centro', :'cc_mkt', 'natureza', :'nat_ap', 'percentual', 100)),
+  'parcelas', '[{"vencimento": "2026-11-20", "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"}]'::jsonb)) as tap \gset
+select pg_temp.como(null);
+select pg_temp.sis();
+insert into erp.centro_aprovadores values (:'cc_mkt', :'gestor') on conflict do nothing;
+insert into erp.listas_financeiro (lista, user_id) values ('AF', :'contador') on conflict do nothing;
+insert into erp.compromissos (id, empresa_id, tipo, pessoa_id, descricao, inicio, fim, periodicidade, valor_periodo, dia_vencimento)
+values ('8e000000-0000-0000-0000-000000000001', :'spe', 'assinatura', '10000000-0000-0000-0000-000000000007',
+        'Assinatura para aprovar', '2026-01-01', '2026-12-31', 'mensal', 300, 10);
+insert into erp.compromisso_rateios (compromisso_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+values ('8e000000-0000-0000-0000-000000000001', :'ne_vm', :'cc_mkt', :'nat_ap', 100);
+select pg_temp.volta();
+create temp table apr_conta as select (select count(*) from erp.titulo_aprovacoes) + (select count(*) from erp.compromisso_aprovacoes)
+                                      + (select count(*) from erp.previsao_aprovacoes) as n;
+grant select on apr_conta to public;
+-- quem só consulta não recebe nada; quem não vê o título não recebe a linha dele
+select pg_temp.como(:'leitor');
+select pg_temp.ok(not exists (select 1 from api.aprovacoes()), 'aprovar: quem só consulta não recebe a lista');
+select pg_temp.falha(format($$select api.decidir('titulo', %L, 'aprovar')$$, :'tap'), 'aprovar: quem só consulta não decide');
+-- a vez: o gestor do centro primeiro; quem lançou vê o motivo
+select pg_temp.como(:'gestor');
+select pg_temp.ok((select a.vez and a.esperando = 'gestor do centro, depois AF' and a.area = 'Marketing' and a.valor = 900
+                     from api.aprovacoes() a where a.tipo = 'titulo' and a.id = :'tap'),
+  'aprovar: é a vez do gestor do centro, e a linha diz quem ainda falta');
+select pg_temp.como(:'analista');
+select pg_temp.ok((select not a.vez and a.motivo = 'Quem lançou não aprova o próprio lançamento' from api.aprovacoes() a where a.tipo = 'titulo' and a.id = :'tap'),
+  'aprovar: quem lançou vê a linha sem a vez, com o motivo');
+select pg_temp.como(:'contador');
+select pg_temp.ok((select not a.vez and a.motivo = 'Esta fase de aprovação é do gestor da área' from api.aprovacoes() a where a.tipo = 'titulo' and a.id = :'tap'),
+  'aprovar: a AF espera a fase do gestor (em sequência)');
+-- a simulação não grava nada (master aprovaria tudo de uma vez)
+select pg_temp.como(:'diretor');
+select pg_temp.ok((select bool_and(a.vez) from api.aprovacoes() a where a.id in (:'tap', '8e000000-0000-0000-0000-000000000001'))
+                  and (select n from apr_conta) = (select count(*) from erp.titulo_aprovacoes) + (select count(*) from erp.compromisso_aprovacoes)
+                                                   + (select count(*) from erp.previsao_aprovacoes)
+                  and erp.etapa_titulo(:'tap') = 'aprovacao',
+  'aprovar: listar simula a decisão e não deixa nenhuma aprovação gravada (nem a do master)');
+-- decidir pela api
+select pg_temp.como(:'gestor');
+select pg_temp.erro_igual(format($$select api.decidir('titulo', %L, 'recusar')$$, :'tap'), 'Recusar exige justificativa', 'aprovar: recusar exige justificativa');
+select pg_temp.erro_igual(format($$select api.decidir('titulo', %L, 'talvez')$$, :'tap'), 'Decisão inválida', 'aprovar: decisão desconhecida é recusada');
+select pg_temp.erro_igual($$select api.decidir('contrato', '8e000000-0000-0000-0000-000000000001', 'revisao', 'x')$$, 'Só o título volta para revisão',
+  'aprovar: só o título volta para revisão');
+select pg_temp.ok(api.decidir('titulo', :'tap', 'aprovar') = 'pendente', 'aprovar: o gestor aprova e falta a AF');
+select pg_temp.ok((select not a.vez from api.aprovacoes() a where a.tipo = 'titulo' and a.id = :'tap'), 'aprovar: depois de aprovar, a vez sai do gestor');
+select pg_temp.como(:'contador');
+select pg_temp.ok((select a.vez and a.esperando = 'AF' from api.aprovacoes() a where a.tipo = 'titulo' and a.id = :'tap'), 'aprovar: agora é a vez da AF');
+select api.decidir('titulo', :'tap', 'aprovar') as dec_af \gset
+select pg_temp.ok(:'dec_af' = 'aprovado' and erp.etapa_titulo(:'tap') = 'aprovado'
+                  and not exists (select 1 from api.aprovacoes() a where a.id = :'tap'),
+  'aprovar: a AF aprova, o título sai da lista e segue para o Sienge');
+-- contrato recorrente: gestor do centro e AF ou AO, em qualquer ordem
+select pg_temp.ok((select a.vez and a.esperando like '%gestor de Marketing%' and a.esperando like '%AF ou AO%'
+                     from api.aprovacoes() a where a.tipo = 'contrato' and a.id = '8e000000-0000-0000-0000-000000000001'),
+  'aprovar: o contrato recorrente aparece com as vagas que faltam');
+select pg_temp.ok(api.decidir('contrato', '8e000000-0000-0000-0000-000000000001', 'aprovar') = 'pendente', 'aprovar: a AF aprova o contrato e falta o gestor');
+select pg_temp.como(:'gestor');
+select api.decidir('contrato', '8e000000-0000-0000-0000-000000000001', 'recusar', 'Valor acima do combinado') as dec_ct \gset
+select pg_temp.ok(:'dec_ct' = 'recusado'
+                  and not exists (select 1 from api.aprovacoes() a where a.id = '8e000000-0000-0000-0000-000000000001'),
+  'aprovar: o gestor recusa com justificativa e o contrato sai da lista');
+-- previsão lançada à mão: a mesma alçada do título
+select pg_temp.como(:'analista');
+insert into erp.previsoes (id, empresa_id, origem, pessoa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+values ('8e000000-0000-0000-0000-000000000002', :'spe', 'manual', '10000000-0000-0000-0000-000000000007', :'ne_vm', :'cc_mkt', :'nat_ap', '2026-12-01', '2026-12-10', 400);
+select pg_temp.ok((select not a.vez and a.motivo is not null from api.aprovacoes() a where a.tipo = 'previsao' and a.id = '8e000000-0000-0000-0000-000000000002'),
+  'aprovar: quem lançou a previsão vê a linha sem a vez');
+select pg_temp.como(:'gestor');
+select pg_temp.ok((select a.vez and a.data = '2026-12-10' and a.valor = 400 from api.aprovacoes() a where a.tipo = 'previsao' and a.id = '8e000000-0000-0000-0000-000000000002'),
+  'aprovar: a previsão à mão aparece na vez do gestor do centro');
+select pg_temp.ok(api.decidir('previsao', '8e000000-0000-0000-0000-000000000002', 'aprovar') in ('pendente', 'aprovado'), 'aprovar: o gestor aprova a previsão pela api');
+-- para cada usuário, a lista só tem o que ele vê
+select pg_temp.como(null);
+do $$
+declare r record; x record;
+begin
+  for r in select u.id::text as id from erp.usuarios u where u.ativo loop
+    perform pg_temp.como(r.id);
+    for x in select * from api.aprovacoes() loop
+      if (x.tipo = 'titulo' and not erp.vejo_titulo(x.id)) or (x.tipo = 'previsao' and not erp.vejo_previsao(x.id))
+         or (x.tipo = 'contrato' and not erp.vejo_compromisso(x.id)) then
+        raise exception 'FALHOU: % recebe na lista de aprovação % que não vê', r.id, x.id;
+      end if;
+    end loop;
+  end loop;
+  perform pg_temp.como(null);
+end $$;
+select pg_temp.ok(true, 'aprovar: para cada usuário, a lista só traz títulos, previsões e contratos que ele vê');
+select pg_temp.como(null);
+rollback;
+
 \echo '# pessoa PJ: o cadastro só o master e os designados veem (Moises, 19/11/2026)'
 begin;
 select pg_temp.sis();

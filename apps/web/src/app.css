@@ -340,3 +340,14 @@ button.lt-o:hover{background:#f1f4f9}
 }
 .lt-kv{grid-template-columns:168px 1fr}
 .lt-in.err:disabled{border-color:#e3e7ec;box-shadow:none}
+
+/* Para aprovar (página fora das abas de Contas a pagar: título visível) */
+.f-head .f-tit{font-size:22px;line-height:28px;font-weight:400;margin:0}
+.apr-just{display:flex;flex-direction:column;gap:8px;font-size:14px}
+.apr-just textarea.lt-in{height:auto;padding:10px 12px;resize:vertical;line-height:20px}
+.apr-just textarea.lt-in.err{border-color:var(--cr)}
+@media (max-width:760px){
+  .f-gav .gav-f:has(.apr-ok){flex-wrap:wrap;padding-top:12px;padding-bottom:12px}
+  .f-gav .gav-f .apr-ok{order:-1;flex-basis:100%}
+  .f-gav .gav-f:has(.apr-ok) .esp{display:none}
+}

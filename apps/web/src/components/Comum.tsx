@@ -51,18 +51,18 @@ export function Abas() {
 /** Cores de cada estado: faixa e ponto (`c`) e o texto sobre branco (`t`, versão escura, contraste AA). Uma cor por estado. */
 export const COR = {
   cinza: { c: '#747775', t: '#5f6368' }, azul: { c: '#0094fe', t: '#0062b8' }, roxo: { c: '#863d8f', t: '#863d8f' },
-  verde: { c: '#7d8a3e', t: '#5c6a22' }, terra: { c: '#c67355', t: '#9c4b2e' },
+  verde: { c: '#7d8a3e', t: '#5c6a22' }, terra: { c: '#c67355', t: '#9c4b2e' }, vermelho: { c: '#b3261e', t: '#b3261e' },
 } as const;
 export type Cor = (typeof COR)[keyof typeof COR];
 
 /** Linha de cabeçalho compacta: as abas no lugar do título grande (o h1 fica só para leitor de tela) e as ações à direita. */
-export function Cab({ t, children }: { t: string; children?: ReactNode }) {
+export function Cab({ t, children, abas = true }: { t: string; children?: ReactNode; abas?: boolean }) {
   useEffect(() => { document.title = `${t} · ERP BKM`; }, [t]);
   const { m, s } = ondeEstou(useLocation().pathname);
   return (
     <>
       {m && s && <nav className="f-trilha" aria-label="Onde estou"><span>{m.r}</span><Ic n="chev" s={16} />{s.to ? <NavLink to={s.to} end><b>{s.r}</b></NavLink> : <b>{s.r}</b>}</nav>}
-      <div className="f-head"><h1 className="sr-only">{t}</h1><Abas /><span className="esp" />{children}</div>
+      <div className="f-head">{abas ? <><h1 className="sr-only">{t}</h1><Abas /></> : <h1 className="f-tit">{t}</h1>}<span className="esp" />{children}</div>
     </>
   );
 }

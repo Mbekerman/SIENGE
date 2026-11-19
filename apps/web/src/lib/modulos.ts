@@ -9,6 +9,7 @@ export const MODULOS: Modulo[] = [
   { k: 'inicio', r: 'Início', ic: 'casa', subs: [] },
   {
     k: 'fin', r: 'Financeiro', ic: 'money', subs: [
+      { r: 'Para aprovar', to: '/aprovar', rotas: ['/aprovar'] },
       { r: 'Contas a pagar', to: '/contas-a-pagar', rotas: ['/contas-a-pagar', '/titulos', '/previsoes', '/contratos'], filhos: [
         { r: 'Visão geral', to: '/contas-a-pagar' }, { r: 'Títulos', to: '/titulos' }, { r: 'Previsões', to: '/previsoes' }, { r: 'Contas recorrentes', to: '/contratos' }] },
       { r: 'Recebimento de notas' },
