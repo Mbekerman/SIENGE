@@ -13,7 +13,8 @@ export function usePagina<F extends string>(base: string) {
   const abrir = useCallback((i: string) => nav(`${base}/${i}${loc.search}`), [nav, base, loc.search]);
   const fechar = useCallback(() => nav(`${base}${loc.search}`), [nav, base, loc.search]);
   const mudarFiltro = (f: F | null) => { const n = new URLSearchParams(q); if (f) n.set('f', f); else n.delete('f'); setQ(n, { replace: true }); };
-  return { id, filtro, busca, abrir, fechar, mudarFiltro };
+  const limpar = () => { const n = new URLSearchParams(q); n.delete('f'); n.delete('q'); setQ(n, { replace: true }); };
+  return { id, filtro, busca, abrir, fechar, mudarFiltro, limpar };
 }
 
 /** Confere a busca em vários textos da linha, sem acento. */
