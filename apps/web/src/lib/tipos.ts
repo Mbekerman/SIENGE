@@ -69,3 +69,16 @@ export interface Rastro {
                 contas: { descricao: string }[]; titulos: number; total_12m: number; pago_total: number; contratos_ativos: number;
                 ultimos: { id: string; documento: string | null; emissao: string; valor: number; etapa: EtapaTitulo; area: string | null; este: boolean }[] };
 }
+
+// Lançar título (migration 20261119000200_api_lancar_titulo.sql)
+export interface OpcoesLancamento {
+  empresas: { id: string; nome: string; documento: string | null; nucleos: { id: string; nome: string; centros: string[] }[] }[];
+  centros: { id: string; nome: string; divisoes: { id: string; caminho: string }[] }[];
+  etiquetas: { id: string; nome: string }[];
+}
+export interface NaturezaLancavel { id: string; codigo: string | null; caminho: string; restrita: boolean }
+export interface FornecedorBusca { id: string; nome: string; nome_fantasia: string | null; documento: string | null; tipo: 'fisica' | 'juridica' }
+export interface PrevisaoParaNota {
+  id: string; data_prevista: string; competencia: string; valor: number; saldo: number; descricao: string | null;
+  natureza: string | null; area: string | null; contrato: string | null; compromisso_id: string | null; sienge: string | null; aprovada: boolean | null;
+}

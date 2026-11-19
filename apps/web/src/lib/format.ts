@@ -56,3 +56,20 @@ export function hojeISO(): string {
 export function normal(s: string | null | undefined): string {
   return (s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 }
+
+/** "1.234,56", "1234.56" ou "R$ 1.234" → 1234.56; vazio ou inválido → null. */
+export function lerReais(s: string): number | null {
+  let t = s.replace(/[^\d,.-]/g, '');
+  if (!t) return null;
+  if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');
+  else if ((t.match(/\./g) ?? []).length > 1 || /\.\d{3}$/.test(t)) t = t.replace(/\./g, '');
+  const n = Number(t);
+  return Number.isFinite(n) ? Math.round(n * 100) / 100 : null;
+}
+
+/** Divide o valor em n parcelas iguais, o resto dos centavos na última (como erp._criar_titulo). */
+export function dividir(total: number, n: number): number[] {
+  if (n <= 0) return [];
+  const p = Math.trunc((total / n) * 100) / 100;
+  return Array.from({ length: n }, (_, i) => (i < n - 1 ? p : Math.round((total - p * (n - 1)) * 100) / 100));
+}

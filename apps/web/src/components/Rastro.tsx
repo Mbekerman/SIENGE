@@ -47,7 +47,7 @@ export function RastroBotoes({ id }: { id: string }) {
 }
 
 /** Janela sobre a página (Material 3: raio 28, véu escuro); Esc e o véu fecham. No celular, tela cheia. */
-export function Popup({ titulo, fechar, abas, children }: { titulo: string; fechar: () => void; abas?: ReactNode; children: ReactNode }) {
+export function Popup({ titulo, fechar, abas, children, pe }: { titulo: string; fechar: () => void; abas?: ReactNode; children: ReactNode; pe?: ReactNode }) {
   useEffect(() => {
     const tecla = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); fechar(); } };
     document.addEventListener('keydown', tecla, true);
@@ -59,6 +59,7 @@ export function Popup({ titulo, fechar, abas, children }: { titulo: string; fech
         <div className="pp-h"><h2>{titulo}</h2><button className="icb" title="Fechar (Esc)" onClick={fechar}><Ic n="close" /></button></div>
         {abas}
         <div className="pp-b">{children}</div>
+        {pe && <div className="pp-f">{pe}</div>}
       </div>
     </div>
   );

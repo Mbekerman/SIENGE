@@ -7351,6 +7351,69 @@ select pg_temp.ok(api.titulo_rastro('8b000000-0000-0000-0000-000000000001') is n
   'rastro: o título restrito (folha PJ) não aparece no rastro de nenhum outro título para quem não o vê');
 select pg_temp.como(null);
 rollback;
+\echo '# lançar título pela tela (api.lancar_titulo, 19/11/2026)'
+select pg_temp.como(null);
+begin;
+select pg_temp.sis();
+insert into erp.pessoa_papeis values ('10000000-0000-0000-0000-000000000007', 'fornecedor') on conflict do nothing;
+insert into erp.etiquetas (id, nome) values ('8c000000-0000-0000-0000-000000000001', 'Teste da tela');
+insert into erp.previsoes (id, empresa_id, origem, pessoa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor) values
+  ('8c000000-0000-0000-0000-000000000002', :'spe', 'manual', '10000000-0000-0000-0000-000000000007', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2026-11-01', '2026-11-20', 500);
+select pg_temp.volta();
+select pg_temp.como(:'leitor');
+select pg_temp.ok(api.lancamento_opcoes() is null, 'lançar: quem só consulta não recebe as opções de lançamento');
+select pg_temp.falha($$select api.lancar_titulo('{}')$$, 'lançar: quem só consulta não lança');
+select pg_temp.como(:'diretor');
+select pg_temp.ok((select jsonb_array_length(j->'empresas') > 0 and j->'etiquetas' @> '[{"nome": "Teste da tela"}]' from api.lancamento_opcoes() j)
+                  and exists (select 1 from api.naturezas_lancaveis(:'ne_vm', :'cc_mkt', null) where codigo = '05.01.04')
+                  and exists (select 1 from api.fornecedores('agência') where id = '10000000-0000-0000-0000-000000000007')
+                  and exists (select 1 from api.fornecedores('777.777') where id = '10000000-0000-0000-0000-000000000007'),
+  'lançar: opções, naturezas do perfil e busca de fornecedor pelo nome ou pelo documento');
+select pg_temp.ok(exists (select 1 from api.previsoes_para_nota(:'spe', '10000000-0000-0000-0000-000000000007',
+                                 jsonb_build_array(jsonb_build_object('nucleo', :'ne_vm', 'centro', :'cc_mkt', 'natureza', pg_temp.nat('05.01.04'))))
+                           where id = '8c000000-0000-0000-0000-000000000002' and saldo = 500)
+                  and not exists (select 1 from api.previsoes_para_nota(:'spe', '10000000-0000-0000-0000-000000000007',
+                                 jsonb_build_array(jsonb_build_object('nucleo', :'ne_vm', 'centro', :'cc_obra', 'natureza', pg_temp.nat('05.01.04'))))
+                           where id = '8c000000-0000-0000-0000-000000000002'),
+  'lançar: a previsão aparece para a nota só com o mesmo núcleo, centro e natureza de uma linha');
+-- uma parcela com boleto inválido recusa tudo: nem a nota fica
+select pg_temp.falha(format($$select api.lancar_titulo(%L)$$, jsonb_build_object(
+  'empresa', :'spe', 'fornecedor', '10000000-0000-0000-0000-000000000007', 'tipo', 'nfse', 'numero', 'T-881',
+  'emissao', '2026-11-05', 'competencia', '2026-11-01', 'valor', 900,
+  'rateio', jsonb_build_array(jsonb_build_object('nucleo', :'ne_vm', 'centro', :'cc_mkt', 'natureza', pg_temp.nat('05.01.04'), 'percentual', 100)),
+  'parcelas', '[{"vencimento": "2026-11-20", "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"},
+                {"vencimento": "2026-12-20", "forma": "boleto", "boleto_linha": "1234"}]'::jsonb)),
+  'lançar: boleto inválido numa parcela recusa o lançamento');
+select pg_temp.ok(not exists (select 1 from erp.documentos_fiscais where numero = 'T-881'), 'lançar: a recusa não deixa a nota pela metade');
+select api.lancar_titulo(jsonb_build_object(
+  'empresa', :'spe', 'fornecedor', '10000000-0000-0000-0000-000000000007', 'tipo', 'nfse', 'numero', 'T-881',
+  'emissao', '2026-11-05', 'competencia', '2026-11-01', 'valor', 900,
+  'rateio', jsonb_build_array(jsonb_build_object('nucleo', :'ne_vm', 'centro', :'cc_mkt', 'natureza', pg_temp.nat('05.01.04'), 'percentual', 100)),
+  'parcelas', '[{"vencimento": "2026-11-20", "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"},
+                {"vencimento": "2026-12-20", "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"}]'::jsonb,
+  'previsoes', '["8c000000-0000-0000-0000-000000000002"]'::jsonb,
+  'etiquetas', '["8c000000-0000-0000-0000-000000000001"]'::jsonb)) as tlt \gset
+select pg_temp.ok((select t.situacao = 'aberto' and t.valor = 900 and t.criado_por = :'diretor'
+                     from erp.titulos t where t.id = :'tlt')
+                  and (select array_agg(valor order by numero) from erp.parcelas where titulo_id = :'tlt') = array[450, 450]::numeric[]
+                  and (select count(*) from erp.parcela_pagamentos where titulo_id = :'tlt') = 2
+                  and exists (select 1 from erp.titulo_etiquetas where titulo_id = :'tlt' and etiqueta_id = '8c000000-0000-0000-0000-000000000001')
+                  and (select valor from erp.titulo_previsoes where titulo_id = :'tlt' and previsao_id = '8c000000-0000-0000-0000-000000000002') = 500
+                  and (select d.situacao from erp.documentos_fiscais d join erp.titulos t on t.documento_id = d.id where t.id = :'tlt') = 'lancado',
+  'lançar: a nota vira título aberto, com as parcelas, a forma de pagamento, a etiqueta e a previsão consumida');
+select pg_temp.falha(format($$select api.lancar_titulo(%L)$$, jsonb_build_object(
+  'empresa', :'spe', 'fornecedor', '10000000-0000-0000-0000-000000000007', 'tipo', 'nfse', 'numero', 'T-881',
+  'emissao', '2026-11-05', 'competencia', '2026-11-01', 'valor', 900,
+  'rateio', jsonb_build_array(jsonb_build_object('nucleo', :'ne_vm', 'centro', :'cc_mkt', 'natureza', pg_temp.nat('05.01.04'), 'percentual', 100)),
+  'parcelas', '[{"vencimento": "2026-11-20", "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"}]'::jsonb)),
+  'lançar: a mesma nota do mesmo fornecedor não entra duas vezes');
+-- quem não lança na linha não lança pela tela (o perfil do erp vale aqui também)
+select pg_temp.como(:'analista2');
+select pg_temp.ok(not exists (select 1 from api.naturezas_lancaveis(:'ne_vm', :'cc_obra', null) n
+                               where not erp.lanco(:'ne_vm', :'cc_obra', n.id, erp.eu())),
+  'lançar: só aparecem as naturezas em que a pessoa lança');
+select pg_temp.como(null);
+rollback;
 -- a conferência da aprovação só responde sobre o que a pessoa vê (S-126)
 select pg_temp.como(:'analista');
 select pg_temp.ok(erp.previsao_aprovada_vista('00000000-0000-0000-0000-000000000000') is null

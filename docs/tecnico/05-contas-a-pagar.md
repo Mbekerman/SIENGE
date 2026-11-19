@@ -50,7 +50,9 @@ Decisões do Moises (8, 14 e 17/nov/2026). Só a previsão aprovada vai ao Sieng
 - **Nota menor que a previsão: saldo ou saving** (Moises, 17/nov/2026): `encerrar_previsao(previsão, destino, data)` dá baixa na previsão parcialmente consumida (situação `encerrada`, o livro estorna o saldo). Com `saldo`, cria outra previsão com o que sobrou, na data informada (hoje ou depois), com origem `saldo_previsao`, que segue a aprovação da original e não passa por alçada própria. Com `saving`, não cria nada. `v_previsoes_a_decidir` lista as que têm consumo e saldo.
 - **Envio ao Sienge**: a previsão aprovada aberta vai como título PRV; a que deixa de ser aberta vira linha a apagar à mão (ver `04-integracao-sienge.md`, 4.7.1).
 
-## 5.3 "Lançar nota fiscal" [Desenhado]
+## 5.3 "Lançar nota fiscal" [Desenhado; primeira tela construída em 19/nov/2026]
+
+**[Construído, 19/nov/2026] Tela Lançar título** (`apps/web/src/pages/Lancar.tsx`, `api.lancar_titulo`): empresa, fornecedor buscado no cadastro, tipo, número, série, emissão, competência e valor; rateio em uma ou mais linhas (núcleo, centro, último nível da divisão e as naturezas que o perfil libera ali); as previsões abertas que casam com o rateio, com o número PRV do Sienge, para marcar quais a nota consome; parcelas iguais com a forma de pagamento de cada uma (PIX, com a chave do documento do fornecedor sugerida, ou boleto); etiquetas. Ainda sem leitura do PDF ou do XML, sem retenção e sem caução.
 
 Experiência pedida pelo Moises (6/nov/2026), com o que cada passo exige tecnicamente:
 
