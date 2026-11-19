@@ -7446,6 +7446,17 @@ select pg_temp.erro_igual(format($$select api.lancar_titulo(%L)$$, (select j || 
 select pg_temp.erro_igual(format($$insert into erp.titulos (empresa_id, tipo, pessoa_id, compromisso_id, emissao, competencia, valor)
   values (%L, 'avulso', '10000000-0000-0000-0000-000000000007', '60000000-0000-0000-0000-000000000002', '2026-11-05', '2026-11-01', 100)$$, :'spe'),
   'O contrato é de outro fornecedor', 'lançar: o título avulso também não se prende a contrato de outro credor');
+-- o gatilho vale também na troca do contrato (ou do emitente, ou do credor) depois de gravado
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+values ('8c000000-0000-0000-0000-000000000005', :'spe', '10000000-0000-0000-0000-000000000007', 'nfse', 'T-883', '2026-11-05', '2026-11-01', 100);
+select pg_temp.erro_igual($$update erp.documentos_fiscais set compromisso_id = '60000000-0000-0000-0000-000000000002'
+                             where id = '8c000000-0000-0000-0000-000000000005'$$,
+  'O contrato é de outro fornecedor', 'lançar: a nota em rascunho não passa a apontar para contrato de outro fornecedor');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor)
+values ('8c000000-0000-0000-0000-000000000006', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-11-05', '2026-11-01', 100);
+select pg_temp.erro_igual($$update erp.titulos set compromisso_id = '60000000-0000-0000-0000-000000000002'
+                             where id = '8c000000-0000-0000-0000-000000000006'$$,
+  'O contrato é de outro fornecedor', 'lançar: o título avulso não passa a apontar para contrato de outro credor');
 select pg_temp.como(:'analista2');
 select pg_temp.ok(api.lancar_titulo((select j from nota_a2)) is not null, 'lançar: sem contrato, a mesma nota entra');
 select pg_temp.como(null);
