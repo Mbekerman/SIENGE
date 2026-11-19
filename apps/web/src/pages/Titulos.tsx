@@ -6,6 +6,9 @@ import { acha, usePagina } from '../lib/navegar';
 import { mensagemErro, rpc } from '../lib/supabase';
 import type { EtapaTitulo, Titulo, TituloDetalhe } from '../lib/tipos';
 import { RastroBotoes } from '../components/Rastro';
+import { LancarTitulo } from './Lancar';
+import { useSessao } from '../lib/sessao';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 export const ETAPA: Record<EtapaTitulo, [string, CorChip]> = {
   rascunho: ['Rascunho', 'ci'], revisao: ['Em revisão', 'at'], recusado: ['Recusado', 'cr'], aprovacao: ['Em aprovação', 'az'],
@@ -32,6 +35,12 @@ const atrasado = (t: Titulo) => !!t.vencimento && t.vencimento < hojeISO() && ![
 export function Titulos() {
   const pg = usePagina<F>('/titulos');
   const q = useQuery({ queryKey: ['titulos'], queryFn: () => rpc<Titulo[]>('titulos') });
+  const { eu } = useSessao();
+  const [sp, setSp] = useSearchParams();
+  const novo = sp.get('novo') === '1';
+  const nav = useNavigate();
+  const semNovo = () => { const n = new URLSearchParams(sp); n.delete('novo'); const s = n.toString(); return s ? `?${s}` : ''; };
+  const abrirNovo = (v: boolean) => { const n = new URLSearchParams(sp); if (v) n.set('novo', '1'); else n.delete('novo'); setSp(n); };
   const todos = (q.data ?? []).filter(t => acha(pg.busca, t.fornecedor, t.documento, t.numero, t.fornecedor_documento, t.areas, t.sienge_id));
   const grupos = G.filter(g => !pg.filtro || pg.filtro === g[0]);
   const linha = (t: Titulo): Linha => ({
@@ -51,7 +60,10 @@ export function Titulos() {
   return (
     <>
       <div className="f-pag">
-        <Cab t="Títulos">{(pg.filtro || pg.busca) && <button className="btn t" onClick={pg.limpar}>Limpar filtro</button>}</Cab>
+        <Cab t="Títulos">
+          {(pg.filtro || pg.busca) && <button className="btn t" onClick={pg.limpar}>Limpar filtro</button>}
+          {eu?.escreve && <button className="btn p" onClick={() => abrirNovo(true)}><Ic n="add" s={18} />Lançar título</button>}
+        </Cab>
         <Tiles itens={G.map(([k, r, cor, e]) => { const it = todos.filter(t => e.includes(t.etapa)); return { k, r, cor, n: it.length, v: it.length ? reais(soma(it)) : undefined }; })} on={pg.filtro} mudar={pg.mudarFiltro} />
         {q.isLoading ? <Carregando /> : q.error ? <Vazio t={mensagemErro(q.error)} />
           : !grupos.some(g => todos.some(t => g[3].includes(t.etapa))) && !(!pg.filtro && cancelados.length) ? <Vazio t={pg.busca || pg.filtro ? 'Nada encontrado.' : 'Nenhum título.'} limpar={pg.busca || pg.filtro ? pg.limpar : undefined} />
@@ -65,6 +77,7 @@ export function Titulos() {
             </>}
       </div>
       {pg.id && <GavetaTitulo id={pg.id} fechar={pg.fechar} />}
+      {novo && <LancarTitulo fechar={() => abrirNovo(false)} lancado={id => nav(`/titulos/${id}${semNovo()}`)} />}
     </>
   );
 }
