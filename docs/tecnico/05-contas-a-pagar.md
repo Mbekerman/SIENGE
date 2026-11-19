@@ -52,7 +52,7 @@ Decisões do Moises (8, 14 e 17/nov/2026). Só a previsão aprovada vai ao Sieng
 
 ## 5.3 "Lançar nota fiscal" [Desenhado; primeira tela construída em 19/nov/2026]
 
-**[Construído, 19/nov/2026] Tela Lançar título** (`apps/web/src/pages/Lancar.tsx`, `api.lancar_titulo`): empresa, fornecedor buscado no cadastro, tipo, número, série, emissão, competência e valor; rateio em uma ou mais linhas (núcleo, centro, último nível da divisão e as naturezas que o perfil libera ali); as previsões abertas que casam com o rateio, com o número PRV do Sienge, para marcar quais a nota consome; parcelas iguais com a forma de pagamento de cada uma (PIX, com a chave do documento do fornecedor sugerida, ou boleto); etiquetas. Ainda sem leitura do PDF ou do XML, sem retenção e sem caução.
+**[Construído, 19/nov/2026] Tela Lançar título** (`apps/web/src/pages/Lancar.tsx`, `api.lancar_titulo`): empresa, fornecedor buscado no cadastro, tipo, número, série, emissão, competência e valor; rateio em uma ou mais linhas (núcleo, centro, último nível da divisão e as naturezas que o perfil libera ali); as previsões abertas que casam com o rateio, com o número PRV do Sienge, para marcar quais a nota consome; parcelas iguais com a forma de pagamento de cada uma (PIX, com a chave do documento do fornecedor sugerida, ou boleto); etiquetas. Ainda sem leitura do PDF ou do XML, sem retenção e sem caução. O contrato preso à nota precisa ser da mesma empresa e do mesmo fornecedor, estar ativo e ser visível para quem lança (gatilho `t_contrato_confere`, também em `titulos`).
 
 Experiência pedida pelo Moises (6/nov/2026), com o que cada passo exige tecnicamente:
 
