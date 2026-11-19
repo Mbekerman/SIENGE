@@ -6,6 +6,7 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
+| 19/nov/2026 | Cadastro de quem recebe como PJ (nome, documento, e-mail, telefone) só para o master e os designados; os demais não veem a pessoa no cadastro, na lista de credores nem no rastro do título | [Aprovações](transversais/aprovacoes.md) |
 | 18/nov/2026 | Nada é aprovado sem aprovador: título e previsão de centro sem gestor e sem faixas próprias vão ao master (antes, o título ficava fora da alçada e a previsão nascia aprovada) | [Aprovações](transversais/aprovacoes.md#alçada-de-pagamento-do-piloto-marketing) |
 | 18/nov/2026 | As previsões (PRV) a apagar à mão no Sienge ficam numa página só de leitura, no lugar da planilha do Google; abre com qualquer conta Google da BKM (@bkm.com.br), mesmo sem usuário no ERP BKM, e ninguém de fora entra; todos veem todas as PRV, sem as permissões do ERP BKM | [Contas a pagar](financeiro/contas-a-pagar.md#previsões-de-despesa-na-transição) |
 | 17/nov/2026 | Centros: Novos Negócios na holding com "Empreendimento beneficiado" (terrenos sem SPE); Consórcios com "Empreendimento de origem"; aporte é movimentação; Projetos e Contratação Caixa são centros próprios; sem centro Viabilidade; despesa da holding paga pela SPE mantém a natureza real no centro Kostyl da SPE, fora da DRE do empreendimento e dentro da DRE da holding pela natureza (SPE continua pagando) | [Classificação](financeiro/classificacao.md) |

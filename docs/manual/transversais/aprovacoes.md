@@ -148,6 +148,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 - O **RH** mantém, no portal dele, quem está ativo, o controle dos benefícios e **qual SPE paga cada funcionário em cada mês**.
 - Uma **tabela de remuneração**, à parte, guarda o valor de cada um "a 7 chaves".
 - O **financeiro** vê só um pseudônimo (por exemplo, "PJ-017") e o valor a pagar, nunca o nome.
+- ✅ **O cadastro de quem recebe como PJ é restrito** (Moises, 19/nov/2026). Nome, CPF ou documento, e-mail e telefone só aparecem para o master e para quem ele designou para o PJ. Os demais usuários não veem essa pessoa no cadastro, na lista de credores nem no fornecedor do rastro do título. 🟡 O código ainda vai sair num PR.
 - O funcionário sobe a nota num **portal**; se tudo bate com as duas tabelas, ela segue direto para pagamento.
 - O RH pode **dividir o pagamento de um funcionário entre núcleos econômicos (SPEs) ou centros de custo**, em percentuais, no mês (Moises, 7/nov/2026). O PJ emite uma nota para cada SPE. Ao receber cada nota, o sistema confere o CNPJ da SPE, o percentual e o valor contra o cadastro do RH daquele mês, e **trava o pagamento** se algo divergir.
 - **Todo mês, as duas tabelas são conferidas.** Se um dos dois responsáveis não der o "ok" do mês, **ninguém recebe**.
