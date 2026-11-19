@@ -2645,6 +2645,15 @@ select pg_temp.ok((select count(*) = 3 and bool_and(por is not null) from erp.ti
                   and exists (select 1 from erp.titulo_ajustes where titulo_id = '82000000-0000-0000-0000-000000000042'
                                and por = :'gestor' and depois ->> 'descricao' = 'brindes de janeiro'),
   'ajuste: cada mudança fica registrada com quem fez, antes e depois');
+-- o rastro do título mostra o pedido, o antes e o depois de cada campo e a volta (api.titulo_rastro, 19/11/2026)
+select pg_temp.ok((select a->>'motivo' = 'trocar a descrição e o valor' and a->>'resposta' = 'ajustado'
+                          and a->'ajustes' @> '[{"campo": "Descrição", "antes": "brindes", "depois": "brindes de janeiro"}]'
+                          and a->'ajustes' @> '[{"campo": "Valor", "antes": "1000.00", "depois": "800.00"}]'
+                          and a->'ajustes' @> '[{"campo": "1ª parcela · valor", "antes": "1000.00", "depois": "800.00"}]'
+                          and j->'historico' @> '[{"texto": "pediu alteração: trocar a descrição e o valor"}]'
+                          and j->'historico' @> '[{"texto": "reenviou para aprovação: ajustado"}]'
+                     from api.titulo_rastro('82000000-0000-0000-0000-000000000042') j, jsonb_array_elements(j->'alteracoes') a),
+  'rastro: o pedido de alteração traz o motivo, a resposta e o antes e o depois de cada campo, e entra no histórico');
 select pg_temp.ok((select string_agg(lista || ':' || (por = case lista when 'AREA' then :'gestor'::uuid else :'contador'::uuid end)::text, ',' order by fase)
                      = 'AREA:true,AF:true' from erp.titulo_aprovacoes
                     where titulo_id = '82000000-0000-0000-0000-000000000042' and rodada = 2 and origem = 'ajuste')
@@ -7284,6 +7293,62 @@ select pg_temp.como('login-sem-cadastro');
 select pg_temp.ok(api.eu() is null and not exists (select 1 from api.titulos()) and not exists (select 1 from api.previsoes())
                   and not exists (select 1 from api.contratos()),
   'api: login sem cadastro no ERP não tem perfil nem lê nada');
+select pg_temp.como(null);
+rollback;
+
+-- ---------------------------------------------------------------------
+\echo '# rastro do título (api.titulo_rastro, 19/11/2026)'
+select pg_temp.como(null);
+begin;
+-- o mesmo título restrito (como a folha PJ) do bloco anterior, para provar que não vaza pelo fornecedor nem pelo contrato
+select pg_temp.como(:'diretor');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('8b000000-0000-0000-0000-000000000001', :'spe', 'avulso', '10000000-0000-0000-0000-000000000005', '2026-11-01', '2026-11-01', 778);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('8b000000-0000-0000-0000-000000000001', 1, '2026-11-30', 778);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('8b000000-0000-0000-0000-000000000001', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), 100);
+select pg_temp.sis(); update erp.naturezas set restrita = true where codigo = '04.01';
+create temp table rastro_ids as select id from erp.titulos where sentido = 'pagar';
+grant select on rastro_ids to authenticated;
+select pg_temp.volta();
+create temp table rastro_usuarios as select unnest(array[:'diretor', :'diretor2', :'gestor', :'analista', :'leitor', :'contador', :'analista2', :'ti']::text[]) u;
+grant select on rastro_usuarios to authenticated;
+do $$
+declare r record; x record; j jsonb; n_vis bigint;
+begin
+  for r in select u from rastro_usuarios loop
+    perform pg_temp.como(r.u);
+    for x in select id from rastro_ids loop
+      j := api.titulo_rastro(x.id);
+      if (j is null) <> not exists (select 1 from erp.titulos where id = x.id) then
+        raise exception 'FALHOU: rastro de % para % não segue o RLS do título', x.id, r.u;
+      end if;
+      continue when j is null;
+      select count(*) into n_vis from erp.titulos t join erp.titulos e on e.id = x.id
+       where t.pessoa_id = e.pessoa_id and t.sentido = 'pagar' and t.situacao <> 'cancelado';
+      if (j->'fornecedor'->>'titulos')::bigint <> n_vis then
+        raise exception 'FALHOU: histórico do fornecedor de % para % conta títulos que a pessoa não vê', x.id, r.u;
+      end if;
+      if exists (select 1 from jsonb_array_elements(coalesce(j->'contrato'->'titulos', '[]') || (j->'fornecedor'->'ultimos')) e
+                  where not exists (select 1 from erp.titulos t where t.id = (e->>'id')::uuid)) then
+        raise exception 'FALHOU: rastro de % para % lista título que a pessoa não vê', x.id, r.u;
+      end if;
+    end loop;
+  end loop;
+  perform pg_temp.como(null);
+end $$;
+select pg_temp.ok(true, 'rastro: para cada usuário e cada título, o rastro só existe se a pessoa vê o título, e o contrato e o fornecedor só contam e listam títulos que ela vê');
+select pg_temp.como(:'diretor');
+select pg_temp.ok((select (j->'fornecedor'->>'titulos')::int >= 1 and j->'fornecedor'->>'nome' = 'Construtora Alfa'
+                          and jsonb_typeof(j->'historico') = 'array' and j->'historico' @> '[{"texto": "lançou o título."}]'
+                          and j->'anexos' = '[]'::jsonb
+                     from api.titulo_rastro('8b000000-0000-0000-0000-000000000001') j),
+  'rastro: o master vê o título restrito, com o fornecedor e o lançamento no histórico');
+select pg_temp.como(:'analista');
+select pg_temp.ok(api.titulo_rastro('8b000000-0000-0000-0000-000000000001') is null
+                  and not exists (select 1 from rastro_ids i cross join lateral api.titulo_rastro(i.id) j
+                                   where j is not null and (j::text like '%8b000000-0000-0000-0000-000000000001%' or j::text like '%778%')),
+  'rastro: o título restrito (folha PJ) não aparece no rastro de nenhum outro título para quem não o vê');
 select pg_temp.como(null);
 rollback;
 -- a conferência da aprovação só responde sobre o que a pessoa vê (S-126)

@@ -5,6 +5,7 @@ import { data, dataCurta, dataHora, documento, hojeISO, mes, reais } from '../li
 import { acha, usePagina } from '../lib/navegar';
 import { mensagemErro, rpc } from '../lib/supabase';
 import type { EtapaTitulo, Titulo, TituloDetalhe } from '../lib/tipos';
+import { RastroBotoes } from '../components/Rastro';
 
 export const ETAPA: Record<EtapaTitulo, [string, CorChip]> = {
   rascunho: ['Rascunho', 'ci'], revisao: ['Em revisão', 'at'], recusado: ['Recusado', 'cr'], aprovacao: ['Em aprovação', 'az'],
@@ -78,6 +79,7 @@ function GavetaTitulo({ id, fechar }: { id: string; fechar: () => void }) {
   return (
     <Gaveta titulo={t.fornecedor} sub={<Chip t={ETAPA[t.etapa][0]} c={ETAPA[t.etapa][1]} />} fechar={fechar}>
       <div><div className="big num">{reais(t.valor)}</div>{t.vencimento && <div className="sec">vence {data(t.vencimento)}</div>}</div>
+      <RastroBotoes id={t.id} />
       {t.etiquetas.length > 0 && <div className="etq-w">{t.etiquetas.map(x => <span key={x} className="etq">{x}</span>)}</div>}
       {recusa && <Alerta c="cr" t={`Recusado por ${recusa.por ?? '—'}${recusa.justificativa ? `: ${recusa.justificativa}` : ''}`} />}
       {t.etapa === 'erro_sienge' && <Alerta c="cr" t={`Não chegou ao Sienge${t.sienge_erro ? `: ${t.sienge_erro}` : ''}`} />}
@@ -108,16 +110,6 @@ function GavetaTitulo({ id, fechar }: { id: string; fechar: () => void }) {
         <Secao t={`Nota ${reais(t.nota.valor_bruto)}`}>
           {t.nota.retencoes.map(r => <Li key={r.imposto} a={`Retenção de ${r.imposto.toUpperCase()}`} b={`− ${reais(r.valor)}`} c={r.vencimento ? `recolhe em ${data(r.vencimento)}` : undefined} />)}
           {t.nota.caucao ? <Li a="Caução" b={`− ${reais(t.nota.caucao)}`} /> : null}
-        </Secao>
-      )}
-      {t.previsoes.length > 0 && (
-        <Secao t="Previsões consumidas">
-          {t.previsoes.map(p => <Li key={p.id} a={`Previsão de ${data(p.data_prevista)}`} b={reais(p.valor)} />)}
-        </Secao>
-      )}
-      {t.aprovacoes.length > 0 && (
-        <Secao t="Aprovação">
-          {t.aprovacoes.map((a, i) => <Li key={i} a={`${a.aprovado ? 'Aprovou' : 'Recusou'}: ${a.por ?? '—'}`} b={dataHora(a.em)} c={[a.area, a.lista, a.justificativa].filter(Boolean).join(' · ')} />)}
         </Secao>
       )}
     </Gaveta>

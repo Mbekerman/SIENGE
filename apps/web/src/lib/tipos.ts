@@ -46,3 +46,26 @@ export interface Contrato {
   periodicidade: string | null; valor_periodo: number | null; valor_total: number | null; dia_vencimento: number | null;
   areas: string | null; naturezas: string | null; empresa: string | null; previsoes_abertas: number; lancado_por: string | null; meu: boolean;
 }
+
+/** Rastro do título (api.titulo_rastro): de onde veio, quem aprovou, o que mudou, os anexos, o contrato e o fornecedor. */
+export interface Rastro {
+  origem: {
+    compromisso: { id: string; tipo: string; numero: string | null; descricao: string; inicio: string; fim: string | null;
+                   valor_total: number | null; valor_periodo: number | null; periodicidade: string | null; situacao: string; lancado_por: string | null } | null;
+    nota: { tipo: string; numero: string; serie: string | null; emissao: string; valor_bruto: number; lancada_por: string | null; lancada_em: string | null } | null;
+    previsoes: { id: string; sienge: string | null; data_prevista: string; valor: number; aprovada_por: string | null }[];
+    substitui: { numero: string | null; motivo: string | null } | null;
+  };
+  aprovacoes: { rodada: number; area: string | null; fase: number; lista: string; aprovado: boolean; justificativa: string | null; por: string | null; em: string; origem: string }[];
+  rodada_atual: number;
+  alteracoes: { rodada: number; area: string | null; motivo: string; pedida_por: string | null; pedida_em: string; resposta: string | null;
+                reenviada_por: string | null; reenviada_em: string | null; ajustes: { campo: string; antes: string | null; depois: string | null }[] }[];
+  historico: { em: string; por: string | null; texto: string }[];
+  anexos: { id: string; nome: string; categoria: string; mime: string; tamanho: number; por: string | null; em: string; url: string | null }[];
+  contrato: { tipo: string; numero: string | null; descricao: string; valor_total: number | null; valor_periodo: number | null; periodicidade: string | null;
+              lancado: number; pago: number; saldo: number | null;
+              titulos: { id: string; documento: string | null; competencia: string; valor: number; etapa: EtapaTitulo; pago_em: string | null; este: boolean }[] } | null;
+  fornecedor: { nome: string; documento: string | null; email: string | null; telefone: string | null; endereco: string | null; desde: string | null;
+                contas: { descricao: string }[]; titulos: number; total_12m: number; pago_total: number; contratos_ativos: number;
+                ultimos: { id: string; documento: string | null; emissao: string; valor: number; etapa: EtapaTitulo; area: string | null; este: boolean }[] };
+}
