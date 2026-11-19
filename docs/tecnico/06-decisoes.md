@@ -2,6 +2,10 @@
 
 Decisões que mudam a arquitetura ou o código, da mais recente para a mais antiga. Quem decide é o Moises; "proposta" é sugestão ainda não confirmada por ele. Decisões de negócio detalhadas (regras para o usuário) ficam no manual do usuário; aqui só o que o desenvolvedor precisa saber.
 
+## 19/nov/2026
+
+- **Cadastro da pessoa PJ só para o master e os designados** (Moises, 19/nov, cartão da thread técnica: "Só master e designados"; migration `20261119000300_erp_pessoa_pj.sql`). Antes, todo membro lia `erp.pessoas` e descobria quem recebe como PJ. Escolhas da implementação: a marca `restrita` é posta no cadastro por quem vê o PJ e, depois, só o master a muda; a pessoa marcada só entra como credor por quem vê o PJ. O CPF continua único: cadastrar de novo o documento de uma pessoa PJ dá erro de duplicidade (revela que existe, não quem é). Da revisão de segurança: a pessoa PJ só entra em lançamento de PJ (previsão de natureza restrita, título, nota ou contrato sem linha comum), senão o nome dela sairia num título comum e a lista de títulos, que junta a pessoa pelo RLS, esconderia o título de quem não vê o PJ; o sistema (importação do Sienge) passa. A auditoria, que o administrador lê, esconde dele as linhas de PJ; quando o master tira a marca da pessoa, as linhas antigas voltam a aparecer.
+
 ## 17/nov/2026
 
 - **Envio ao Sienge pelo título avulso** (Moises, 17/nov: "Faça a adaptação da escrita"; 14h12: "caminhar com o app com dados de teste e somente mandar títulos pro Sienge, nada de puxar histórico ainda"). A nota aprovada vira `POST /bills` com as parcelas e a forma de pagamento; medição fica para depois. A escolha entre medição e título avulso para notas de contrato (05, 5.2) continua aberta.
