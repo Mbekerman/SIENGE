@@ -25,6 +25,7 @@ No Supabase, `api` precisa estar em Settings › API › Exposed schemas. O `erp
 Navegação em três níveis (18/11/2026): o menu lateral tem os módulos (`src/lib/modulos.ts`); o mouse sobre um módulo abre a gaveta dos submódulos, e sobre um submódulo, uma segunda gaveta com as páginas (como no Business Manager da Meta). No alto da página, a trilha (Financeiro › Contas a pagar) e as abas.
 
 - Gaveta do título: os botões Origem, Aprovações, Alterações, Histórico, Anexos, Contrato e Fornecedor abrem um popup com abas (`components/Rastro.tsx`, dados de `api.titulo_rastro`).
+- Lançar título: botão na página Títulos (`/titulos?novo=1`), janela em `pages/Lancar.tsx`, lendo e gravando pelas funções de `20261119000200_api_lancar_titulo.sql`.
 - `/contas-a-pagar`: visão geral, com quatro números do momento e um cartão por seção explicando o que se encontra e o que se faz nela.
 - `/titulos`, `/titulos/:id`: títulos por etapa (Rascunhos, Em aprovação, No Sienge, Pagos), com a gaveta do título.
 - `/previsoes`, `/previsoes/:id`: previsões por situação.
