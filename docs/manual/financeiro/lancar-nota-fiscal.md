@@ -52,7 +52,7 @@ O botão **Lançar título** fica na página Títulos e abre uma janela com esta
 1. **Documento:** empresa, fornecedor (busca por nome, nome fantasia ou CNPJ), tipo (NFS-e, NF-e, Fatura, Boleto, Recibo ou Outro), número, série, emissão, competência e valor.
 2. **Onde entra:** núcleo, centro, divisão do último nível e natureza. A lista de naturezas traz só as que a pessoa pode lançar ali. O botão "Ratear" acrescenta linhas, cada uma com o seu percentual.
 3. **Previsões que a nota consome:** as previsões abertas do fornecedor com o mesmo núcleo, centro e natureza. Cada uma mostra o número PRV no Sienge, a data e o saldo, e aparece "Esperando aprovação" quando for o caso. A pessoa marca quais a nota consome.
-4. **Pagamento:** a nota se divide em parcelas iguais, e cada parcela é PIX ou boleto. A chave PIX sugerida é o CNPJ do fornecedor; outra chave de CPF ou CNPJ pede justificativa. ⚠️ A sobra de centavos ainda está sendo conferida: a regra do PR #71 põe a sobra na primeira parcela, como o Sienge faz.
+4. **Pagamento:** a nota se divide em parcelas iguais, e cada parcela é PIX ou boleto. A chave PIX sugerida é o CNPJ do fornecedor; outra chave de CPF ou CNPJ pede justificativa. O centavo que sobra vai na primeira parcela, como no Sienge (por exemplo, R$ 900,01 em 2 parcelas fica R$ 450,01 + R$ 450,00).
 5. **Etiquetas.**
 
 Ao clicar em **Lançar**, o título vai para a aprovação e abre na gaveta. Se faltar alguma coisa, o pé da janela diz o quê.
