@@ -7387,20 +7387,20 @@ select pg_temp.falha(format($$select api.lancar_titulo(%L)$$, jsonb_build_object
 select pg_temp.ok(not exists (select 1 from erp.documentos_fiscais where numero = 'T-881'), 'lançar: a recusa não deixa a nota pela metade');
 select api.lancar_titulo(jsonb_build_object(
   'empresa', :'spe', 'fornecedor', '10000000-0000-0000-0000-000000000007', 'tipo', 'nfse', 'numero', 'T-881',
-  'emissao', '2026-11-05', 'competencia', '2026-11-01', 'valor', 900,
+  'emissao', '2026-11-05', 'competencia', '2026-11-01', 'valor', 900.01,
   'rateio', jsonb_build_array(jsonb_build_object('nucleo', :'ne_vm', 'centro', :'cc_mkt', 'natureza', pg_temp.nat('05.01.04'), 'percentual', 100)),
   'parcelas', '[{"vencimento": "2026-11-20", "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"},
                 {"vencimento": "2026-12-20", "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"}]'::jsonb,
   'previsoes', '["8c000000-0000-0000-0000-000000000002"]'::jsonb,
   'etiquetas', '["8c000000-0000-0000-0000-000000000001"]'::jsonb)) as tlt \gset
-select pg_temp.ok((select t.situacao = 'aberto' and t.valor = 900 and t.criado_por = :'diretor'
+select pg_temp.ok((select t.situacao = 'aberto' and t.valor = 900.01 and t.criado_por = :'diretor'
                      from erp.titulos t where t.id = :'tlt')
-                  and (select array_agg(valor order by numero) from erp.parcelas where titulo_id = :'tlt') = array[450, 450]::numeric[]
+                  and (select array_agg(valor order by numero) from erp.parcelas where titulo_id = :'tlt') = array[450.01, 450]::numeric[]
                   and (select count(*) from erp.parcela_pagamentos where titulo_id = :'tlt') = 2
                   and exists (select 1 from erp.titulo_etiquetas where titulo_id = :'tlt' and etiqueta_id = '8c000000-0000-0000-0000-000000000001')
                   and (select valor from erp.titulo_previsoes where titulo_id = :'tlt' and previsao_id = '8c000000-0000-0000-0000-000000000002') = 500
                   and (select d.situacao from erp.documentos_fiscais d join erp.titulos t on t.documento_id = d.id where t.id = :'tlt') = 'lancado',
-  'lançar: a nota vira título aberto, com as parcelas, a forma de pagamento, a etiqueta e a previsão consumida');
+  'lançar: a nota vira título aberto, com as parcelas (o centavo na primeira, como o Sienge), a forma de pagamento, a etiqueta e a previsão consumida');
 select pg_temp.falha(format($$select api.lancar_titulo(%L)$$, jsonb_build_object(
   'empresa', :'spe', 'fornecedor', '10000000-0000-0000-0000-000000000007', 'tipo', 'nfse', 'numero', 'T-881',
   'emissao', '2026-11-05', 'competencia', '2026-11-01', 'valor', 900,

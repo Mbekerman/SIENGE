@@ -87,7 +87,7 @@ language sql stable security invoker set search_path = pg_catalog, pg_temp as $$
 --   rateio: [{nucleo, centro, divisao? (o último nível), natureza, percentual}],
 --   parcelas: [{vencimento, forma: pix|boleto, pix_tipo?, pix_chave?, boleto_linha?, pix_excecao?}],
 --   previsoes?: [uuid], etiquetas?: [uuid] }
--- As parcelas saem iguais (o resto dos centavos na última), como em erp.lancar_documento. Sem "previsoes", a nota
+-- As parcelas saem iguais (o centavo que sobra na primeira, como o Sienge; erp._criar_titulo). Sem "previsoes", a nota
 -- consome as previsões abertas do contrato, da mais antiga; com a lista, só as da lista (a tela manda as do
 -- contrato marcadas junto com as que a pessoa escolheu).
 create function api.lancar_titulo(p jsonb) returns uuid language plpgsql volatile security invoker

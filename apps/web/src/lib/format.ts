@@ -67,9 +67,10 @@ export function lerReais(s: string): number | null {
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : null;
 }
 
-/** Divide o valor em n parcelas iguais, o resto dos centavos na última (como erp._criar_titulo). */
+/** Divide o valor em n parcelas iguais, o centavo que sobra na PRIMEIRA, como o Sienge e erp._criar_titulo
+ *  (R$ 1,00 em 3 = 0,34 + 0,33 + 0,33; migration 20261117000200_erp_envio_sienge.sql). */
 export function dividir(total: number, n: number): number[] {
   if (n <= 0) return [];
-  const p = Math.trunc((total / n) * 100) / 100;
-  return Array.from({ length: n }, (_, i) => (i < n - 1 ? p : Math.round((total - p * (n - 1)) * 100) / 100));
+  const c = Math.round(total * 100), p = Math.trunc(c / n);
+  return Array.from({ length: n }, (_, i) => (i === 0 ? c - p * (n - 1) : p) / 100);
 }

@@ -195,7 +195,7 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
             </div>
           ))}
           <button className="btn t sm" style={{ alignSelf: 'flex-start' }} onClick={() => setParcelas(ps => [...ps, novaParcela(ps[ps.length - 1])])}><Ic n="add" s={18} />Adicionar parcela</button>
-          {parcelas.length > 1 && <span className="sec peq">As parcelas saem iguais; os centavos que sobram vão na última.</span>}
+          {parcelas.length > 1 && <span className="sec peq">As parcelas saem iguais; o centavo que sobra vai na primeira, como no Sienge.</span>}
         </section>
 
         {o.etiquetas.length > 0 && (
