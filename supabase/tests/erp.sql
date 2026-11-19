@@ -7608,6 +7608,24 @@ select pg_temp.falha(format($$update erp.anexos set documento_id = (select docum
 select api.lancar_titulo((select j || jsonb_build_object('anexos', jsonb_build_array(:'anx2')) from nota_a2_anx)) as tan2 \gset
 select pg_temp.ok((select a.documento_id = t.documento_id from erp.anexos a, erp.titulos t where a.id = :'anx2' and t.id = :'tan2'),
   'anexo: o próprio anexo solto entra no lançamento');
+-- o rastro de um título não traz o anexo de outra nota; o aviso de arquivo repetido ignora nota cancelada
+select pg_temp.como(:'diretor');
+select pg_temp.ok((select jsonb_array_length(r->'anexos') = 1 and r->'anexos'->0->>'id' = :'anx' from api.titulo_rastro(:'tan') r)
+                  and (select jsonb_array_length(r->'anexos') = 1 and r->'anexos'->0->>'id' = :'anx2' from api.titulo_rastro(:'tan2') r),
+  'anexo: o rastro de cada título lista só os anexos da própria nota');
+select pg_temp.sis();
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+values ('8d000000-0000-0000-0000-000000000009', :'spe', '10000000-0000-0000-0000-000000000007', 'nfse', 'T-899', '2026-11-05', '2026-11-01', 100);
+insert into erp.anexos (id, nome, tipo_mime, tamanho, sha256) values ('8d000000-0000-0000-0000-00000000000a', 'cancelada.pdf', 'application/pdf', 10, repeat('f', 64));
+update erp.anexos set documento_id = '8d000000-0000-0000-0000-000000000009' where id = '8d000000-0000-0000-0000-00000000000a';
+set local role erp_situacao;
+update erp.documentos_fiscais set situacao = 'cancelado' where id = '8d000000-0000-0000-0000-000000000009';
+reset role;
+select pg_temp.volta();
+select pg_temp.como(:'diretor');
+select pg_temp.ok((select jsonb_array_length(j->'repetido_em') = 0 from api.registrar_anexo('de novo.pdf', 'application/pdf', 10, repeat('f', 64)) j)
+                  and exists (select 1 from erp.anexos where id = '8d000000-0000-0000-0000-00000000000a'),
+  'anexo: o mesmo arquivo de uma nota cancelada não conta como repetido');
 select pg_temp.como(null);
 rollback;
 
