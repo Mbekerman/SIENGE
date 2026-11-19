@@ -7478,6 +7478,139 @@ select pg_temp.ok(not exists (select 1 from pg_proc p join pg_namespace n on n.o
                   and not exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'api'),
   'api: anon e service_role não executam nada do esquema api, e ele não tem tabela nem visão');
 
+\echo '# anexo do título e o que casa com a nota lida (19/11/2026)'
+select pg_temp.como(null);
+begin;
+select pg_temp.sis();
+insert into erp.pessoa_papeis values ('10000000-0000-0000-0000-000000000007', 'fornecedor') on conflict do nothing;
+insert into erp.previsoes (id, empresa_id, origem, pessoa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor) values
+  ('8d000000-0000-0000-0000-000000000001', :'spe', 'manual', '10000000-0000-0000-0000-000000000007', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2026-11-01', '2026-11-20', 900),
+  ('8d000000-0000-0000-0000-000000000002', :'spe', 'manual', '10000000-0000-0000-0000-000000000007', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2026-03-01', '2026-03-20', 50);
+insert into erp.compromissos (id, empresa_id, tipo, pessoa_id, descricao, inicio, fim, periodicidade, valor_periodo, dia_vencimento)
+values ('8d000000-0000-0000-0000-000000000003', :'spe', 'assinatura', '10000000-0000-0000-0000-000000000007',
+        'Assinatura da agência', '2026-01-01', '2026-12-31', 'mensal', 950, 18);
+insert into erp.compromisso_rateios (compromisso_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+values ('8d000000-0000-0000-0000-000000000003', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select pe.documento as doc_spe from erp.empresas e join erp.pessoas pe on pe.id = e.pessoa_id where e.id = :'spe' \gset
+select pe.documento as doc_forn from erp.pessoas pe where pe.id = '10000000-0000-0000-0000-000000000007' \gset
+select pg_temp.volta();
+select pg_temp.como(:'leitor');
+select pg_temp.falha($$select api.registrar_anexo('nota.pdf', 'application/pdf', 1000, repeat('a', 64))$$, 'anexo: quem só consulta não sobe arquivo');
+select pg_temp.ok(api.identificar_nota('{}') is null, 'anexo: quem só consulta não recebe a identificação da nota');
+select pg_temp.como(:'diretor');
+select (api.registrar_anexo('NF 881.pdf', 'application/pdf', 1000, repeat('a', 64))->>'id') as anx \gset
+select pg_temp.falha($$select api.registrar_anexo('nota.exe', 'application/x-msdownload', 1000, repeat('b', 64))$$, 'anexo: só PDF, XML e imagem');
+select pg_temp.falha($$select api.registrar_anexo('nota.pdf', 'application/pdf', 1000, 'abc')$$, 'anexo: o sha256 tem 64 dígitos hexadecimais');
+select pg_temp.falha(format($$insert into erp.anexos (nome, tipo_mime, tamanho, sha256, documento_id) values ('x.pdf', 'application/pdf', 1, %L, %L)$$,
+                            repeat('c', 64), '8c000000-0000-0000-0000-000000000005'),
+  'anexo: não nasce ligado a uma nota (a ligação é no lançamento)');
+select api.gravar_leitura(:'anx', jsonb_build_object('valor', 900, 'emitente', :'doc_forn'));
+select pg_temp.ok((select a.criado_por = :'diretor' and a.lido_em is not null and a.leitura->>'valor' = '900' from erp.anexos a where a.id = :'anx'),
+  'anexo: o banco põe quem subiu e grava a leitura');
+select pg_temp.erro_igual(format($$update erp.anexos set sha256 = %L where id = %L$$, repeat('d', 64), :'anx'),
+  'O arquivo do anexo não muda: suba outro', 'anexo: o arquivo (sha256, nome, tamanho) não muda depois de gravado');
+-- quem não subiu não vê, não lê pela api, não muda a leitura nem apaga
+select pg_temp.como(:'analista2');
+select pg_temp.ok(not exists (select 1 from erp.anexos where id = :'anx') and api.anexo(:'anx') is null,
+  'anexo: o anexo solto só quem subiu vê');
+select pg_temp.erro_igual(format($$select api.gravar_leitura(%L, '{}')$$, :'anx'), 'Anexo não encontrado', 'anexo: outra pessoa não muda a leitura');
+delete from erp.anexos where id = :'anx';
+select pg_temp.como(:'diretor');
+select pg_temp.ok(exists (select 1 from erp.anexos where id = :'anx'), 'anexo: outra pessoa não apaga o anexo solto');
+-- o que casa com a nota
+select api.identificar_nota(jsonb_build_object('tomador', :'doc_spe', 'emitente', :'doc_forn', 'tipo', 'nfse', 'numero', '881',
+                                                'valor', 900, 'emissao', '2026-11-05', 'vencimento', '2026-11-20')) as idn \gset
+select pg_temp.ok((:'idn'::jsonb)->'empresa'->>'id' = :'spe' and (:'idn'::jsonb)->'fornecedor'->>'id' = '10000000-0000-0000-0000-000000000007'
+                  and ((:'idn'::jsonb)->'fornecedor'->>'fornecedor')::boolean,
+  'identificar: acha a empresa pelo CNPJ do tomador e o fornecedor pelo do emitente');
+select pg_temp.ok((select c->>'id' from jsonb_array_elements((:'idn'::jsonb)->'candidatos') c limit 1) = '8d000000-0000-0000-0000-000000000001'
+                  and (select (c->>'pontos')::int = 10 and c->'motivos' @> '["mesmo fornecedor", "mesmo valor", "data próxima"]'
+                              and c->'rateio'->0->>'natureza' = pg_temp.nat('05.01.04')::text
+                         from jsonb_array_elements((:'idn'::jsonb)->'candidatos') c where c->>'id' = '8d000000-0000-0000-0000-000000000001'),
+  'identificar: a previsão do mesmo fornecedor, valor e data vem primeiro, com o rateio para preencher');
+select pg_temp.ok(exists (select 1 from jsonb_array_elements((:'idn'::jsonb)->'candidatos') c
+                           where c->>'id' = '8d000000-0000-0000-0000-000000000003' and c->>'tipo' = 'contrato'
+                             and c->>'data' = '2026-11-18' and c->'motivos' @> '["valor próximo", "vencimento do contrato"]'
+                             and jsonb_array_length(c->'rateio') = 1),
+  'identificar: a assinatura do fornecedor entra, com o vencimento no dia dela e o valor do período');
+select pg_temp.ok(not exists (select 1 from jsonb_array_elements((:'idn'::jsonb)->'candidatos') c where c->>'id' = '8d000000-0000-0000-0000-000000000002'),
+  'identificar: previsão de valor e data longe (só o fornecedor bate) fica de fora');
+select pg_temp.ok(jsonb_array_length((:'idn'::jsonb)->'nota_repetida') = 0, 'identificar: sem nota repetida');
+select pg_temp.ok((api.identificar_nota(jsonb_build_object('tomador', '00000000000000', 'emitente', '00000000000191', 'valor', 900)) ->> 'fornecedor') is null,
+  'identificar: CNPJ que não está no cadastro volta sem empresa e sem fornecedor');
+-- lança com o anexo; o anexo fica ligado e entra no rastro
+select api.lancar_titulo(jsonb_build_object(
+  'empresa', :'spe', 'fornecedor', '10000000-0000-0000-0000-000000000007', 'tipo', 'nfse', 'numero', '0881',
+  'emissao', '2026-11-05', 'competencia', '2026-11-01', 'valor', 900,
+  'rateio', jsonb_build_array(jsonb_build_object('nucleo', :'ne_vm', 'centro', :'cc_mkt', 'natureza', pg_temp.nat('05.01.04'), 'percentual', 100)),
+  'parcelas', '[{"vencimento": "2026-11-20", "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"}]'::jsonb,
+  'previsoes', '["8d000000-0000-0000-0000-000000000001"]'::jsonb,
+  'anexos', jsonb_build_array(:'anx'))) as tan \gset
+select pg_temp.ok((select a.documento_id = t.documento_id and a.ligado_em is not null from erp.anexos a, erp.titulos t where a.id = :'anx' and t.id = :'tan')
+                  and (select r->'anexos'->0->>'id' = :'anx' and r->'anexos'->0->>'nome' = 'NF 881.pdf' from api.titulo_rastro(:'tan') r),
+  'anexo: o lançamento liga o anexo à nota, e o rastro do título mostra o arquivo');
+select pg_temp.erro_igual(format($$select api.gravar_leitura(%L, '{}')$$, :'anx'), 'Anexo não encontrado', 'anexo: ligado à nota, nem quem subiu muda a leitura');
+delete from erp.anexos where id = :'anx';
+select pg_temp.ok(exists (select 1 from erp.anexos where id = :'anx'), 'anexo: ligado à nota, nem quem subiu apaga');
+select pg_temp.ok((select jsonb_array_length(j->'repetido_em') = 1 and j->'repetido_em'->0->>'titulo_id' = :'tan'
+                     from api.registrar_anexo('copia.pdf', 'application/pdf', 1000, repeat('a', 64)) j),
+  'anexo: subir de novo o mesmo arquivo avisa a nota em que ele já está');
+select pg_temp.ok((select jsonb_array_length(j->'nota_repetida') = 1 and j->'nota_repetida'->0->>'titulo_id' = :'tan'
+                     from api.identificar_nota(jsonb_build_object('tomador', :'doc_spe', 'emitente', :'doc_forn', 'tipo', 'nfse', 'numero', '881')) j),
+  'identificar: a nota com o mesmo número do mesmo emitente (zeros à esquerda não contam) volta como repetida');
+select pg_temp.ok((select j->'pagamento'->>'forma' = 'pix' and j->'pagamento'->>'pix_chave' = 'agencia@example.com'
+                     from api.identificar_nota(jsonb_build_object('emitente', :'doc_forn')) j),
+  'identificar: a última chave PIX usada com o fornecedor vem pré-selecionada');
+-- quem não vê a nota não vê o anexo dela nem a repetição; o anexo de outra pessoa não se liga
+select pg_temp.como(:'analista2');
+create temp table anexo_ids as select :'anx'::uuid as anx, :'tan'::uuid as tit, (select documento_id from erp.titulos where id = :'tan') as doc;
+grant select on anexo_ids to public;
+select pg_temp.como(null);
+do $$
+declare r record; i record; j jsonb; c jsonb; n int := 0;
+begin
+  select * into i from anexo_ids;
+  for r in select u.id::text as id from erp.usuarios u where u.ativo loop
+    perform pg_temp.como(r.id);
+    j := api.identificar_nota(jsonb_build_object('emitente', '77777777000177', 'tipo', 'nfse', 'numero', '881', 'valor', 950, 'vencimento', '2026-11-18'));
+    if not erp.vejo_documento(i.doc) then
+      n := n + 1;
+      if exists (select 1 from erp.anexos where id = i.anx) or api.anexo(i.anx) is not null then
+        raise exception 'FALHOU: % vê o anexo de uma nota que não vê', r.id; end if;
+      if j is not null and (j->'nota_repetida')::text like '%' || i.doc || '%' then
+        raise exception 'FALHOU: % recebe como repetida uma nota que não vê', r.id; end if;
+    end if;
+    if j is not null and not erp.vejo_titulo(i.tit) and j->'pagamento'->>'de_titulo' = i.tit::text then
+      raise exception 'FALHOU: % recebe a chave PIX de um título que não vê', r.id; end if;
+    for c in select x from jsonb_array_elements(coalesce(j->'candidatos', '[]')) x loop
+      if (c->>'tipo' = 'previsao' and not erp.vejo_previsao((c->>'id')::uuid))
+         or (c->>'tipo' = 'contrato' and not erp.vejo_compromisso((c->>'id')::uuid)) then
+        raise exception 'FALHOU: % recebe candidato que não vê (%)', r.id, c->>'id'; end if;
+    end loop;
+  end loop;
+  perform pg_temp.como(null);
+  if n = 0 then raise exception 'FALHOU: (teste) nenhum usuário deixa de ver a nota'; end if;
+end $$;
+select pg_temp.ok(true, 'identificar: para cada usuário, o anexo, a nota repetida, a chave PIX e os candidatos só aparecem para quem os vê');
+-- quem não vê nada do Marketing não recebe os candidatos dele
+select pg_temp.como(:'analista2');
+select (api.registrar_anexo('meu.pdf', 'application/pdf', 10, repeat('e', 64))->>'id') as anx2 \gset
+select n.id as nat_b2 from api.naturezas_lancaveis(:'ne_vm', :'cc_obra', null) n order by n.codigo limit 1 \gset
+create temp table nota_a2_anx as select jsonb_build_object(
+  'empresa', :'spe', 'fornecedor', '10000000-0000-0000-0000-000000000007', 'tipo', 'nfse', 'numero', 'T-891',
+  'emissao', '2026-11-05', 'competencia', '2026-11-01', 'valor', 100,
+  'rateio', jsonb_build_array(jsonb_build_object('nucleo', :'ne_vm', 'centro', :'cc_obra', 'natureza', :'nat_b2', 'percentual', 100)),
+  'parcelas', '[{"vencimento": "2026-11-20", "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"}]'::jsonb) j;
+select pg_temp.erro_igual(format($$select api.lancar_titulo(%L)$$, (select j || jsonb_build_object('anexos', jsonb_build_array(:'anx')) from nota_a2_anx)),
+  'Anexo não encontrado ou já ligado a outra nota', 'anexo: o anexo de outra pessoa (ou já ligado) não entra no lançamento');
+select pg_temp.falha(format($$update erp.anexos set documento_id = (select documento_id from erp.titulos where id = %L) where id = %L$$, :'tan', :'anx2'),
+  'anexo: não se liga a nota de outra pessoa, mesmo uma em que ela lança');
+select api.lancar_titulo((select j || jsonb_build_object('anexos', jsonb_build_array(:'anx2')) from nota_a2_anx)) as tan2 \gset
+select pg_temp.ok((select a.documento_id = t.documento_id from erp.anexos a, erp.titulos t where a.id = :'anx2' and t.id = :'tan2'),
+  'anexo: o próprio anexo solto entra no lançamento');
+select pg_temp.como(null);
+rollback;
+
 \echo '# pessoa PJ: o cadastro só o master e os designados veem (Moises, 19/11/2026)'
 begin;
 select pg_temp.sis();
