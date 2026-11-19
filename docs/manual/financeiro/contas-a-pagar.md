@@ -178,6 +178,17 @@ O #90 também traz a navegação nova (Moises, 18/nov/2026):
 
   Embaixo vem um cartão por seção, que explica o que se encontra nela e o que dá para fazer.
 
+🟡 **Rastro do título, no PR #91** (ainda não juntado). A gaveta do título ganha uma barra com 7 botões, e cada um abre uma janela:
+- **Origem:** o documento que veio antes do título e o título que ele substituiu.
+- **Aprovações:** todas as rodadas de aprovação.
+- **Alterações:** os pedidos de revisão com a resposta, e o antes e depois de cada ajuste.
+- **Histórico:** a linha do tempo do título.
+- **Anexos:** vazio por ora, com o botão marcado "em breve".
+- **Contrato:** valor, lançado, pago, saldo e os títulos do contrato. Só aparece quando o título vem de um contrato.
+- **Fornecedor:** o cadastro, os números e os últimos títulos. Conta só os títulos que a pessoa pode ver.
+
+As seções Previsões consumidas e Aprovação saem da gaveta e passam para essas janelas.
+
 As imagens abaixo são as do PR #85 e serão trocadas quando o #90 for juntado.
 
 ![Títulos no computador](../imagens/financeiro/consulta-titulos-desk.png)
