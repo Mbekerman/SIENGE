@@ -89,7 +89,7 @@ Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depo
 - O título de previsão vai ao Sienge **sem forma de pagamento**, só como previsão, para não ser pago por engano.
 - **O Sienge é monitorado:** a leitura diária aponta os títulos de previsão que deveriam ter sido apagados e continuam lá, com aviso também por **e-mail**.
 - **Quando o Sienge é verificado:** a cada 30 minutos no horário comercial, mais uma conferência completa de madrugada. Motivo: o limite de 200 consultas por minuto da API do Sienge é dividido com o CRM (Moises, 14/nov/2026, 14h35).
-- **Página das PRV a apagar** (Moises, 18/nov/2026, no lugar da planilha do Google): abre com **qualquer conta Google da BKM** (@bkm.com.br), mesmo de quem não tem usuário no ERP BKM; ninguém de fora entra. Quem abre vê **todas** as PRV a apagar, de todas as empresas e centros, sem as permissões do ERP BKM (confirmado pelo Moises, 18/nov/2026, 9h53). Mostra empresa, número do título no Sienge, documento (PRV-…), valor, data prevista, desde quando está na lista, a última conferência e a situação da previsão.
+- **Página das PRV a apagar** (Moises, 18/nov/2026, no lugar da planilha do Google): abre com **qualquer conta Google da BKM** (@bkm.com.br), mesmo de quem não tem usuário no ERP BKM; ninguém de fora entra. Quem abre vê **todas** as PRV a apagar, de todas as empresas e centros, sem as permissões do ERP BKM (confirmado pelo Moises, 18/nov/2026, 9h53). Mostra empresa, número do título no Sienge, documento (PRV-…), valor, data prevista, desde quando está na lista, a última conferência e a situação da previsão. A página **se atualiza sozinha**: o título apagado no Sienge some dela em segundos, sem F5 (Moises, 18/nov/2026). No Sienge, busque pelo **número do título** (no campo Título) ou pelo **documento PRV-…**; o número do título não é o número do documento.
 - **A página é só de leitura.** Ninguém marca "apagado": o próprio ERP BKM confere o Sienge e a linha some da página sozinha quando o título foi de fato apagado (Moises, 14/nov/2026, 14h32). Quando o Sienge avisa a exclusão, isso leva segundos; senão, a conferência a cada 30 minutos marca.
 - **Ninguém inclui nem tira linha à mão:** a lista vem direto do ERP BKM a cada abertura (e a cada 5 minutos, com a página aberta). Por isso a defesa da planilha contra linha incluída à mão deixou de ser necessária.
 - Se sumir do Sienge um título que **não estava na lista**, a leitura diária avisa a **AF**.
@@ -446,6 +446,8 @@ O título tem uma **Conversa**: uma linha do tempo com o lançamento, as aprova�
 | Não dá | Por quê |
 | --- | --- |
 | Lançar a mesma nota duas vezes (mesmo emitente, tipo, número e série) | Trava do ERP BKM. O Sienge da BKM aceita número repetido, então a trava é nossa (teste de 6/nov/2026) |
+| Juntar notas, faturas ou boletos diferentes num título só | Um título por documento, por motivo (Moises, 18/nov/2026). Cada nota gera o próprio título; o boleto precisa ter o valor da parcela. A mesma nota continua podendo ser dividida entre centros e divisões |
+| Pôr uma natureza de PJ junto com outra natureza no mesmo título, nota ou contrato | O pagamento de PJ sobe sozinho (Moises, 18/nov/2026) |
 | Editar uma nota ou um título depois de confirmado | O título só muda de situação pelas baixas. Corrigir é cancelar e lançar de novo |
 | Baixar mais do que o saldo da parcela ou do que o saldo do pagamento | Trava do banco de dados |
 | Usar o adiantamento de um fornecedor para baixar título de outro, ou de outra empresa | A baixa só vale para a mesma empresa e a mesma pessoa |

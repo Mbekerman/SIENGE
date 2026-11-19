@@ -81,6 +81,85 @@ export function mensagemDeErro(status, corpo) {
   return 'Não foi possível ler a lista agora. Tente de novo em instantes.';
 }
 
+// ---------- tempo real ----------
+// O Broadcast do Realtime do Supabase (supabase/dev/pagina_prv_realtime.sql) avisa "mudou" no canal
+// privado prv-apagar; a página relê a lista. O protocolo (Phoenix) é feito aqui, sem biblioteca de fora.
+// Sem o Realtime, a releitura a cada RELER_MS continua valendo.
+export const CANAL = 'realtime:prv-apagar';
+export const RELER_MS = 60_000;
+export const BATIDA_MS = 25_000;
+export const ESPERAS_MS = [1_000, 2_000, 5_000, 10_000, 30_000];
+
+export function urlRealtime(cfg) {
+  return `${cfg.url.replace(/^https:/, 'wss:')}/realtime/v1/websocket?${new URLSearchParams({ apikey: cfg.chave, vsn: '1.0.0' })}`;
+}
+
+export function msgEntrar(token, ref) {
+  return JSON.stringify({ topic: CANAL, event: 'phx_join', ref, join_ref: ref,
+    payload: { config: { broadcast: { self: false, ack: false }, presence: { key: '' }, private: true }, access_token: token } });
+}
+export const msgBatida = (ref) => JSON.stringify({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref });
+export const msgToken = (token, ref) => JSON.stringify({ topic: CANAL, event: 'access_token', payload: { access_token: token }, ref });
+
+// O que chega: 'mudou' (relê a lista), 'entrou' (canal aceito: relê, pode ter perdido algo), 'recusado'
+// ou nada de interesse.
+export function lerMensagem(texto, refEntrada) {
+  let m;
+  try { m = JSON.parse(texto); } catch { return null; }
+  if (!m || m.topic !== CANAL) return null;
+  if (m.event === 'broadcast' && m.payload?.event === 'mudou') return 'mudou';
+  if (m.event === 'phx_reply' && m.ref === refEntrada) return m.payload?.status === 'ok' ? 'entrou' : 'recusado';
+  if (m.event === 'phx_error' || m.event === 'phx_close' || m.event === 'system' && m.payload?.status === 'error') return 'recusado';
+  return null;
+}
+
+// O motivo que o Realtime dá ao recusar o canal, para mostrar na tela (sem dado nenhum da lista).
+export function motivoDaRecusa(texto) {
+  try {
+    const p = JSON.parse(texto)?.payload ?? {};
+    const m = p.response?.reason ?? p.message ?? p.reason ?? '';
+    return typeof m === 'string' ? m.slice(0, 200) : '';
+  } catch { return ''; }
+}
+
+export const esperaDaVez = (n) => ESPERAS_MS[Math.min(n, ESPERAS_MS.length - 1)];
+
+// Liga o canal e se religa sozinho. token() devolve o token atual (ou null: fora do login, não liga).
+// Devolve trocarToken(), para mandar o token renovado sem religar, e parar().
+// aoEstado(ligada, motivo): avisa a tela se a atualização automática está ligada e, desligada, por quê.
+export function ouvir(cfg, token, aoMudar, Ws = globalThis.WebSocket, aoEstado = () => {}) {
+  let ws = null, batida = null, falhas = 0, ref = 0, enviado = null, entrada = null, parado = false, volta = null;
+  const proximo = () => String(++ref);
+  const religar = () => { if (!parado) volta = setTimeout(abrir, esperaDaVez(falhas++)); };
+  async function abrir() {
+    if (parado) return;
+    const t = await token().catch(() => null);
+    if (!t) return religar();
+    try { ws = new Ws(urlRealtime(cfg)); } catch { return religar(); }
+    ws.onopen = () => {
+      enviado = t;
+      entrada = proximo();
+      ws.send(msgEntrar(t, entrada));
+      batida = setInterval(() => { if (ws.readyState === 1) ws.send(msgBatida(proximo())); }, BATIDA_MS);
+    };
+    ws.onmessage = (e) => {
+      const o = lerMensagem(e.data, entrada);
+      if (o === 'entrou') { falhas = 0; aoEstado(true); aoMudar(); }
+      else if (o === 'mudou') aoMudar();
+      else if (o === 'recusado') { aoEstado(false, motivoDaRecusa(e.data)); ws.close(); }
+    };
+    ws.onclose = () => { clearInterval(batida); ws = null; aoEstado(false); religar(); };
+  }
+  abrir();
+  return {
+    trocarToken: async () => {
+      const t = await token().catch(() => null);
+      if (t && t !== enviado && ws?.readyState === 1) { enviado = t; ws.send(msgToken(t, proximo())); }
+    },
+    parar: () => { parado = true; clearTimeout(volta); clearInterval(batida); ws?.close(); },
+  };
+}
+
 // ---------- navegador ----------
 
 async function pedirJson(url, init) {
@@ -157,10 +236,22 @@ export async function iniciar(cfgBruta, el) {
     el.lido.textContent = `Lista lida às ${new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', timeStyle: 'short' }).format(new Date())}`;
     mostrar(el, 'dentro');
   };
+  // vários avisos seguidos viram uma releitura só
+  let espera = null;
+  const logo = () => { clearTimeout(espera); espera = setTimeout(() => { if (ler(CHAVE_SESSAO)) carregar(); }, 500); };
   el.atualizar.onclick = carregar;
-  setInterval(() => { if (document.visibilityState === 'visible' && ler(CHAVE_SESSAO)) carregar(); }, 5 * 60_000);
+  setInterval(() => { if (document.visibilityState === 'visible' && ler(CHAVE_SESSAO)) carregar(); }, RELER_MS);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && ler(CHAVE_SESSAO)) carregar(); });
   await carregar();
+  if (ler(CHAVE_SESSAO) && globalThis.WebSocket) {
+    const canal = ouvir(cfg, async () => (await sessao())?.acesso ?? null, logo, globalThis.WebSocket, (ligada, motivo) => {
+      if (ligada) el.vivo.textContent = 'Atualização automática ligada';
+      else if (motivo) el.vivo.textContent = `Atualização automática desligada (${motivo}); a lista é relida a cada minuto`;
+      else if (!el.vivo.textContent.startsWith('Atualização automática desligada (')) el.vivo.textContent = 'Atualização automática religando; a lista é relida a cada minuto';
+      if (!ligada) console.warn('Tempo real da página das PRV:', motivo || 'conexão caiu');
+    });
+    setInterval(canal.trocarToken, 5 * 60_000);
+  }
 }
 
 function mostrar(el, estado, aviso = '') {

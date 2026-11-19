@@ -137,7 +137,11 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 
 ✅ **Já vale agora, com o Sienge** (Moises, 7/nov/2026): os títulos dos fornecedores PJ copiados do Sienge ficam numa **área restrita** do ERP BKM. Relatórios e BI mostram só a soma por núcleo econômico e mês, sem valor por pessoa. Os centros de custo pequenos **não** são juntados (Moises, 7/nov/2026). Consequência: num centro de custo com um PJ só, a soma do mês é o valor dele. No próprio Sienge, nome e valor continuam visíveis.
 
-✅ O pagamento dos PJ **não tem aprovação própria**: a aprovação são os dois "ok" do mês sobre as tabelas (Moises, 7/nov/2026).
+✅ Desde 18/nov/2026 (Moises), o título PJ tem uma aprovação: a do **master** ou de quem ele designou para o PJ. Os dois "ok" do mês sobre as tabelas continuam (Moises, 18/nov/2026): um do **RH**, que confere tudo menos a remuneração, e um do **master**, que confere a remuneração. Ainda sem código.
+
+✅ **O cadastro do PJ (nome, CPF, e-mail, telefone) só o master e quem ele designou veem** (Moises, 19/nov/2026). Quem vê o PJ cadastra a pessoa já como PJ; depois, só o master tira ou põe essa marca. Os demais não acham a pessoa na lista de fornecedores nem conseguem lançar nada para ela. A pessoa PJ só recebe lançamento de PJ: uma previsão, um título, uma nota ou um contrato com natureza comum para ela recebe o aviso "Pessoa PJ só em lançamento de PJ". O histórico de alterações do cadastro dela também fica fechado para o administrador do sistema.
+
+✅ **O pagamento de PJ sobe sozinho** (Moises, 18/nov/2026: "salário só pode subir sozinho"): o título, a nota ou o contrato com natureza de PJ não pode ter outra natureza junto. Quem tentar pôr uma linha PJ ao lado de uma linha comum (ou o contrário) recebe o aviso "O pagamento de PJ sobe sozinho". ⏳ A conferência do valor da nota do PJ entra com o cadastro da remuneração, que ainda não existe. Quando entrar: a nota com valor diferente do aprovado, para mais ou para menos, **não é recusada**; vai para a aprovação do master (Moises, 18/nov/2026).
 
 > 🔜 **Futuro.** Os pagamentos PJ ainda passam pelo Sienge, e a remessa e o extrato vão pelo Nexxera (Moises, 7/nov/2026). Enquanto for assim, o nome e o valor de cada PJ continuam visíveis no Sienge, e **todo o fluxo abaixo (anonimização, conferência com dois "ok", portal de notas e portal do contador) fica para quando o Sienge sair desse fluxo**. Ver [O que ainda é feito à mão no Sienge](passos-manuais-no-sienge.md). A conciliação automática depende do módulo de Bancos, que não foi desenhado.
 
@@ -148,7 +152,6 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 - O **RH** mantém, no portal dele, quem está ativo, o controle dos benefícios e **qual SPE paga cada funcionário em cada mês**.
 - Uma **tabela de remuneração**, à parte, guarda o valor de cada um "a 7 chaves".
 - O **financeiro** vê só um pseudônimo (por exemplo, "PJ-017") e o valor a pagar, nunca o nome.
-- ✅ **O cadastro de quem recebe como PJ é restrito** (Moises, 19/nov/2026). Nome, CPF ou documento, e-mail e telefone só aparecem para o master e para quem ele designou para o PJ. Os demais usuários não veem essa pessoa no cadastro, na lista de credores nem no fornecedor do rastro do título. 🟡 O código ainda vai sair num PR.
 - O funcionário sobe a nota num **portal**; se tudo bate com as duas tabelas, ela segue direto para pagamento.
 - O RH pode **dividir o pagamento de um funcionário entre núcleos econômicos (SPEs) ou centros de custo**, em percentuais, no mês (Moises, 7/nov/2026). O PJ emite uma nota para cada SPE. Ao receber cada nota, o sistema confere o CNPJ da SPE, o percentual e o valor contra o cadastro do RH daquele mês, e **trava o pagamento** se algo divergir.
 - **Todo mês, as duas tabelas são conferidas.** Se um dos dois responsáveis não der o "ok" do mês, **ninguém recebe**.
@@ -206,7 +209,14 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 ✅ Decidida pelo Moises em 14/nov/2026; no banco desde o PR #14.
 
 - **Onde vale:** no piloto, Marketing. A alçada vale para todo título a pagar e toda previsão lançada à mão, em todo centro de custo.
-- ✅ **Nada é aprovado sem aprovador** (Moises, 18/nov/2026): centro sem gestor da área e sem faixas próprias **não aprova sozinho**. Ele segue as faixas gerais; a fase do gestor, que o centro não tem, vai ao **master**, com aviso de falta de aprovadores. Antes, o título desse centro ficava fora da alçada e a previsão nascia aprovada. Exceções que continuam sem alçada: títulos de **imposto** e **societário**, e a linha **sem núcleo e sem centro** (como 10.01 Bens da empresa), que hoje só o master lança.
+- ✅ **Nada é aprovado sem aprovador** (Moises, 18/nov/2026): centro sem gestor da área e sem faixas próprias **não aprova sozinho**. Ele segue as faixas gerais; a fase do gestor, que o centro não tem, vai ao **master**, com aviso de falta de aprovadores. Antes, o título desse centro ficava fora da alçada e a previsão nascia aprovada.
+- ✅ **Imposto, sócios e linha sem centro também passam por aprovação** (Moises, 18/nov/2026), em qualquer valor:
+  - título de **imposto retido**: aprovação da **AF**;
+  - título de **movimento entre sócios** (a parte a pagar): aprovação da **AD**;
+  - linha **sem núcleo e sem centro** (como 10.01 Bens da empresa, que hoje só o master lança): **AF e AO juntos**, em qualquer ordem, **ou a AD sozinha**. Vale também para a previsão sem centro. O título que tem linhas com centro e sem centro passa pelas duas aprovações.
+- ✅ **PJ só com o master e quem ele designar** (Moises, 18/nov/2026). O título ou a previsão com alguma linha de natureza restrita (folha PJ, pró-labore) tem uma aprovação só, a do **master ou de um designado**, em qualquer valor. AF, AO, AD, diretor e gestor da área não veem nem aprovam. O PJ **não entra no acumulado do mês** do centro (escolha do Moises, 18/nov/2026), e os avisos sobre ele só vão a quem vê o PJ. A previsão PJ **não vai ao Sienge** como PRV. O título PJ aprovado ainda vai ao Sienge para ser pago, e lá quem tem acesso ao financeiro o vê (limitação da transição).
+- ✅ **A AD sempre pode fazer a aprovação da AF ou da AO** (Moises, 18/nov/2026). Quando a mesma faixa tem a vaga da AD e a da AF, quem está na AD aprova primeiro na vaga dela.
+- Recusar o título de imposto cancela a nota inteira, como recusar o título do fornecedor.
 - **Acumulado:** o do **mês de competência**, por centro de custo, somando todos os núcleos e empresas, já contando o próprio título.
 - **Faixas:**
   - até R$ 50 mil no acumulado: aprovam o gestor da área e depois a AF;
@@ -214,7 +224,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 - ✅ O acumulado soma também o que **o mesmo fornecedor** tem no mês em outros centros de custo, para não escapar da alçada repartindo o gasto. O administrador pode desligar (Moises, 14/nov/2026).
 - **Configuração:** as faixas e o modo de somar (grupo, empresa ou núcleo) são valores iniciais; o administrador muda, com registro.
 - **Regras do código** (a conferir com o Moises): a alçada é fixada na confirmação do título, e um título lançado depois não muda a de um anterior; as fases de aprovação correm em sequência; quem lançou não aprova e cada pessoa aprova uma fase de aprovação só; sem a alçada completa, o título não é pago; quem aprova vê os títulos do mês que formaram o acumulado.
-- **Fora da alçada:** imposto retido e movimento entre sócios.
+- **Imposto retido** pede a AF; **movimento entre sócios** pede a AD (desde 18/nov/2026).
 
 **Alçada por centro de custo** (Moises, 15/nov/2026; no código a partir do PR #37):
 
@@ -258,7 +268,7 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 5. A aprovação vale só para o que foi aprovado, **inclusive a conta bancária e o PIX do fornecedor**. Se o título, os dados bancários ou o arquivo do lote mudarem depois, é preciso aprovar de novo.
 6. **Trocar os dados bancários de um fornecedor** é um ato que outra pessoa aprova. O fornecedor é avisado pelo contato que já estava cadastrado, e os títulos abertos dele voltam para aprovação. (É o golpe mais comum: um e-mail falso pedindo a troca da conta.)
 7. O lote só aceita título aprovado e sem nenhuma mudança depois da aprovação.
-8. Todo pagamento tem pelo menos uma aprovação. No PJ, a aprovação são os dois "ok" do mês.
+8. Todo pagamento tem pelo menos uma aprovação. No PJ, a do master ou de quem ele designou (desde 18/nov/2026).
 9. Toda mudança de configuração fica registrada.
 
 ✅ Travas novas, autorizadas pelo Moises em 14/nov/2026 (S-053 a S-055), também no banco e sem tela que as desligue:
@@ -316,7 +326,7 @@ O item **Admin** do menu tem sete seções. A seção Etapa dos núcleos, que ap
 
 ✅ Decidido pelo Moises em 14/nov/2026:
 
-- **Toda mudança de acesso fica pendente até ser aprovada.** Vale para modelos, atribuições, exceções, gestor e diretor da área, AF, AO, AD, tipos de núcleo, marca de natureza restrita e mudança do tipo de um núcleo.
+- **Toda mudança de acesso fica pendente até ser aprovada.** Vale para modelos, atribuições, exceções, gestor e diretor da área, AF, AO, AD, tipos de núcleo, marca de natureza restrita (esta só com a aprovação do master, mesmo que as outras sejam dispensadas) e mudança do tipo de um núcleo.
 - Aprovam os **aprovadores de acesso**, uma lista configurável com um mínimo de aprovações. Quem pediu e quem ganha o acesso não aprovam.
 - **O master** muda a lista de aprovadores sozinho; os outros só a mudam com a unanimidade da própria lista. Só o master cria e administra administradores, e só ele define o grupo de sucessão.
 - **Tudo o que o master faz vale na hora**, sem aprovação. Ele escolhe, tipo a tipo, quais mudanças de acesso pedidas pelo administrador precisam de aprovação; todas começam exigindo.

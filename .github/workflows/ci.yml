@@ -46,6 +46,22 @@ jobs:
       - run: node --test --experimental-strip-types servicos/sienge-escrita/trava.test.ts
       - run: node --test --experimental-strip-types servicos/sienge-escrita/envio.test.ts
       - run: node --test --experimental-strip-types servicos/sienge-escrita/fila.test.ts
-      - run: node --test --experimental-strip-types servicos/sienge-escrita/planilha.test.ts
       - run: node --test --experimental-strip-types servicos/sienge-aviso/logica.test.ts
       - run: node --test pagina/prv.test.mjs
+
+  web:
+    name: Front (tipos e build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm run build

@@ -11,7 +11,6 @@
 // pedido com 4xx em TENTATIVAS_4XX tentativas seguidas: ninguém tenta de novo até alguém olhar).
 import { Divergencia, enviarTitulo, erroPermanente, ErroSienge, proximaTentativa, segundosRetryAfter, type PedidoTitulo, type Resposta } from './envio.ts';
 import { gravarComTrava, type Ambiente } from './trava.ts';
-import type { LinhaApagar } from './planilha.ts';
 
 // id: o título ou a previsão (o banco sabe qual).
 export type ItemFila = { item_id: string; sienge_id: number | null; tentativas: number };
@@ -32,7 +31,6 @@ export interface Banco {
   prvNossas(empresa: number): Promise<{ sienge_id: number; previsao_id: string; esperada: boolean }[]>;
   recriarPrv(previsaoId: string, siengeId: number, motivo: string): Promise<void>;
   terminarCruzamento(empresa: number, estranhas: Estranha[], resumo: Record<string, number>, erro?: string | null): Promise<number>;
-  linhasApagar(): Promise<LinhaApagar[]>; // erp.v_sienge_prv_apagar, para a planilha do financeiro
   // Aviso do Sienge (webhook) de parcela removida de uma linha PRV nossa: o banco reserva por 5 minutos.
   pegarAviso(): Promise<Aviso | null>;
   terminarAviso(eventoId: string, resultado: string, processado: boolean): Promise<void>;
@@ -102,6 +100,19 @@ export async function processarUm(banco: Banco, http: Http, cfg: Config): Promis
     await banco.terminar(item.item_id, { situacao, erro: msg, tentativas, proxima });
     return { passo: situacao, titulo: item.item_id, erro: msg, enfileirados };
   }
+}
+
+// Só os avisos pendentes, sem enfileirar nem enviar título: o recebedor (servicos/sienge-aviso) chama
+// logo depois de gravar um aviso novo, para a linha apagada sair da página em segundos, sem esperar a
+// rotina de minuto (pedido do Moises, 18/11/2026). A rotina continua pegando o que sobrar.
+export async function processarAvisos(banco: Banco, http: Http, max = 5): Promise<Resultado[]> {
+  const feitos: Resultado[] = [];
+  for (let i = 0; i < max; i++) {
+    const r = await processarAviso(banco, http, 0);
+    if (!r) break;
+    feitos.push(r);
+  }
+  return feitos;
 }
 
 // O aviso do Sienge é só um dado (qualquer um pode mandar um POST ao recebedor): só o 404 do GET do
@@ -288,10 +299,6 @@ export function bancoPostgres(sql: Sql): Banco {
     terminarCruzamento: (e, est, resumo, erro) => comoSistema(async (tx) =>
       (await tx`select erp.sienge_terminar_cruzamento(${e}::int, ${tx.json(est)}::jsonb, ${tx.json(resumo)}::jsonb,
                                                       ${erro ?? null}::text) as n`)[0].n),
-    linhasApagar: () => comoSistema(async (tx) =>
-      (await tx`select previsao_id::text as previsao_id, sienge_id, empresa_sienge, data_prevista::text as data_prevista,
-                       valor::text as valor, situacao_previsao, to_json(apagar_desde) #>> '{}' as apagar_desde
-                  from erp.v_sienge_prv_apagar`).map((r: LinhaApagar) => ({ ...r }))),
     pegarAviso: () => comoSistema(async (tx) => {
       const [r] = await tx`select evento_id::text as evento_id, bill_id, previsao_id::text as previsao_id, tipo from erp.sienge_pegar_aviso()`;
       return r ? { evento_id: r.evento_id, bill_id: r.bill_id, previsao_id: r.previsao_id, tipo: r.tipo } : null;

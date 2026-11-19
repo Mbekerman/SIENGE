@@ -387,6 +387,16 @@ select erp.lancar_documento('70000000-0000-0000-0000-000000000001', array['2026-
 select pg_temp.aprova(:'tit', :'diretor');
 select pg_temp.ok((select valor from erp.titulos where id = :'tit') = 9000, 'título do fornecedor pelo líquido: 10.000 − 500 de ISS − 500 de caução');
 select pg_temp.ok((select count(*) = 2 and sum(valor) = 9000 from erp.parcelas where titulo_id = :'tit'), 'em 2 parcelas');
+-- um título por nota, fatura ou boleto (Moises, 18/11/2026): a nota gera um título só do fornecedor,
+-- em parcelas; não se lança de novo; o mesmo número do mesmo emitente não entra duas vezes
+select pg_temp.ok((select count(*) from erp.titulos where documento_id = '70000000-0000-0000-0000-000000000001' and tipo = 'fornecedor') = 1,
+  'um título por nota: a nota gera um título só do fornecedor');
+select pg_temp.erro_igual($$select erp.lancar_documento('70000000-0000-0000-0000-000000000001', array['2026-04-20']::date[])$$,
+  'O documento já foi lançado', 'um título por nota: a nota lançada não gera outro título');
+select pg_temp.erro_igual(format($$insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+  values (%L, '10000000-0000-0000-0000-000000000005', 'nfse', '101', '2026-02-05', '2026-02-01', 10)$$, :'spe'),
+  'duplicate key value violates unique constraint "documentos_fiscais_unico"',
+  'um título por nota: a mesma nota não entra duas vezes');
 select pg_temp.ok((select pessoa_id = '10000000-0000-0000-0000-000000000006' and valor = 500 from erp.titulos
                    where documento_id = '70000000-0000-0000-0000-000000000001' and tipo = 'imposto'), 'título do ISS contra a prefeitura');
 select pg_temp.ok(erp.caucao_saldo('60000000-0000-0000-0000-000000000002') = 500, 'caução de 5% do contrato no extrato');
@@ -662,7 +672,8 @@ select pg_temp.falha($$delete from erp.quitacoes$$, 'quitação não se apaga');
 select pg_temp.falha($$delete from erp.lancamentos$$, 'o livro não apaga linhas');
 select pg_temp.falha($$update erp.lancamentos set valor = 1$$, 'o livro não se edita');
 
--- pagar o ISS pelo atalho
+-- pagar o ISS pelo atalho (o imposto passa pela AF desde 18/11/2026)
+select pg_temp.aprova((select id from erp.titulos where tipo = 'imposto'), :'diretor');
 select erp.pagar_parcela((select p.id from erp.parcelas p join erp.titulos t on t.id = p.titulo_id where t.tipo = 'imposto'),
                             :'conta_spe', '2026-03-10') is not null as x \gset
 select pg_temp.ok((select situacao from erp.titulos where tipo = 'imposto') = 'quitado', 'atalho paga a parcela inteira');
@@ -691,6 +702,11 @@ select pg_temp.ok((select count(*) from erp.titulos t join erp.movimentos_societ
   'aporte vira par ligado: a pagar na incorporadora, a receber na SPE');
 select pg_temp.ok((select sum(l.valor) from erp.lancamentos l join erp.movimentos_societarios m on l.titulo_id in (m.titulo_pagar_id, m.titulo_receber_id) where m.id = :'ms') = 0,
   'no consolidado do grupo o par se anula');
+select pg_temp.sis();
+select pg_temp.ok((select count(*) = 1 and bool_and(a.centro_custo_id is null and a.fases = '{AD}' and a.basta is null and a.titulo_id = m.titulo_pagar_id)
+                   from erp.titulo_alcadas a join erp.movimentos_societarios m on a.titulo_id in (m.titulo_pagar_id, m.titulo_receber_id) where m.id = :'ms'),
+  'movimento entre sócios: o título a pagar pede a AD, sem centro; o a receber não tem alçada (18/11/2026)');
+select pg_temp.volta();
 select pg_temp.como(nullif(:'quem_antes', ''));
 
 -- ---------------------------------------------------------------------
@@ -964,6 +980,8 @@ select pg_temp.ok(not has_table_privilege('authenticated', 'erp.lancamentos', 'I
                   and not has_table_privilege('authenticated', 'erp.mudancas_acesso', 'INSERT,UPDATE,DELETE')
                   and not has_table_privilege('authenticated', 'erp.atribuicoes', 'INSERT,UPDATE,DELETE'),
   'catálogo: livro, auditoria, caução e acesso não têm gravação direta pela API');
+select pg_temp.ok(not exists (select 1 from pg_roles where rolname like 'erp\_%' and has_schema_privilege(rolname, 'erp', 'CREATE')),
+  'catálogo: nenhum papel erp_* fica com CREATE no esquema erp (dado só durante a troca de dono)');
 -- EXECUTE: as invoker (rodam com o RLS de quem chama) e, das definer, só a lista abaixo
 select pg_temp.ok(not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -984,7 +1002,8 @@ select pg_temp.ok(not exists (
        'registrar_movimento_societario','fechar_mes','reabrir_mes','pedir_reclassificacao','decidir_reclassificacao','avisos_forma_pagamento','decidir_compromisso','decidir_previsao','encerrar_previsao','gerar_previsoes_assinatura',
        'cancelar_reclassificacao','pedir_mudanca_acesso','decidir_mudanca_acesso','cancelar_mudanca_acesso','passar_master',
        'pedir_sucessao_master','decidir_sucessao_master','vetar_sucessao_master','efetivar_sucessao_master',
-       'pedir_mudanca_config','decidir_mudanca_config','cancelar_mudanca_config','marcar_notificacoes_lidas')),
+       'pedir_mudanca_config','decidir_mudanca_config','cancelar_mudanca_config','marcar_notificacoes_lidas',
+       'designar_pj','retirar_pj','vejo_pj','vejo_auditoria','previsao_aprovada_vista','contrato_aprovado_visto','contrato_confere')),
   'catálogo: das funções security definer, authenticated só executa as da lista (RPCs e conferências de quem está logado)');
 select pg_temp.ok(not has_function_privilege('authenticated', 'erp._aplicar_mudanca_acesso(uuid)', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp.gerar_avisos_sucessao()', 'EXECUTE')
@@ -994,7 +1013,9 @@ select pg_temp.ok(not has_function_privilege('authenticated', 'erp._aplicar_muda
                   and not has_function_privilege('authenticated', 'erp.registrar_evento(text, text, text, uuid, uuid, jsonb)', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp._executar_config(text, text, jsonb)', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp._contexto_mudanca_config(text)', 'EXECUTE')
-                  and not has_function_privilege('authenticated', 'erp._criar_titulo(uuid, text, text, uuid, uuid, uuid, date, date, numeric, date[], text, uuid, text)', 'EXECUTE'),
+                  and not has_function_privilege('authenticated', 'erp._criar_titulo(uuid, text, text, uuid, uuid, uuid, date, date, numeric, date[], text, uuid, text)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp._fixar_alcada_sem_centro(erp.titulos, text[], text, numeric)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp._fixar_alcada_previsao_sem_centro(erp.previsoes)', 'EXECUTE'),
   'catálogo: o que aplica sem conferir, os saldos internos e as rotinas do servidor ficam sem EXECUTE para a API');
 -- S-079: nenhuma função que recebe a pessoa (p_user) é executável pela API
 select pg_temp.ok(not exists (
@@ -1819,9 +1840,136 @@ select pg_temp.como(:'gestor');
 select pg_temp.ok(erp.decidir_titulo('82000000-0000-0000-0000-000000000001', true) = 'pendente', 'alçada: o gestor da área aprova a fase dele');
 select pg_temp.erro_igual($$select erp.decidir_titulo('82000000-0000-0000-0000-000000000001', true)$$,
   'Você já aprovou uma fase de aprovação deste título', 'alçada: a mesma pessoa não aprova duas fases (o gestor também está no AF)');
-select pg_temp.como(:'diretor2');
+select pg_temp.como(:'analista2');
 select pg_temp.erro_igual($$select erp.decidir_titulo('82000000-0000-0000-0000-000000000001', true)$$,
   'Esta fase de aprovação é de quem está em AF', 'alçada: AF vem depois do gestor, em sequência');
+-- a AD sempre pode fazer a aprovação da AF ou da AO (Moises, 18/11/2026)
+savepoint ad_no_af;
+select pg_temp.como(:'diretor2');
+select erp.decidir_titulo('82000000-0000-0000-0000-000000000001', true) as r_ad \gset
+select pg_temp.ok(:'r_ad' = 'aprovado'
+                  and (select por = :'diretor2'::uuid and lista = 'AF' from erp.titulo_aprovacoes
+                        where titulo_id = '82000000-0000-0000-0000-000000000001' and fase = 2),
+  'alçada: a AD aprova na vaga da AF (18/11/2026)');
+rollback to savepoint ad_no_af;
+-- linha sem centro (movimentação): AO + AF juntos, ou a AD sozinha, em qualquer valor (Moises, 18/11/2026)
+savepoint sem_centro;
+select pg_temp.como(:'diretor');   -- só o master lança linha sem núcleo e sem centro
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('82000000-0000-0000-0000-0000000000a1', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-05-05', '2026-05-01', 1000);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('82000000-0000-0000-0000-0000000000a1', 1, '2026-05-20', 1000);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('82000000-0000-0000-0000-0000000000a1', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 60),
+  ('82000000-0000-0000-0000-0000000000a1', null, null, pg_temp.nat('11.02'), 40);
+select erp.confirmar_titulo('82000000-0000-0000-0000-0000000000a1');
+select pg_temp.ok((select count(*) = 2
+                          and count(*) filter (where centro_custo_id is null and fases = '{AF,AO}' and basta = 'AD' and paralelo
+                                                 and alcada_id is null and not falta_aprovadores) = 1
+                          and count(*) filter (where centro_custo_id = :'cc_mkt' and basta is null) = 1
+                   from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-0000000000a1'),
+  'sem centro: o título misto tem a alçada do centro e a alçada sem centro (AF e AO, ou a AD)');
+select pg_temp.ok((select basta = 'AD' from erp.v_titulo_alcadas where titulo_id = '82000000-0000-0000-0000-0000000000a1' and centro_custo_id is null),
+  'sem centro: a visão das alçadas mostra a alçada sem centro');
+-- o centro aprova pelo gestor (AREA), pela AF e pela AD; depois a alçada sem centro
+select pg_temp.como(:'gestor');
+select pg_temp.ok(erp.decidir_titulo('82000000-0000-0000-0000-0000000000a1', true, null, false, :'cc_mkt') = 'pendente', 'sem centro: o gestor aprova o centro');
+select pg_temp.como(:'contador');
+select pg_temp.ok(erp.decidir_titulo('82000000-0000-0000-0000-0000000000a1', true, null, false, :'cc_mkt') = 'pendente', 'sem centro: a AF aprova o centro');
+select pg_temp.como(:'diretor2');
+select pg_temp.ok(erp.decidir_titulo('82000000-0000-0000-0000-0000000000a1', true, null, false, :'cc_mkt') = 'pendente', 'sem centro: a AD fecha o centro');
+select pg_temp.sis();
+select pg_temp.ok((select count(*) = 1 and bool_and(centro_custo_id is null) from erp.titulo_alcadas a
+                    where a.titulo_id = '82000000-0000-0000-0000-0000000000a1' and erp._fase_da_alcada(a) is not null),
+  'sem centro: falta só a alçada sem centro (' || (select string_agg(coalesce(centro_custo_id::text,'-') || array_to_string(fases, ','), ' ') from erp.titulo_alcadas a
+    where a.titulo_id = '82000000-0000-0000-0000-0000000000a1' and erp._fase_da_alcada(a) is not null) || ')');
+select pg_temp.volta();
+savepoint sem_centro_ad;
+select pg_temp.como(:'diretor2');
+select erp.decidir_titulo('82000000-0000-0000-0000-0000000000a1', true) as r_sc \gset
+select pg_temp.ok(:'r_sc' = 'aprovado'
+                  and (select count(*) = 2 and bool_and(lista = 'AD' and por = :'diretor2'::uuid) from erp.titulo_aprovacoes v
+                        join erp.titulo_alcadas a on a.id = v.alcada_id
+                        where v.titulo_id = '82000000-0000-0000-0000-0000000000a1' and a.centro_custo_id is null),
+  'sem centro: o voto da AD sozinho aprova a alçada sem centro');
+rollback to savepoint sem_centro_ad;
+select pg_temp.como(:'gestor');   -- AF (já aprovou o centro como gestor: na alçada sem centro, vota de novo)
+select pg_temp.ok(erp.decidir_titulo('82000000-0000-0000-0000-0000000000a1', true) = 'pendente', 'sem centro: a AF sozinha não basta');
+select pg_temp.erro_igual($$select erp.decidir_titulo('82000000-0000-0000-0000-0000000000a1', true)$$,
+  'Você já aprovou uma fase de aprovação deste título', 'sem centro: a AF não ocupa as duas vagas');
+select pg_temp.como(:'analista');  -- AO
+select pg_temp.ok(erp.decidir_titulo('82000000-0000-0000-0000-0000000000a1', true) = 'aprovado', 'sem centro: AF + AO aprovam');
+rollback to savepoint sem_centro;
+-- sem ninguém na AF e na AO, com uma pessoa só na AD (que não preenche as duas vagas): não falta
+-- aprovador, porque a AD sozinha basta
+savepoint sem_centro_sem_ao;
+select pg_temp.sis(); delete from erp.listas_financeiro where lista in ('AF','AO'); select pg_temp.volta();
+select pg_temp.como(:'diretor');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('82000000-0000-0000-0000-0000000000a3', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-05-05', '2026-05-01', 10);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('82000000-0000-0000-0000-0000000000a3', 1, '2026-05-20', 10);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('82000000-0000-0000-0000-0000000000a3', null, null, pg_temp.nat('11.02'), 100);
+select erp.confirmar_titulo('82000000-0000-0000-0000-0000000000a3');
+select pg_temp.sis();
+select pg_temp.ok((select not falta_aprovadores from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-0000000000a3')
+                  and not exists (select 1 from erp.eventos where tipo = 'alcada_falta_aprovadores' and registro = '82000000-0000-0000-0000-0000000000a3'),
+  'sem centro: sem AF e AO, com uma pessoa na AD, não falta aprovador nem vai ao master');
+select pg_temp.volta();
+rollback to savepoint sem_centro_sem_ao;
+-- sem AO e sem AD (com a AF): falta aprovador
+savepoint sem_centro_sem_ao_ad;
+select pg_temp.sis(); delete from erp.listas_financeiro where lista in ('AO','AD') and user_id <> :'diretor'; select pg_temp.volta();
+select pg_temp.como(:'diretor');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('82000000-0000-0000-0000-0000000000a4', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-05-05', '2026-05-01', 10);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('82000000-0000-0000-0000-0000000000a4', 1, '2026-05-20', 10);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('82000000-0000-0000-0000-0000000000a4', null, null, pg_temp.nat('11.02'), 100);
+select erp.confirmar_titulo('82000000-0000-0000-0000-0000000000a4');
+select pg_temp.sis();
+select pg_temp.ok((select falta_aprovadores and vagas_sem_gente = '{AO}' from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-0000000000a4')
+                  and exists (select 1 from erp.eventos where tipo = 'alcada_falta_aprovadores' and registro = '82000000-0000-0000-0000-0000000000a4'),
+  'sem centro: sem AO e sem AD, falta aprovador e vai ao master');
+select pg_temp.volta();
+rollback to savepoint sem_centro_sem_ao_ad;
+-- sem centro, sem ninguém na AF e na AO e com a AD vazia: vai ao master, com o aviso
+savepoint sem_centro_falta;
+select pg_temp.sis(); delete from erp.listas_financeiro where lista in ('AF','AO','AD') and user_id <> :'diretor'; select pg_temp.volta();
+select pg_temp.como(:'diretor');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('82000000-0000-0000-0000-0000000000a2', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-05-05', '2026-05-01', 10);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('82000000-0000-0000-0000-0000000000a2', 1, '2026-05-20', 10);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('82000000-0000-0000-0000-0000000000a2', null, null, pg_temp.nat('11.02'), 100);
+select erp.confirmar_titulo('82000000-0000-0000-0000-0000000000a2');
+select pg_temp.sis();
+select pg_temp.ok((select falta_aprovadores from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-0000000000a2')
+                  and exists (select 1 from erp.eventos where tipo = 'alcada_falta_aprovadores' and registro = '82000000-0000-0000-0000-0000000000a2'),
+  'sem centro: sem AF, AO nem AD, vai ao master com o aviso');
+rollback to savepoint sem_centro_falta;
+-- a previsão sem centro segue a mesma regra: AO + AF, ou a AD sozinha
+savepoint prev_sem_centro;
+select pg_temp.como(:'diretor');
+insert into erp.previsoes (id, empresa_id, origem, pessoa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor) values
+  ('68000000-0000-0000-0000-0000000000a1', :'spe', 'manual', '10000000-0000-0000-0000-000000000007', null, null, pg_temp.nat('11.02'), '2026-05-01', '2026-05-20', 500);
+select pg_temp.sis();
+select pg_temp.ok((select count(*) = 1 and bool_and(centro_custo_id is null and fases = '{AF,AO}' and basta = 'AD')
+                   from erp.previsao_alcadas where previsao_id = '68000000-0000-0000-0000-0000000000a1'),
+  'sem centro: a previsão sem centro pede AF e AO, ou a AD');
+select pg_temp.volta();
+savepoint prev_sem_centro_ad;
+select pg_temp.como(:'diretor2');
+select erp.decidir_previsao('68000000-0000-0000-0000-0000000000a1', true) as r_psc \gset
+select pg_temp.sis();
+select pg_temp.ok(:'r_psc' = 'aprovado' and erp.previsao_aprovada('68000000-0000-0000-0000-0000000000a1'),
+  'sem centro: a AD sozinha aprova a previsão sem centro');
+select pg_temp.volta();
+rollback to savepoint prev_sem_centro_ad;
+select pg_temp.como(:'gestor');
+select pg_temp.ok(erp.decidir_previsao('68000000-0000-0000-0000-0000000000a1', true) = 'pendente', 'sem centro: na previsão, a AF sozinha não basta');
+select pg_temp.como(:'analista');
+select pg_temp.ok(erp.decidir_previsao('68000000-0000-0000-0000-0000000000a1', true) = 'aprovado', 'sem centro: na previsão, AF + AO aprovam');
+rollback to savepoint prev_sem_centro;
 select pg_temp.como(:'contador');
 select pg_temp.ok(erp.decidir_titulo('82000000-0000-0000-0000-000000000001', true) = 'aprovado', 'alçada: AF aprova e o título fica liberado');
 select pg_temp.como(:'analista');
@@ -1929,10 +2077,12 @@ values ('70000000-0000-0000-0000-000000000650', :'ne_vm', :'cc_mkt', pg_temp.nat
 insert into erp.documento_retencoes (documento_id, imposto, valor, orgao_id, vencimento)
 values ('70000000-0000-0000-0000-000000000650', 'iss', 50, '10000000-0000-0000-0000-000000000006', '2026-08-10');
 select erp.lancar_documento('70000000-0000-0000-0000-000000000650', array['2026-07-20']::date[]) is not null as lancou \gset
-select pg_temp.ok((select count(*) filter (where t.tipo = 'fornecedor') = 1 and count(*) filter (where t.tipo = 'imposto') = 0
+select pg_temp.ok((select count(*) filter (where t.tipo = 'fornecedor' and a.centro_custo_id is not null) = 1
+                          and count(*) filter (where t.tipo = 'imposto' and a.centro_custo_id is null and a.fases = '{AF}' and a.basta is null) = 1
+                          and count(*) = 2
                    from erp.titulo_alcadas a join erp.titulos t on t.id = a.titulo_id
                    where t.documento_id = '70000000-0000-0000-0000-000000000650'),
-  'alçada: o título do fornecedor entra; o imposto retido não');
+  'alçada: o título do fornecedor pela alçada do centro; o imposto retido pelo AF, sem centro');
 -- sem faixa que cubra o acumulado, o título não se confirma
 select pg_temp.como(:'diretor');
 delete from erp.alcadas_pagamento where ate is null;
@@ -2495,6 +2645,15 @@ select pg_temp.ok((select count(*) = 3 and bool_and(por is not null) from erp.ti
                   and exists (select 1 from erp.titulo_ajustes where titulo_id = '82000000-0000-0000-0000-000000000042'
                                and por = :'gestor' and depois ->> 'descricao' = 'brindes de janeiro'),
   'ajuste: cada mudança fica registrada com quem fez, antes e depois');
+-- o rastro do título mostra o pedido, o antes e o depois de cada campo e a volta (api.titulo_rastro, 19/11/2026)
+select pg_temp.ok((select a->>'motivo' = 'trocar a descrição e o valor' and a->>'resposta' = 'ajustado'
+                          and a->'ajustes' @> '[{"campo": "Descrição", "antes": "brindes", "depois": "brindes de janeiro"}]'
+                          and a->'ajustes' @> '[{"campo": "Valor", "antes": "1000.00", "depois": "800.00"}]'
+                          and a->'ajustes' @> '[{"campo": "1ª parcela · valor", "antes": "1000.00", "depois": "800.00"}]'
+                          and j->'historico' @> '[{"texto": "pediu alteração: trocar a descrição e o valor"}]'
+                          and j->'historico' @> '[{"texto": "reenviou para aprovação: ajustado"}]'
+                     from api.titulo_rastro('82000000-0000-0000-0000-000000000042') j, jsonb_array_elements(j->'alteracoes') a),
+  'rastro: o pedido de alteração traz o motivo, a resposta e o antes e o depois de cada campo, e entra no histórico');
 select pg_temp.ok((select string_agg(lista || ':' || (por = case lista when 'AREA' then :'gestor'::uuid else :'contador'::uuid end)::text, ',' order by fase)
                      = 'AREA:true,AF:true' from erp.titulo_aprovacoes
                     where titulo_id = '82000000-0000-0000-0000-000000000042' and rodada = 2 and origem = 'ajuste')
@@ -2646,6 +2805,7 @@ select pg_temp.ok(erp.caucao_saldo('60000000-0000-0000-0000-000000000002') = :'c
   'recusa: (antes) a nota retém caução e consome a previsão');
 select pg_temp.como(:'analista');
 select pg_temp.erro_igual(format($$do $y$ begin
+    perform pg_temp.aprova((select id from erp.titulos where documento_id = '70000000-0000-0000-0000-000000000660' and tipo = 'imposto'), %L);
     insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values
       ('83000000-0000-0000-0000-000000000660', %L, %L, '10000000-0000-0000-0000-000000000006', %L, %L, '2027-02-10', 50);
     insert into erp.quitacoes (pagamento_id, parcela_id, principal)
@@ -2653,7 +2813,7 @@ select pg_temp.erro_igual(format($$do $y$ begin
        where t.documento_id = '70000000-0000-0000-0000-000000000660' and t.tipo = 'imposto';
     perform pg_temp.como(%L);
     perform erp.decidir_titulo(%L, false, 'serviço não medido');
-  end $y$ $$, :'spe', :'conta_spe', :'ne_vm', :'cc_obra', :'diretor2', :'tit660'),
+  end $y$ $$, :'gestor', :'spe', :'conta_spe', :'ne_vm', :'cc_obra', :'diretor2', :'tit660'),
   'O título ou a nota dele já tem pagamento; o estorno do pagamento fica para o módulo de bancos',
   'recusa: com o imposto da nota já pago, a nota não se desfaz');
 select pg_temp.como(:'diretor2');
@@ -2797,20 +2957,29 @@ select pg_temp.ok((select not ve_tudo and lanca from pg_temp.acesso(:'analista',
 
 -- naturezas: liberação e bloqueio da pessoa
 insert into erp.excecoes_natureza (user_id, natureza_id, centro_custo_id, efeito) values (:'analista', pg_temp.nat('05.01.04'), :'cc_mkt', 'liberar');
+-- desde 18/11/2026 a exceção não libera natureza restrita (PJ): só o master e os designados por ele
+select pg_temp.ok(not pg_temp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'))
+                  and not pg_temp.ve_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), :'gestor'),
+  'PJ: a exceção de natureza não libera a natureza restrita');
+insert into erp.designados_pj (user_id, motivo, por) values (:'analista', 'teste', :'gestor');
 select pg_temp.ok(pg_temp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'))
-                  and not pg_temp.ve_linha(:'analista', :'ne_vm', :'cc_obra', pg_temp.nat('05.01.04'), :'gestor'),
-  'perfis: natureza restrita liberada só no centro da liberação');
+                  and pg_temp.ve_linha(:'analista', :'ne_vm', :'cc_obra', pg_temp.nat('05.01.04'), :'gestor')
+                  and not pg_temp.lanca_linha(:'analista', :'ne_vm', :'cc_obra', pg_temp.nat('05.01.04')),
+  'PJ: o designado vê o PJ em qualquer centro e lança só onde lança');
 insert into erp.excecoes_natureza (user_id, natureza_id, centro_custo_id, efeito) values (:'analista', pg_temp.nat('05.01'), null, 'bloquear');
 select pg_temp.ok(not pg_temp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.01'))
                   and not pg_temp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04')),
   'perfis: bloqueio do galho vence a liberação e vale nas naturezas de baixo');
+select pg_temp.ok(not pg_temp.ve_linha(:'analista', :'ne_vm', :'cc_obra', pg_temp.nat('05.01.04'), :'gestor'),
+  'PJ: o bloqueio da pessoa vale também para o designado');
+delete from erp.designados_pj where user_id = :'analista';
 
 -- modelo que libera natureza restrita: só nos centros do modelo
 insert into erp.atribuicoes (id, user_id, perfil_id, escopo) values ('a1000000-0000-0000-0000-000000000004', :'leitor', 'a0000000-0000-0000-0000-000000000004', 'lista');
 insert into erp.atribuicao_nucleos values ('a1000000-0000-0000-0000-000000000004', :'ne_vm', true);
-select pg_temp.ok(pg_temp.lanca_linha(:'leitor', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'))
-                  and not pg_temp.natureza_liberada(:'leitor', :'ne_vm', :'cc_obra', pg_temp.nat('05.01.04')),
-  'perfis: o modelo libera a natureza restrita só nos centros dele');
+select pg_temp.ok(not pg_temp.lanca_linha(:'leitor', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'))
+                  and not pg_temp.natureza_liberada(:'leitor', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04')),
+  'PJ: o modelo de acesso não libera a natureza restrita (sem acesso por papel, Moises 18/11/2026)');
 
 -- lista com os marcados agora + os futuros dos tipos escolhidos (foto na hora)
 insert into erp.atribuicoes (id, user_id, perfil_id, escopo) values ('a1000000-0000-0000-0000-000000000005', :'gestor', 'a0000000-0000-0000-0000-000000000003', 'lista');
@@ -2858,8 +3027,9 @@ select pg_temp.ok((select not ve_tudo and lanca from pg_temp.acesso(:'contador',
 
 -- exceção de natureza vencida deixa de valer (bloquear e liberar)
 update erp.excecoes_natureza set fim = current_date - 1 where user_id = :'analista' and efeito = 'bloquear';
+-- (a 05.01.04 é restrita: sem designação do master, a liberação da exceção não vale)
 select pg_temp.ok(pg_temp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.01'))
-                  and pg_temp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04')),
+                  and not pg_temp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04')),
   'perfis: bloqueio de natureza vencido deixa de valer');
 update erp.excecoes_natureza set fim = current_date - 1 where user_id = :'analista' and efeito = 'liberar';
 select pg_temp.ok(not pg_temp.lanca_linha(:'analista', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04')),
@@ -2986,10 +3156,16 @@ select pg_temp.ok((select situacao = 'cancelada' from erp.mudancas_acesso where 
 select erp.pedir_mudanca_acesso('naturezas', 'alterar', jsonb_build_object('id', pg_temp.nat('05.01.04'), 'restrita', false), 'Agência deixa de ser restrita') as m_res \gset
 select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('naturezas', 'alterar', jsonb_build_object('id', %L, 'nome', 'x'), 'x')$$, pg_temp.nat('05.01.04')),
   'O pedido de natureza só muda a marca restrita e o galho', 'acesso: o pedido de natureza não muda outras colunas');
+-- desde 18/11/2026 a marca restrita (o que é PJ) só muda com o voto do master
+select pg_temp.ok((select aprovacao = 'master' and minimo = 1 from erp.mudancas_acesso where id = :'m_res'),
+  'PJ: o pedido que muda a marca restrita vai ao master');
 select pg_temp.como(:'leitor');
 select pg_temp.erro_igual(format($$select erp.decidir_mudanca_acesso(%L, true)$$, :'m_res'),
-  'Quem ganha acesso com a mudança não a aprova', 'acesso: quem tem acesso a algum centro não aprova tirar a marca restrita');
+  'Só o master decide este pedido', 'PJ: aprovador de acesso não decide a marca restrita');
 select pg_temp.como(:'diretor2');
+select pg_temp.erro_igual(format($$select erp.decidir_mudanca_acesso(%L, true)$$, :'m_res'),
+  'Só o master decide este pedido', 'PJ: nem outro diretor decide a marca restrita');
+select pg_temp.como(:'diretor');
 select erp.decidir_mudanca_acesso(:'m_res', true);
 select pg_temp.ok(not (select restrita from erp.naturezas where codigo = '05.01.04'), 'acesso: a marca restrita muda pelo pedido aprovado');
 select pg_temp.como(null);
@@ -3392,7 +3568,9 @@ insert into erp.perfil_centros values
   ('a1000000-0000-0000-0000-000000000001', :'cc_mkt', 'leitor'), ('a1000000-0000-0000-0000-000000000002', :'cc_mkt', 'lancador_restrito'),
   ('a1000000-0000-0000-0000-000000000003', :'cc_obra', 'lancador'), ('a1000000-0000-0000-0000-000000000004', :'cc_mkt', 'lancador'),
   ('a1000000-0000-0000-0000-000000000009', :'cc_mkt', 'lancador');
+-- o modelo com a natureza PJ não libera o PJ (Moises, 18/11/2026): quem vê o PJ é o designado pelo master
 insert into erp.perfil_naturezas values ('a1000000-0000-0000-0000-000000000004', pg_temp.nat('06.07'));
+insert into erp.designados_pj (user_id, motivo, por) values (:'u4', 'Lança a folha PJ do Marketing', :'u7');
 insert into erp.atribuicoes (id, user_id, perfil_id, escopo) values
   ('a2000000-0000-0000-0000-000000000001', :'u1', 'a1000000-0000-0000-0000-000000000001', 'todos'),
   ('a2000000-0000-0000-0000-000000000002', :'u2', 'a1000000-0000-0000-0000-000000000002', 'todos'),
@@ -3428,8 +3606,8 @@ select pg_temp.tit(:'u2', :'ta', :'incorp', 1000, jsonb_build_array(jsonb_build_
 select pg_temp.tit(:'u9', :'tb', :'incorp', 40000, jsonb_build_array(jsonb_build_object('n', :'ne_corp', 'c', :'cc_mkt', 'nat', '05.01.04', 'p', 100)));
 select pg_temp.tit(:'u3', :'tc', :'spe', 3000, jsonb_build_array(jsonb_build_object('n', :'ne_vm', 'c', :'cc_obra', 'nat', '04.01', 'p', 100)));
 select pg_temp.tit(:'u4', :'td', :'incorp', 20000, jsonb_build_array(jsonb_build_object('n', :'ne_corp', 'c', :'cc_mkt', 'nat', '06.07', 'p', 100)));
-select pg_temp.tit(:'u4', :'te', :'incorp', 2000, jsonb_build_array(
-  jsonb_build_object('n', :'ne_corp', 'c', :'cc_mkt', 'nat', '05.01.04', 'p', 50), jsonb_build_object('n', :'ne_corp', 'c', :'cc_mkt', 'nat', '06.07', 'p', 50)));
+-- o E já misturou Marketing e PJ; desde 18/11/2026 o PJ sobe sozinho, então o E é só PJ
+select pg_temp.tit(:'u4', :'te', :'incorp', 2000, jsonb_build_array(jsonb_build_object('n', :'ne_corp', 'c', :'cc_mkt', 'nat', '06.07', 'p', 100)));
 select pg_temp.ok(true, 'acesso: cada um lança o título nas linhas em que lança');
 
 create function pg_temp.vejo_tits() returns text language sql as $$
@@ -3491,12 +3669,31 @@ select pg_temp.ok(exists (select 1 from erp.lancamentos where titulo_id = :'ta')
 select pg_temp.como(:'u4');
 select pg_temp.ok(exists (select 1 from erp.lancamentos where titulo_id = :'td'), 'acesso: com o PJ liberado, vê o PJ no livro');
 select pg_temp.como(:'u7');
--- desde 18/11/2026 a Obra (sem gestor) também tem alçada, pelas faixas gerais: a AD vê o C, em que aprova
-select pg_temp.ok(pg_temp.vejo_tits() = 'BC', 'acesso: quem aprova na AD vê os títulos das alçadas dele, e só eles (vê ' || pg_temp.vejo_tits() || ')');
+-- desde 18/11/2026 a Obra (sem gestor) também tem alçada, pelas faixas gerais (a AD vê o C), e a AD ocupa
+-- as vagas do AF e do AO (vê o A); o D é PJ e só o master e os designados o veem e aprovam (Moises,
+-- 18/11/2026); o E, que ninguém confirmou, fica de fora
+select pg_temp.ok(pg_temp.vejo_tits() = 'ABC', 'acesso: quem aprova na AD vê os títulos das alçadas dele, e só eles, sem o PJ (vê ' || pg_temp.vejo_tits() || ')');
+select pg_temp.sis();
+select pg_temp.ok((select fases = '{PJ}' and centro_custo_id is null from erp.titulo_alcadas where titulo_id = :'td')
+                  and not exists (select 1 from erp.titulo_alcadas where titulo_id = :'td' and fases <> '{PJ}'),
+  'PJ: o título PJ tem uma alçada só, a vaga PJ, sem as vagas de papel');
+select pg_temp.volta(); select pg_temp.como(:'u7');
+select pg_temp.erro_igual(format($$select erp.decidir_titulo(%L, true)$$, :'td'), 'Esta fase de aprovação é de quem está em PJ',
+  'PJ: a AD não aprova o título PJ');
+select pg_temp.como(:'u1');
+select pg_temp.ok(not erp.aprovo_titulo(:'td'), 'PJ: quem não vê o PJ não é aprovador dele');
+-- S-062: sem a alçada do A, a AD deixa de vê-lo e ele vai para a linha sem detalhe; o D (PJ) nem entra
+-- no acumulado do centro (Moises, 18/11/2026)
+savepoint s062;
+select pg_temp.sis(); set local session_replication_role = replica;
+delete from erp.titulo_alcadas where titulo_id in (:'ta', :'td');
+set local session_replication_role = origin; select pg_temp.volta();
+select pg_temp.como(:'u7');
 select pg_temp.ok((select count(*) = 2 and count(*) filter (where titulo_id = :'tb') = 1
-                     and bool_or(titulo_id is null and pessoa = 'Outros 2 títulos (sem acesso)' and valor_no_centro = 21000 and empresa_id is null)
+                     and bool_or(titulo_id is null and pessoa = 'Outros 1 títulos (sem acesso)' and valor_no_centro = 1000 and empresa_id is null)
                    from erp.titulos_do_acumulado(:'tb')),
   'S-062: no acumulado, quem aprova vê em detalhe o que vê e o resto numa linha só, com a soma');
+rollback to savepoint s062;
 select pg_temp.como(:'u3');
 select pg_temp.erro_igual(format($$select erp.pedir_reclassificacao(%L, %L, 'x')$$, pg_temp.nat('05.01.04'), pg_temp.nat('05.01.02')),
   'O pedido leva lançamentos fora do seu acesso (núcleo, centro ou natureza); filtre pelo que você lança',
@@ -3522,9 +3719,12 @@ select pg_temp.ok(not exists (select 1 from erp.grupo_sucessao) and not exists (
 select pg_temp.erro_igual(format($$select erp.efetivar_sucessao_master(%L)$$, :'suc_v'),
   'Só o grupo de sucessão ou o indicado efetivam a sucessão', 'acesso: quem está fora do grupo não efetiva a sucessão');
 -- pagamento carimbado no Marketing que quita o título PJ: some para quem não vê o PJ
-select pg_temp.como(:'gestor'); select erp.decidir_titulo(:'td', true);
+select pg_temp.como(:'gestor');
+select pg_temp.erro_igual(format($$select erp.decidir_titulo(%L, true)$$, :'td'), 'Esta fase de aprovação é de quem está em PJ',
+  'PJ: o gestor do centro não aprova o título PJ');
+select pg_temp.como(:'diretor');
+select pg_temp.ok(erp.decidir_titulo(:'td', true) = 'aprovado', 'PJ: o master aprova o título PJ');
 select pg_temp.sis(); insert into erp.listas_financeiro (lista, user_id) values ('AF', :'contador') on conflict do nothing; select pg_temp.volta();
-select pg_temp.como(:'contador'); select erp.decidir_titulo(:'td', true);
 select pg_temp.como(:'u4');
 insert into erp.pagamentos (id, empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor) values
   ('c2000000-0000-0000-0000-0000000000d1', :'incorp', :'conta_inc', '10000000-0000-0000-0000-0000000000c1', :'ne_corp', :'cc_mkt', '2027-10-10', 20000);
@@ -3534,6 +3734,9 @@ select pg_temp.como(:'u9');
 select pg_temp.ok(not exists (select 1 from erp.pagamentos where id = 'c2000000-0000-0000-0000-0000000000d1')
                   and not exists (select 1 from erp.quitacoes where pagamento_id = 'c2000000-0000-0000-0000-0000000000d1'),
   'acesso: o pagamento que quita título PJ some para quem vê o centro mas não o PJ');
+select pg_temp.como(:'u7');
+select pg_temp.ok(not exists (select 1 from erp.pagamentos where id = 'c2000000-0000-0000-0000-0000000000d1'),
+  'PJ: nem o financeiro (AD) vê o pagamento que quita título PJ');
 -- S-093: cada trava das políticas com o seu teste
 select pg_temp.como(:'u7');
 select pg_temp.ok(not erp.vejo(null, null, pg_temp.nat('06.07'), null) and erp.vejo(null, null, pg_temp.nat('05.01.04'), null),
@@ -3672,8 +3875,12 @@ select pg_temp.ok(true, 'S-090: o master muda a alçada');
 -- quem lançou o pagamento continua vendo, mesmo sem o perfil
 select pg_temp.sis(); delete from erp.atribuicoes where user_id = :'u4'; delete from erp.listas_financeiro where user_id = :'u4'; select pg_temp.volta();
 select pg_temp.como(:'u4');
-select pg_temp.ok(exists (select 1 from erp.pagamentos where id = 'c2000000-0000-0000-0000-0000000000d1') and pg_temp.vejo_tits() = '',
-  'acesso: sem o perfil, quem lançou o pagamento ainda o vê, e não vê mais os títulos');
+select pg_temp.ok(exists (select 1 from erp.pagamentos where id = 'c2000000-0000-0000-0000-0000000000d1') and pg_temp.vejo_tits() = 'DE',
+  'acesso: sem o perfil, quem lançou o pagamento ainda o vê, e só vê os títulos PJ (designado pelo master)');
+select pg_temp.sis(); delete from erp.designados_pj where user_id = :'u4'; select pg_temp.volta();
+select pg_temp.como(:'u4');
+select pg_temp.ok(not exists (select 1 from erp.pagamentos where id = 'c2000000-0000-0000-0000-0000000000d1') and pg_temp.vejo_tits() = '',
+  'PJ: retirado da designação, nem quem lançou vê o pagamento que quita título PJ');
 select pg_temp.como(null);
 rollback;
 
@@ -4013,6 +4220,22 @@ select pg_temp.erro_igual($$select erp.decidir_titulo('84000000-0000-0000-0000-0
   'Você já aprovou uma fase de aprovação deste título', 'alçada por centro: em paralelo, a mesma pessoa não aprova duas vagas');
 select pg_temp.como(:'contador');
 select pg_temp.ok(erp.decidir_titulo('84000000-0000-0000-0000-000000000002', true) = 'aprovado', 'alçada por centro: em paralelo, com as duas vagas, o título fica aprovado');
+-- em paralelo, a AD aprova na vaga dela, não na da AF que ela também ocupa (18/11/2026)
+savepoint par_ad;
+select pg_temp.sis();
+insert into erp.listas_financeiro (lista, user_id) values ('AD', :'diretor2') on conflict do nothing;
+update erp.alcadas_pagamento set fases = '{AF,AD}' where id = '86000000-0000-0000-0000-000000000002';
+select pg_temp.volta();
+select pg_temp.como(:'analista');
+select pg_temp.tit('84000000-0000-0000-0000-0000000000a0', :'cc_mkt', '05.01.04', 3000);
+select pg_temp.como(:'diretor2');
+select erp.decidir_titulo('84000000-0000-0000-0000-0000000000a0', true) as r_pad \gset
+select pg_temp.ok(:'r_pad' = 'pendente'
+                  and exists (select 1 from erp.titulo_aprovacoes where titulo_id = '84000000-0000-0000-0000-0000000000a0' and fase = 2 and lista = 'AD' and por = :'diretor2'),
+  'alçada por centro: em paralelo, a AD aprova a vaga dela antes da vaga da AF');
+select pg_temp.como(:'contador');
+select pg_temp.ok(erp.decidir_titulo('84000000-0000-0000-0000-0000000000a0', true) = 'aprovado', 'alçada por centro: e a AF fecha');
+rollback to savepoint par_ad;
 -- em sequência, com o diretor da área
 select pg_temp.como(:'analista');
 select pg_temp.tit('84000000-0000-0000-0000-000000000005', :'cc_mkt', '05.01.04', 150000);
@@ -4555,9 +4778,10 @@ select pg_temp.volta();
 create function pg_temp.lib_d(u uuid, n uuid, c uuid, nat uuid, d uuid, out lib boolean, out lanca boolean) language plpgsql as $$
 declare r text := pg_temp.dono_ini();
 begin lib := erp.natureza_liberada(u, n, c, nat, d); lanca := erp.lanca_linha(u, n, c, null, d); perform set_config('role', r, false); end $$;
-select pg_temp.ok((select lib and lanca from pg_temp.lib_d(:'analista2', :'ne1', :'cc_mkt', pg_temp.nat('05.01.02'), :'dv_pdv'))
+-- desde 18/11/2026 o modelo não libera a restrita (PJ, só o master e os designados); o lançar segue a divisão
+select pg_temp.ok((select not lib and lanca from pg_temp.lib_d(:'analista2', :'ne1', :'cc_mkt', pg_temp.nat('05.01.02'), :'dv_pdv'))
                   and (select not lib and not lanca from pg_temp.lib_d(:'analista2', :'ne1', :'cc_mkt', pg_temp.nat('05.01.02'), :'dv_onl')),
-  'divisão: a restrita liberada pelo modelo e o lançar valem só nas divisões que ele dá (S-102)');
+  'divisão: o lançar vale só nas divisões que o modelo dá, e o modelo não libera a restrita (S-102)');
 select pg_temp.sis(); delete from erp.perfil_naturezas where perfil_id = :'m_pdv'; update erp.naturezas set restrita = false where codigo = '05.01.02'; select pg_temp.volta();
 -- exceção da divisão vence a do centro
 select pg_temp.sis();
@@ -5660,8 +5884,13 @@ select pg_temp.como(:'bi1');
 select pg_temp.ok(pg_temp.bi_soma() = -1000 and not exists (select 1 from bi.f_livro where restrita),
   'bi: quem vê o Marketing sem a natureza PJ soma só o Marketing, sem o PJ (soma ' || pg_temp.bi_soma() || ')');
 select pg_temp.como(:'bi2');
+select pg_temp.ok(pg_temp.bi_soma() = -1000 and not exists (select 1 from bi.f_livro where restrita),
+  'bi: o modelo com a natureza PJ não mostra o PJ (só o master e os designados; soma ' || pg_temp.bi_soma() || ')');
+select pg_temp.como(null);
+insert into erp.designados_pj (user_id, motivo, por) values (:'bi2', 'BI do PJ', :'diretor');
+select pg_temp.como(:'bi2');
 select pg_temp.ok(pg_temp.bi_soma() = -9000 and (select count(*) from bi.f_livro where restrita and competencia = '2031-01-01') = 1,
-  'bi: com a natureza PJ liberada, vê o PJ do centro somado no mês (soma ' || pg_temp.bi_soma() || ')');
+  'bi: designado pelo master, vê o PJ do centro somado no mês (soma ' || pg_temp.bi_soma() || ')');
 select pg_temp.como(:'bi3');
 select pg_temp.ok(pg_temp.bi_soma() = -2000, 'bi: quem vê a Obra não soma o Marketing (soma ' || pg_temp.bi_soma() || ')');
 select pg_temp.como(:'bi4');
@@ -6696,6 +6925,13 @@ select pg_temp.login('{"role":"authenticated","email":"fulano@bkm.com.br","app_m
 select pg_temp.ok(not exists (select 1 from pagina.prv_apagar() where titulo_sienge = 7202),
   'página PRV: linha já apagada no Sienge sai da página');
 rollback to savepoint pagina_apagada;
+savepoint pagina_pj;
+select pg_temp.sis();
+update erp.naturezas set restrita = true where codigo = '05.01.04';
+select pg_temp.login('{"role":"authenticated","email":"fulano@bkm.com.br","app_metadata":{"provider":"google"}}');
+select pg_temp.ok(not exists (select 1 from pagina.prv_apagar() where titulo_sienge = 7202),
+  'página PRV: a PRV de natureza que virou PJ sai da página');
+rollback to savepoint pagina_pj;
 select pg_temp.login('{"role":"authenticated","email":"fulano@bkmxcom.br","app_metadata":{"provider":"google"}}');
 select pg_temp.erro_igual($$select * from pagina.prv_apagar()$$, 'Entre com a conta Google da BKM', 'página PRV: domínio parecido (bkmxcom.br) não entra');
 select pg_temp.login('{"role":"authenticated","email":"fulano@bkm-com.br","app_metadata":{"provider":"google"}}');
@@ -6824,6 +7060,569 @@ select pg_temp.erro_igual($$select erp.sienge_registrar_aviso('a1000000-0000-000
 select pg_temp.erro_igual($$select * from erp.sienge_pegar_aviso()$$, 'Só o sistema processa aviso do Sienge', 'aviso: fora do sistema, pegar é recusado');
 select pg_temp.como(null);
 rollback;
+
+\echo '# PJ: só o master e quem ele designar (Moises, 18/11/2026)'
+begin;
+select pg_temp.sis();
+update erp.naturezas set restrita = true where codigo = '05.01.03';
+insert into erp.regras_notificacao (tipo, destino, user_id, email, whatsapp) values ('alcada_falta_aprovadores', 'pessoa', :'gestor', false, false);
+select pg_temp.volta();
+-- designar: só o master, com motivo e histórico
+select pg_temp.como(:'diretor2');
+select pg_temp.erro_igual(format($$select erp.designar_pj(%L, 'x')$$, :'analista'), 'Só o master designa quem vê o PJ',
+  'PJ: quem não é master não designa');
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual(format($$select erp.designar_pj(%L, ' ')$$, :'analista'), 'Designar para o PJ precisa de motivo',
+  'PJ: designar sem motivo é recusado');
+select erp.designar_pj(:'analista', 'Lança a folha PJ');
+select pg_temp.ok(exists (select 1 from erp.designados_pj where user_id = :'analista')
+                  and exists (select 1 from erp.designados_pj_historico where user_id = :'analista' and acao = 'designado' and por = :'diretor'),
+  'PJ: o master designa, com o histórico');
+select pg_temp.como(:'gestor');
+select pg_temp.ok(not exists (select 1 from erp.designados_pj) and not exists (select 1 from erp.designados_pj_historico),
+  'PJ: quem não é master nem o designado não vê a lista');
+select pg_temp.falha(format($$insert into erp.designados_pj (user_id, motivo, por) values (%L, 'x', %L)$$, :'gestor', :'gestor'),
+  'PJ: ninguém se designa pela tabela');
+-- a previsão PJ: lançada pelo designado, alçada só da vaga PJ
+select pg_temp.como(:'analista');
+insert into erp.previsoes (id, empresa_id, origem, pessoa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor) values
+  ('6a000000-0000-0000-0000-0000000000a1', :'spe', 'manual', null, :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.03'), '2026-12-01', '2026-12-10', 700),
+  ('6a000000-0000-0000-0000-0000000000a2', :'spe', 'manual', null, :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2026-12-01', '2026-12-10', 30);
+select pg_temp.ok(exists (select 1 from erp.previsoes where id = '6a000000-0000-0000-0000-0000000000a1'), 'PJ: o designado lança e vê a previsão PJ');
+select pg_temp.sis();
+select pg_temp.ok((select count(*) = 1 and bool_and(fases = '{PJ}' and centro_custo_id is null and not falta_aprovadores)
+                   from erp.previsao_alcadas where previsao_id = '6a000000-0000-0000-0000-0000000000a1'),
+  'PJ: a previsão PJ tem só a vaga PJ (o master aprova)');
+select pg_temp.ok(erp.registro_pj('previsoes', '6a000000-0000-0000-0000-0000000000a1') and not erp.registro_pj('previsoes', '6a000000-0000-0000-0000-0000000000a2')
+                  and not erp.registro_pj('titulos', 'x'),
+  'PJ: o evento sabe se o registro é PJ');
+select pg_temp.volta();
+select pg_temp.como(:'gestor');
+select pg_temp.ok(not exists (select 1 from erp.previsoes where id = '6a000000-0000-0000-0000-0000000000a1'),
+  'PJ: o AF não vê a previsão PJ');
+select pg_temp.erro_igual($$select erp.decidir_previsao('6a000000-0000-0000-0000-0000000000a1', true)$$, 'Previsão não existe',
+  'PJ: o AF não aprova a previsão PJ');
+select pg_temp.como(:'diretor2');
+select pg_temp.ok(not exists (select 1 from erp.previsoes where id = '6a000000-0000-0000-0000-0000000000a1'),
+  'PJ: nem a AD vê a previsão PJ');
+-- o aviso: o da previsão PJ não vai ao AF; o mesmo aviso de outra previsão vai
+select pg_temp.sis();
+select erp.registrar_evento('alcada_falta_aprovadores', 'previsoes', '6a000000-0000-0000-0000-0000000000a1', :'ne_vm', :'cc_mkt', '{}');
+select erp.registrar_evento('alcada_falta_aprovadores', 'previsoes', '6a000000-0000-0000-0000-0000000000a2', :'ne_vm', :'cc_mkt', '{}');
+select max(id) filter (where registro = '6a000000-0000-0000-0000-0000000000a1') as ev_pj,
+       max(id) filter (where registro = '6a000000-0000-0000-0000-0000000000a2') as ev_comum from erp.eventos \gset
+select pg_temp.ok(exists (select 1 from erp.notificacoes n where n.evento_id = :'ev_comum' and not erp.ve_pj(n.user_id))
+                  and not exists (select 1 from erp.notificacoes n where n.evento_id = :'ev_pj' and not erp.ve_pj(n.user_id)),
+  'PJ: o aviso de título ou previsão PJ só vai a quem vê o PJ');
+-- o PJ fica fora do acumulado: a previsão PJ não soma no acumulado das outras
+select erp._previsoes_no_acumulado(:'spe', null, '2026-12-01', :'cc_mkt', null, :'ne_vm', '6a000000-0000-0000-0000-0000000000a2') as acum_sem \gset
+update erp.naturezas set restrita = false where codigo = '05.01.03';
+select pg_temp.ok(erp._previsoes_no_acumulado(:'spe', null, '2026-12-01', :'cc_mkt', null, :'ne_vm', '6a000000-0000-0000-0000-0000000000a2') = :'acum_sem'::numeric + 700,
+  'PJ: a previsão PJ não entra no acumulado do mês (sem a marca, entraria)');
+update erp.naturezas set restrita = true where codigo = '05.01.03';
+-- o designado vê o PJ mesmo em centro em que não tem acesso
+savepoint pj_sem_acesso;
+insert into erp.designados_pj (user_id, motivo, por) values (:'ti', 'Teste', :'diretor');
+select pg_temp.ok(not erp.ve_linha(:'ti', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), :'diretor')
+                  and erp.ve_linha(:'ti', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.03'), :'diretor'),
+  'PJ: o designado vê o PJ num centro em que não tem acesso, e só o PJ');
+rollback to savepoint pj_sem_acesso;
+-- designado inativo ou só da sucessão não vê o PJ
+savepoint pj_inativo;
+update erp.usuarios set ativo = false where id = :'analista';
+select pg_temp.ok(not erp.ve_pj(:'analista'), 'PJ: designado inativo não vê o PJ');
+rollback to savepoint pj_inativo;
+savepoint pj_sucessao;
+set local session_replication_role = replica;
+update erp.usuarios set so_sucessao = true, papel = 'leitura' where id = :'analista';
+set local session_replication_role = origin;
+select pg_temp.ok(not erp.ve_pj(:'analista'), 'PJ: designado só da sucessão não vê o PJ');
+rollback to savepoint pj_sucessao;
+select pg_temp.ok(erp.ve_pj(:'analista'), 'PJ: designado ativo vê o PJ');
+-- o pagamento de PJ sobe sozinho: o rateio não mistura PJ com outra natureza (Moises, 18/11/2026)
+select pg_temp.sis();
+savepoint pj_sozinho;
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('6b000000-0000-0000-0000-000000000001', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-12-01', '2026-12-01', 100);
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto) values
+  ('6b000000-0000-0000-0000-000000000002', :'spe', '10000000-0000-0000-0000-000000000007', 'recibo', 'PJ-1', '2026-12-01', '2026-12-01', 100);
+insert into erp.compromissos (id, empresa_id, tipo, pessoa_id, descricao, inicio, valor_total) values
+  ('6b000000-0000-0000-0000-000000000003', :'spe', 'avulsa', '10000000-0000-0000-0000-000000000007', 'Teste PJ', '2026-12-01', 100);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('6b000000-0000-0000-0000-000000000001', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 50);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('6b000000-0000-0000-0000-000000000002', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 50);
+insert into erp.compromisso_rateios (compromisso_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('6b000000-0000-0000-0000-000000000003', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 50);
+select pg_temp.erro_igual(format($$insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+  values ('6b000000-0000-0000-0000-000000000001', %L, %L, pg_temp.nat('05.01.03'), 50)$$, :'ne_vm', :'cc_mkt'),
+  'O pagamento de PJ sobe sozinho: o rateio não mistura natureza PJ com outra natureza', 'PJ: o título não mistura linha PJ com linha comum');
+select pg_temp.erro_igual(format($$insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+  values ('6b000000-0000-0000-0000-000000000002', %L, %L, pg_temp.nat('05.01.03'), 50)$$, :'ne_vm', :'cc_mkt'),
+  'O pagamento de PJ sobe sozinho: o rateio não mistura natureza PJ com outra natureza', 'PJ: a nota não mistura linha PJ com linha comum');
+select pg_temp.erro_igual(format($$insert into erp.compromisso_rateios (compromisso_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+  values ('6b000000-0000-0000-0000-000000000003', %L, %L, pg_temp.nat('05.01.03'), 50)$$, :'ne_vm', :'cc_mkt'),
+  'O pagamento de PJ sobe sozinho: o rateio não mistura natureza PJ com outra natureza', 'PJ: o contrato não mistura linha PJ com linha comum');
+-- trocar a natureza da linha comum para PJ, com outra linha comum no título, também é recusado
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('6b000000-0000-0000-0000-000000000001', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), 50);
+select pg_temp.erro_igual($$update erp.titulo_rateios set natureza_id = pg_temp.nat('05.01.03') where titulo_id = '6b000000-0000-0000-0000-000000000001' and natureza_id = pg_temp.nat('04.01')$$,
+  'O pagamento de PJ sobe sozinho: o rateio não mistura natureza PJ com outra natureza', 'PJ: trocar uma linha para PJ ao lado de linha comum é recusado');
+-- levar uma linha PJ de um pai só PJ para um pai com linha comum também é recusado (revisão do #86)
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('6b000000-0000-0000-0000-000000000004', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-12-01', '2026-12-01', 100);
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto) values
+  ('6b000000-0000-0000-0000-000000000005', :'spe', '10000000-0000-0000-0000-000000000007', 'recibo', 'PJ-2', '2026-12-01', '2026-12-01', 100);
+insert into erp.compromissos (id, empresa_id, tipo, pessoa_id, descricao, inicio, valor_total) values
+  ('6b000000-0000-0000-0000-000000000006', :'spe', 'avulsa', '10000000-0000-0000-0000-000000000007', 'Teste PJ 2', '2026-12-01', 100);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('6b000000-0000-0000-0000-000000000004', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.03'), 100);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('6b000000-0000-0000-0000-000000000005', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.03'), 100);
+insert into erp.compromisso_rateios (compromisso_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('6b000000-0000-0000-0000-000000000006', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.03'), 100);
+select pg_temp.erro_igual($$update erp.titulo_rateios set titulo_id = '6b000000-0000-0000-0000-000000000001' where titulo_id = '6b000000-0000-0000-0000-000000000004'$$,
+  'O pagamento de PJ sobe sozinho: o rateio não mistura natureza PJ com outra natureza', 'PJ: levar a linha PJ para um título com linha comum é recusado');
+select pg_temp.erro_igual($$update erp.documento_rateios set documento_id = '6b000000-0000-0000-0000-000000000002' where documento_id = '6b000000-0000-0000-0000-000000000005'$$,
+  'O pagamento de PJ sobe sozinho: o rateio não mistura natureza PJ com outra natureza', 'PJ: levar a linha PJ para uma nota com linha comum é recusado');
+select pg_temp.erro_igual($$update erp.compromisso_rateios set compromisso_id = '6b000000-0000-0000-0000-000000000003' where compromisso_id = '6b000000-0000-0000-0000-000000000006'$$,
+  'O pagamento de PJ sobe sozinho: o rateio não mistura natureza PJ com outra natureza', 'PJ: levar a linha PJ para um contrato com linha comum é recusado');
+-- só PJ, em mais de uma linha, passa
+delete from erp.titulo_rateios where titulo_id = '6b000000-0000-0000-0000-000000000001';
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('6b000000-0000-0000-0000-000000000001', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.03'), 50),
+  ('6b000000-0000-0000-0000-000000000001', :'ne_vm', :'cc_obra', pg_temp.nat('05.01.03'), 50);
+select pg_temp.ok((select count(*) from erp.titulo_rateios where titulo_id = '6b000000-0000-0000-0000-000000000001') = 2,
+  'PJ: título só de PJ, em mais de uma linha, passa');
+rollback to savepoint pj_sozinho;
+-- aprovada pelo master, a previsão PJ não vira linha PRV no Sienge
+select pg_temp.volta(); select pg_temp.como(:'diretor');
+select pg_temp.ok(erp.decidir_previsao('6a000000-0000-0000-0000-0000000000a1', true) = 'aprovado', 'PJ: o master aprova a previsão PJ');
+select pg_temp.sis();
+select erp.sienge_enfileirar();
+select pg_temp.ok(not exists (select 1 from erp.sienge_previsoes where previsao_id = '6a000000-0000-0000-0000-0000000000a1'),
+  'PJ: a previsão PJ não vai ao Sienge como linha PRV');
+select pg_temp.volta();
+-- retirado, o designado deixa de ver
+select pg_temp.como(:'diretor2');
+select pg_temp.erro_igual(format($$select erp.retirar_pj(%L, 'x')$$, :'analista'), 'Só o master retira quem vê o PJ',
+  'PJ: quem não é master não retira');
+select pg_temp.como(:'diretor');
+select erp.retirar_pj(:'analista', 'Mudou de área');
+select pg_temp.como(:'analista');
+select pg_temp.ok(not exists (select 1 from erp.previsoes where id = '6a000000-0000-0000-0000-0000000000a1'),
+  'PJ: retirado, deixa de ver o PJ');
+select pg_temp.sis();
+select pg_temp.ok((select count(*) = 2 from erp.designados_pj_historico where user_id = :'analista'), 'PJ: designar e retirar ficam no histórico');
+-- mudar a marca restrita: sem o master, nem pelo pedido dispensado
+update erp.regras_mudanca_acesso set exige_aprovacao = false where tabela = 'naturezas';
+select pg_temp.volta();
+select pg_temp.como(:'ti');
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('naturezas', 'alterar', jsonb_build_object('id', %L, 'restrita', false), 'x')$$, pg_temp.nat('05.01.03')),
+  'Só o master muda o que é PJ (a marca restrita da natureza)', 'PJ: com o pedido de natureza dispensado, a marca restrita continua só com o master');
+select pg_temp.erro_igual(format($$select erp.pedir_mudanca_acesso('naturezas', 'alterar', jsonb_build_object('id', %L, 'mae_id', %L), 'x')$$,
+                                  pg_temp.nat('05.01.04'), pg_temp.nat('05.01.03')),
+  'Só o master muda o que é PJ (a marca restrita da natureza)', 'PJ: levar uma natureza para dentro do galho PJ também só com o master');
+select pg_temp.como(null);
+rollback;
+
+-- ---------------------------------------------------------------------
+\echo '# api das telas (esquema api, 18/11/2026)'
+-- A tela vê exatamente o que o RLS do erp deixa: compara, para cada usuário, o que a função da API devolve com
+-- o que a mesma pessoa lê direto nas tabelas.
+select pg_temp.como(null);
+begin;
+-- um título com natureza restrita (como a folha PJ), lançado pelo master, que os outros não veem
+select pg_temp.como(:'diretor');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('8a000000-0000-0000-0000-000000000001', :'spe', 'avulso', '10000000-0000-0000-0000-000000000005', '2026-11-01', '2026-11-01', 777);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('8a000000-0000-0000-0000-000000000001', 1, '2026-11-30', 777);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('8a000000-0000-0000-0000-000000000001', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), 100);
+select pg_temp.sis(); update erp.naturezas set restrita = true where codigo = '04.01'; select pg_temp.volta();
+create temp table api_usuarios as select unnest(array[:'diretor', :'diretor2', :'gestor', :'analista', :'leitor', :'contador', :'analista2', :'ti']::text[]) u;
+grant select on api_usuarios to authenticated;
+do $$
+declare r record; v_api bigint; v_erp bigint;
+begin
+  for r in select u from api_usuarios loop
+    perform pg_temp.como(r.u);
+    select count(*) into v_api from api.titulos();
+    select count(*) into v_erp from erp.titulos where sentido = 'pagar';
+    if v_api <> v_erp or exists (select id from api.titulos() except select id from erp.titulos where sentido = 'pagar') then
+      raise exception 'FALHOU: api.titulos difere do RLS para %', r.u;
+    end if;
+    if exists (select id from api.previsoes() except select id from erp.previsoes where sentido = 'pagar')
+       or exists (select id from erp.previsoes where sentido = 'pagar' except select id from api.previsoes()) then
+      raise exception 'FALHOU: api.previsoes difere do RLS para %', r.u;
+    end if;
+    if exists (select id from api.contratos() except select id from erp.compromissos where tipo in ('contrato','assinatura'))
+       or exists (select id from erp.compromissos where tipo in ('contrato','assinatura') except select id from api.contratos()) then
+      raise exception 'FALHOU: api.contratos difere do RLS para %', r.u;
+    end if;
+  end loop;
+  perform pg_temp.como(null);
+end $$;
+select pg_temp.ok(true, 'api: títulos, previsões e contratos são, para cada usuário, os mesmos que o RLS do erp deixa ler');
+select pg_temp.como(:'diretor');
+select pg_temp.ok((select count(*) from api.titulos()) >= 5 and (select count(*) from api.previsoes()) >= 3
+                  and (select count(*) from api.contratos()) >= 2 and (select count(distinct etapa) from api.titulos()) >= 3,
+  'api: a comparação acima não é vazia (o master vê títulos em várias etapas, previsões e contratos)');
+insert into erp.previsoes (id, empresa_id, origem, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+values ('8a000000-0000-0000-0000-0000000000a1', :'spe', 'manual', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2026-12-01', '2026-12-10', 55);
+select pg_temp.ok((select aprovacao = 'esperando' from api.previsoes() where id = '8a000000-0000-0000-0000-0000000000a1')
+                  or not exists (select 1 from erp.previsao_alcadas where previsao_id = '8a000000-0000-0000-0000-0000000000a1'),
+  'api: previsão manual com alçada aparece esperando aprovação');
+select erp.decidir_previsao('8a000000-0000-0000-0000-0000000000a1', true)
+ where exists (select 1 from erp.previsao_alcadas where previsao_id = '8a000000-0000-0000-0000-0000000000a1');
+select pg_temp.ok((select aprovacao = 'aprovada' and saldo = 55 from api.previsoes() where id = '8a000000-0000-0000-0000-0000000000a1'),
+  'api: aprovada pelo master, a previsão aparece aprovada, com o saldo');
+select pg_temp.ok((select etapa = 'rascunho' and valor = 777 and fornecedor = 'Construtora Alfa' and meu and parcelas = 1
+                          and areas = 'Obra' and vencimento = '2026-11-30' from api.titulos() where id = '8a000000-0000-0000-0000-000000000001'),
+  'api: o master vê o título restrito, com etapa, valor, fornecedor, área e vencimento');
+select pg_temp.ok((select (j->>'valor')::numeric = 777 and jsonb_array_length(j->'parcelas') = 1 and jsonb_array_length(j->'rateio') = 1
+                          and j->'rateio'->0->>'area' = 'Obra' from api.titulo('8a000000-0000-0000-0000-000000000001') j),
+  'api: a gaveta traz parcelas e rateio');
+select pg_temp.como(:'analista');
+select pg_temp.ok(not exists (select 1 from api.titulos() where id = '8a000000-0000-0000-0000-000000000001')
+                  and api.titulo('8a000000-0000-0000-0000-000000000001') is null,
+  'api: natureza restrita (folha PJ) não aparece na lista nem na gaveta de quem não a tem liberada');
+select pg_temp.ok((select (j->>'nome') = 'Rafael' and (j->>'papel') = 'analista' and (j->'listas') = '["AO"]'::jsonb and (j->>'escreve')::boolean
+                     from api.eu() j), 'api: eu() traz nome, papel e listas de quem está logado');
+select pg_temp.como('login-sem-cadastro');
+select pg_temp.ok(api.eu() is null and not exists (select 1 from api.titulos()) and not exists (select 1 from api.previsoes())
+                  and not exists (select 1 from api.contratos()),
+  'api: login sem cadastro no ERP não tem perfil nem lê nada');
+select pg_temp.como(null);
+rollback;
+
+-- ---------------------------------------------------------------------
+\echo '# rastro do título (api.titulo_rastro, 19/11/2026)'
+select pg_temp.como(null);
+begin;
+-- o mesmo título restrito (como a folha PJ) do bloco anterior, para provar que não vaza pelo fornecedor nem pelo contrato
+select pg_temp.como(:'diretor');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('8b000000-0000-0000-0000-000000000001', :'spe', 'avulso', '10000000-0000-0000-0000-000000000005', '2026-11-01', '2026-11-01', 778);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('8b000000-0000-0000-0000-000000000001', 1, '2026-11-30', 778);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('8b000000-0000-0000-0000-000000000001', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), 100);
+select pg_temp.sis(); update erp.naturezas set restrita = true where codigo = '04.01';
+create temp table rastro_ids as select id from erp.titulos where sentido = 'pagar';
+grant select on rastro_ids to authenticated;
+select pg_temp.volta();
+create temp table rastro_usuarios as select unnest(array[:'diretor', :'diretor2', :'gestor', :'analista', :'leitor', :'contador', :'analista2', :'ti']::text[]) u;
+grant select on rastro_usuarios to authenticated;
+do $$
+declare r record; x record; j jsonb; n_vis bigint;
+begin
+  for r in select u from rastro_usuarios loop
+    perform pg_temp.como(r.u);
+    for x in select id from rastro_ids loop
+      j := api.titulo_rastro(x.id);
+      if (j is null) <> not exists (select 1 from erp.titulos where id = x.id) then
+        raise exception 'FALHOU: rastro de % para % não segue o RLS do título', x.id, r.u;
+      end if;
+      continue when j is null;
+      select count(*) into n_vis from erp.titulos t join erp.titulos e on e.id = x.id
+       where t.pessoa_id = e.pessoa_id and t.sentido = 'pagar' and t.situacao <> 'cancelado';
+      if (j->'fornecedor'->>'titulos')::bigint <> n_vis then
+        raise exception 'FALHOU: histórico do fornecedor de % para % conta títulos que a pessoa não vê', x.id, r.u;
+      end if;
+      if exists (select 1 from jsonb_array_elements(coalesce(j->'contrato'->'titulos', '[]') || (j->'fornecedor'->'ultimos')) e
+                  where not exists (select 1 from erp.titulos t where t.id = (e->>'id')::uuid)) then
+        raise exception 'FALHOU: rastro de % para % lista título que a pessoa não vê', x.id, r.u;
+      end if;
+    end loop;
+  end loop;
+  perform pg_temp.como(null);
+end $$;
+select pg_temp.ok(true, 'rastro: para cada usuário e cada título, o rastro só existe se a pessoa vê o título, e o contrato e o fornecedor só contam e listam títulos que ela vê');
+select pg_temp.como(:'diretor');
+select pg_temp.ok((select (j->'fornecedor'->>'titulos')::int >= 1 and j->'fornecedor'->>'nome' = 'Construtora Alfa'
+                          and jsonb_typeof(j->'historico') = 'array' and j->'historico' @> '[{"texto": "lançou o título."}]'
+                          and j->'anexos' = '[]'::jsonb
+                     from api.titulo_rastro('8b000000-0000-0000-0000-000000000001') j),
+  'rastro: o master vê o título restrito, com o fornecedor e o lançamento no histórico');
+select pg_temp.como(:'analista');
+select pg_temp.ok(api.titulo_rastro('8b000000-0000-0000-0000-000000000001') is null
+                  and not exists (select 1 from rastro_ids i cross join lateral api.titulo_rastro(i.id) j
+                                   where j is not null and (j::text like '%8b000000-0000-0000-0000-000000000001%' or j::text ~ '"valor": 778[,}]')),
+  'rastro: o título restrito (folha PJ) não aparece no rastro de nenhum outro título para quem não o vê');
+select pg_temp.como(null);
+rollback;
+\echo '# lançar título pela tela (api.lancar_titulo, 19/11/2026)'
+select pg_temp.como(null);
+begin;
+select pg_temp.sis();
+insert into erp.pessoa_papeis values ('10000000-0000-0000-0000-000000000007', 'fornecedor') on conflict do nothing;
+insert into erp.etiquetas (id, nome) values ('8c000000-0000-0000-0000-000000000001', 'Teste da tela');
+insert into erp.previsoes (id, empresa_id, origem, pessoa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor) values
+  ('8c000000-0000-0000-0000-000000000002', :'spe', 'manual', '10000000-0000-0000-0000-000000000007', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2026-11-01', '2026-11-20', 500);
+select pg_temp.volta();
+select pg_temp.como(:'leitor');
+select pg_temp.ok(api.lancamento_opcoes() is null, 'lançar: quem só consulta não recebe as opções de lançamento');
+select pg_temp.falha($$select api.lancar_titulo('{}')$$, 'lançar: quem só consulta não lança');
+select pg_temp.como(:'diretor');
+select pg_temp.ok((select jsonb_array_length(j->'empresas') > 0 and j->'etiquetas' @> '[{"nome": "Teste da tela"}]' from api.lancamento_opcoes() j)
+                  and exists (select 1 from api.naturezas_lancaveis(:'ne_vm', :'cc_mkt', null) where codigo = '05.01.04')
+                  and exists (select 1 from api.fornecedores('agência') where id = '10000000-0000-0000-0000-000000000007')
+                  and exists (select 1 from api.fornecedores('777.777') where id = '10000000-0000-0000-0000-000000000007'),
+  'lançar: opções, naturezas do perfil e busca de fornecedor pelo nome ou pelo documento');
+select pg_temp.ok(exists (select 1 from api.previsoes_para_nota(:'spe', '10000000-0000-0000-0000-000000000007',
+                                 jsonb_build_array(jsonb_build_object('nucleo', :'ne_vm', 'centro', :'cc_mkt', 'natureza', pg_temp.nat('05.01.04'))))
+                           where id = '8c000000-0000-0000-0000-000000000002' and saldo = 500)
+                  and not exists (select 1 from api.previsoes_para_nota(:'spe', '10000000-0000-0000-0000-000000000007',
+                                 jsonb_build_array(jsonb_build_object('nucleo', :'ne_vm', 'centro', :'cc_obra', 'natureza', pg_temp.nat('05.01.04'))))
+                           where id = '8c000000-0000-0000-0000-000000000002'),
+  'lançar: a previsão aparece para a nota só com o mesmo núcleo, centro e natureza de uma linha');
+-- uma parcela com boleto inválido recusa tudo: nem a nota fica
+select pg_temp.falha(format($$select api.lancar_titulo(%L)$$, jsonb_build_object(
+  'empresa', :'spe', 'fornecedor', '10000000-0000-0000-0000-000000000007', 'tipo', 'nfse', 'numero', 'T-881',
+  'emissao', '2026-11-05', 'competencia', '2026-11-01', 'valor', 900,
+  'rateio', jsonb_build_array(jsonb_build_object('nucleo', :'ne_vm', 'centro', :'cc_mkt', 'natureza', pg_temp.nat('05.01.04'), 'percentual', 100)),
+  'parcelas', '[{"vencimento": "2026-11-20", "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"},
+                {"vencimento": "2026-12-20", "forma": "boleto", "boleto_linha": "1234"}]'::jsonb)),
+  'lançar: boleto inválido numa parcela recusa o lançamento');
+select pg_temp.ok(not exists (select 1 from erp.documentos_fiscais where numero = 'T-881'), 'lançar: a recusa não deixa a nota pela metade');
+select api.lancar_titulo(jsonb_build_object(
+  'empresa', :'spe', 'fornecedor', '10000000-0000-0000-0000-000000000007', 'tipo', 'nfse', 'numero', 'T-881',
+  'emissao', '2026-11-05', 'competencia', '2026-11-01', 'valor', 900.01,
+  'rateio', jsonb_build_array(jsonb_build_object('nucleo', :'ne_vm', 'centro', :'cc_mkt', 'natureza', pg_temp.nat('05.01.04'), 'percentual', 100)),
+  'parcelas', '[{"vencimento": "2026-11-20", "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"},
+                {"vencimento": "2026-12-20", "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"}]'::jsonb,
+  'previsoes', '["8c000000-0000-0000-0000-000000000002"]'::jsonb,
+  'etiquetas', '["8c000000-0000-0000-0000-000000000001"]'::jsonb)) as tlt \gset
+select pg_temp.ok((select t.situacao = 'aberto' and t.valor = 900.01 and t.criado_por = :'diretor'
+                     from erp.titulos t where t.id = :'tlt')
+                  and (select array_agg(valor order by numero) from erp.parcelas where titulo_id = :'tlt') = array[450.01, 450]::numeric[]
+                  and (select count(*) from erp.parcela_pagamentos where titulo_id = :'tlt') = 2
+                  and exists (select 1 from erp.titulo_etiquetas where titulo_id = :'tlt' and etiqueta_id = '8c000000-0000-0000-0000-000000000001')
+                  and (select valor from erp.titulo_previsoes where titulo_id = :'tlt' and previsao_id = '8c000000-0000-0000-0000-000000000002') = 500
+                  and (select d.situacao from erp.documentos_fiscais d join erp.titulos t on t.documento_id = d.id where t.id = :'tlt') = 'lancado',
+  'lançar: a nota vira título aberto, com as parcelas (o centavo na primeira, como o Sienge), a forma de pagamento, a etiqueta e a previsão consumida');
+select pg_temp.falha(format($$select api.lancar_titulo(%L)$$, jsonb_build_object(
+  'empresa', :'spe', 'fornecedor', '10000000-0000-0000-0000-000000000007', 'tipo', 'nfse', 'numero', 'T-881',
+  'emissao', '2026-11-05', 'competencia', '2026-11-01', 'valor', 900,
+  'rateio', jsonb_build_array(jsonb_build_object('nucleo', :'ne_vm', 'centro', :'cc_mkt', 'natureza', pg_temp.nat('05.01.04'), 'percentual', 100)),
+  'parcelas', '[{"vencimento": "2026-11-20", "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"}]'::jsonb)),
+  'lançar: a mesma nota do mesmo fornecedor não entra duas vezes');
+-- quem não lança na linha não lança pela tela (o perfil do erp vale aqui também)
+select pg_temp.como(:'analista2');
+select pg_temp.ok(not exists (select 1 from api.naturezas_lancaveis(:'ne_vm', :'cc_obra', null) n
+                               where not erp.lanco(:'ne_vm', :'cc_obra', n.id, erp.eu())),
+  'lançar: só aparecem as naturezas em que a pessoa lança');
+-- o contrato preso à nota é conferido contra ela (revisão de segurança do #93)
+select pg_temp.como(null);
+select pg_temp.como(:'analista2');
+select n.id as nat_a2 from api.naturezas_lancaveis(:'ne_vm', :'cc_obra', null) n order by n.codigo limit 1 \gset
+select pg_temp.como(null);
+select pg_temp.sis();
+insert into erp.compromissos (id, empresa_id, tipo, pessoa_id, descricao, inicio, fim, periodicidade, valor_periodo, dia_vencimento)
+values ('8c000000-0000-0000-0000-000000000003', :'spe', 'assinatura', '10000000-0000-0000-0000-000000000007',
+        'Contrato que a pessoa não vê', '2026-01-01', '2026-12-31', 'mensal', 100, 10),
+       ('8c000000-0000-0000-0000-000000000004', :'spe', 'assinatura', '10000000-0000-0000-0000-000000000007',
+        'Contrato encerrado', '2026-01-01', '2026-12-31', 'mensal', 100, 10);
+insert into erp.compromisso_rateios (compromisso_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+values ('8c000000-0000-0000-0000-000000000004', :'ne_vm', :'cc_obra', :'nat_a2', 100);
+update erp.compromissos set situacao = 'encerrado' where id = '8c000000-0000-0000-0000-000000000004';
+select pg_temp.volta();
+select pg_temp.como(:'analista2');
+create temp table nota_a2 as select jsonb_build_object(
+  'empresa', :'spe', 'fornecedor', '10000000-0000-0000-0000-000000000007', 'tipo', 'nfse', 'numero', 'T-882',
+  'emissao', '2026-11-05', 'competencia', '2026-11-01', 'valor', 100,
+  'rateio', jsonb_build_array(jsonb_build_object('nucleo', :'ne_vm', 'centro', :'cc_obra', 'natureza', :'nat_a2', 'percentual', 100)),
+  'parcelas', '[{"vencimento": "2026-11-20", "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"}]'::jsonb) j;
+select pg_temp.erro_igual(format($$select api.lancar_titulo(%L)$$, (select j || '{"compromisso": "60000000-0000-0000-0000-000000000002"}' from nota_a2)),
+  'O contrato é de outro fornecedor', 'lançar: a nota não se prende a contrato de outro fornecedor (CT-1)');
+select pg_temp.erro_igual(format($$select api.lancar_titulo(%L)$$, (select j || '{"compromisso": "60000000-0000-0000-0000-000000000001"}' from nota_a2)),
+  'O contrato é de outra empresa', 'lançar: a nota não se prende a contrato de outra empresa');
+select pg_temp.erro_igual(format($$select api.lancar_titulo(%L)$$, (select j || '{"compromisso": "8c000000-0000-0000-0000-000000000003"}' from nota_a2)),
+  'Contrato não encontrado', 'lançar: a nota não se prende a contrato que a pessoa não vê, e a resposta não diz de quem ele é');
+select pg_temp.erro_igual(format($$select api.lancar_titulo(%L)$$, (select j || '{"compromisso": "8c000000-0000-0000-0000-000000000004"}' from nota_a2)),
+  'O contrato não está ativo', 'lançar: a nota não se prende a contrato encerrado');
+select pg_temp.erro_igual(format($$select api.lancar_titulo(%L)$$, (select j || '{"compromisso": "8c000000-0000-0000-0000-0000000000ff"}' from nota_a2)),
+  'Contrato não encontrado', 'lançar: contrato que não existe é recusado');
+select pg_temp.erro_igual(format($$insert into erp.titulos (empresa_id, tipo, pessoa_id, compromisso_id, emissao, competencia, valor)
+  values (%L, 'avulso', '10000000-0000-0000-0000-000000000007', '60000000-0000-0000-0000-000000000002', '2026-11-05', '2026-11-01', 100)$$, :'spe'),
+  'O contrato é de outro fornecedor', 'lançar: o título avulso também não se prende a contrato de outro credor');
+-- o gatilho vale também na troca do contrato (ou do emitente, ou do credor) depois de gravado
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+values ('8c000000-0000-0000-0000-000000000005', :'spe', '10000000-0000-0000-0000-000000000007', 'nfse', 'T-883', '2026-11-05', '2026-11-01', 100);
+select pg_temp.erro_igual($$update erp.documentos_fiscais set compromisso_id = '60000000-0000-0000-0000-000000000002'
+                             where id = '8c000000-0000-0000-0000-000000000005'$$,
+  'O contrato é de outro fornecedor', 'lançar: a nota em rascunho não passa a apontar para contrato de outro fornecedor');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor)
+values ('8c000000-0000-0000-0000-000000000006', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-11-05', '2026-11-01', 100);
+select pg_temp.erro_igual($$update erp.titulos set compromisso_id = '60000000-0000-0000-0000-000000000002'
+                             where id = '8c000000-0000-0000-0000-000000000006'$$,
+  'O contrato é de outro fornecedor', 'lançar: o título avulso não passa a apontar para contrato de outro credor');
+select pg_temp.como(:'analista2');
+select pg_temp.ok(api.lancar_titulo((select j from nota_a2)) is not null, 'lançar: sem contrato, a mesma nota entra');
+select pg_temp.como(null);
+rollback;
+-- a conferência da aprovação só responde sobre o que a pessoa vê (S-126)
+select pg_temp.como(:'analista');
+select pg_temp.ok(erp.previsao_aprovada_vista('00000000-0000-0000-0000-000000000000') is null
+                  and erp.contrato_aprovado_visto('00000000-0000-0000-0000-000000000000') is null,
+  'api: aprovação de previsão ou contrato que a pessoa não vê volta nula');
+select pg_temp.como(null);
+-- catálogo: o esquema api é todo invoker, e só authenticated executa
+select pg_temp.ok(not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                               where n.nspname = 'api' and p.prosecdef),
+  'api: nenhuma função do esquema api passa por cima do RLS (todas são invoker)');
+select pg_temp.ok(not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                               where n.nspname = 'api' and (has_function_privilege('anon', p.oid, 'EXECUTE')
+                                                            or has_function_privilege('service_role', p.oid, 'EXECUTE')))
+                  and not has_schema_privilege('anon', 'api', 'USAGE')
+                  and not exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'api'),
+  'api: anon e service_role não executam nada do esquema api, e ele não tem tabela nem visão');
+
+\echo '# pessoa PJ: o cadastro só o master e os designados veem (Moises, 19/11/2026)'
+begin;
+select pg_temp.sis();
+delete from erp.designados_pj where user_id in (:'gestor', :'analista');
+insert into erp.designados_pj (user_id, motivo, por) values (:'analista', 'Teste pessoa PJ', :'diretor');
+select pg_temp.ok(not erp.ve_pj(:'gestor') and erp.ve_pj(:'analista') and erp.ve_pj(:'diretor'), 'pessoa PJ: (teste) o gestor não vê o PJ; o designado e o master veem');
+-- quem não vê o PJ não cadastra pessoa já marcada
+select pg_temp.como(:'gestor');
+select pg_temp.falha($$insert into erp.pessoas (id, tipo, nome, documento, restrita) values ('6c000000-0000-0000-0000-000000000009', 'fisica', 'X', '52998224725', true)$$,
+  'pessoa PJ: quem não vê o PJ não cadastra pessoa marcada');
+-- o designado cadastra a pessoa PJ com o papel
+select pg_temp.como(:'analista');
+insert into erp.pessoas (id, tipo, nome, documento, email, restrita) values ('6c000000-0000-0000-0000-000000000001', 'fisica', 'Fulano PJ', '11144477735', 'fulano@exemplo.com', true);
+insert into erp.pessoa_papeis (pessoa_id, papel) values ('6c000000-0000-0000-0000-000000000001', 'fornecedor');
+select pg_temp.ok(exists (select 1 from erp.pessoas where id = '6c000000-0000-0000-0000-000000000001')
+                  and exists (select 1 from erp.pessoa_papeis where pessoa_id = '6c000000-0000-0000-0000-000000000001'),
+  'pessoa PJ: o designado vê a pessoa e o papel');
+select pg_temp.como(:'diretor');
+select pg_temp.ok(exists (select 1 from erp.pessoas where id = '6c000000-0000-0000-0000-000000000001'), 'pessoa PJ: o master vê a pessoa');
+-- o gestor não vê a pessoa, nem o papel, nem pela api
+select pg_temp.como(:'gestor');
+select pg_temp.ok(not exists (select 1 from erp.pessoas where id = '6c000000-0000-0000-0000-000000000001' or documento = '11144477735'),
+  'pessoa PJ: quem não vê o PJ não acha a pessoa, nem pelo CPF');
+select pg_temp.ok(not exists (select 1 from erp.pessoa_papeis where pessoa_id = '6c000000-0000-0000-0000-000000000001'),
+  'pessoa PJ: quem não vê o PJ não vê o papel dela');
+select pg_temp.falha($$update erp.pessoas set email = 'outro@exemplo.com' where id = '6c000000-0000-0000-0000-000000000001'$$,
+  'pessoa PJ: quem não vê o PJ não altera a pessoa');
+-- nem usa a pessoa como credor, mesmo sabendo o id (a chave estrangeira não passa pelo RLS)
+select pg_temp.erro_igual(format($$insert into erp.titulos (empresa_id, tipo, pessoa_id, emissao, competencia, valor)
+  values (%L, 'avulso', '6c000000-0000-0000-0000-000000000001', '2026-12-01', '2026-12-01', 10)$$, :'spe'),
+  'Pessoa PJ só o master e os designados usam', 'pessoa PJ: quem não vê o PJ não lança título para ela');
+select pg_temp.erro_igual(format($$insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+  values (%L, '6c000000-0000-0000-0000-000000000001', 'recibo', 'PJ-9', '2026-12-01', '2026-12-01', 10)$$, :'spe'),
+  'Pessoa PJ só o master e os designados usam', 'pessoa PJ: quem não vê o PJ não lança nota dela');
+select pg_temp.erro_igual(format($$insert into erp.compromissos (empresa_id, tipo, pessoa_id, descricao, inicio, valor_total)
+  values (%L, 'avulsa', '6c000000-0000-0000-0000-000000000001', 'x', '2026-12-01', 10)$$, :'spe'),
+  'Pessoa PJ só o master e os designados usam', 'pessoa PJ: quem não vê o PJ não faz contrato com ela');
+-- trocar o credor de um título para a pessoa PJ também é barrado
+select pg_temp.sis();
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('6c000000-0000-0000-0000-000000000002', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-12-01', '2026-12-01', 10);
+select pg_temp.como_dono(:'gestor');
+select pg_temp.erro_igual($$update erp.titulos set pessoa_id = '6c000000-0000-0000-0000-000000000001' where id = '6c000000-0000-0000-0000-000000000002'$$,
+  'Pessoa PJ só o master e os designados usam', 'pessoa PJ: trocar o credor para a pessoa PJ é barrado');
+-- o designado usa a pessoa
+select pg_temp.como_dono(:'analista');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('6c000000-0000-0000-0000-000000000003', :'spe', 'avulso', '6c000000-0000-0000-0000-000000000001', '2026-12-01', '2026-12-01', 10);
+select pg_temp.ok(true, 'pessoa PJ: o designado lança título para a pessoa PJ');
+-- o mesmo vale para previsão, pagamento, empresa do grupo, sócio e órgão da retenção
+select pg_temp.como_dono(:'gestor');
+select pg_temp.erro_igual(format($$insert into erp.previsoes (empresa_id, origem, pessoa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+  values (%L, 'manual', '6c000000-0000-0000-0000-000000000001', %L, %L, %L, '2026-12-01', '2026-12-20', 10)$$, :'spe', :'ne_vm', :'cc_obra', pg_temp.nat('04.01')),
+  'Pessoa PJ só o master e os designados usam', 'pessoa PJ: quem não vê o PJ não lança previsão dela');
+select pg_temp.erro_igual(format($$insert into erp.pagamentos (empresa_id, conta_id, pessoa_id, nucleo_economico_id, centro_custo_id, data, valor)
+  values (%L, %L, '6c000000-0000-0000-0000-000000000001', %L, %L, '2026-12-01', 10)$$, :'spe', :'conta_spe', :'ne_vm', :'cc_obra'),
+  'Pessoa PJ só o master e os designados usam', 'pessoa PJ: quem não vê o PJ não paga a ela');
+select pg_temp.erro_igual(format($$insert into erp.participacoes (empresa_id, socio_id, percentual, inicio) values (%L, '6c000000-0000-0000-0000-000000000001', 1, '2026-12-01')$$, :'holding'),
+  'Pessoa PJ só o master e os designados usam', 'pessoa PJ: quem não vê o PJ não a põe como sócia');
+select pg_temp.sis();
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+  values ('6c000000-0000-0000-0000-000000000004', :'spe', '10000000-0000-0000-0000-000000000007', 'recibo', 'PJ-10', '2026-12-01', '2026-12-01', 10);
+select pg_temp.como_dono(:'gestor');
+select pg_temp.erro_igual($$insert into erp.documento_retencoes (documento_id, imposto, valor, orgao_id, vencimento)
+  values ('6c000000-0000-0000-0000-000000000004', 'iss', 1, '6c000000-0000-0000-0000-000000000001', '2026-12-10')$$,
+  'Pessoa PJ só o master e os designados usam', 'pessoa PJ: quem não vê o PJ não a põe como órgão da retenção');
+select pg_temp.erro_igual($$insert into erp.empresas (pessoa_id, tipo) values ('6c000000-0000-0000-0000-000000000001', 'spe')$$,
+  'Pessoa PJ só o master e os designados usam', 'pessoa PJ: quem não vê o PJ não a põe como empresa do grupo');
+-- quem não vê o PJ não põe papel nela, nem a alcança por update ou delete sem filtro
+select pg_temp.como(:'gestor');
+select pg_temp.falha($$insert into erp.pessoa_papeis (pessoa_id, papel) values ('6c000000-0000-0000-0000-000000000001', 'cliente')$$,
+  'pessoa PJ: quem não vê o PJ não põe papel nela');
+update erp.pessoas set telefone = '11999990000' where not exists (select 1 from erp.empresas e where e.pessoa_id = pessoas.id);
+select pg_temp.falha($$delete from erp.pessoas where nome = 'Fulano PJ'$$, 'pessoa PJ: quem não vê o PJ não apaga a pessoa');
+select pg_temp.sis();
+select pg_temp.ok((select telefone is null from erp.pessoas where id = '6c000000-0000-0000-0000-000000000001')
+                  and (select telefone = '11999990000' from erp.pessoas where id = '10000000-0000-0000-0000-000000000007'),
+  'pessoa PJ: o update sem filtro de quem não vê o PJ muda as outras e não a pessoa PJ');
+-- pessoa PJ só em lançamento de PJ, nem pelo designado
+select pg_temp.como_dono(:'analista');
+select pg_temp.erro_igual(format($$insert into erp.previsoes (empresa_id, origem, pessoa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+  values (%L, 'manual', '6c000000-0000-0000-0000-000000000001', %L, %L, %L, '2026-12-01', '2026-12-20', 10)$$, :'spe', :'ne_vm', :'cc_obra', pg_temp.nat('04.01')),
+  'Pessoa PJ só em lançamento de PJ: a natureza tem de ser restrita', 'pessoa PJ: previsão de natureza comum não usa a pessoa PJ');
+select pg_temp.erro_igual(format($$insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+  values ('6c000000-0000-0000-0000-000000000003', %L, %L, %L, 100)$$, :'ne_vm', :'cc_obra', pg_temp.nat('04.01')),
+  'Pessoa PJ só em lançamento de PJ: a natureza tem de ser restrita', 'pessoa PJ: título da pessoa PJ não ganha linha de natureza comum');
+select pg_temp.sis();
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+  values ('6c000000-0000-0000-0000-000000000002', :'ne_vm', :'cc_obra', pg_temp.nat('04.01'), 100);
+select pg_temp.como_dono(:'analista');
+select pg_temp.erro_igual($$update erp.titulos set pessoa_id = '6c000000-0000-0000-0000-000000000001' where id = '6c000000-0000-0000-0000-000000000002'$$,
+  'Pessoa PJ só em lançamento de PJ: a natureza tem de ser restrita', 'pessoa PJ: título com linha comum não passa para a pessoa PJ');
+-- a auditoria de título e previsão de PJ e de natureza restrita (linhas de parcela_pagamentos, sienge_previsoes e
+-- naturezas_liberadas, escritas como o dono da auditoria): o TI sem designação não lê; a do título comum, lê
+select pg_temp.sis();
+update erp.naturezas set restrita = true where codigo = '05.01.04';
+select pg_temp.nat('05.01.04') as nat_pj \gset
+select pg_temp.ok(erp.natureza_restrita(:'nat_pj') and not erp.natureza_restrita(pg_temp.nat('04.01')),
+  'pessoa PJ: (teste) há natureza restrita, e a 04.01 não é');
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+  values ('6c000000-0000-0000-0000-000000000003', :'ne_vm', :'cc_mkt', :'nat_pj', 100);
+insert into erp.previsoes (id, empresa_id, origem, pessoa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+  values ('6c000000-0000-0000-0000-000000000005', :'spe', 'manual', '6c000000-0000-0000-0000-000000000001', :'ne_vm', :'cc_mkt', :'nat_pj', '2026-12-01', '2026-12-20', 10);
+set local role erp_auditoria;
+insert into erp.auditoria (tabela, registro, acao, depois, por) values
+  ('parcela_pagamentos', '6c000000-0000-0000-0000-000000000003', 'insert', '{"titulo_id": "6c000000-0000-0000-0000-000000000003", "numero": 1, "pix_chave": "pj"}', :'diretor'),
+  ('parcela_pagamentos', '6c000000-0000-0000-0000-000000000002', 'insert', '{"titulo_id": "6c000000-0000-0000-0000-000000000002", "numero": 1, "pix_chave": "comum"}', :'diretor'),
+  ('sienge_previsoes', '6c000000-0000-0000-0000-000000000005', 'insert', '{"previsao_id": "6c000000-0000-0000-0000-000000000005"}', :'diretor'),
+  ('naturezas_liberadas', 'pj', 'insert', jsonb_build_object('natureza_id', :'nat_pj'), :'diretor');
+reset role;
+select pg_temp.como(:'ti');
+select pg_temp.ok(not exists (select 1 from erp.auditoria where depois ->> 'pix_chave' = 'pj')
+                  and exists (select 1 from erp.auditoria where depois ->> 'pix_chave' = 'comum'),
+  'pessoa PJ: o administrador sem designação não lê a auditoria da chave PIX do título PJ, e lê a do título comum');
+select pg_temp.ok(not exists (select 1 from erp.auditoria where tabela = 'sienge_previsoes' and registro = '6c000000-0000-0000-0000-000000000005'),
+  'pessoa PJ: o administrador sem designação não lê a auditoria da previsão PJ');
+select pg_temp.ok(not exists (select 1 from erp.auditoria where tabela = 'naturezas_liberadas' and registro = 'pj'),
+  'pessoa PJ: o administrador sem designação não lê a auditoria da liberação de natureza restrita');
+select pg_temp.como(:'diretor');
+select pg_temp.ok((select count(*) = 4 from erp.auditoria where tabela in ('parcela_pagamentos', 'sienge_previsoes', 'naturezas_liberadas')
+                     and registro in ('6c000000-0000-0000-0000-000000000003', '6c000000-0000-0000-0000-000000000002', '6c000000-0000-0000-0000-000000000005', 'pj')),
+  'pessoa PJ: o master lê as quatro');
+-- a auditoria da pessoa PJ: o administrador (o TI) sem designação não lê; o master lê
+select pg_temp.como(:'ti');
+select pg_temp.ok(not exists (select 1 from erp.auditoria where tabela in ('pessoas', 'pessoa_papeis') and registro = '6c000000-0000-0000-0000-000000000001')
+                  and exists (select 1 from erp.auditoria where tabela = 'pessoas' and registro = '10000000-0000-0000-0000-000000000007'),
+  'pessoa PJ: o administrador sem designação não lê a auditoria da pessoa PJ, e lê a das outras');
+select pg_temp.como(:'diretor');
+select pg_temp.ok(exists (select 1 from erp.auditoria where tabela = 'pessoas' and registro = '6c000000-0000-0000-0000-000000000001')
+                  and exists (select 1 from erp.auditoria where tabela = 'pessoa_papeis' and registro = '6c000000-0000-0000-0000-000000000001'),
+  'pessoa PJ: o master lê a auditoria da pessoa PJ');
+-- a marca só o master muda: nem o designado tira
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual($$update erp.pessoas set restrita = false where id = '6c000000-0000-0000-0000-000000000001'$$,
+  'A marca de PJ da pessoa só o master muda', 'pessoa PJ: o designado não tira a marca');
+select pg_temp.como(:'gestor');
+select pg_temp.erro_igual($$update erp.pessoas set restrita = true where id = '10000000-0000-0000-0000-000000000007'$$,
+  'A marca de PJ da pessoa só o master muda', 'pessoa PJ: quem não é master não marca pessoa comum');
+select pg_temp.como(:'diretor');
+update erp.pessoas set restrita = false where id = '6c000000-0000-0000-0000-000000000001';
+select pg_temp.como(:'gestor');
+select pg_temp.ok(exists (select 1 from erp.pessoas where id = '6c000000-0000-0000-0000-000000000001'), 'pessoa PJ: o master tira a marca e a pessoa volta a aparecer');
+select pg_temp.volta();
+rollback;
+select pg_temp.sis();
 
 \echo '# fim'
 do $$ begin raise notice 'TODOS OS TESTES PASSARAM'; end $$;

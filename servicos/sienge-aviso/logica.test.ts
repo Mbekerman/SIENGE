@@ -117,3 +117,19 @@ test('registro no banco: como erp_sistema e o corpo por tx.json, nunca como text
   assert.ok(passos[1].q.includes('erp.sienge_registrar_aviso'));
   assert.deepEqual(passos[1].v, [ID, 'PAYMENT_INSTALLMENT_REMOVED', 'h1', { comoJson: corpo }]);
 });
+
+test('aviso novo chama o processamento na hora; repetido, recusado ou com erro, não', async () => {
+  let n = 0;
+  const depois = () => { n++; };
+  await receber(pedido(), TOKEN, gravador(true).f, depois);
+  assert.equal(n, 1);
+  await receber(pedido(), TOKEN, gravador(false).f, depois);
+  await receber(pedido({ aut: `Bearer ${TOKEN}x` }), TOKEN, gravador(true).f, depois);
+  await receber(pedido(), TOKEN, gravador(new Error('banco')).f, depois);
+  assert.equal(n, 1);
+});
+
+test('erro no processamento na hora não muda a resposta ao Sienge', async () => {
+  const r = await receber(pedido(), TOKEN, gravador(true).f, () => { throw new Error('x'); });
+  assert.deepEqual([r.status, await r.json()], [200, { ok: true, novo: true }]);
+});

@@ -1,7 +1,7 @@
 // node --test --experimental-strip-types servicos/sienge-escrita/fila.test.ts
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bancoPostgres, dataSaoPaulo, httpSienge, processarUm, TENTATIVAS_4XX, type Banco, type Http, type ItemFila } from './fila.ts';
+import { bancoPostgres, dataSaoPaulo, httpSienge, processarAvisos, processarUm, TENTATIVAS_4XX, type Banco, type Http, type ItemFila } from './fila.ts';
 import { ErroSienge, type PedidoTitulo } from './envio.ts';
 
 const T = '00000000-0000-0000-0000-0000000000aa';
@@ -29,7 +29,6 @@ function banco(item: ItemFila | null, ped: PedidoTitulo | Error = pedido(), conf
     prvNossas: async () => [],
     recriarPrv: async () => { throw new Error('não recria'); },
     terminarCruzamento: async () => { throw new Error('não cruza'); },
-    linhasApagar: async () => [],
     pegarAviso: async () => null,
     terminarAviso: async () => { throw new Error('não há aviso'); },
   };
@@ -180,13 +179,12 @@ test('banco: todo passo roda numa transação como erp_sistema', async () => {
   assert.equal(await bp.terminarCruzamento(11, [], {}), 3);
   // JSON pelo tx.json, nunca JSON.stringify (chegaria como jsonb do tipo string; achado no bkm_dev, 18/11)
   assert.deepEqual(valores.at(-1)!.slice(1, 3), [{ comoJson: [] }, { comoJson: {} }]);
-  assert.deepEqual(await bp.linhasApagar(), []);
   assert.deepEqual(await bp.pegarAviso(), { evento_id: T, bill_id: 7, previsao_id: T, tipo: 'apagar' });
   await bp.terminarAviso(T, 'r', false);
-  assert.equal(log.length, 15);
+  assert.equal(log.length, 14);
   const sqls = log.map((p) => p[1]);
   for (const f of ['sienge_enfileirar', 'sienge_pegar()', 'sienge_pedido_item', 'sienge_registrar_item', 'sienge_ids()', 'sienge_terminar', 'sienge_pegar_conferencia()', 'sienge_marcar_apagado',
-                   'sienge_pegar_cruzamento()', 'sienge_prv_nossas', 'sienge_recriar_prv', 'sienge_terminar_cruzamento', 'v_sienge_prv_apagar',
+                   'sienge_pegar_cruzamento()', 'sienge_prv_nossas', 'sienge_recriar_prv', 'sienge_terminar_cruzamento',
                    'sienge_pegar_aviso()', 'sienge_terminar_aviso'])
     assert.ok(sqls.some((q) => q.includes(`erp.${f}`)), f);
   for (const passo of log) assert.equal(passo[0], 'set local role erp_sistema');
@@ -436,4 +434,24 @@ test('aviso: o item da fila vem antes do aviso', async () => {
   const r = await processarUm(x.b, sienge().h, cfg);
   assert.equal(r.passo, 'enviado');
   assert.deepEqual(x.fechados, []);
+});
+
+test('só avisos (chamado pelo recebedor): processa o aviso sem enfileirar, enviar título nem conferir', async () => {
+  const x = comAviso('apagar', { item_id: 'outra', sienge_id: 1 });
+  x.b.enfileirar = async () => { throw new Error('não enfileira'); };
+  x.b.pegar = async () => { throw new Error('não pega título'); };
+  const l = leitor(404);
+  const r = await processarAvisos(x.b, l.h);
+  assert.deepEqual(r, [{ passo: 'aviso', evento: 'ev1', siengeId: 7301, resultado: 'apagado no Sienge (404): linha marcada como apagada', enfileirados: 0 }]);
+  assert.deepEqual(x.apagados, ['p1']);
+  assert.deepEqual(l.chamadas, ['/bills/7301']);
+});
+
+test('só avisos: sem aviso pendente, nada; e para no máximo pedido', async () => {
+  const x = banco(null);
+  assert.deepEqual(await processarAvisos(x.b, leitor(404).h), []);
+  let n = 0;
+  x.b.pegarAviso = async () => ({ evento_id: `ev${++n}`, bill_id: 7301, previsao_id: 'p1', tipo: 'apagar' as const });
+  x.b.terminarAviso = async () => {};
+  assert.equal((await processarAvisos(x.b, leitor('ok').h, 3)).length, 3);
 });
