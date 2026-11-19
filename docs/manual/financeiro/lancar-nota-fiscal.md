@@ -43,7 +43,30 @@ Nota de serviço de R$ 10.000,00, com ISS de 5% retido e caução de 5% do contr
 
 ## Tarefa: lançar uma nota fiscal
 
-> ⏳ As telas ainda não existem. Os passos seguem o desenho de 6/nov/2026; alguns pontos dependem de decisões em aberto, indicadas abaixo.
+> 🟡 **Primeira tela de lançamento, no PR #93** (ainda não juntado). Ela é mais simples que o desenho de 6/nov/2026, que segue abaixo como o destino.
+
+### O que a tela do PR #93 já faz
+
+O botão **Lançar título** fica na página Títulos e abre uma janela com estas seções, nesta ordem:
+
+1. **Documento:** empresa, fornecedor (busca por nome, nome fantasia ou CNPJ), tipo (NFS-e, NF-e, Fatura, Boleto, Recibo ou Outro), número, série, emissão, competência e valor.
+2. **Onde entra:** núcleo, centro, divisão do último nível e natureza. A lista de naturezas traz só as que a pessoa pode lançar ali. O botão "Ratear" acrescenta linhas, cada uma com o seu percentual.
+3. **Previsões que a nota consome:** as previsões abertas do fornecedor com o mesmo núcleo, centro e natureza. Cada uma mostra o número PRV no Sienge, a data e o saldo, e aparece "Esperando aprovação" quando for o caso. A pessoa marca quais a nota consome.
+4. **Pagamento:** a nota se divide em parcelas iguais, e cada parcela é PIX ou boleto. A chave PIX sugerida é o CNPJ do fornecedor; outra chave de CPF ou CNPJ pede justificativa. ⚠️ A sobra de centavos ainda está sendo conferida: a regra do PR #71 põe a sobra na primeira parcela, como o Sienge faz.
+5. **Etiquetas.**
+
+Ao clicar em **Lançar**, o título vai para a aprovação e abre na gaveta. Se faltar alguma coisa, o pé da janela diz o quê.
+
+**Ainda não dá para fazer:**
+- ler o PDF ou o XML;
+- reter impostos ou caução;
+- adiantar sem nota;
+- salvar rascunho;
+- escrever uma descrição.
+
+### O desenho completo (6/nov/2026)
+
+Alguns pontos dependem de decisões em aberto, indicadas abaixo.
 
 **Quem faz:** 🟡 alguém da BKM, normalmente o responsável pelo contrato. Abrir para o próprio fornecedor subir a nota fica para depois (proposta de 6/nov/2026, sem confirmação).
 
