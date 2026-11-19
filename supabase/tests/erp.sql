@@ -7460,6 +7460,36 @@ insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id,
 select pg_temp.como_dono(:'analista');
 select pg_temp.erro_igual($$update erp.titulos set pessoa_id = '6c000000-0000-0000-0000-000000000001' where id = '6c000000-0000-0000-0000-000000000002'$$,
   'Pessoa PJ só em lançamento de PJ: a natureza tem de ser restrita', 'pessoa PJ: título com linha comum não passa para a pessoa PJ');
+-- a auditoria de título e previsão de PJ e de natureza restrita (linhas de parcela_pagamentos, sienge_previsoes e
+-- naturezas_liberadas, escritas como o dono da auditoria): o TI sem designação não lê; a do título comum, lê
+select pg_temp.sis();
+update erp.naturezas set restrita = true where codigo = '05.01.04';
+select pg_temp.nat('05.01.04') as nat_pj \gset
+select pg_temp.ok(erp.natureza_restrita(:'nat_pj') and not erp.natureza_restrita(pg_temp.nat('04.01')),
+  'pessoa PJ: (teste) há natureza restrita, e a 04.01 não é');
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+  values ('6c000000-0000-0000-0000-000000000003', :'ne_vm', :'cc_mkt', :'nat_pj', 100);
+insert into erp.previsoes (id, empresa_id, origem, pessoa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+  values ('6c000000-0000-0000-0000-000000000005', :'spe', 'manual', '6c000000-0000-0000-0000-000000000001', :'ne_vm', :'cc_mkt', :'nat_pj', '2026-12-01', '2026-12-20', 10);
+set local role erp_auditoria;
+insert into erp.auditoria (tabela, registro, acao, depois, por) values
+  ('parcela_pagamentos', '6c000000-0000-0000-0000-000000000003', 'insert', '{"titulo_id": "6c000000-0000-0000-0000-000000000003", "numero": 1, "pix_chave": "pj"}', :'diretor'),
+  ('parcela_pagamentos', '6c000000-0000-0000-0000-000000000002', 'insert', '{"titulo_id": "6c000000-0000-0000-0000-000000000002", "numero": 1, "pix_chave": "comum"}', :'diretor'),
+  ('sienge_previsoes', '6c000000-0000-0000-0000-000000000005', 'insert', '{"previsao_id": "6c000000-0000-0000-0000-000000000005"}', :'diretor'),
+  ('naturezas_liberadas', 'pj', 'insert', jsonb_build_object('natureza_id', :'nat_pj'), :'diretor');
+reset role;
+select pg_temp.como(:'ti');
+select pg_temp.ok(not exists (select 1 from erp.auditoria where depois ->> 'pix_chave' = 'pj')
+                  and exists (select 1 from erp.auditoria where depois ->> 'pix_chave' = 'comum'),
+  'pessoa PJ: o administrador sem designação não lê a auditoria da chave PIX do título PJ, e lê a do título comum');
+select pg_temp.ok(not exists (select 1 from erp.auditoria where tabela = 'sienge_previsoes' and registro = '6c000000-0000-0000-0000-000000000005'),
+  'pessoa PJ: o administrador sem designação não lê a auditoria da previsão PJ');
+select pg_temp.ok(not exists (select 1 from erp.auditoria where tabela = 'naturezas_liberadas' and registro = 'pj'),
+  'pessoa PJ: o administrador sem designação não lê a auditoria da liberação de natureza restrita');
+select pg_temp.como(:'diretor');
+select pg_temp.ok((select count(*) = 4 from erp.auditoria where tabela in ('parcela_pagamentos', 'sienge_previsoes', 'naturezas_liberadas')
+                     and registro in ('6c000000-0000-0000-0000-000000000003', '6c000000-0000-0000-0000-000000000002', '6c000000-0000-0000-0000-000000000005', 'pj')),
+  'pessoa PJ: o master lê as quatro');
 -- a auditoria da pessoa PJ: o administrador (o TI) sem designação não lê; o master lê
 select pg_temp.como(:'ti');
 select pg_temp.ok(not exists (select 1 from erp.auditoria where tabela in ('pessoas', 'pessoa_papeis') and registro = '6c000000-0000-0000-0000-000000000001')
