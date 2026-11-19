@@ -1003,7 +1003,7 @@ select pg_temp.ok(not exists (
        'cancelar_reclassificacao','pedir_mudanca_acesso','decidir_mudanca_acesso','cancelar_mudanca_acesso','passar_master',
        'pedir_sucessao_master','decidir_sucessao_master','vetar_sucessao_master','efetivar_sucessao_master',
        'pedir_mudanca_config','decidir_mudanca_config','cancelar_mudanca_config','marcar_notificacoes_lidas',
-       'designar_pj','retirar_pj','previsao_aprovada_vista','contrato_aprovado_visto')),
+       'designar_pj','retirar_pj','vejo_pj','previsao_aprovada_vista','contrato_aprovado_visto')),
   'catálogo: das funções security definer, authenticated só executa as da lista (RPCs e conferências de quem está logado)');
 select pg_temp.ok(not has_function_privilege('authenticated', 'erp._aplicar_mudanca_acesso(uuid)', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp.gerar_avisos_sucessao()', 'EXECUTE')
@@ -7367,6 +7367,70 @@ select pg_temp.ok(not exists (select 1 from pg_proc p join pg_namespace n on n.o
                   and not has_schema_privilege('anon', 'api', 'USAGE')
                   and not exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'api'),
   'api: anon e service_role não executam nada do esquema api, e ele não tem tabela nem visão');
+
+\echo '# pessoa PJ: o cadastro só o master e os designados veem (Moises, 19/11/2026)'
+begin;
+select pg_temp.sis();
+delete from erp.designados_pj where user_id in (:'gestor', :'analista');
+insert into erp.designados_pj (user_id, motivo, por) values (:'analista', 'Teste pessoa PJ', :'diretor');
+select pg_temp.ok(not erp.ve_pj(:'gestor') and erp.ve_pj(:'analista') and erp.ve_pj(:'diretor'), 'pessoa PJ: (teste) o gestor não vê o PJ; o designado e o master veem');
+-- quem não vê o PJ não cadastra pessoa já marcada
+select pg_temp.como(:'gestor');
+select pg_temp.falha($$insert into erp.pessoas (id, tipo, nome, documento, restrita) values ('6c000000-0000-0000-0000-000000000009', 'fisica', 'X', '52998224725', true)$$,
+  'pessoa PJ: quem não vê o PJ não cadastra pessoa marcada');
+-- o designado cadastra a pessoa PJ com o papel
+select pg_temp.como(:'analista');
+insert into erp.pessoas (id, tipo, nome, documento, email, restrita) values ('6c000000-0000-0000-0000-000000000001', 'fisica', 'Fulano PJ', '11144477735', 'fulano@exemplo.com', true);
+insert into erp.pessoa_papeis (pessoa_id, papel) values ('6c000000-0000-0000-0000-000000000001', 'fornecedor');
+select pg_temp.ok(exists (select 1 from erp.pessoas where id = '6c000000-0000-0000-0000-000000000001')
+                  and exists (select 1 from erp.pessoa_papeis where pessoa_id = '6c000000-0000-0000-0000-000000000001'),
+  'pessoa PJ: o designado vê a pessoa e o papel');
+select pg_temp.como(:'diretor');
+select pg_temp.ok(exists (select 1 from erp.pessoas where id = '6c000000-0000-0000-0000-000000000001'), 'pessoa PJ: o master vê a pessoa');
+-- o gestor não vê a pessoa, nem o papel, nem pela api
+select pg_temp.como(:'gestor');
+select pg_temp.ok(not exists (select 1 from erp.pessoas where id = '6c000000-0000-0000-0000-000000000001' or documento = '11144477735'),
+  'pessoa PJ: quem não vê o PJ não acha a pessoa, nem pelo CPF');
+select pg_temp.ok(not exists (select 1 from erp.pessoa_papeis where pessoa_id = '6c000000-0000-0000-0000-000000000001'),
+  'pessoa PJ: quem não vê o PJ não vê o papel dela');
+select pg_temp.falha($$update erp.pessoas set email = 'outro@exemplo.com' where id = '6c000000-0000-0000-0000-000000000001'$$,
+  'pessoa PJ: quem não vê o PJ não altera a pessoa');
+-- nem usa a pessoa como credor, mesmo sabendo o id (a chave estrangeira não passa pelo RLS)
+select pg_temp.erro_igual(format($$insert into erp.titulos (empresa_id, tipo, pessoa_id, emissao, competencia, valor)
+  values (%L, 'avulso', '6c000000-0000-0000-0000-000000000001', '2026-12-01', '2026-12-01', 10)$$, :'spe'),
+  'Pessoa PJ só o master e os designados usam', 'pessoa PJ: quem não vê o PJ não lança título para ela');
+select pg_temp.erro_igual(format($$insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+  values (%L, '6c000000-0000-0000-0000-000000000001', 'recibo', 'PJ-9', '2026-12-01', '2026-12-01', 10)$$, :'spe'),
+  'Pessoa PJ só o master e os designados usam', 'pessoa PJ: quem não vê o PJ não lança nota dela');
+select pg_temp.erro_igual(format($$insert into erp.compromissos (empresa_id, tipo, pessoa_id, descricao, inicio, valor_total)
+  values (%L, 'avulsa', '6c000000-0000-0000-0000-000000000001', 'x', '2026-12-01', 10)$$, :'spe'),
+  'Pessoa PJ só o master e os designados usam', 'pessoa PJ: quem não vê o PJ não faz contrato com ela');
+-- trocar o credor de um título para a pessoa PJ também é barrado
+select pg_temp.sis();
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('6c000000-0000-0000-0000-000000000002', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2026-12-01', '2026-12-01', 10);
+select pg_temp.como_dono(:'gestor');
+select pg_temp.erro_igual($$update erp.titulos set pessoa_id = '6c000000-0000-0000-0000-000000000001' where id = '6c000000-0000-0000-0000-000000000002'$$,
+  'Pessoa PJ só o master e os designados usam', 'pessoa PJ: trocar o credor para a pessoa PJ é barrado');
+-- o designado usa a pessoa
+select pg_temp.como_dono(:'analista');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('6c000000-0000-0000-0000-000000000003', :'spe', 'avulso', '6c000000-0000-0000-0000-000000000001', '2026-12-01', '2026-12-01', 10);
+select pg_temp.ok(true, 'pessoa PJ: o designado lança título para a pessoa PJ');
+-- a marca só o master muda: nem o designado tira
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual($$update erp.pessoas set restrita = false where id = '6c000000-0000-0000-0000-000000000001'$$,
+  'A marca de PJ da pessoa só o master muda', 'pessoa PJ: o designado não tira a marca');
+select pg_temp.como(:'gestor');
+select pg_temp.erro_igual($$update erp.pessoas set restrita = true where id = '10000000-0000-0000-0000-000000000007'$$,
+  'A marca de PJ da pessoa só o master muda', 'pessoa PJ: quem não é master não marca pessoa comum');
+select pg_temp.como(:'diretor');
+update erp.pessoas set restrita = false where id = '6c000000-0000-0000-0000-000000000001';
+select pg_temp.como(:'gestor');
+select pg_temp.ok(exists (select 1 from erp.pessoas where id = '6c000000-0000-0000-0000-000000000001'), 'pessoa PJ: o master tira a marca e a pessoa volta a aparecer');
+select pg_temp.volta();
+rollback;
+select pg_temp.sis();
 
 \echo '# fim'
 do $$ begin raise notice 'TODOS OS TESTES PASSARAM'; end $$;

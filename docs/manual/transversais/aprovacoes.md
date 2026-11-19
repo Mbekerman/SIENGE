@@ -139,6 +139,8 @@ Um gasto de marketing de R$ 300 mil, com as regras acima, passa pelo gestor de m
 
 ✅ Desde 18/nov/2026 (Moises), o título PJ tem uma aprovação: a do **master** ou de quem ele designou para o PJ. Os dois "ok" do mês sobre as tabelas continuam (Moises, 18/nov/2026): um do **RH**, que confere tudo menos a remuneração, e um do **master**, que confere a remuneração. Ainda sem código.
 
+✅ **O cadastro do PJ (nome, CPF, e-mail, telefone) só o master e quem ele designou veem** (Moises, 19/nov/2026). Quem vê o PJ cadastra a pessoa já como PJ; depois, só o master tira ou põe essa marca. Os demais não acham a pessoa na lista de fornecedores nem conseguem lançar nada para ela.
+
 ✅ **O pagamento de PJ sobe sozinho** (Moises, 18/nov/2026: "salário só pode subir sozinho"): o título, a nota ou o contrato com natureza de PJ não pode ter outra natureza junto. Quem tentar pôr uma linha PJ ao lado de uma linha comum (ou o contrário) recebe o aviso "O pagamento de PJ sobe sozinho". ⏳ A conferência do valor da nota do PJ entra com o cadastro da remuneração, que ainda não existe. Quando entrar: a nota com valor diferente do aprovado, para mais ou para menos, **não é recusada**; vai para a aprovação do master (Moises, 18/nov/2026).
 
 > 🔜 **Futuro.** Os pagamentos PJ ainda passam pelo Sienge, e a remessa e o extrato vão pelo Nexxera (Moises, 7/nov/2026). Enquanto for assim, o nome e o valor de cada PJ continuam visíveis no Sienge, e **todo o fluxo abaixo (anonimização, conferência com dois "ok", portal de notas e portal do contador) fica para quando o Sienge sair desse fluxo**. Ver [O que ainda é feito à mão no Sienge](passos-manuais-no-sienge.md). A conciliação automática depende do módulo de Bancos, que não foi desenhado.
