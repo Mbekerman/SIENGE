@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 # ERP BKM, teste em escala do leitor (dev; pedido do Moises, 20/11/2026): publica o job erp-leitor-lote com o código da
 # develop, a mesma conta (erp-leitor) e a mesma regra da Anthropic do erp-leitor-dev, e roda uma rodada.
-# Rodar no Cloud Shell do projeto bkm-erp, depois de subir os arquivos para gs://bkm-erp-515119-anexos-dev/lote/entrada/:
-#   gcloud storage cp -r <pasta com os arquivos>/* gs://bkm-erp-515119-anexos-dev/lote/entrada/
+# Rodar no Cloud Shell do projeto bkm-erp, depois de subir os arquivos para gs://bkm-erp-515119-anexos-dev/lote/entrada/
+# (só os que não são de pessoal, folha ou PJ; a lista separada pela revisão do #110):
+#   for z in lote-parte-*.zip; do unzip -q -o "$z" -d lote; done
+#   gcloud storage cp -r lote/* gs://bkm-erp-515119-anexos-dev/lote/entrada/
 #   LOTE_LIMITE=20 bash ~/SIENGE/servicos/leitor/lote-dev.sh        (piloto: 20 arquivos, para medir o custo)
 #   LOTE_LIMITE=5000 bash ~/SIENGE/servicos/leitor/lote-dev.sh      (o resto; continua de onde parou)
+# O script confere antes que o bucket não é público e liga a regra que apaga lote/ em 7 dias.
 # Os resultados ficam em gs://bkm-erp-515119-anexos-dev/lote/saida/ (um .json por arquivo). Para trazê-los:
 #   gcloud storage cp -r gs://bkm-erp-515119-anexos-dev/lote/saida ./saida && zip -qr saida.zip saida
+# O saida.zip tem dados pessoais (CPF, valores, contas): não vai ao repositório e se apaga depois da análise.
 # O job não toca o banco nem consulta boleto; só lê com a IA e grava o resultado. A trava do custo é o limite de gasto
 # do workspace da Anthropic. Para desfazer: gcloud run jobs delete erp-leitor-lote --region southamerica-east1 ;
 # os arquivos e resultados saem com gcloud storage rm -r gs://bkm-erp-515119-anexos-dev/lote/ (a conta do leitor não apaga).
@@ -18,6 +22,22 @@ B=bkm-erp-515119-anexos-dev
 LOTE_LIMITE=${LOTE_LIMITE:-20}
 LOTE_PARALELO=${LOTE_PARALELO:-4}
 gcloud config set project "$P"
+
+# Condições da revisão do #110: o bucket não pode ser público, e lote/ se apaga sozinho em 7 dias
+POL=$(gcloud storage buckets get-iam-policy "gs://$B" --format=json)
+if echo "$POL" | grep -qE '"allUsers"|"allAuthenticatedUsers"'; then
+  echo "O bucket $B tem acesso público (allUsers ou allAuthenticatedUsers): tire antes de subir os arquivos." >&2; exit 1
+fi
+echo "Quem acessa o bucket $B:"; echo "$POL" | python3 -c "import json,sys
+for b in json.load(sys.stdin).get('bindings',[]): print(' ', b['role'], ', '.join(b['members']))"
+T=$(mktemp)
+gcloud storage buckets describe "gs://$B" --format=json | python3 -c "import json,sys
+d=json.load(sys.stdin); regras=(d.get('lifecycle_config') or {}).get('rule', [])
+nova={'action': {'type': 'Delete'}, 'condition': {'age': 7, 'matchesPrefix': ['lote/']}}
+if nova not in regras: regras.append(nova)
+json.dump({'rule': regras}, open('$T', 'w'))"
+gcloud storage buckets update "gs://$B" --lifecycle-file="$T"
+echo "Regra de ciclo de vida: lote/ some 7 dias depois de subir."
 
 # As variáveis da federação são as do erp-leitor-dev (não são segredo)
 envleitor() { gcloud run services describe erp-leitor-dev --region "$R" --format=json \

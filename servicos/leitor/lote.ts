@@ -29,6 +29,7 @@ export interface Resultado {
   leitura?: Leitura;
   erro?: string;
   erro_ia?: boolean;   // falha da chamada à IA: não grava, para a rodada seguinte tentar de novo
+  erro_tipo?: string;  // só o tipo do erro vai ao log (a mensagem pode trazer trecho do documento; revisão do #110)
 }
 
 // O nome do resultado: o do arquivo, sem a pasta de entrada.
@@ -72,6 +73,7 @@ export async function lerArquivo(nome: string, dados: Buffer, ia: (e: Entrada) =
               cache_lido: x.uso.cache_read_input_tokens ?? 0, cache_criado: x.uso.cache_creation_input_tokens ?? 0 };
   } catch (e) {
     r.erro = e instanceof Error ? e.message : String(e);
+    r.erro_tipo = e instanceof Error ? e.constructor.name : typeof e;
   } finally {
     r.ms = Date.now() - t0;
   }
@@ -156,7 +158,7 @@ async function main() {
       const r = await lerArquivo(o.slice(ENTRADA.length), await baixar(bucket, o), (e) => lerComIaDetalhe(cliente, e),
         (pdf) => abrirPdf(pdf, senhas));
       feitos++; if (r.erro) erros++;
-      if (r.erro_ia) { log('a IA falhou; fica para a próxima rodada', { arquivo: r.arquivo, erro: r.erro }); continue; }
+      if (r.erro_ia) { log('a IA falhou; fica para a próxima rodada', { arquivo: r.arquivo, erro: r.erro_tipo }); continue; }
       await gravar(bucket, nomeSaida(o), JSON.stringify(r));
       entrada += r.uso?.entrada ?? 0; saida += r.uso?.saida ?? 0;
       if (feitos % 20 === 0) log('andamento', { feitos, erros, tokens_entrada: entrada, tokens_saida: saida });
@@ -167,5 +169,8 @@ async function main() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch((e) => { console.error(JSON.stringify({ severity: 'ERROR', msg: 'lote falhou', erro: String(e) })); process.exit(1); });
+  main().catch((e) => {
+    console.error(JSON.stringify({ severity: 'ERROR', msg: 'lote falhou', erro: e instanceof Error ? `${e.constructor.name}: ${e.message.slice(0, 120)}` : typeof e }));
+    process.exit(1);
+  });
 }
