@@ -35,9 +35,13 @@ export function pdfCriptografado(b: Buffer): boolean {
   return /\/Encrypt\s/.test(fim) || /\/Encrypt\s/.test(ini);
 }
 
-// Senhas que as concessionárias usam: os 4, 5, 6 ou 8 primeiros dígitos do CNPJ de quem paga.
+// Senhas que as concessionárias usam, tiradas do CNPJ de quem paga (pedido do Moises, 20/11/2026): primeiro os
+// começos do CNPJ de cada empresa, do 3 primeiros dígitos ao CNPJ inteiro; depois os finais, dos 3 últimos até
+// todos menos o primeiro. Sem repetir; em ordem, porque a primeira que abre encerra.
 export function senhasCandidatas(cnpjs: string[]): string[] {
+  const ds = [...new Set(cnpjs.map((c) => c.replace(/\D/g, '')).filter((d) => d.length === 14))];
   const s = new Set<string>();
-  for (const c of cnpjs) { const d = c.replace(/\D/g, ''); if (d.length >= 8) for (const n of [4, 5, 6, 8]) s.add(d.slice(0, n)); }
+  for (const d of ds) for (let n = 3; n <= 14; n++) s.add(d.slice(0, n));
+  for (const d of ds) for (let n = 3; n <= 13; n++) s.add(d.slice(-n));
   return [...s];
 }

@@ -79,15 +79,23 @@ const bucket: Bucket = {
   },
 };
 
-// PDF com senha: qpdf no próprio contêiner, sem shell, com arquivos temporários apagados ao fim.
-function abrirPdf(pdf: Buffer, senha: string): Promise<Buffer | null> {
+// PDF com senha: qpdf no próprio contêiner, sem shell, com arquivos temporários apagados ao fim. Cada senha é
+// conferida com --requires-password (só lê a criptografia: 3 = a senha abre ou não precisa), e o arquivo é
+// decifrado uma vez só, com a que abriu. As senhas nunca vão a log.
+const qpdf = (args: string[]) => new Promise<number>((res) =>
+  execFile('qpdf', args, { timeout: 20_000 }, (err) => res(err ? ((err as { code?: unknown }).code as number ?? -1) : 0)));
+function abrirPdf(pdf: Buffer, senhas: string[]): Promise<Buffer | null> {
   return (async () => {
     const dir = await mkdtemp(join(tmpdir(), 'pdf-'));
     try {
-      await writeFile(join(dir, 'e.pdf'), pdf);
-      const ok = await new Promise<boolean>((res) => execFile('qpdf', [`--password=${senha}`, '--decrypt', join(dir, 'e.pdf'), join(dir, 's.pdf')],
-        { timeout: 20_000 }, (err) => res(!err || (err as { code?: number }).code === 3)));   // 3 = aviso, arquivo gerado
-      return ok ? await readFile(join(dir, 's.pdf')) : null;
+      const e = join(dir, 'e.pdf'), o = join(dir, 's.pdf');
+      await writeFile(e, pdf);
+      for (const senha of senhas) {
+        if (await qpdf(['--requires-password', `--password=${senha}`, e]) !== 3) continue;
+        const r = await qpdf([`--password=${senha}`, '--decrypt', e, o]);
+        return r === 0 || r === 3 ? await readFile(o) : null;   // 3 = aviso, arquivo gerado
+      }
+      return null;
     } catch { return null; } finally { await rm(dir, { recursive: true, force: true }); }
   })();
 }

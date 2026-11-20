@@ -104,7 +104,13 @@ test('tipo pelos bytes, não pelo nome', () => {
   assert.equal(tipoPelosBytes(Buffer.from([0x3c, 0xff, 0xfe])), null, 'começa com < mas não é UTF-8');
   assert.equal(pdfCriptografado(Buffer.from('%PDF-1.4\ntrailer << /Encrypt 5 0 R >>')), true);
   assert.equal(pdfCriptografado(Buffer.from('%PDF-1.4\ntrailer << /Root 1 0 R >>')), false);
-  assert.deepEqual(senhasCandidatas(['44.555.666/0001-99', '1']), ['4455', '44555', '445556', '44555666']);
+  const c = senhasCandidatas(['44.555.666/0001-99', '1', '44555666000199', '11222333000144']);
+  assert.equal(c.length, 2 * (12 + 11), 'CNPJ curto e repetido ficam de fora');
+  assert.deepEqual(c.slice(0, 3), ['445', '4455', '44555']);
+  assert.equal(c[11], '44555666000199'); assert.equal(c[12], '112');
+  assert.deepEqual(c.slice(24, 27), ['199', '0199', '00199']);
+  assert.equal(c[34], '4555666000199', 'o último final é todos menos o primeiro dígito');
+  assert.equal(c.at(-1), '1222333000144');
 });
 
 test('resposta da IA: nulos somem, valores zerados viram não informado, linha conferida', () => {
@@ -211,11 +217,17 @@ test('subir: falha da IA não perde o arquivo e não grava leitura', async () =>
   assert.ok(!chamadas.some((c) => c.startsWith('gravar_leitura')));
 });
 
+// o falso do qpdf: tenta as senhas em ordem, como o servidor
+const uma = (f: (s: string) => Promise<Buffer | null>) => async (_p: Buffer, ss: string[]) => {
+  for (const s of ss) { const r = await f(s); if (r) return r; }
+  return null;
+};
+
 test('subir: PDF com senha tenta os CNPJs das empresas e só então chama a IA', async () => {
   const tentadas: string[] = [];
-  const { deps } = falsos({ abrirPdf: async (_p, s) => { tentadas.push(s); return s === '44555' ? Buffer.from('%PDF-aberto') : null; } });
+  const { deps } = falsos({ abrirPdf: uma(async (s) => { tentadas.push(s); return s === '44555' ? Buffer.from('%PDF-aberto') : null; }) });
   const r = await subir(deps, 'ok', 'f.pdf', Buffer.from('%PDF-1.4\ntrailer << /Encrypt 5 0 R >>'));
-  assert.deepEqual(tentadas, ['', '4455', '44555']); assert.equal(r.leitura?.valor, 10);
+  assert.deepEqual(tentadas, ['', '445', '4455', '44555']); assert.equal(r.leitura?.valor, 10);
   const { deps: d2 } = falsos({ abrirPdf: async () => null });
   const r2 = await subir(d2, 'ok', 'f.pdf', Buffer.from('%PDF-1.4\ntrailer << /Encrypt 5 0 R >>'));
   assert.match(r2.erro_leitura!, /senha/); assert.equal(r2.pede_senha, true);
@@ -228,7 +240,7 @@ test('senha do PDF: a digitada abre o guardado e lê; errada pede de novo; sem c
   const id = '00000000-0000-4000-8000-000000000001';
   const tentadas: string[] = [];
   const { deps, chamadas } = falsos({ sha, mimeAnexo: 'application/pdf', nomeAnexo: 'f.pdf',
-    abrirPdf: async (_p: Buffer, s: string) => { tentadas.push(s); return s === 'x9!' ? Buffer.from('%PDF-aberto') : null; } } as never);
+    abrirPdf: uma(async (s) => { tentadas.push(s); return s === 'x9!' ? Buffer.from('%PDF-aberto') : null; }) } as never);
   const r0 = await subir(deps, 'ok', 'f.pdf', pdf);
   assert.equal(r0.pede_senha, true);
   chamadas.length = 0;
