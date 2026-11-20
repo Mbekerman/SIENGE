@@ -45,10 +45,14 @@ returns table (tipo text, id uuid, centro_id uuid, divisao_id uuid, area text, p
                fornecedor text, descricao text, data date, empresa text, lancado_por text, lancado_em timestamptz,
                esperando text, vez boolean, motivo text)
 language plpgsql volatile security invoker set search_path = pg_catalog, pg_temp as $$
-declare r record; v_motivo text;
+declare r record; v_motivo text; v_n int := 0;
 begin
+  -- a simulação grava (e desfaz): numa transação só de leitura (GET do PostgREST) toda linha daria "não é a vez"
+  if current_setting('transaction_read_only') = 'on' then
+    raise exception 'api.aprovacoes precisa de transação de escrita (chamar por POST)';
+  end if;
   if not erp.escrevo() then return; end if;
-  for r in
+  for r in select * from (
     -- títulos em aprovação: cada alçada da rodada atual que ainda falta aprovar
     select 'titulo'::text as tipo, t.id, a.centro_custo_id as centro_id, a.divisao_id,
            erp.area_linha(a.centro_custo_id, a.divisao_id, null) as area, a.valor_no_centro as parte, t.valor,
@@ -104,8 +108,13 @@ begin
       from erp.compromissos c
      where c.tipo in ('contrato', 'assinatura') and c.situacao = 'ativo' and not erp.contrato_aprovado_visto(c.id)
        and not exists (select 1 from erp.compromisso_aprovacoes x where x.compromisso_id = c.id and x.versao = c.aprovacao_versao and not x.aprovado)
+    ) l order by l.data nulls last, l.lancado_em, l.id
   loop
-    v_motivo := erp._simular_decisao(r.tipo, r.id, r.centro_id, r.divisao_id);
+    -- cada simulação é uma subtransação com xid; acima de 64 numa transação o cache de subtransações estoura e deixa
+    -- os snapshots de todas as sessões mais lentos. Simula as 50 mais antigas; as demais aparecem sem a vez.
+    v_n := v_n + 1;
+    v_motivo := case when v_n <= 50 then erp._simular_decisao(r.tipo, r.id, r.centro_id, r.divisao_id)
+                     else 'Há mais de 50 itens esperando aprovação: decida os mais antigos para ver a vez nestes.' end;
     tipo := r.tipo; id := r.id; centro_id := r.centro_id; divisao_id := r.divisao_id; area := r.area; parte := r.parte;
     valor := r.valor; fornecedor := r.fornecedor; descricao := r.descricao; data := r.data; empresa := r.empresa;
     lancado_por := r.lancado_por; lancado_em := r.lancado_em; esperando := r.esperando;

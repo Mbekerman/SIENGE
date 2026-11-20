@@ -7659,6 +7659,10 @@ grant select on apr_conta to public;
 select pg_temp.como(:'leitor');
 select pg_temp.ok(not exists (select 1 from api.aprovacoes()), 'aprovar: quem só consulta não recebe a lista');
 select pg_temp.falha(format($$select api.decidir('titulo', %L, 'aprovar')$$, :'tap'), 'aprovar: quem só consulta não decide');
+-- transação só de leitura (GET do PostgREST): erro claro, nunca "não é a vez" em tudo (revisão de segurança do #95)
+begin read only;
+select pg_temp.erro_igual('select * from api.aprovacoes()', 'api.aprovacoes precisa de transação de escrita (chamar por POST)', 'aprovar: só leitura dá erro claro');
+commit;
 -- a vez: o gestor do centro primeiro; quem lançou vê o motivo
 select pg_temp.como(:'gestor');
 select pg_temp.ok((select a.vez and a.esperando = 'gestor do centro, depois AF' and a.area = 'Marketing' and a.valor = 900
