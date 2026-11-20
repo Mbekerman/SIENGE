@@ -69,6 +69,7 @@ Ao clicar em **Lançar**, o título vai para a aprovação e abre na gaveta. Se 
 - **Nota com retenção trava o Lançar.** Quando a leitura acha tributo retido, ou um líquido abaixo do bruto, aparece um aviso vermelho: "Nota com retenção ainda não se lança… espere a tela de retenções". O Lançar só destrava se a pessoa marcar "Conferi o documento: a nota não tem retenção (a leitura errou)". ⚠️ Quem lança à mão, sem arquivo, uma nota com retenção ainda lança pelo valor bruto; isso vai ao Moises.
 - **De onde a nota vem:** o bloco lista as origens possíveis (previsão, contrato, assinatura, conta de consumo ou pedido de compra), com a mais provável já marcada. Escolher uma origem preenche o rateio e a previsão; "Nenhum destes" limpa os dois.
 - **Depois de lido:** tudo continua editável, e o arquivo fica ligado à nota.
+- **Limite de envio** (Moises, 20/nov/2026; PR #101, ainda não juntado): cada pessoa sobe até 30 arquivos ao leitor a cada 10 minutos. Quem passa do limite vê o aviso "Muitos arquivos em pouco tempo; espere alguns minutos". O administrador ou o master podem mudar o número de cada pessoa, de 1 a 1.000, e ninguém muda o próprio. Ainda não há tela para isso; a mudança é feita direto no banco.
 - **No rastro do título**, o botão Anexos passa a baixar o arquivo.
 
 **Ainda não dá para fazer:**
