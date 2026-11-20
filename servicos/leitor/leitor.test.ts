@@ -148,6 +148,15 @@ test('resposta da IA: texto vazio é ausente; retenções em lista somam por tri
   assert.equal(converter({ tipo: 'nfse', retencoes: [] }, 'm').retencoes, undefined);
 });
 
+test('resposta da IA: sem total impresso, o valor é a soma das parcelas (se todas têm valor)', () => {
+  const dez = Array.from({ length: 10 }, (_, i) => ({ numero: String(i + 1), vencimento: `2026-${String(i + 1).padStart(2, '0')}-10`, valor: 1088.8 }));
+  assert.equal(converter({ tipo: 'boleto', valor: null, parcelas: dez }, 'm').valor, 10888);
+  assert.equal(converter({ tipo: 'boleto', valor: null, parcelas: [{ valor: 10 }, { valor: null }] }, 'm').valor, undefined);
+  assert.equal(converter({ tipo: 'nfe', valor: 26908.48, parcelas: [{ valor: 1 }] }, 'm').valor, 26908.48);
+  const l = converter({ tipo: 'nfe', valor: 26908.48, parcelas: [{ valor: 8969.49 }, { valor: 8969.49 }, { valor: 8969.5 }] }, 'm');
+  assert.deepEqual(l.parcelas?.map((p) => p.valor), [8969.49, 8969.49, 8969.5]);
+});
+
 function falsos(extra: Partial<Deps> = {}) {
   const chamadas: string[] = [];
   const guardados = new Map<string, Buffer>();

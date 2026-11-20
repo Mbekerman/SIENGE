@@ -42,14 +42,21 @@ const SISTEMA = `Você lê documentos de contas a pagar de uma incorporadora bra
 nota fiscal de serviço (NFS-e), fatura de concessionária (energia, água, gás, telefone, internet), boleto, recibo.
 Extraia só o que está escrito no documento. Nunca deduza nem invente: texto que não estiver legível ou não existir fica "" (vazio) e número fica null.
 - emitente é quem emite e recebe o pagamento (prestador, fornecedor, concessionária, beneficiário do boleto); \
-tomador é quem paga (destinatário, tomador do serviço, cliente, pagador).
-- documento: CNPJ ou CPF só com os dígitos.
+tomador é quem paga (destinatário, tomador do serviço, cliente, pagador). Preencha o tomador sempre que o documento \
+mostrar o cliente ou pagador, mesmo sem CNPJ (só o nome) e mesmo em fatura de concessionária.
+- documento: CNPJ ou CPF só com os dígitos. nome: a razão social inteira, exatamente como impressa, sem cortar nem \
+abreviar o começo ou o fim.
+- numero: o número do próprio documento. Na fatura de concessionária ou de telefonia, é o número da fatura ou da conta; \
+se ela traz uma NF-e ou NFCom embutida, o número dessa nota vai em observacoes, não em numero. Na NFS-e, o número da \
+nota, não o do RPS ou da DPS.
 - Datas em AAAA-MM-DD; competencia em AAAA-MM; valores em reais como número com ponto decimal (1.234,56 vira 1234.56).
 - valor é o valor bruto do documento (total da nota, valor dos serviços, total a pagar da fatura); valor_liquido é o \
-valor líquido depois das retenções, quando a nota mostra.
+valor líquido depois das retenções, quando a nota mostra. Se o arquivo traz só os boletos das parcelas, sem total \
+impresso, valor fica null (o sistema soma as parcelas).
 - retencoes: uma linha por tributo retido na fonte que a nota mostra como retido (tributo e valor); lista vazia se nenhum. \
 ISS só quando a nota diz que é retido.
-- parcelas: as duplicatas ou vencimentos que o documento lista, cada uma com o próprio vencimento e valor.
+- parcelas: as duplicatas ou vencimentos que o documento lista, na ordem e com o valor de cada uma exatamente como \
+impresso (não redistribua centavos). Num arquivo com vários boletos de um mesmo documento, uma parcela por boleto.
 - linhas_digitaveis: cada linha digitável de boleto ou código de barras de arrecadação exatamente como impresso, \
 só os dígitos. Não confunda com a chave de acesso da NF-e (44 dígitos, começa pelo código da UF).
 - chave_acesso: a chave de 44 dígitos da NF-e, ou o código de verificação da NFS-e.
@@ -132,7 +139,7 @@ export function converter(j: Record<string, any>, modelo: string, hoje = new Dat
     emitente: p(j.emitente), tomador: p(j.tomador),
     numero: str(j.numero), serie: str(j.serie), chave_acesso: str(j.chave_acesso),
     emissao, competencia: comp,
-    valor: pos(j.valor), valor_liquido: pos(j.valor_liquido),
+    valor: pos(j.valor) ?? somaParcelas(j.parcelas), valor_liquido: pos(j.valor_liquido),
     retencoes: retencoes(j.retencoes),
     descricao: str(j.descricao)?.slice(0, 300),
     parcelas: (Array.isArray(j.parcelas) ? j.parcelas : []).map((x: any) => ({ numero: str(x?.numero), vencimento: data(x?.vencimento), valor: pos(x?.valor) })),
@@ -152,6 +159,12 @@ function retencoes(r: unknown): Record<string, number | undefined> {
     if (TRIBUTOS.includes(t) && v !== undefined) o[t] = Math.round(((o[t] ?? 0) + v) * 100) / 100;
   }
   return o;
+}
+// Sem total impresso (um arquivo só com os boletos das parcelas): o valor é a soma das parcelas, se todas têm valor.
+function somaParcelas(ps: unknown): number | undefined {
+  if (!Array.isArray(ps) || !ps.length) return undefined;
+  const v = ps.map((x) => pos(x?.valor));
+  return v.every((n) => n !== undefined) ? Math.round(v.reduce((a, n) => a + n!, 0) * 100) / 100 : undefined;
 }
 const str = (x: unknown) => (typeof x === 'string' && x.trim() ? x.trim() : undefined);
 const pos = (x: unknown) => { const n = numero(x); return n !== undefined && n > 0 ? Math.round(n * 100) / 100 : undefined; };
