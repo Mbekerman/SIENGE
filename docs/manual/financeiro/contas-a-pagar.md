@@ -233,9 +233,9 @@ Conta recorrente é a que se repete todo mês. Ela fica cadastrada uma vez e gan
 | Tipo | Exemplos | O que o cadastro guarda |
 | --- | --- | --- |
 | **Contrato de serviço** | software, contabilidade, vigilância, limpeza, mídia | fornecedor, empresa pagadora, valor mensal, vigência, reajuste, dia de vencimento, dados de pagamento (PIX, conta ou boleto), núcleo econômico, centro de custo, natureza, gestor e o PDF do contrato |
-| **Conta de consumo** | energia, água, telefone | faixa máxima por mês, teto no ano e o número da instalação ou do cliente (é ele que identifica a fatura quando a concessionária usa um CNPJ só para todas as contas) |
+| **Conta de consumo** | energia, água, telefone | média esperada por mês (o valor médio da fatura, não um máximo), teto no ano e o número da instalação ou do cliente (é ele que identifica a fatura quando a concessionária usa um CNPJ só para todas as contas) |
 
-**Aprovação do cadastro:** cada conta recorrente é aprovada pelo gestor e por alguém da AF ou da AO antes de valer. **Trocar PIX, conta, valor ou faixa exige nova aprovação.**
+**Aprovação do cadastro:** cada conta recorrente é aprovada pelo gestor e por alguém da AF ou da AO antes de valer. **Trocar PIX, conta, valor ou média esperada exige nova aprovação.**
 
 ### Tarefa: cadastrar uma conta recorrente
 
@@ -246,15 +246,21 @@ Conta recorrente é a que se repete todo mês. Ela fica cadastrada uma vez e gan
 1. Em Financeiro › Contas a pagar › Contas recorrentes, clique em **Nova conta** e escolha um de três tipos:
    - **Assinatura:** valor por mês ou por período;
    - **Contrato de serviço:** valor total;
-   - **Conta de consumo:** concessionária, número da instalação (como está na fatura), faixa de valor por mês, teto no ano e dia do vencimento, que é obrigatório.
+   - **Conta de consumo:** concessionária, número da instalação (como está na fatura), **média esperada por mês** (o valor médio da fatura, não um máximo; Moises, 20/nov/2026), teto no ano e dia do vencimento, que é obrigatório.
 2. Preencha empresa, fornecedor, descrição, vigência, vencimento e o rateio, como no Lançar título.
 3. Clique em **Enviar para aprovação**. Aprovam o gestor de cada área e alguém da AF ou da AO.
 
 **Para mudar uma conta ativa:** use **Alterar**, na gaveta da conta. O botão só aparece para quem lança naquela conta. O tipo não muda, e mudar valor, vigência, fornecedor, instalação ou rateio manda a conta de novo para aprovação.
 
-**Na lista**, as contas de consumo ganham um grupo próprio, com "até R$ X por mês".
+**Na lista**, as contas de consumo ganham um grupo próprio, com "média R$ X por mês".
 
-**Ainda falta:** a regra de aprovação de cada nota do mês. No contrato, a nota pede o gestor e a AF ou a AD. Na conta de consumo, a nota dentro da faixa vai direto para a AF, a AO ou a AD.
+**Ainda falta:** a regra de aprovação da nota de cada mês, que entra no PR das notas.
+- **Contrato de serviço:** a nota pede o gestor e alguém da AF ou da AD.
+- **Conta de consumo** (Moises, 20/nov/2026): a fatura vai direto para a AF, a AO ou a AD quando cumpre duas condições:
+  - fica até X% acima da média esperada;
+  - somada ao que já se pagou no ano, fica dentro do teto anual.
+
+  Se não cumprir, passa antes pelo gestor. O X vale para a empresa toda e começa em 30%. Ele fica nas Configurações e, como é configuração de dinheiro, só muda por pedido de mudança com aprovação.
 
 **Como era no protótipo (linha F):**
 
@@ -262,10 +268,10 @@ Conta recorrente é a que se repete todo mês. Ela fica cadastrada uma vez e gan
 2. Escolha o tipo: **Contrato de serviço** (valor fixo por mês) ou **Conta de consumo** (luz, água, telefone).
 3. Preencha:
    - **Contrato de serviço:** fornecedor, valor mensal, vigência, reajuste (por exemplo, "IPCA, todo dezembro"), dia de vencimento, pagamento (vem do cadastro do fornecedor), núcleo econômico, centro de custo, natureza, gestor e o PDF do contrato;
-   - **Conta de consumo:** concessionária, número da instalação (como está na fatura; é por ele que o sistema acha a fatura), faixa por mês, teto no ano, vencimento, pagamento (por exemplo, boleto da fatura), núcleo econômico, centro de custo, natureza e gestor.
+   - **Conta de consumo:** concessionária, número da instalação (como está na fatura; é por ele que o sistema acha a fatura), média esperada por mês, teto no ano, vencimento, pagamento (por exemplo, boleto da fatura), núcleo econômico, centro de custo, natureza e gestor.
 4. Clique em **Enviar para aprovação**. Aprovam o gestor e alguém da AF ou da AO. Enquanto isso, a conta aparece com a marca **Cadastro em aprovação**.
 
-**Se precisar mudar:** trocar PIX, conta, valor ou faixa manda a conta de novo para aprovação.
+**Se precisar mudar:** trocar PIX, conta, valor ou média esperada manda a conta de novo para aprovação.
 
 
 > 🧪 Telas em protótipo (linha F), ainda sem código. Pedido do Moises, 8/nov/2026.
@@ -290,7 +296,7 @@ Conta recorrente é a que se repete todo mês. Ela fica cadastrada uma vez e gan
 - quem recebe a nota (o tomador) é a empresa pagadora certa;
 - o contrato está vigente;
 - o mês ainda não tem nota (não deixa mandar a nota duas vezes);
-- o valor cabe na regra: no contrato de serviço, o valor mensal com os reajustes aprovados; na conta de consumo, a faixa do mês e o teto do ano.
+- o valor cabe na regra: no contrato de serviço, o valor mensal com os reajustes aprovados; na conta de consumo, até X% acima da média esperada (começa em 30%) e dentro do teto do ano.
 
 O que não bate vira **exceção**: o pedido só segue com justificativa. Na tela, as marcas "CNPJ igual ao do contrato" e "igual ao contrato" aparecem embaixo do fornecedor e do valor.
 
