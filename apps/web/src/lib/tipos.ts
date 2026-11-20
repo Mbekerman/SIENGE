@@ -82,3 +82,14 @@ export interface PrevisaoParaNota {
   id: string; data_prevista: string; competencia: string; valor: number; saldo: number; descricao: string | null;
   natureza: string | null; area: string | null; contrato: string | null; compromisso_id: string | null; sienge: string | null; aprovada: boolean | null;
 }
+
+// Para aprovar (migration 20261119000500_api_aprovar.sql): uma linha por alçada pendente (título e previsão) ou por contrato
+export type TipoAprovacao = 'titulo' | 'previsao' | 'contrato';
+export interface Aprovacao {
+  tipo: TipoAprovacao; id: string; centro_id: string | null; divisao_id: string | null; area: string | null;
+  /** valor que cabe a esta alçada quando o título ou a previsão tem rateio; nulo no contrato */
+  parte: number | null; valor: number; fornecedor: string | null; descricao: string | null; data: string | null; empresa: string | null;
+  lancado_por: string | null; lancado_em: string | null; esperando: string | null;
+  /** é a vez de quem vê; `motivo` diz por que não (a mesma mensagem que a decisão daria) */
+  vez: boolean; motivo: string | null;
+}
