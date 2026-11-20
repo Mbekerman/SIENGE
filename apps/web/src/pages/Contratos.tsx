@@ -1,10 +1,13 @@
 // Contas recorrentes: contratos e assinaturas agrupados pelo tipo, com os contadores que filtram (tpl.js › fContas).
 import { useQuery } from '@tanstack/react-query';
-import { Alerta, COR, Cab, Carregando, Chip, Colunas, Gaveta, Grupo, Kv, Tiles, Vazio, type Linha } from '../components/Comum';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Alerta, COR, Cab, Carregando, Chip, Colunas, Gaveta, Grupo, Ic, Kv, Tiles, Vazio, type Linha } from '../components/Comum';
 import { data, hojeISO, reais, reais0 } from '../lib/format';
 import { acha, usePagina } from '../lib/navegar';
 import { mensagemErro, rpc } from '../lib/supabase';
+import { useSessao } from '../lib/sessao';
 import type { Contrato } from '../lib/tipos';
+import { ContaRecorrente } from './NovaConta';
 
 type F = 'ativos' | 'aprovacao' | 'vence' | 'encerrados';
 const PER: Record<string, string> = { mensal: 'por mês', bimestral: 'por bimestre', trimestral: 'por trimestre', semestral: 'por semestre', anual: 'por ano' };
@@ -20,12 +23,20 @@ const sit = (c: Contrato) => !ativo(c) ? <Chip t={c.situacao === 'cancelado' ? '
   : c.aprovado === false ? <Chip t="Em aprovação" c="at" /> : <Chip t="Ativo" c="ok" />;
 const COLS = [30, 17, 19, 9, 12, 13];
 const ROT = [{ t: 'Fornecedor' }, { t: 'Natureza' }, { t: 'Área', x: true }, { t: 'Vence' }, { t: 'Situação' }, { t: 'Valor', r: true }];
-const valor = (c: Contrato) => c.valor_periodo != null ? `${reais(c.valor_periodo)}` : c.valor_total != null ? reais(c.valor_total) : '—';
+const valor = (c: Contrato) => c.valor_periodo != null ? reais(c.valor_periodo) : c.valor_total != null ? reais(c.valor_total)
+  : c.faixa_mensal != null ? `média ${reais(c.faixa_mensal)}` : '—';
+const TIPO: Record<Contrato['tipo'], string> = { contrato: 'Contrato de serviço', assinatura: 'Assinatura', consumo: 'Conta de consumo' };
 
 export function Contratos() {
   const pg = usePagina<F>('/contratos');
   const q = useQuery({ queryKey: ['contratos'], queryFn: () => rpc<Contrato[]>('contratos') });
-  const todos = (q.data ?? []).filter(c => acha(pg.busca, c.fornecedor, c.numero, c.descricao, c.naturezas, c.areas));
+  const { eu } = useSessao();
+  const [sp, setSp] = useSearchParams();
+  const nav = useNavigate();
+  const janela = sp.get('novo') === '1' ? 'novo' : sp.get('alterar') === '1' ? 'alterar' : null;
+  const semJanela = () => { const n = new URLSearchParams(sp); n.delete('novo'); n.delete('alterar'); const s = n.toString(); return s ? `?${s}` : ''; };
+  const abrir = (k: 'novo' | 'alterar' | null) => { const n = new URLSearchParams(sp); n.delete('novo'); n.delete('alterar'); if (k) n.set(k, '1'); setSp(n); };
+  const todos = (q.data ?? []).filter(c => acha(pg.busca, c.fornecedor, c.numero, c.descricao, c.naturezas, c.areas, c.instalacao));
   const vis = todos.filter(c => pg.filtro ? FILTRO[pg.filtro](c) : ativo(c));
   const linha = (c: Contrato): Linha => ({
     id: c.id,
@@ -41,12 +52,16 @@ export function Contratos() {
     sub: <><span>{[c.naturezas, c.dia_vencimento && `dia ${c.dia_vencimento}`].filter(Boolean).join(' · ')}</span>{sit(c)}</>,
   });
   const soma = (l: Contrato[]) => l.filter(c => c.periodicidade === 'mensal').reduce((a, c) => a + Number(c.valor_periodo ?? 0), 0);
-  const ctr = vis.filter(c => c.tipo === 'contrato'), ass = vis.filter(c => c.tipo === 'assinatura');
+  const somaF = (l: Contrato[]) => l.reduce((a, c) => a + Number(c.faixa_mensal ?? 0), 0);
+  const ctr = vis.filter(c => c.tipo === 'contrato'), ass = vis.filter(c => c.tipo === 'assinatura'), cons = vis.filter(c => c.tipo === 'consumo');
   const sel = pg.id ? (q.data ?? []).find(c => c.id === pg.id) : undefined;
   return (
     <>
       <div className="f-pag">
-        <Cab t="Contas recorrentes">{(pg.filtro || pg.busca) && <button className="btn t" onClick={pg.limpar}>Limpar filtro</button>}</Cab>
+        <Cab t="Contas recorrentes">
+          {(pg.filtro || pg.busca) && <button className="btn t" onClick={pg.limpar}>Limpar filtro</button>}
+          {eu?.escreve && <button className="btn p" onClick={() => abrir('novo')}><Ic n="add" s={18} />Nova conta</button>}
+        </Cab>
         <Tiles itens={[
           { k: 'ativos' as F, r: 'Ativas', cor: COR.verde, n: todos.filter(FILTRO.ativos).length, v: soma(todos.filter(FILTRO.ativos)) ? `${reais0(soma(todos.filter(FILTRO.ativos)))} por mês` : undefined },
           { k: 'aprovacao' as F, r: 'Em aprovação', cor: COR.terra, n: todos.filter(FILTRO.aprovacao).length },
@@ -58,18 +73,23 @@ export function Contratos() {
           : <>
               <Colunas cols={COLS} rot={ROT} />
               <Grupo nome="Contratos de serviço" cor={COR.azul} linhas={ctr.map(linha)} total={soma(ctr) ? `${reais0(soma(ctr))} por mês` : undefined} sel={pg.id} abrir={pg.abrir} cols={COLS} />
-              <Grupo nome="Assinaturas" cor={COR.roxo} linhas={ass.map(linha)} total={soma(ass) ? `${reais0(soma(ass))} por mês` : undefined} sel={pg.id} abrir={pg.abrir} cols={COLS} />
+              <Grupo nome="Assinaturas" cor={COR.verde} linhas={ass.map(linha)} total={soma(ass) ? `${reais0(soma(ass))} por mês` : undefined} sel={pg.id} abrir={pg.abrir} cols={COLS} />
+              <Grupo nome="Contas de consumo" cor={COR.roxo} linhas={cons.map(linha)} total={somaF(cons) ? `média ${reais0(somaF(cons))} por mês` : undefined} sel={pg.id} abrir={pg.abrir} cols={COLS} />
             </>}
       </div>
       {pg.id && (
         sel ? (
           <Gaveta titulo={sel.fornecedor ?? sel.descricao} sub={sit(sel)} fechar={pg.fechar}>
+            {sel.posso_alterar && <div className="lt-lin"><button className="btn sm" onClick={() => abrir('alterar')}><Ic n="edit" s={18} />Alterar</button></div>}
             <div className="big num">{valor(sel)}{sel.periodicidade && <span className="sec" style={{ fontSize: 16, marginLeft: 8 }}>{PER[sel.periodicidade]}</span>}</div>
             {ativo(sel) && sel.aprovado === false && <Alerta c="at" t="Cadastro em aprovação" />}
             <Kv l={[
-              ['Tipo', sel.tipo === 'assinatura' ? 'Assinatura' : 'Contrato de serviço'],
+              ['Tipo', TIPO[sel.tipo]],
               ['Descrição', sel.descricao],
               ['Número', sel.numero],
+              ['Nº da instalação', sel.instalacao],
+              ['Média esperada por mês', sel.faixa_mensal != null ? reais(sel.faixa_mensal) : null],
+              ['Teto no ano', sel.teto_anual != null ? reais(sel.teto_anual) : null],
               ['Vigência', `${data(sel.inicio)}${sel.fim ? ` a ${data(sel.fim)}` : ', sem prazo'}`],
               ['Vencimento', sel.dia_vencimento ? `dia ${sel.dia_vencimento}` : null],
               ['Valor total', sel.valor_total != null ? reais(sel.valor_total) : null],
@@ -84,6 +104,8 @@ export function Contratos() {
           <Gaveta titulo="Conta recorrente" fechar={pg.fechar}>{q.isLoading ? <Carregando /> : <Vazio t="Não encontrada ou sem acesso." />}</Gaveta>
         )
       )}
+      {janela === 'novo' && <ContaRecorrente fechar={() => abrir(null)} salvo={id => nav(`/contratos/${id}${semJanela()}`)} />}
+      {janela === 'alterar' && pg.id && <ContaRecorrente id={pg.id} fechar={() => abrir(null)} salvo={() => abrir(null)} />}
     </>
   );
 }

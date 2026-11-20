@@ -1003,7 +1003,7 @@ select pg_temp.ok(not exists (
        'cancelar_reclassificacao','pedir_mudanca_acesso','decidir_mudanca_acesso','cancelar_mudanca_acesso','passar_master',
        'pedir_sucessao_master','decidir_sucessao_master','vetar_sucessao_master','efetivar_sucessao_master',
        'pedir_mudanca_config','decidir_mudanca_config','cancelar_mudanca_config','marcar_notificacoes_lidas',
-       'designar_pj','retirar_pj','vejo_pj','vejo_auditoria','previsao_aprovada_vista','contrato_aprovado_visto','contrato_confere')),
+       'designar_pj','retirar_pj','vejo_pj','vejo_auditoria','previsao_aprovada_vista','contrato_aprovado_visto','contrato_confere','compromisso_vinculos')),
   'catálogo: das funções security definer, authenticated só executa as da lista (RPCs e conferências de quem está logado)');
 select pg_temp.ok(not has_function_privilege('authenticated', 'erp._aplicar_mudanca_acesso(uuid)', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp.gerar_avisos_sucessao()', 'EXECUTE')
@@ -7256,8 +7256,8 @@ begin
        or exists (select id from erp.previsoes where sentido = 'pagar' except select id from api.previsoes()) then
       raise exception 'FALHOU: api.previsoes difere do RLS para %', r.u;
     end if;
-    if exists (select id from api.contratos() except select id from erp.compromissos where tipo in ('contrato','assinatura'))
-       or exists (select id from erp.compromissos where tipo in ('contrato','assinatura') except select id from api.contratos()) then
+    if exists (select id from api.contratos() except select id from erp.compromissos where tipo in ('contrato','assinatura','consumo'))
+       or exists (select id from erp.compromissos where tipo in ('contrato','assinatura','consumo') except select id from api.contratos()) then
       raise exception 'FALHOU: api.contratos difere do RLS para %', r.u;
     end if;
   end loop;
@@ -7631,6 +7631,12 @@ rollback;
 
 \echo '# tela Para aprovar (api.aprovacoes e api.decidir, 19/11/2026)'
 select pg_temp.como(null);
+-- transação só de leitura (GET do PostgREST): erro claro, nunca "não é a vez" em tudo (revisão de segurança do #95)
+select pg_temp.como(:'gestor');
+begin read only;
+select pg_temp.erro_igual('select * from api.aprovacoes()', 'api.aprovacoes precisa de transação de escrita (chamar por POST)', 'aprovar: só leitura dá erro claro');
+rollback;
+select pg_temp.como(null);
 begin;
 select pg_temp.sis();
 insert into erp.pessoa_papeis values ('10000000-0000-0000-0000-000000000007', 'fornecedor') on conflict do nothing;
@@ -7659,10 +7665,6 @@ grant select on apr_conta to public;
 select pg_temp.como(:'leitor');
 select pg_temp.ok(not exists (select 1 from api.aprovacoes()), 'aprovar: quem só consulta não recebe a lista');
 select pg_temp.falha(format($$select api.decidir('titulo', %L, 'aprovar')$$, :'tap'), 'aprovar: quem só consulta não decide');
--- transação só de leitura (GET do PostgREST): erro claro, nunca "não é a vez" em tudo (revisão de segurança do #95)
-begin read only;
-select pg_temp.erro_igual('select * from api.aprovacoes()', 'api.aprovacoes precisa de transação de escrita (chamar por POST)', 'aprovar: só leitura dá erro claro');
-commit;
 -- a vez: o gestor do centro primeiro; quem lançou vê o motivo
 select pg_temp.como(:'gestor');
 select pg_temp.ok((select a.vez and a.esperando = 'gestor do centro, depois AF' and a.area = 'Marketing' and a.valor = 900
@@ -7734,6 +7736,144 @@ end $$;
 select pg_temp.ok(true, 'aprovar: para cada usuário, a lista só traz títulos, previsões e contratos que ele vê');
 select pg_temp.como(null);
 rollback;
+
+\echo '# contas recorrentes pela tela (api.salvar_conta e conta de consumo, 20/11/2026)'
+select pg_temp.como(null);
+begin;
+select pg_temp.sis();
+insert into erp.pessoa_papeis values ('10000000-0000-0000-0000-000000000007', 'fornecedor') on conflict do nothing;
+insert into erp.centro_aprovadores values (:'cc_mkt', :'gestor') on conflict do nothing;
+insert into erp.listas_financeiro (lista, user_id) values ('AF', :'contador') on conflict do nothing;
+select pg_temp.volta();
+select pg_temp.como(:'analista');
+select n.id as nat_cr from api.naturezas_lancaveis(:'ne_vm', :'cc_mkt', null) n order by n.codigo limit 1 \gset
+select jsonb_build_object('empresa', :'spe', 'tipo', 'consumo', 'fornecedor', '10000000-0000-0000-0000-000000000007',
+         'descricao', 'Luz do PDV', 'inicio', '2026-11-01', 'dia_vencimento', 6, 'instalacao', '0012.345-6',
+         'faixa_mensal', 1500, 'teto_anual', 16000,
+         'rateio', jsonb_build_array(jsonb_build_object('nucleo', :'ne_vm', 'centro', :'cc_mkt', 'natureza', :'nat_cr', 'percentual', 100))) as cbase \gset
+-- quem só consulta não grava
+select pg_temp.como(:'leitor');
+select pg_temp.falha(format('select api.salvar_conta(%L::jsonb)', :'cbase'), 'conta: quem só consulta não cadastra');
+-- a conta de consumo pede instalação, faixa e teto; o rateio soma 100%
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format('select api.salvar_conta(%L::jsonb)', (:'cbase'::jsonb - 'instalacao')::text),
+  'Informe a instalação, a média esperada por mês, o teto no ano e o dia do vencimento', 'conta: consumo sem instalação é recusado');
+select pg_temp.erro_igual(format('select api.salvar_conta(%L::jsonb)', jsonb_set(:'cbase'::jsonb, '{rateio,0,percentual}', '60')::text),
+  'O rateio precisa somar 100%', 'conta: rateio que não soma 100% é recusado');
+select api.salvar_conta(:'cbase'::jsonb) as ccons \gset
+select pg_temp.ok((select c.tipo = 'consumo' and c.periodicidade = 'mensal' and c.faixa_mensal = 1500
+                     and c.valor_periodo is null from erp.compromissos c where c.id = :'ccons'), 'conta: consumo gravado, mensal');
+select aprovacao_versao as cver from erp.compromissos where id = :'ccons' \gset
+select pg_temp.ok((select not x.aprovado and x.instalacao = '0012.345-6' and x.teto_anual = 16000 and x.posso_alterar
+                     from api.contratos() x where x.id = :'ccons'), 'conta: aparece na lista, em aprovação, e quem lançou altera');
+-- a mesma instalação (escrita de outro jeito) do mesmo fornecedor na mesma empresa não entra duas vezes
+select pg_temp.falha(format('select api.salvar_conta(%L::jsonb)', jsonb_set(:'cbase'::jsonb, '{instalacao}', '"00123456"')::text),
+  'conta: a mesma instalação não entra duas vezes');
+-- vai para a tela Para aprovar com a faixa como valor; o gestor tem a vez, quem lançou não
+select pg_temp.como(:'gestor');
+select pg_temp.ok((select a.vez and a.valor = 1500 from api.aprovacoes() a where a.tipo = 'contrato' and a.id = :'ccons'),
+  'conta: consumo na tela Para aprovar, na vez do gestor, pela faixa');
+select pg_temp.como(:'analista');
+select pg_temp.ok((select not a.vez from api.aprovacoes() a where a.tipo = 'contrato' and a.id = :'ccons'), 'conta: quem lançou não aprova a conta');
+-- api.conta devolve o cadastro para alterar
+select pg_temp.ok((select (x->>'instalacao') = '0012.345-6' and jsonb_array_length(x->'rateio') = 1
+                     and (x->'rateio'->0->>'percentual')::numeric = 100 from api.conta(:'ccons') x), 'conta: o cadastro volta para a tela de alterar');
+-- alterar sem mudar nada não reabre a aprovação; mudar a faixa reabre
+select api.salvar_conta(:'cbase'::jsonb || jsonb_build_object('id', :'ccons'));
+select pg_temp.ok((select aprovacao_versao = :cver from erp.compromissos where id = :'ccons'), 'conta: salvar igual não muda a versão');
+select api.salvar_conta(:'cbase'::jsonb || jsonb_build_object('id', :'ccons', 'faixa_mensal', 1800));
+select pg_temp.ok((select aprovacao_versao = :cver + 1 and faixa_mensal = 1800 from erp.compromissos where id = :'ccons'), 'conta: mudar a faixa pede aprovação de novo');
+select api.salvar_conta(:'cbase'::jsonb || jsonb_build_object('id', :'ccons', 'faixa_mensal', 1800, 'instalacao', '0099'));
+select pg_temp.ok((select aprovacao_versao = :cver + 2 and instalacao = '0099' from erp.compromissos where id = :'ccons'), 'conta: mudar a instalação pede aprovação de novo');
+select api.salvar_conta(:'cbase'::jsonb || jsonb_build_object('id', :'ccons', 'faixa_mensal', 1800, 'instalacao', '0099', 'teto_anual', 99000));
+select pg_temp.ok((select aprovacao_versao = :cver + 3 and teto_anual = 99000 from erp.compromissos where id = :'ccons'), 'conta: mudar o teto pede aprovação de novo');
+-- quem só lê vê a conta sem poder alterar; quem não lança no centro também não
+select pg_temp.como(:'leitor');
+select pg_temp.ok((select coalesce(bool_and(not x.posso_alterar), true) and count(*) > 0 from api.contratos() x where x.id = :'ccons'), 'conta: quem só lê vê a conta e não altera');
+select pg_temp.sis();
+insert into erp.excecoes_centro (user_id, nucleo_economico_id, centro_custo_id, nivel) values (:'analista2', :'ne_vm', :'cc_mkt', 'leitor')
+  on conflict (user_id, nucleo_economico_id, centro_custo_id) do update set nivel = 'leitor', fim = null;
+select pg_temp.volta();
+select pg_temp.como(:'analista2');
+select pg_temp.ok((select coalesce(bool_and(not x.posso_alterar), true) and count(*) > 0 from api.contratos() x where x.id = :'ccons'), 'conta: quem vê e não lança no centro não altera');
+select pg_temp.como(:'analista');
+-- o tipo não muda pela alteração
+select pg_temp.erro_igual(format('select api.salvar_conta(%L::jsonb)', (:'cbase'::jsonb || jsonb_build_object('id', :'ccons', 'tipo', 'assinatura',
+  'valor_periodo', 100, 'periodicidade', 'mensal'))::text), 'Conta não encontrada, encerrada ou sem permissão para alterar', 'conta: o tipo não muda');
+-- contrato de serviço por valor total e assinatura mensal
+select api.salvar_conta(jsonb_build_object('empresa', :'spe', 'tipo', 'contrato', 'fornecedor', '10000000-0000-0000-0000-000000000007',
+  'descricao', 'Agência 12 meses', 'inicio', '2026-12-01', 'fim', '2027-11-30', 'valor_total', 24000, 'instalacao', 'X',
+  'rateio', :'cbase'::jsonb->'rateio')) as cctr \gset
+select pg_temp.ok((select c.tipo = 'contrato' and c.valor_total = 24000 and c.instalacao is null from erp.compromissos c where c.id = :'cctr'),
+  'conta: contrato de serviço gravado sem campos de consumo');
+select pg_temp.erro_igual(format('select api.salvar_conta(%L::jsonb)', jsonb_build_object('empresa', :'spe', 'tipo', 'assinatura',
+  'fornecedor', '10000000-0000-0000-0000-000000000007', 'descricao', 'Software', 'inicio', '2026-12-01', 'valor_periodo', 200,
+  'rateio', :'cbase'::jsonb->'rateio')::text), 'Informe o valor e a periodicidade', 'conta: assinatura sem periodicidade é recusada');
+-- conta encerrada não se altera e sai do "posso alterar"
+select pg_temp.sis();
+update erp.compromissos set situacao = 'encerrado' where id = :'ccons';
+select pg_temp.volta();
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format('select api.salvar_conta(%L::jsonb)', (:'cbase'::jsonb || jsonb_build_object('id', :'ccons', 'faixa_mensal', 2000))::text),
+  'Conta não encontrada, encerrada ou sem permissão para alterar', 'conta: conta encerrada não se altera');
+select pg_temp.ok((select not x.posso_alterar from api.contratos() x where x.id = :'ccons'), 'conta: conta encerrada sai do posso alterar');
+-- contrato sem nada ligado: o fornecedor e o valor mudam (corrige cadastro errado)
+select api.salvar_conta(jsonb_build_object('id', :'cctr', 'empresa', :'spe', 'tipo', 'contrato', 'fornecedor', '10000000-0000-0000-0000-000000000005',
+  'descricao', 'Agência 12 meses', 'inicio', '2026-12-01', 'fim', '2027-11-30', 'valor_total', 1, 'rateio', :'cbase'::jsonb->'rateio'));
+select pg_temp.ok((select pessoa_id = '10000000-0000-0000-0000-000000000005' and valor_total = 1 from erp.compromissos where id = :'cctr'),
+  'conta: sem nota, título ou previsão, o fornecedor e o valor mudam');
+-- contrato só com nota (cancelada): já está ligado, mas o cancelado não conta no lançado
+select pg_temp.sis();
+update erp.compromissos set valor_total = 10000 where id = :'cctr';
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, compromisso_id, tipo, numero, emissao, competencia, valor_bruto, situacao)
+values ('70000000-0000-0000-0000-0000000096a1', :'spe', '10000000-0000-0000-0000-000000000005', :'cctr', 'nfse', '96-1', '2026-12-05', '2026-12-01', 4000, 'rascunho');
+set local role erp_situacao;
+update erp.documentos_fiscais set situacao = 'cancelado' where id = '70000000-0000-0000-0000-0000000096a1';
+reset role;
+select pg_temp.ok((select v.ligado and v.lancado = 0 from erp.compromisso_vinculos(:'cctr') v), 'conta: contrato só com nota cancelada está ligado e não tem lançado');
+select pg_temp.volta();
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format('update erp.compromissos set pessoa_id = %L where id = %L', '10000000-0000-0000-0000-000000000007', :'cctr'),
+  'O fornecedor não muda: o contrato já tem nota, título ou previsão; encerre e cadastre outro', 'conta: contrato só com nota não troca de fornecedor');
+-- título sem nota conta no lançado; nota não cancelada também
+select pg_temp.sis();
+select pg_temp.como(:'analista');
+set local role erp_situacao;
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, compromisso_id, emissao, competencia, valor, situacao)
+values ('81000000-0000-0000-0000-0000000096a1', :'spe', 'avulso', '10000000-0000-0000-0000-000000000005', :'cctr', '2026-12-05', '2026-12-01', 300, 'rascunho');
+reset role;
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, compromisso_id, tipo, numero, emissao, competencia, valor_bruto)
+values ('70000000-0000-0000-0000-0000000096a2', :'spe', '10000000-0000-0000-0000-000000000005', :'cctr', 'nfse', '96-2', '2026-12-05', '2026-12-01', 200);
+select pg_temp.ok((select v.lancado = 500 from erp.compromisso_vinculos(:'cctr') v), 'conta: lançado = título sem nota + nota não cancelada');
+select pg_temp.volta();
+select pg_temp.como(:'analista');
+select pg_temp.falha(format('update erp.compromissos set valor_total = 499.99 where id = %L', :'cctr'), 'conta: o valor não fica abaixo do título sem nota + nota');
+-- direto no banco, sem a api: consumo sem instalação é recusado
+select pg_temp.falha(format($$insert into erp.compromissos (empresa_id, tipo, pessoa_id, descricao, inicio, periodicidade, dia_vencimento, faixa_mensal, teto_anual)
+  values (%L, 'consumo', '10000000-0000-0000-0000-000000000007', 'X', '2026-12-01', 'mensal', 5, 10, 100)$$, :'spe'), 'conta: consumo sem instalação é recusado também direto no banco');
+-- contrato com nota ligada (CT-1, revisão do #96): o fornecedor não muda e o valor não fica abaixo do lançado, em qualquer caminho
+select pg_temp.sis();
+select pg_temp.ok((select v.ligado and v.lancado > 1 from erp.compromisso_vinculos('60000000-0000-0000-0000-000000000002') v),
+  'conta: (teste) o CT-1 tem nota ligada e valor lançado');
+select (erp.compromisso_vinculos('60000000-0000-0000-0000-000000000002')).lancado as ct1_lanc \gset
+select pg_temp.volta();
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual($$update erp.compromissos set pessoa_id = '10000000-0000-0000-0000-000000000007' where id = '60000000-0000-0000-0000-000000000002'$$,
+  'O fornecedor não muda: o contrato já tem nota, título ou previsão; encerre e cadastre outro', 'conta: o fornecedor do contrato com nota não muda');
+select pg_temp.falha($$update erp.compromissos set valor_total = 1 where id = '60000000-0000-0000-0000-000000000002'$$,
+  'conta: o valor do contrato não fica abaixo do já lançado');
+select pg_temp.falha(format('update erp.compromissos set valor_total = %s where id = %L', :ct1_lanc - 0.01, '60000000-0000-0000-0000-000000000002'),
+  'conta: um centavo abaixo do lançado também é recusado');
+update erp.compromissos set valor_total = :ct1_lanc where id = '60000000-0000-0000-0000-000000000002';
+select pg_temp.ok((select valor_total = :ct1_lanc from erp.compromissos where id = '60000000-0000-0000-0000-000000000002'),
+  'conta: o valor igual ao lançado é aceito');
+-- corrida (revisão do #96): a troca de fornecedor ou valor e a nota no mesmo contrato tomam a mesma trava; não se
+-- testa a espera numa conexão só, então confere que os dois gatilhos a tomam
+select pg_temp.ok((select bool_and(pg_get_functiondef(f) like '%pg_advisory_xact_lock(hashtext(''erp.compromisso:''%')
+                     from unnest(array['erp.tg_compromisso_vinculado()'::regprocedure, 'erp.tg_contrato_confere()'::regprocedure]) f),
+  'conta: o contrato e a nota que entra nele tomam a mesma trava');
+rollback;
+select pg_temp.como(null);
 
 \echo '# pessoa PJ: o cadastro só o master e os designados veem (Moises, 19/11/2026)'
 begin;
