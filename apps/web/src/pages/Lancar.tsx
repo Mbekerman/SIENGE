@@ -85,6 +85,9 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   const subir = useMutation({ mutationFn: subirArquivo, onSuccess: r => { setArq(r); setSemRet(false); preencher(r); } });
   const senha = useMutation({ mutationFn: (x: { id: string; s: string }) => abrirComSenha(x.id, x.s), onSuccess: r => { setArq(r); preencher(r); } });
   const comRet = Boolean(arq?.leitura && temRetencao(arq.leitura));
+  // CNPJ do tomador mascarado no documento: sugere as empresas que fecham com o que aparece; quem lança confirma
+  const mascaraTom = arq?.leitura?.tomador?.documento_mascara;
+  const sugeridas = o && mascaraTom && !arq?.identificacao?.empresa && !empresa ? empresasPelaMascara(mascaraTom, o.empresas) : [];
   const usarCandidato = (c: Identificacao['candidatos'][number] | null) => {
     setCand(c?.id ?? null);
     if (!c) { setPrevs([]); return; }
@@ -158,7 +161,8 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
 
         {leitorLigado && <ArquivoNota r={arq} subindo={subir.isPending} erro={subir.error ? mensagemErro(subir.error) : null}
           escolher={f => { senha.reset(); subir.mutate(f); }} valor={valor} cand={cand} usar={usarCandidato}
-          abrir={x => arq && senha.mutate({ id: arq.anexo.id, s: x })} abrindo={senha.isPending} erroSenha={senha.error ? mensagemErro(senha.error) : null} />}
+          abrir={x => arq && senha.mutate({ id: arq.anexo.id, s: x })} abrindo={senha.isPending} erroSenha={senha.error ? mensagemErro(senha.error) : null}
+          sugeridas={sugeridas} mascara={mascaraTom} usarEmpresa={id => { setEmpresa(id); setLinhas([novaLinha()]); }} />}
         {comRet && arq?.leitura && (
           <div className="lt-sec">
             <span className="nt cr">A leitura achou retenção de imposto ({descRetencao(arq.leitura)}). Nota com retenção ainda não se lança: o título sairia pelo valor bruto e a BKM pagaria ao fornecedor o imposto que ela mesma tem de recolher. Espere a tela de retenções.</span>
@@ -399,10 +403,11 @@ function avisosLidos(r: ResultadoLeitor, valor: number | null): { c: 'cr' | 'at'
   return out;
 }
 
-function ArquivoNota({ r, subindo, erro, escolher, valor, cand, usar, abrir, abrindo, erroSenha }: {
+function ArquivoNota({ r, subindo, erro, escolher, valor, cand, usar, abrir, abrindo, erroSenha, sugeridas, mascara, usarEmpresa }: {
   r: ResultadoLeitor | null; subindo: boolean; erro: string | null; escolher: (f: File) => void; valor: number | null;
   cand: string | null; usar: (c: Identificacao['candidatos'][number] | null) => void;
   abrir: (senha: string) => void; abrindo: boolean; erroSenha: string | null;
+  sugeridas: OpcoesLancamento['empresas']; mascara?: string; usarEmpresa: (id: string) => void;
 }) {
   const inp = useRef<HTMLInputElement>(null);
   const [sobre, setSobre] = useState(false);
@@ -444,6 +449,12 @@ function ArquivoNota({ r, subindo, erro, escolher, valor, cand, usar, abrir, abr
       {abrindo && <div className="lt-arq"><Carregando /><span className="sec">Abrindo e lendo o PDF…</span></div>}
       {erroSenha && <span className="lt-erro"><Ic n="warn" s={18} />{erroSenha}</span>}
       {avisos.map((a, i) => <span key={i} className={`nt ${a.c}`}>{a.t}</span>)}
+      {sugeridas.length > 0 && mascara && (
+        <div className="lt-sug">
+          <span className="nt at">O CNPJ de quem paga está mascarado no documento ({mascara.replace(/\*/g, '•')}). {sugeridas.length === 1 ? 'Pode ser esta empresa' : 'Pode ser uma destas empresas'}; confira antes de usar:</span>
+          <div className="lt-lin">{sugeridas.map(e => <button key={e.id} type="button" className="btn ton sm" onClick={() => usarEmpresa(e.id)}>Usar {e.nome}</button>)}</div>
+        </div>
+      )}
       {cands.length > 0 && <>
         <span className="sec peq">De onde vem esta nota? Escolher preenche o rateio e a previsão; dá para mudar depois.</span>
         {cands.map(c => (
@@ -471,3 +482,11 @@ const descRetencao = (l: Leitura) => {
   const it = RET.filter(([k]) => (l.retencoes?.[k] ?? 0) > 0).map(([k, n]) => `${n} ${reais(l.retencoes![k]!)}`);
   return it.length ? it.join(', ') : `líquido ${reais(l.valor_liquido!)} de ${reais(l.valor!)}`;
 };
+
+/** As empresas cujo CNPJ fecha com a máscara lida (dígitos e *): com 14 posições, dígito a dígito; senão, pelo começo
+ *  (antes do primeiro *) e pelo fim (depois do último *). Só sugestão: quem lança confirma. */
+export function empresasPelaMascara(m: string, empresas: OpcoesLancamento['empresas']): OpcoesLancamento['empresas'] {
+  const ini = m.slice(0, m.indexOf('*')), fim = m.slice(m.lastIndexOf('*') + 1);
+  const fecha = (d: string) => (m.length === d.length ? [...m].every((c, i) => c === '*' || c === d[i]) : d.startsWith(ini) && d.endsWith(fim));
+  return empresas.filter(e => e.documento && fecha(e.documento.replace(/\D/g, '')));
+}
