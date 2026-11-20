@@ -7,43 +7,48 @@ import { type Boleto, type Leitura, type TipoDocumento, data, limpar, numero, so
 
 export const MODELO = 'claude-opus-5-5';
 
+// A API aceita no máximo 16 campos com union (type: [t, 'null']) por esquema. Texto ausente vem como "" (vazio); só os
+// números aceitam null, porque zero seria um valor. O teste conta e falha acima de 16.
+const texto = { type: 'string' };
 const nulo = (t: string) => ({ type: [t, 'null'] });
 const objeto = (props: Record<string, unknown>) => ({
   type: 'object', additionalProperties: false, properties: props, required: Object.keys(props),
 });
-const pessoa = objeto({ documento: nulo('string'), nome: nulo('string') });
+const pessoa = objeto({ documento: texto, nome: texto });
+
+const TRIBUTOS = ['iss', 'irrf', 'inss', 'pis', 'cofins', 'csll'];
 
 export const ESQUEMA = objeto({
   tipo: { type: 'string', enum: ['nfe', 'nfse', 'fatura', 'boleto', 'recibo', 'outro'] },
   emitente: pessoa,
   tomador: pessoa,
-  numero: nulo('string'),
-  serie: nulo('string'),
-  chave_acesso: nulo('string'),
-  emissao: nulo('string'),
-  competencia: nulo('string'),
+  numero: texto,
+  serie: texto,
+  chave_acesso: texto,
+  emissao: texto,
+  competencia: texto,
   valor: nulo('number'),
   valor_liquido: nulo('number'),
-  retencoes: objeto({ iss: nulo('number'), irrf: nulo('number'), inss: nulo('number'), pis: nulo('number'),
-                      cofins: nulo('number'), csll: nulo('number') }),
-  descricao: nulo('string'),
-  parcelas: { type: 'array', items: objeto({ numero: nulo('string'), vencimento: nulo('string'), valor: nulo('number') }) },
+  retencoes: { type: 'array', items: objeto({ tributo: { type: 'string', enum: TRIBUTOS }, valor: { type: 'number' } }) },
+  descricao: texto,
+  parcelas: { type: 'array', items: objeto({ numero: texto, vencimento: texto, valor: nulo('number') }) },
   linhas_digitaveis: { type: 'array', items: { type: 'string' } },
-  pix: objeto({ chave: nulo('string'), copia_e_cola: nulo('string') }),
-  consumo: objeto({ instalacao: nulo('string'), referencia: nulo('string'), vencimento: nulo('string') }),
+  pix: objeto({ chave: texto, copia_e_cola: texto }),
+  consumo: objeto({ instalacao: texto, referencia: texto, vencimento: texto }),
   observacoes: { type: 'array', items: { type: 'string' } },
 });
 
 const SISTEMA = `Você lê documentos de contas a pagar de uma incorporadora brasileira: nota fiscal de produto (NF-e/DANFE), \
 nota fiscal de serviço (NFS-e), fatura de concessionária (energia, água, gás, telefone, internet), boleto, recibo.
-Extraia só o que está escrito no documento. Nunca deduza nem invente: o que não estiver legível ou não existir fica null.
+Extraia só o que está escrito no documento. Nunca deduza nem invente: texto que não estiver legível ou não existir fica "" (vazio) e número fica null.
 - emitente é quem emite e recebe o pagamento (prestador, fornecedor, concessionária, beneficiário do boleto); \
 tomador é quem paga (destinatário, tomador do serviço, cliente, pagador).
 - documento: CNPJ ou CPF só com os dígitos.
 - Datas em AAAA-MM-DD; competencia em AAAA-MM; valores em reais como número com ponto decimal (1.234,56 vira 1234.56).
 - valor é o valor bruto do documento (total da nota, valor dos serviços, total a pagar da fatura); valor_liquido é o \
 valor líquido depois das retenções, quando a nota mostra.
-- retencoes: só os tributos retidos na fonte que a nota mostra como retidos. ISS só quando a nota diz que é retido.
+- retencoes: uma linha por tributo retido na fonte que a nota mostra como retido (tributo e valor); lista vazia se nenhum. \
+ISS só quando a nota diz que é retido.
 - parcelas: as duplicatas ou vencimentos que o documento lista, cada uma com o próprio vencimento e valor.
 - linhas_digitaveis: cada linha digitável de boleto ou código de barras de arrecadação exatamente como impresso, \
 só os dígitos. Não confunda com a chave de acesso da NF-e (44 dígitos, começa pelo código da UF).
@@ -128,7 +133,7 @@ export function converter(j: Record<string, any>, modelo: string, hoje = new Dat
     numero: str(j.numero), serie: str(j.serie), chave_acesso: str(j.chave_acesso),
     emissao, competencia: comp,
     valor: pos(j.valor), valor_liquido: pos(j.valor_liquido),
-    retencoes: Object.fromEntries(['iss', 'irrf', 'inss', 'pis', 'cofins', 'csll'].map((k) => [k, pos(j.retencoes?.[k])])),
+    retencoes: retencoes(j.retencoes),
     descricao: str(j.descricao)?.slice(0, 300),
     parcelas: (Array.isArray(j.parcelas) ? j.parcelas : []).map((x: any) => ({ numero: str(x?.numero), vencimento: data(x?.vencimento), valor: pos(x?.valor) })),
     boletos,
@@ -136,6 +141,17 @@ export function converter(j: Record<string, any>, modelo: string, hoje = new Dat
     consumo: { instalacao: str(j.consumo?.instalacao), referencia: refConsumo, vencimento: data(j.consumo?.vencimento) },
     avisos,
   });
+}
+// Lista [{tributo, valor}] (o esquema atual) ou objeto {iss: 10} (aceito também); tributo repetido soma.
+function retencoes(r: unknown): Record<string, number | undefined> {
+  const o: Record<string, number | undefined> = {};
+  const linhas = Array.isArray(r) ? r : r && typeof r === 'object' ? Object.entries(r).map(([tributo, valor]) => ({ tributo, valor })) : [];
+  for (const x of linhas as { tributo?: unknown; valor?: unknown }[]) {
+    const t = typeof x?.tributo === 'string' ? x.tributo.toLowerCase() : '';
+    const v = pos(x?.valor);
+    if (TRIBUTOS.includes(t) && v !== undefined) o[t] = Math.round(((o[t] ?? 0) + v) * 100) / 100;
+  }
+  return o;
 }
 const str = (x: unknown) => (typeof x === 'string' && x.trim() ? x.trim() : undefined);
 const pos = (x: unknown) => { const n = numero(x); return n !== undefined && n > 0 ? Math.round(n * 100) / 100 : undefined; };

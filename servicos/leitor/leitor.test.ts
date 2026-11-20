@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { pdfCriptografado, senhasCandidatas, tipoPelosBytes } from './arquivo.ts';
 import { conferirLinha } from './boleto.ts';
 import { type Bucket, type Deps, Recusa, baixar, pedidoIdentificar, subir } from './fluxo.ts';
-import { converter } from './ia.ts';
+import { converter, ESQUEMA } from './ia.ts';
 import { Limite } from './limite.ts';
 import { lerXml } from './xml.ts';
 import { analisar } from './xml.ts';
@@ -119,6 +119,33 @@ test('resposta da IA: nulos somem, valores zerados viram não informado, linha c
   assert.match(l.avisos!.join(), /dígito verificador errado/);
   assert.deepEqual(l.consumo, { instalacao: '12345', referencia: '2026-10', vencimento: '2026-11-20' });
   assert.equal(converter({ tipo: 'qualquer' }, 'm').tipo, 'outro');
+});
+
+test('esquema da IA: no máximo 16 campos com union (limite da API), todos obrigatórios e sem campo a mais', () => {
+  let unioes = 0;
+  const andar = (n: any) => {
+    if (!n || typeof n !== 'object') return;
+    if (Array.isArray(n.type) || n.anyOf) unioes++;
+    if (n.type === 'object' || (Array.isArray(n.type) && n.type.includes('object'))) {
+      assert.equal(n.additionalProperties, false); assert.deepEqual(n.required, Object.keys(n.properties));
+    }
+    for (const v of Object.values(n.properties ?? {})) andar(v);
+    andar(n.items);
+  };
+  andar(ESQUEMA);
+  assert.ok(unioes <= 16, `${unioes} campos com union`);
+});
+
+test('resposta da IA: texto vazio é ausente; retenções em lista somam por tributo', () => {
+  const l = converter({ tipo: 'nfse', emitente: { documento: '', nome: '  ' }, numero: '', serie: '', emissao: '', competencia: '',
+    descricao: '', pix: { chave: '', copia_e_cola: '' }, consumo: { instalacao: '', referencia: '', vencimento: '' },
+    parcelas: [{ numero: '', vencimento: '', valor: null }], valor: 1000,
+    retencoes: [{ tributo: 'ISS', valor: 50 }, { tributo: 'irrf', valor: 15 }, { tributo: 'irrf', valor: 0.5 },
+                { tributo: 'outro', valor: 9 }, { tributo: 'pis', valor: 0 }] }, 'm');
+  assert.equal(l.emitente, undefined); assert.equal(l.numero, undefined); assert.equal(l.emissao, undefined);
+  assert.equal(l.descricao, undefined); assert.equal(l.pix, undefined); assert.equal(l.consumo, undefined);
+  assert.deepEqual(l.retencoes, { iss: 50, irrf: 15.5 });
+  assert.equal(converter({ tipo: 'nfse', retencoes: [] }, 'm').retencoes, undefined);
 });
 
 function falsos(extra: Partial<Deps> = {}) {
