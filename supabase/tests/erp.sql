@@ -6248,6 +6248,61 @@ select pg_temp.erro_igual(format($$update erp.titulos set pessoa_id = '10000000-
   'Quem recebe pelo PIX copia e cola da parcela 1 não confere com o credor do título (confira o código de novo ou justifique a exceção)',
   'pix copia e cola: trocar o credor depois do código conferido é recusado');
 rollback to savepoint sp_bol;
+-- mutações da revisão do #108: o valor da parcela que muda depois da forma, o número trocado e o lançamento que troca
+-- credor e formas juntos
+savepoint sp_bol;
+select pg_temp.sis();
+select erp.registrar_boleto_conferencia('34191090080000000212134567890008899990000015000', '77777777000177', 'AGÊNCIA BETA', 150, null, (select login_id from erp.usuarios where id = :'diretor'));
+select erp._criar_titulo(:'spe', 'pagar', 'avulso', '10000000-0000-0000-0000-000000000007', null, null, '2026-06-02', '2026-06-01',
+  150, array['2026-07-01']::date[], null, null, 'rascunho do valor trocado') as trasc \gset
+select pg_temp.volta();
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (:'trasc', 1, 'boleto', '34191090080000000212134567890008899990000015000');
+select pg_temp.sis();
+update erp.parcelas set valor = 100 where titulo_id = :'trasc';
+select pg_temp.erro_igual(format($$select erp._conferir_recebedores(%L)$$, :'trasc'),
+  'O beneficiário do boleto da parcela 1 não confere com o credor do título (confira o boleto de novo ou justifique a exceção)',
+  'boleto: a parcela que muda de valor depois do boleto conferido não passa na conferência de novo');
+select pg_temp.volta();
+rollback to savepoint sp_bol;
+savepoint sp_bol;
+select pg_temp.sis();
+select erp._criar_titulo(:'spe', 'pagar', 'avulso', '10000000-0000-0000-0000-000000000007', null, null, '2026-06-02', '2026-06-01',
+  150, array['2026-07-01']::date[], null, null, 'rascunho do valor trocado') as trasc \gset
+select pg_temp.volta();
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, pix_tipo, pix_chave, pix_copia_cola)
+values (:'trasc', 1, 'pix', 'email', 'teste@example.com', '00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***630485E6');
+select pg_temp.sis();
+update erp.parcelas set valor = 100 where titulo_id = :'trasc';
+select pg_temp.erro_igual(format($$select erp._conferir_recebedores(%L)$$, :'trasc'),
+  'Quem recebe pelo PIX copia e cola da parcela 1 não confere com o credor do título (confira o código de novo ou justifique a exceção)',
+  'pix copia e cola: a parcela que muda de valor depois do código (campo 54) não passa na conferência de novo');
+select pg_temp.volta();
+rollback to savepoint sp_bol;
+savepoint sp_bol;
+select pg_temp.sis();
+-- linha sem valor (o banco registra o valor): só a conferência pega a outra parcela
+select erp.registrar_boleto_conferencia('34191090080000000212134567890008199990000000000', '77777777000177', 'AGÊNCIA BETA', 150, null, (select login_id from erp.usuarios where id = :'diretor'));
+select pg_temp.volta();
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (:'tse', 2, 'boleto', '34191090080000000212134567890008199990000000000');
+select pg_temp.erro_igual(format($$update erp.parcela_pagamentos set numero = 3 where titulo_id = %L and numero = 2$$, :'tse'),
+  'O beneficiário do boleto da parcela 3 não foi conferido (só com a justificativa da exceção)',
+  'boleto: trocar o número da parcela confere de novo o boleto contra o valor da outra parcela');
+rollback to savepoint sp_bol;
+savepoint sp_bol;
+select pg_temp.sis();
+select erp.registrar_boleto_conferencia('34191090080000000212134567890008899990000015000', '77777777000177', 'AGÊNCIA BETA', 150, null, (select login_id from erp.usuarios where id = :'diretor'));
+select erp._criar_titulo(:'spe', 'pagar', 'avulso', '10000000-0000-0000-0000-000000000007', null, null, '2026-06-02', '2026-06-01',
+  150, array['2026-07-01']::date[], null, null, 'rascunho trocado inteiro') as trasc \gset
+select pg_temp.volta();
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (:'trasc', 1, 'boleto', '34191090080000000212134567890008899990000015000');
+set constraints erp.t_titulo_recebedor deferred;
+update erp.titulos set pessoa_id = '10000000-0000-0000-0000-000000000008' where id = :'trasc';
+delete from erp.parcela_pagamentos where titulo_id = :'trasc';
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, pix_tipo, pix_chave) values (:'trasc', 1, 'pix', 'email', 'conserta@example.com');
+set constraints erp.t_titulo_recebedor immediate;
+select pg_temp.ok((select pessoa_id = '10000000-0000-0000-0000-000000000008' from erp.titulos where id = :'trasc'),
+  'recebedor: o lançamento que troca o credor e as formas juntos passa (a conferência é no fim da transação)');
+rollback to savepoint sp_bol;
 select pg_temp.ok(not has_function_privilege('anon', 'erp.boleto_conferido(text)', 'EXECUTE') and not has_function_privilege('anon', 'api.recebedores_divergentes()', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp.registrar_boleto_conferencia(text,text,text,numeric,date,text)', 'EXECUTE')
                   and (select p.prosecdef and pg_get_userbyid(p.proowner) = 'erp_conferencia' from pg_proc p where p.oid = 'erp.tg_parcela_boleto_recebedor()'::regprocedure),
