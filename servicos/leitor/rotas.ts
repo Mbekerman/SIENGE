@@ -3,7 +3,7 @@
 // pessoa usa o id que o Supabase devolveu, não o que o JWT diz.
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { LIMITE } from './arquivo.ts';
-import { type Deps, Recusa, baixar, subir } from './fluxo.ts';
+import { type Deps, Recusa, abrirComSenha, baixar, subir } from './fluxo.ts';
 import type { Limite } from './limite.ts';
 
 export interface Pessoa { id: string; limite?: number }
@@ -32,10 +32,10 @@ export function tratador(o: Opcoes) {
     res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
     res.end(JSON.stringify(corpo));
   }
-  function lerCorpo(req: IncomingMessage): Promise<Buffer> {
+  function lerCorpo(req: IncomingMessage, max = LIMITE): Promise<Buffer> {
     return new Promise((ok, falha) => {
       const partes: Buffer[] = []; let n = 0;
-      req.on('data', (c: Buffer) => { n += c.length; if (n > LIMITE) { falha(new Recusa(413, 'O arquivo passa de 20 MB')); req.destroy(); } else partes.push(c); });
+      req.on('data', (c: Buffer) => { n += c.length; if (n > max) { falha(new Recusa(413, max === LIMITE ? 'O arquivo passa de 20 MB' : 'Pedido grande demais')); req.destroy(); } else partes.push(c); });
       req.on('end', () => ok(Buffer.concat(partes)));
       req.on('error', falha);
     });
@@ -49,7 +49,8 @@ export function tratador(o: Opcoes) {
       if (req.method === 'GET' && url.pathname === '/saude') return json(res, 200, { ok: true });
       const post = req.method === 'POST' && url.pathname === '/anexos';
       const m = /^\/anexos\/([^/]+)$/.exec(url.pathname);
-      if (!post && !(req.method === 'GET' && m)) throw new Recusa(404, 'Não encontrado');
+      const ms = req.method === 'POST' ? /^\/anexos\/([^/]+)\/senha$/.exec(url.pathname) : null;
+      if (!post && !ms && !(req.method === 'GET' && m)) throw new Recusa(404, 'Não encontrado');
       const jwt = /^Bearer (\S+)$/.exec(req.headers.authorization ?? '')?.[1];
       if (!jwt || jwt.length > 8192) throw new Recusa(401, 'Entre de novo');
       const p = await o.quem(jwt);
@@ -63,6 +64,15 @@ export function tratador(o: Opcoes) {
         let nome = 'arquivo';
         try { nome = decodeURIComponent(String(req.headers['x-nome-arquivo'] ?? 'arquivo')); } catch { /* fica arquivo */ }
         return json(res, 200, await subir(o.deps, jwt, nome, dados));
+      }
+      if (ms) {
+        // a senha do PDF que os CNPJs não abriram: cada tentativa conta no limite (abrir leva à IA)
+        if (!o.limite.passa(p.id, p.limite)) throw new Recusa(429, 'Muitos arquivos em pouco tempo; espere alguns minutos');
+        if (Number(req.headers['content-length'] ?? 0) > 1024) throw new Recusa(413, 'Pedido grande demais');
+        let senha: unknown;
+        try { senha = (JSON.parse((await lerCorpo(req, 1024)).toString('utf8')) as { senha?: unknown })?.senha; }
+        catch (e) { if (e instanceof Recusa) throw e; throw new Recusa(400, 'Senha inválida'); }
+        return json(res, 200, await abrirComSenha(o.deps, jwt, ms[1], senha as string));
       }
       const a = await baixar(o.deps, jwt, m![1]);
       res.writeHead(200, {

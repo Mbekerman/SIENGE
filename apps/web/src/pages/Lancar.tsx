@@ -7,20 +7,20 @@ import { Alerta, Carregando, Chip, Ic } from '../components/Comum';
 import { Popup } from '../components/Rastro';
 import { data, dividir, documento, hojeISO, lerReais, reais } from '../lib/format';
 import { mensagemErro, rpc } from '../lib/supabase';
-import { leitorLigado, subirArquivo, TIPOS_ACEITOS } from '../lib/leitor';
+import { abrirComSenha, leitorLigado, subirArquivo, TIPOS_ACEITOS } from '../lib/leitor';
 import type { FornecedorBusca, Identificacao, Leitura, NaturezaLancavel, OpcoesLancamento, PrevisaoParaNota, ResultadoLeitor } from '../lib/tipos';
 
 type Forma = 'pix' | 'boleto';
 type PixTipo = 'cpf_cnpj' | 'email' | 'telefone' | 'aleatoria';
 export interface Linha { k: number; nucleo: string; centro: string; divisao: string; natureza: string; pct: string }
-interface Parcela { k: number; vencimento: string; forma: Forma; pix_tipo: PixTipo; pix_chave: string; boleto: string; excecao: string }
+interface Parcela { k: number; vencimento: string; valor: string; forma: Forma; pix_tipo: PixTipo; pix_chave: string; boleto: string; excecao: string }
 
 const TIPOS: [string, string][] = [['nfse', 'NFS-e'], ['nfe', 'NF-e'], ['fatura', 'Fatura'], ['boleto', 'Boleto'], ['recibo', 'Recibo'], ['outro', 'Outro']];
 const PIX: [PixTipo, string][] = [['cpf_cnpj', 'CPF ou CNPJ'], ['email', 'E-mail'], ['telefone', 'Telefone'], ['aleatoria', 'Chave aleatória']];
 let seq = 1;
 export const novaLinha = (pct = '100'): Linha => ({ k: seq++, nucleo: '', centro: '', divisao: '', natureza: '', pct });
 const novaParcela = (base?: Parcela, doc?: string | null): Parcela => ({
-  k: seq++, vencimento: '', forma: base?.forma ?? 'pix', pix_tipo: base?.pix_tipo ?? 'cpf_cnpj',
+  k: seq++, vencimento: '', valor: '', forma: base?.forma ?? 'pix', pix_tipo: base?.pix_tipo ?? 'cpf_cnpj',
   pix_chave: base?.pix_chave ?? (doc ?? ''), boleto: '', excecao: base?.excecao ?? '',
 });
 
@@ -65,7 +65,11 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   useEffect(() => { if (o && !empresa && o.empresas.length === 1) setEmpresa(o.empresas[0].id); }, [o, empresa]);
   const valor = lerReais(valorTxt);
   const somaPct = linhas.reduce((a, l) => a + (Number(l.pct.replace(',', '.')) || 0), 0);
-  const valores = valor ? dividir(valor, parcelas.length) : [];
+  // o valor de cada parcela: o digitado (como está no documento) ou, sem nenhum, a divisão igual do Sienge
+  const iguais = valor ? dividir(valor, parcelas.length) : [];
+  const digitados = parcelas.map(p => lerReais(p.valor));
+  const comValor = parcelas.length > 1 && digitados.some(v => v != null);
+  const somaParc = Math.round(digitados.reduce<number>((a, v) => a + (v ?? 0), 0) * 100) / 100;
 
   // previsões que casam com as linhas completas do rateio
   const chaves = linhas.filter(l => l.nucleo && l.centro && l.natureza).map(l => ({ nucleo: l.nucleo, centro: l.centro, natureza: l.natureza }));
@@ -79,6 +83,7 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
 
   // o arquivo: sobe ao leitor, que guarda, lê e diz o que casa; a tela se preenche e tudo continua editável
   const subir = useMutation({ mutationFn: subirArquivo, onSuccess: r => { setArq(r); setSemRet(false); preencher(r); } });
+  const senha = useMutation({ mutationFn: (x: { id: string; s: string }) => abrirComSenha(x.id, x.s), onSuccess: r => { setArq(r); preencher(r); } });
   const comRet = Boolean(arq?.leitura && temRetencao(arq.leitura));
   const usarCandidato = (c: Identificacao['candidatos'][number] | null) => {
     setCand(c?.id ?? null);
@@ -121,6 +126,8 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   if (linhas.some(l => !l.nucleo || !l.centro || !l.natureza || (divisoesDe(o, l.centro).length > 0 && !l.divisao))) falta.push('o rateio completo');
   else if (Math.abs(somaPct - 100) > 0.00005) falta.push('o rateio somando 100%');
   if (parcelas.some(p => !p.vencimento)) falta.push('o vencimento de cada parcela');
+  if (comValor && digitados.some(v => v == null || v <= 0)) falta.push('o valor de cada parcela (ou de nenhuma, para saírem iguais)');
+  else if (comValor && valor && Math.round(somaParc * 100) !== Math.round(valor * 100)) falta.push(`as parcelas somando o valor (estão em ${reais(somaParc)})`);
   if (parcelas.some(p => (p.forma === 'pix' ? !p.pix_chave.trim() : !p.boleto.replace(/\D/g, '')))) falta.push('a forma de pagamento de cada parcela');
 
   const contratos = [...new Set(previsoes.filter(p => prevs.includes(p.id)).map(p => p.compromisso_id))];
@@ -130,8 +137,8 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
       compromisso: contratos.length === 1 ? contratos[0] : null,
       rateio: linhas.map(l => ({ nucleo: l.nucleo, centro: l.centro, divisao: l.divisao || null, natureza: l.natureza, percentual: Number(l.pct.replace(',', '.')) })),
       parcelas: parcelas.map(p => p.forma === 'pix'
-        ? { vencimento: p.vencimento, forma: 'pix', pix_tipo: p.pix_tipo, pix_chave: chave(p.pix_tipo, p.pix_chave), pix_excecao: p.excecao.trim() || null }
-        : { vencimento: p.vencimento, forma: 'boleto', boleto_linha: p.boleto.replace(/\D/g, '') }),
+        ? { vencimento: p.vencimento, ...(comValor ? { valor: lerReais(p.valor) } : {}), forma: 'pix', pix_tipo: p.pix_tipo, pix_chave: chave(p.pix_tipo, p.pix_chave), pix_excecao: p.excecao.trim() || null }
+        : { vencimento: p.vencimento, ...(comValor ? { valor: lerReais(p.valor) } : {}), forma: 'boleto', boleto_linha: p.boleto.replace(/\D/g, '') }),
       previsoes: prevs, etiquetas: etq, anexos: arq ? [arq.anexo.id] : [],
     } }),
     onSuccess: id => { qc.invalidateQueries({ queryKey: ['titulos'] }); qc.invalidateQueries({ queryKey: ['previsoes'] }); lancado(id); },
@@ -150,7 +157,8 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
         <p className="sec lt-intro">A nota vira um título que vai para a aprovação. Aprovado, ele segue sozinho para o Sienge com a forma de pagamento de cada parcela.</p>
 
         {leitorLigado && <ArquivoNota r={arq} subindo={subir.isPending} erro={subir.error ? mensagemErro(subir.error) : null}
-          escolher={f => subir.mutate(f)} valor={valor} cand={cand} usar={usarCandidato} />}
+          escolher={f => { senha.reset(); subir.mutate(f); }} valor={valor} cand={cand} usar={usarCandidato}
+          abrir={x => arq && senha.mutate({ id: arq.anexo.id, s: x })} abrindo={senha.isPending} erroSenha={senha.error ? mensagemErro(senha.error) : null} />}
         {comRet && arq?.leitura && (
           <div className="lt-sec">
             <span className="nt cr">A leitura achou retenção de imposto ({descRetencao(arq.leitura)}). Nota com retenção ainda não se lança: o título sairia pelo valor bruto e a BKM pagaria ao fornecedor o imposto que ela mesma tem de recolher. Espere a tela de retenções.</span>
@@ -222,7 +230,11 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
               <div className="lt-lin">
                 <b className="lt-pn">{parcelas.length > 1 ? `${i + 1}ª` : 'Vence'}</b>
                 <input type="date" className={`lt-in ${tentou && !p.vencimento ? 'err' : ''}`} value={p.vencimento} onChange={e => mudaP(p.k, { vencimento: e.target.value })} aria-label="Vencimento" />
-                <span className="num lt-pv">{valores[i] != null ? reais(valores[i]) : ''}</span>
+                {parcelas.length > 1
+                  ? <input className={`lt-in num lt-pv ${tentou && comValor && !(digitados[i] && digitados[i]! > 0) ? 'err' : ''}`} inputMode="decimal" aria-label="Valor da parcela"
+                      placeholder={iguais[i] != null ? reais(iguais[i]) : 'R$ 0,00'} value={p.valor}
+                      onChange={e => mudaP(p.k, { valor: e.target.value })} onBlur={() => { const v = lerReais(p.valor); if (v != null) mudaP(p.k, { valor: reais(v) }); }} />
+                  : <span className="num lt-pv">{iguais[0] != null ? reais(iguais[0]) : ''}</span>}
                 <div className="f-seg"><button className={p.forma === 'pix' ? 'on' : ''} onClick={() => mudaP(p.k, { forma: 'pix' })}>PIX</button><button className={p.forma === 'boleto' ? 'on' : ''} onClick={() => mudaP(p.k, { forma: 'boleto' })}>Boleto</button></div>
                 {parcelas.length > 1 && <button className="icb" title="Tirar a parcela" onClick={() => setParcelas(ps => ps.filter(x => x.k !== p.k))}><Ic n="lixo" s={18} /></button>}
               </div>
@@ -241,7 +253,9 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
             </div>
           ))}
           <button className="btn t sm" style={{ alignSelf: 'flex-start' }} onClick={() => setParcelas(ps => [...ps, novaParcela(ps[ps.length - 1])])}><Ic n="add" s={18} />Adicionar parcela</button>
-          {parcelas.length > 1 && <span className="sec peq">As parcelas saem iguais; o centavo que sobra vai na primeira, como no Sienge.</span>}
+          {parcelas.length > 1 && <span className="sec peq">{comValor
+            ? (valor && Math.round(somaParc * 100) !== Math.round(valor * 100) ? `As parcelas somam ${reais(somaParc)}; o valor é ${reais(valor)}.` : 'Cada parcela fica com o valor digitado, como no documento.')
+            : 'Sem o valor de cada parcela, elas saem iguais (o centavo que sobra vai na primeira, como no Sienge).'}</span>}
         </section>
 
         {o.etiquetas.length > 0 && (
@@ -344,12 +358,18 @@ export function parcelasLidas(l: NonNullable<ResultadoLeitor['leitura']>, pag: I
   const venc = (l.parcelas ?? []).filter(p => p.vencimento);
   const bol = (l.boletos ?? []).filter(b => b.valida);
   const n = Math.max(venc.length, bol.length, 1);
+  // o valor de cada parcela como está no documento, quando todas têm (os das parcelas, senão os dos boletos)
+  const vs = (n > 1 && (l.parcelas ?? []).length === n && (l.parcelas ?? []).every(p => p.valor && p.valor > 0)) ? (l.parcelas ?? []).map(p => p.valor!)
+    : (n > 1 && bol.length === n && bol.every(b => b.valor && b.valor > 0)) ? bol.map(b => b.valor!) : null;
+  const igual = vs && l.valor ? dividir(l.valor, n) : null;
+  const valores = vs && !(igual && vs.every((v, i) => Math.round(v * 100) === Math.round(igual[i] * 100))) ? vs.map(v => reais(v)) : null;
   return Array.from({ length: n }, (_, i) => {
     const b = bol[i];
     const vencimento = venc[i]?.vencimento ?? (b?.conferido_asaas?.ok ? b.conferido_asaas.vencimento : undefined) ?? b?.vencimento ?? l.consumo?.vencimento ?? '';
-    if (b) return { ...novaParcela(), vencimento, forma: 'boleto', boleto: b.linha };
+    const valor = valores?.[i] ?? '';
+    if (b) return { ...novaParcela(), vencimento, valor, forma: 'boleto', boleto: b.linha };
     const pix = pag?.forma === 'pix' && pag.pix_chave ? { pix_tipo: (pag.pix_tipo ?? 'cpf_cnpj') as PixTipo, pix_chave: pag.pix_chave } : { pix_tipo: 'cpf_cnpj' as PixTipo, pix_chave: doc ?? '' };
-    return { ...novaParcela(), vencimento, forma: pag?.forma === 'boleto' ? 'boleto' : 'pix', ...pix };
+    return { ...novaParcela(), vencimento, valor, forma: pag?.forma === 'boleto' ? 'boleto' : 'pix', ...pix };
   });
 }
 
@@ -359,7 +379,7 @@ const COMP: Record<string, string> = { contrato: 'Contrato', assinatura: 'Assina
 /** O que o leitor achou: os avisos dele, a nota repetida e os processos que podem ter gerado o título. */
 function avisosLidos(r: ResultadoLeitor, valor: number | null): { c: 'cr' | 'at' | 'inf'; t: ReactNode }[] {
   const l = r.leitura, id = r.identificacao, out: { c: 'cr' | 'at' | 'inf'; t: ReactNode }[] = [];
-  if (r.erro_leitura) out.push({ c: 'at', t: `${r.erro_leitura}. O arquivo ficou guardado; preencha à mão.` });
+  if (r.erro_leitura && !r.pede_senha) out.push({ c: 'at', t: `${r.erro_leitura}. O arquivo ficou guardado; preencha à mão.` });
   for (const d of [...r.repetido_em, ...(id?.nota_repetida ?? [])].filter((x, i, a) => a.findIndex(y => y.documento_id === x.documento_id) === i))
     out.push({ c: 'cr', t: <>Esta nota já foi lançada: {NOME_TIPO[d.tipo] ?? d.tipo} {d.numero} de {data(d.emissao)}, {reais(d.valor)}{d.titulo_id && <> · <a href={`/titulos/${d.titulo_id}`} target="_blank" rel="noreferrer">abrir o título</a></>}.</> });
   if (!l) return out;
@@ -379,12 +399,15 @@ function avisosLidos(r: ResultadoLeitor, valor: number | null): { c: 'cr' | 'at'
   return out;
 }
 
-function ArquivoNota({ r, subindo, erro, escolher, valor, cand, usar }: {
+function ArquivoNota({ r, subindo, erro, escolher, valor, cand, usar, abrir, abrindo, erroSenha }: {
   r: ResultadoLeitor | null; subindo: boolean; erro: string | null; escolher: (f: File) => void; valor: number | null;
   cand: string | null; usar: (c: Identificacao['candidatos'][number] | null) => void;
+  abrir: (senha: string) => void; abrindo: boolean; erroSenha: string | null;
 }) {
   const inp = useRef<HTMLInputElement>(null);
   const [sobre, setSobre] = useState(false);
+  const [pwd, setPwd] = useState('');
+  useEffect(() => { setPwd(''); }, [r]);
   const pegar = (f?: File | null) => { if (f && !subindo) escolher(f); };
   const avisos = r ? avisosLidos(r, valor) : [];
   const cands = r?.identificacao?.candidatos ?? [];
@@ -408,6 +431,18 @@ function ArquivoNota({ r, subindo, erro, escolher, valor, cand, usar }: {
           </button>
         )}
       {erro && <span className="lt-erro"><Ic n="warn" s={18} />{erro}</span>}
+      {r?.pede_senha && !abrindo && (
+        <form className="lt-senha" onSubmit={e => { e.preventDefault(); if (pwd) abrir(pwd); }}>
+          <span className="nt at">{r.erro_leitura === 'A senha não abriu o PDF' ? 'A senha não abriu o PDF. Confira e tente de novo.' : 'O PDF tem senha e nenhum CNPJ das empresas abriu. Digite a senha para a tela se preencher, ou preencha à mão.'}</span>
+          <div className="lt-lin">
+            <input type="password" className="lt-in" aria-label="Senha do PDF" placeholder="Senha do PDF" autoComplete="off" maxLength={100}
+              value={pwd} onChange={e => setPwd(e.target.value)} />
+            <button className="btn ton" type="submit" disabled={!pwd}>Abrir</button>
+          </div>
+        </form>
+      )}
+      {abrindo && <div className="lt-arq"><Carregando /><span className="sec">Abrindo e lendo o PDF…</span></div>}
+      {erroSenha && <span className="lt-erro"><Ic n="warn" s={18} />{erroSenha}</span>}
       {avisos.map((a, i) => <span key={i} className={`nt ${a.c}`}>{a.t}</span>)}
       {cands.length > 0 && <>
         <span className="sec peq">De onde vem esta nota? Escolher preenche o rateio e a previsão; dá para mudar depois.</span>

@@ -30,6 +30,18 @@ export async function subirArquivo(f: File): Promise<ResultadoLeitor> {
   return r.json();
 }
 
+/** Abre o PDF guardado com a senha que a pessoa digitou (quando os CNPJs das empresas não abriram) e lê. A senha não
+ *  fica guardada em lugar nenhum. */
+export async function abrirComSenha(id: string, senha: string): Promise<ResultadoLeitor> {
+  if (!LEITOR_URL) throw new Error('O leitor de notas não está ligado neste ambiente');
+  const r = await fetch(`${LEITOR_URL}/anexos/${encodeURIComponent(id)}/senha`, {
+    method: 'POST', body: JSON.stringify({ senha }),
+    headers: { authorization: `Bearer ${await token()}`, 'content-type': 'application/json' },
+  }).catch(() => { throw new Error('Sem conexão com o leitor. Verifique a internet e tente de novo.'); });
+  if (!r.ok) throw await erro(r);
+  return r.json();
+}
+
 /** Baixa o arquivo (o serviço manda como anexo, nunca para abrir na página). */
 export async function baixarAnexo(id: string, nome: string): Promise<void> {
   if (!LEITOR_URL) throw new Error('O leitor de notas não está ligado neste ambiente');

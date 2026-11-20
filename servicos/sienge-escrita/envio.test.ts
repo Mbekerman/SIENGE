@@ -51,15 +51,20 @@ test('pagamento da parcela: PIX sem dados do credor e boleto com as duas linhas'
 
 const p = (numero: number, vencimento: string, valor: number): Parcela => ({ numero, vencimento, valor, forma: 'pix', pix_tipo: 'email', pix_chave: 'a@b.com' });
 
-test('conferir parcelas: vencimento corrige, valor ou quantidade diferente para', () => {
+test('conferir parcelas: vencimento e valor corrigem, quantidade ou total diferente para', () => {
   const nossas = [p(1, '2026-12-01', 100), p(2, '2027-01-01', 200)];
   assert.deepEqual(conferirParcelas(nossas, [
     { installmentNumber: 1, dueDate: '2026-12-01', amount: 100 }, { installmentNumber: 2, dueDate: '2026-12-01', amount: 200.001 },
   ]), [{ numero: 2, dueDate: '2027-01-01' }]);
   assert.throws(() => conferirParcelas(nossas, [{ installmentNumber: 1, dueDate: '2026-12-01', amount: 300 }]), Divergencia);
+  // mesmo total, valores diferentes (o Sienge dividiu igual): corrige o valor
+  assert.deepEqual(conferirParcelas(nossas, [
+    { installmentNumber: 1, dueDate: '2026-12-01', amount: 150 }, { installmentNumber: 2, dueDate: '2026-12-01', amount: 150 },
+  ]), [{ numero: 1, amount: 100 }, { numero: 2, amount: 200, dueDate: '2027-01-01' }]);
+  // total diferente: para
   assert.throws(() => conferirParcelas(nossas, [
-    { installmentNumber: 1, dueDate: '2026-12-01', amount: 150 }, { installmentNumber: 2, dueDate: '2027-01-01', amount: 150 },
-  ]), Divergencia);
+    { installmentNumber: 1, dueDate: '2026-12-01', amount: 150 }, { installmentNumber: 2, dueDate: '2027-01-01', amount: 151 },
+  ]), /total das parcelas/);
   // só a quantidade difere: as nossas batem, mas o Sienge tem uma a mais
   assert.throws(() => conferirParcelas(nossas, [
     { installmentNumber: 1, dueDate: '2026-12-01', amount: 100 }, { installmentNumber: 2, dueDate: '2027-01-01', amount: 200 },
@@ -74,7 +79,7 @@ const pedido = (parcelas: Parcela[]): PedidoTitulo => ({
 });
 
 // Sienge de mentira: guarda os títulos e as parcelas e registra cada chamada.
-function falso(opc: { existentes?: Record<string, unknown>[]; parcelasDoSienge?: { installmentNumber: number; dueDate: string; amount: number }[] } = {}) {
+function falso(opc: { aceitaValor?: boolean; existentes?: Record<string, unknown>[]; parcelasDoSienge?: { installmentNumber: number; dueDate: string; amount: number }[] } = {}) {
   const chamadas: string[] = [];
   const registrados: number[] = [];
   const api: Api = {
@@ -84,8 +89,16 @@ function falso(opc: { existentes?: Record<string, unknown>[]; parcelasDoSienge?:
       if (/\/installments$/.test(c)) return { results: opc.parcelasDoSienge ?? [] };
       throw new Error(`leitura inesperada ${c}`);
     },
-    gravar: async (m, c) => {
+    gravar: async (m, c, corpo) => {
       chamadas.push(`${m} ${c}`);
+      // o PATCH em massa muda as parcelas, como o Sienge (menos com aceitaValor: false)
+      if (m === 'PATCH' && /\/installments$/.test(c) && opc.aceitaValor !== false && Array.isArray(corpo)) {
+        for (const x of corpo as { installmentId: number; amount?: number; dueDate?: string }[]) {
+          const q = opc.parcelasDoSienge?.find((y) => y.installmentNumber === x.installmentId);
+          if (q && x.amount !== undefined) q.amount = x.amount;
+          if (q && x.dueDate !== undefined) q.dueDate = x.dueDate;
+        }
+      }
       return m === 'POST' ? { status: 201, location: '/bills/9100' } : { status: 204 };
     },
     registrarCriado: async (id) => { registrados.push(id); },
@@ -182,4 +195,21 @@ test('próxima tentativa: 1, 2, 4 minutos... até 6 horas', () => {
   const min = (n: number) => (proximaTentativa(n, t0).getTime() - t0.getTime()) / 60_000;
   assert.deepEqual([0, 1, 2, 3, 4].map(min), [1, 1, 2, 4, 8]);
   assert.equal(min(20), 360);
+});
+
+test('enviar: parcelas de valores diferentes corrigem num PATCH em massa e conferem de novo', async () => {
+  const f = falso({ parcelasDoSienge: [
+    { installmentNumber: 1, dueDate: '2026-12-01', amount: 1.5 }, { installmentNumber: 2, dueDate: '2027-01-01', amount: 1.5 }] });
+  await enviarTitulo(f.api, pedido([p(1, '2026-12-01', 1), p(2, '2027-01-01', 2)]), 9300);
+  assert.deepEqual(f.chamadas, [
+    'GET /bills/9300/installments', 'PATCH /bills/9300/installments', 'GET /bills/9300/installments',
+    'PATCH /bills/9300/installments/1/payment-information/pix', 'PATCH /bills/9300/installments/2/payment-information/pix',
+  ]);
+});
+
+test('enviar: o Sienge não corrigiu o valor, para antes do pagamento', async () => {
+  const f = falso({ aceitaValor: false, parcelasDoSienge: [
+    { installmentNumber: 1, dueDate: '2026-12-01', amount: 1.5 }, { installmentNumber: 2, dueDate: '2027-01-01', amount: 1.5 }] });
+  await assert.rejects(enviarTitulo(f.api, pedido([p(1, '2026-12-01', 1), p(2, '2027-01-01', 2)]), 9300), /não aceitou/);
+  assert.equal(f.chamadas.some((c) => c.includes('payment-information')), false);
 });

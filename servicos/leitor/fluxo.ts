@@ -12,6 +12,8 @@ export class Recusa extends Error {
   status: number;
   constructor(status: number, msg: string) { super(msg); this.status = status; }
 }
+// PDF com senha que não abriu: a tela pede a senha à pessoa (POST /anexos/<id>/senha).
+export class SemSenha extends Recusa { constructor(msg: string) { super(422, msg); } }
 
 export interface Banco { rpc<T = unknown>(jwt: string, fn: string, args: Record<string, unknown>): Promise<T> }
 export interface Bucket {
@@ -32,6 +34,7 @@ export interface Resultado {
   repetido_em: unknown[];
   leitura: Leitura | null;
   erro_leitura?: string;
+  pede_senha?: boolean;   // PDF com senha que os CNPJs não abriram: a tela pede a senha
   identificacao: unknown;
 }
 
@@ -49,21 +52,49 @@ export async function subir(d: Deps, jwt: string, nomeOriginal: string, dados: B
   await d.bucket.gravar(reg.id, mime, dados);
 
   // 3. lê; uma falha de leitura não perde o arquivo: a pessoa preenche à mão
-  let leitura: Leitura | null = null, erro: string | undefined;
-  try { leitura = await ler(d, jwt, mime, dados); }
-  catch (e) { erro = e instanceof Recusa ? e.message : 'Não consegui ler o arquivo'; d.log('leitura falhou', { anexo: reg.id, erro: String(e) }); }
+  return concluir(d, jwt, { id: reg.id, nome, tipo_mime: mime, tamanho: dados.length }, reg.repetido_em ?? [],
+    () => ler(d, jwt, mime, dados));
+}
+
+// Lê, confere os boletos no Asaas, grava a leitura e pergunta ao banco o que casa com ela.
+async function concluir(d: Deps, jwt: string, anexo: Resultado['anexo'], repetido: unknown[], lendo: () => Promise<Leitura>): Promise<Resultado> {
+  let leitura: Leitura | null = null, erro: string | undefined, pedeSenha = false;
+  try { leitura = await lendo(); }
+  catch (e) {
+    erro = e instanceof Recusa ? e.message : 'Não consegui ler o arquivo';
+    pedeSenha = e instanceof SemSenha;
+    if (!pedeSenha) d.log('leitura falhou', { anexo: anexo.id, erro: String(e) });
+  }
 
   if (leitura) {
     if (d.asaas) for (const b of leitura.boletos ?? []) {
       if (!b.valida) continue;
       try { b.conferido_asaas = await d.asaas(b.linha); } catch (e) { d.log('asaas falhou', { erro: String(e) }); }
     }
-    await d.banco.rpc(jwt, 'gravar_leitura', { p_anexo: reg.id, p_leitura: leitura });
+    await d.banco.rpc(jwt, 'gravar_leitura', { p_anexo: anexo.id, p_leitura: leitura });
   }
 
   const identificacao = leitura ? await d.banco.rpc(jwt, 'identificar_nota', { p: pedidoIdentificar(leitura) }) : null;
-  return { anexo: { id: reg.id, nome, tipo_mime: mime, tamanho: dados.length }, repetido_em: reg.repetido_em ?? [],
-           leitura, erro_leitura: erro, identificacao };
+  return { anexo, repetido_em: repetido, leitura, erro_leitura: erro, ...(pedeSenha ? { pede_senha: true } : {}), identificacao };
+}
+
+// A senha que a pessoa digitou para o PDF que os CNPJs não abriram. O arquivo é o guardado (o banco diz, com o login
+// dela, que ela vê o anexo; o sha256 confere). A senha só vai ao qpdf: não é gravada nem vai ao registro.
+export async function abrirComSenha(d: Deps, jwt: string, id: string, senha: string): Promise<Resultado> {
+  if (typeof senha !== 'string' || !senha.length || senha.length > 100 || /[\u0000-\u001f\u007f]/.test(senha)) {
+    throw new Recusa(400, 'Senha inválida');
+  }
+  // só o anexo que a pessoa subiu e ainda não ligou a uma nota (é o que gravar_leitura aceita); antes da IA
+  const soltos = await d.banco.rpc<{ id: string }[] | null>(jwt, 'meus_anexos_soltos', {});
+  if (!(soltos ?? []).some((x) => x.id === id)) throw new Recusa(404, 'Anexo não encontrado ou já ligado a uma nota');
+  const a = await baixar(d, jwt, id);
+  if (a.mime !== 'application/pdf' || !pdfCriptografado(a.dados)) throw new Recusa(400, 'Este arquivo não é um PDF com senha');
+  if (!d.ia) throw new Recusa(503, 'Leitura por IA indisponível');
+  return concluir(d, jwt, { id, nome: a.nome, tipo_mime: 'application/pdf', tamanho: a.dados.length }, [], async () => {
+    const aberto = d.abrirPdf ? await d.abrirPdf(a.dados, senha) : null;
+    if (!aberto) throw new SemSenha('A senha não abriu o PDF');
+    return d.ia!({ tipo: 'pdf', dados: aberto });
+  });
 }
 
 async function ler(d: Deps, jwt: string, mime: Mime, dados: Buffer): Promise<Leitura> {
@@ -80,7 +111,7 @@ async function ler(d: Deps, jwt: string, mime: Mime, dados: Buffer): Promise<Lei
     let pdf = dados;
     if (pdfCriptografado(dados)) {
       const aberto = await abrir(d, jwt, dados);
-      if (!aberto) throw new Recusa(422, 'O PDF tem senha e nenhuma das senhas pelo CNPJ das empresas abriu');
+      if (!aberto) throw new SemSenha('O PDF tem senha e nenhum CNPJ das empresas abriu; digite a senha');
       pdf = aberto;
     }
     return d.ia({ tipo: 'pdf', dados: pdf });

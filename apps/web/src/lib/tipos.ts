@@ -133,5 +133,6 @@ export interface ResultadoLeitor {
   repetido_em: { documento_id: string; tipo: string; numero: string; emissao: string; valor: number; titulo_id: string | null }[];
   leitura: Leitura | null;
   erro_leitura?: string;
+  pede_senha?: boolean;   // PDF com senha que os CNPJs das empresas não abriram
   identificacao: Identificacao | null;
 }
