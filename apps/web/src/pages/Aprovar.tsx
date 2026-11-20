@@ -30,6 +30,8 @@ export function Aprovar() {
   const pg = usePagina<F>('/aprovar');
   const q = useQuery({ queryKey: ['aprovacoes'], queryFn: () => rpc<Aprovacao[]>('aprovacoes') });
   const [aviso, setAviso] = useState<string | null>(null);
+  const [marcados, setMarcados] = useState<Set<string>>(new Set());
+  const qc = useQueryClient();
   useEffect(() => { if (!aviso) return; const t = setTimeout(() => setAviso(null), 5000); return () => clearTimeout(t); }, [aviso]);
 
   const todos = (q.data ?? []).filter(a => acha(pg.busca, a.fornecedor, a.descricao, a.area, a.empresa, a.lancado_por));
@@ -42,11 +44,34 @@ export function Aprovar() {
   ];
   // Na minha vez mostra os três grupos da vez; os outros contadores, só o seu grupo
   const grupos = G.filter(g => !pg.filtro || pg.filtro === g[0] || (pg.filtro === 'vez' && g[0] !== 'out'));
+  // seleção em lote: só o que está na vez da pessoa e à vista (filtro e busca); cada item passa pela decisão de sempre
+  const visiveis = grupos.flatMap(g => g[3]).filter(a => a.vez);
+  const sel = visiveis.filter(a => marcados.has(chave(a)));
+  const todosMarcados = visiveis.length > 0 && sel.length === visiveis.length;
+  const trocar = (k: string) => setMarcados(m => { const n = new Set(m); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+  const lote = useMutation({
+    mutationFn: async (itens: Aprovacao[]) => {
+      const erros: string[] = []; let ok = 0;
+      for (const a of itens) {
+        try { await rpc<string>('decidir', { p_tipo: a.tipo, p_id: a.id, p_decisao: 'aprovar', p_justificativa: null, p_centro: a.centro_id, p_divisao: a.divisao_id }); ok++; }
+        catch (e) { erros.push(`${a.fornecedor ?? a.descricao ?? 'item'}: ${mensagemErro(e)}`); }
+      }
+      return { ok, erros };
+    },
+    onSettled: () => { for (const k of ['aprovacoes', 'titulos', 'previsoes', 'contratos', 'titulo', 'rastro']) qc.invalidateQueries({ queryKey: [k] }); },
+    onSuccess: ({ ok, erros }) => {
+      setMarcados(new Set());
+      setAviso(erros.length ? `${ok} aprovado${ok === 1 ? '' : 's'}; ${erros.length} não: ${erros.join(' · ')}` : `${ok} aprovado${ok === 1 ? '' : 's'}.`);
+    },
+  });
   const linha = (a: Aprovacao): Linha => {
     const dt = a.data && <span className={`num ${vencido(a) ? 'atras' : ''}`}>{vencido(a) && <Ic n="warn" s={16} />}{dataCurta(a.data)}</span>;
     return {
       id: chave(a),
-      titulo: a.fornecedor ?? a.descricao ?? '—',
+      titulo: a.vez
+        ? <span className="apr-ck"><input type="checkbox" checked={marcados.has(chave(a))} aria-label={`Marcar ${a.fornecedor ?? a.descricao ?? 'item'}`}
+            onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()} onChange={() => trocar(chave(a))} />{a.fornecedor ?? a.descricao ?? '—'}</span>
+        : <span className="apr-ck"><span className="apr-ck-v" />{a.fornecedor ?? a.descricao ?? '—'}</span>,
       cels: [
         { c: <Chip t={TIPO[a.tipo][0]} c={TIPO[a.tipo][1]} /> },
         { c: a.area, x: true },
@@ -75,6 +100,18 @@ export function Aprovar() {
         {q.isLoading ? <Carregando /> : q.error ? <Vazio t={mensagemErro(q.error)} />
           : vazio ? <Vazio t={pg.busca || pg.filtro ? 'Nada encontrado.' : 'Nada esperando aprovação.'} limpar={pg.busca || pg.filtro ? pg.limpar : undefined} />
           : <>
+              {visiveis.length > 0 && (
+                <div className={`apr-lote ${sel.length ? 'on' : ''}`}>
+                  <label className="apr-ck"><input type="checkbox" checked={todosMarcados} ref={el => { if (el) el.indeterminate = sel.length > 0 && !todosMarcados; }}
+                    onChange={() => setMarcados(todosMarcados ? new Set() : new Set(visiveis.map(chave)))} />
+                    {sel.length ? `${sel.length} selecionado${sel.length === 1 ? '' : 's'} · ${reais(soma(sel))}` : `Selecionar todos (${visiveis.length})`}</label>
+                  <span className="esp" />
+                  {sel.length > 0 && <>
+                    <button className="btn t" onClick={() => setMarcados(new Set())} disabled={lote.isPending}>Limpar</button>
+                    <button className="btn p" onClick={() => lote.mutate(sel)} disabled={lote.isPending}>{lote.isPending ? 'Aprovando…' : `Aprovar ${sel.length}`}</button>
+                  </>}
+                </div>
+              )}
               <Colunas cols={COLS} rot={ROT} />
               {grupos.map(([k, nome, cor, it]) => (
                 <Grupo key={k} nome={nome} cor={cor} linhas={it.map(linha)} total={reais(soma(it))} sel={pg.id} abrir={pg.abrir} cols={COLS} fechado={k === 'out' && pg.filtro !== 'out'} />

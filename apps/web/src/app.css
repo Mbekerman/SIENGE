@@ -351,3 +351,12 @@ button.lt-o:hover{background:#f1f4f9}
   .f-gav .gav-f .apr-ok{order:-1;flex-basis:100%}
   .f-gav .gav-f:has(.apr-ok) .esp{display:none}
 }
+/* seleção em lote do Para aprovar */
+.apr-ck{display:inline-flex;align-items:center;gap:12px;min-width:0}
+.apr-ck input{width:18px;height:18px;margin:0;flex:none;accent-color:#0b57d0;cursor:pointer}
+.apr-ck-v{width:18px;flex:none}
+.apr-lote{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:8px;min-height:56px;padding:0 16px 0 34px;margin-bottom:8px;border-radius:16px;background:var(--m-surface,#f8fafd)}
+.apr-lote.on{background:#d3e3fd}
+.apr-lote label{font-size:14px;font-weight:500;cursor:pointer}
+@media (max-width:760px){ .apr-lote{padding:0 16px;margin:0 0 8px;border-radius:0} .apr-lote.on .btn.p{flex:none} }
+.apr-lote .esp{flex:1}
