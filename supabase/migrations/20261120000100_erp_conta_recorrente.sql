@@ -106,6 +106,9 @@ declare v record;
 begin
   if new.pessoa_id is not distinct from old.pessoa_id
      and (new.valor_total is null or new.valor_total >= coalesce(old.valor_total, 0)) then return new; end if;
+  -- corrida com a nota ou o título que entra agora no mesmo contrato: um espera o outro (o par está em
+  -- tg_contrato_confere). A leitura seguinte é outro comando e já vê o que o outro gravou.
+  perform pg_advisory_xact_lock(hashtext('erp.compromisso:' || new.id::text));
   v := erp.compromisso_vinculos(new.id);
   if new.pessoa_id is distinct from old.pessoa_id and v.ligado then
     raise exception 'O fornecedor não muda: o contrato já tem nota, título ou previsão; encerre e cadastre outro';
@@ -121,6 +124,24 @@ grant execute on function erp.tg_compromisso_vinculado()
   to authenticated, erp_sistema, erp_conferencia, erp_situacao, erp_reclassificacao, erp_acesso;
 create trigger t_compromisso_vinculado before update of pessoa_id, valor_total on erp.compromissos
   for each row execute function erp.tg_compromisso_vinculado();
+
+-- O outro lado da trava: a nota ou o título preso a um contrato espera a troca de fornecedor ou de valor em
+-- andamento nesse contrato, e confere contra o que ficou gravado (mesmo corpo do 20261119000250 + a trava).
+create or replace function erp.tg_contrato_confere() returns trigger language plpgsql as $$
+declare v_pessoa uuid; v_erro text; v_grava boolean;
+begin
+  if new.compromisso_id is null then return new; end if;
+  perform pg_advisory_xact_lock(hashtext('erp.compromisso:' || new.compromisso_id::text));
+  if tg_table_name = 'documentos_fiscais' then
+    v_pessoa := new.emitente_id;
+  else
+    v_pessoa := case when (to_jsonb(new)->>'tipo') in ('fornecedor', 'avulso', 'adiantamento') then (to_jsonb(new)->>'pessoa_id')::uuid end;
+  end if;
+  v_grava := not (erp.sistema() or erp.agindo_como('erp_situacao'));
+  v_erro := erp.contrato_confere(new.compromisso_id, new.empresa_id, v_pessoa, v_grava);
+  if v_erro is not null then raise exception '%', v_erro; end if;
+  return new;
+end $$;
 
 -- ---------------------------------------------------------------------------------------------
 -- 2. Lista, cadastro e gravação pela API

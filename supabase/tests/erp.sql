@@ -7816,6 +7816,11 @@ select pg_temp.falha(format('update erp.compromissos set valor_total = %s where 
 update erp.compromissos set valor_total = :ct1_lanc where id = '60000000-0000-0000-0000-000000000002';
 select pg_temp.ok((select valor_total = :ct1_lanc from erp.compromissos where id = '60000000-0000-0000-0000-000000000002'),
   'conta: o valor igual ao lançado é aceito');
+-- corrida (revisão do #96): a troca de fornecedor ou valor e a nota no mesmo contrato tomam a mesma trava; não se
+-- testa a espera numa conexão só, então confere que os dois gatilhos a tomam
+select pg_temp.ok((select bool_and(pg_get_functiondef(f) like '%pg_advisory_xact_lock(hashtext(''erp.compromisso:''%')
+                     from unnest(array['erp.tg_compromisso_vinculado()'::regprocedure, 'erp.tg_contrato_confere()'::regprocedure]) f),
+  'conta: o contrato e a nota que entra nele tomam a mesma trava');
 rollback;
 select pg_temp.como(null);
 
