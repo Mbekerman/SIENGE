@@ -110,6 +110,12 @@ function bloco(e: Entrada): Anthropic.Beta.Messages.BetaContentBlockParam {
 }
 
 export async function lerComIa(cliente: Anthropic, e: Entrada, hoje = new Date()): Promise<Leitura> {
+  return (await lerComIaDetalhe(cliente, e, hoje)).leitura;
+}
+
+// A mesma leitura, com o uso de tokens da chamada (o teste em escala, lote.ts, mede o custo por arquivo).
+export async function lerComIaDetalhe(cliente: Anthropic, e: Entrada, hoje = new Date()):
+  Promise<{ leitura: Leitura; modelo: string; uso: Anthropic.Beta.Messages.BetaUsage }> {
   const r = await cliente.beta.messages.create({
     model: MODELO,
     max_tokens: 16000,
@@ -122,7 +128,7 @@ export async function lerComIa(cliente: Anthropic, e: Entrada, hoje = new Date()
   if (r.stop_reason === 'refusal') throw new Error('A IA recusou ler o documento');
   if (r.stop_reason === 'max_tokens') throw new Error('A leitura da IA ficou incompleta');
   const texto = r.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
-  return converter(JSON.parse(texto), r.model, hoje);
+  return { leitura: converter(JSON.parse(texto), r.model, hoje), modelo: r.model, uso: r.usage };
 }
 
 // Da resposta da IA para a Leitura, normalizando e conferindo o que dá para conferir.
