@@ -5,6 +5,9 @@ import type { Entrada } from './ia.ts';
 import type { Boleto, Leitura } from './leitura.ts';
 import { lerXml } from './xml.ts';
 
+// Uma NF-e tem dezenas de KB; acima disso o XML não é lido (nem pelo analisador, nem pela IA).
+export const LIMITE_XML = 2 * 1024 * 1024;
+
 export class Recusa extends Error {
   status: number;
   constructor(status: number, msg: string) { super(msg); this.status = status; }
@@ -65,6 +68,7 @@ export async function subir(d: Deps, jwt: string, nomeOriginal: string, dados: B
 
 async function ler(d: Deps, jwt: string, mime: Mime, dados: Buffer): Promise<Leitura> {
   if (mime === 'application/xml') {
+    if (dados.length > LIMITE_XML) throw new Recusa(413, 'XML maior que 2 MB não é nota fiscal; suba o PDF');
     const texto = textoUtf8(dados)!;
     const l = lerXml(texto);
     if (l) return l;

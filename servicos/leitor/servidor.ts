@@ -11,12 +11,13 @@
 // ASAAS_URL e ASAAS_CHAVE (esta pelo Secret Manager; sem ela, o boleto fica só com a conferência dos dígitos).
 import { execFile } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { LIMITE, type Mime } from './arquivo.ts';
+import type { Mime } from './arquivo.ts';
 import { clienteFederado, lerComIa } from './ia.ts';
-import { type Banco, type Bucket, type Deps, Recusa, baixar, subir } from './fluxo.ts';
+import { type Banco, type Bucket, type Deps, Recusa } from './fluxo.ts';
+import { tratador } from './rotas.ts';
 import { Limite } from './limite.ts';
 
 const env = (k: string) => { const v = process.env[k]; if (!v) throw new Error(`Falta a variável ${k}`); return v; };
@@ -111,68 +112,19 @@ const cliente = await clienteFederado();
 const deps: Deps = { banco, bucket, ia: (e) => lerComIa(cliente, e), asaas, abrirPdf, log };
 const limite = new Limite(30, 10 * 60_000);   // 30 arquivos por pessoa a cada 10 minutos
 
-function cors(req: IncomingMessage, res: ServerResponse) {
-  const o = req.headers.origin;
-  if (o && ORIGENS.has(o)) {
-    res.setHeader('access-control-allow-origin', o);
-    res.setHeader('vary', 'origin');
-    res.setHeader('access-control-allow-headers', 'authorization, content-type, x-nome-arquivo');
-    res.setHeader('access-control-allow-methods', 'GET, POST');
-    res.setHeader('access-control-expose-headers', 'content-disposition');
-    res.setHeader('access-control-max-age', '600');
-  }
-}
-function json(res: ServerResponse, status: number, corpo: unknown) {
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
-  res.end(JSON.stringify(corpo));
-}
-function lerCorpo(req: IncomingMessage): Promise<Buffer> {
-  return new Promise((ok, falha) => {
-    const partes: Buffer[] = []; let n = 0;
-    req.on('data', (c: Buffer) => { n += c.length; if (n > LIMITE) { falha(new Recusa(413, 'O arquivo passa de 20 MB')); req.destroy(); } else partes.push(c); });
-    req.on('end', () => ok(Buffer.concat(partes)));
-    req.on('error', falha);
-  });
-}
-// Quem é, só para o limite por pessoa (o banco confere o JWT de verdade em cada chamada).
-function sujeito(jwt: string): string {
-  try { return JSON.parse(Buffer.from(jwt.split('.')[1], 'base64url').toString()).sub ?? 'x'; } catch { return 'x'; }
+// Confere o login no Supabase (GET /auth/v1/user) e devolve o id da pessoa; um minuto em memória por JWT.
+const vistos = new Map<string, { id: string; ate: number }>();
+async function quem(jwt: string): Promise<string | null> {
+  const c = vistos.get(jwt);
+  if (c && c.ate > Date.now()) return c.id;
+  const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: { apikey: SUPABASE_KEY, authorization: `Bearer ${jwt}` }, signal: AbortSignal.timeout(10_000) });
+  if (r.status === 401 || r.status === 403) return null;
+  if (!r.ok) throw new Recusa(502, 'Não consegui conferir o login');
+  const id = ((await r.json()) as { id?: unknown }).id;
+  if (typeof id !== 'string' || !id) return null;
+  if (vistos.size > 5000) vistos.clear();
+  vistos.set(jwt, { id, ate: Date.now() + 60_000 });
+  return id;
 }
 
-createServer(async (req, res) => {
-  cors(req, res);
-  try {
-    const url = new URL(req.url ?? '/', 'http://x');
-    if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
-    if (req.method === 'GET' && url.pathname === '/saude') return json(res, 200, { ok: true });
-    const jwt = /^Bearer (\S+)$/.exec(req.headers.authorization ?? '')?.[1];
-    if (!jwt) throw new Recusa(401, 'Entre de novo');
-
-    if (req.method === 'POST' && url.pathname === '/anexos') {
-      if (!limite.passa(sujeito(jwt))) throw new Recusa(429, 'Muitos arquivos em pouco tempo; espere alguns minutos');
-      const tam = Number(req.headers['content-length'] ?? 0);
-      if (tam > LIMITE) throw new Recusa(413, 'O arquivo passa de 20 MB');
-      const dados = await lerCorpo(req);
-      let nome = 'arquivo';
-      try { nome = decodeURIComponent(String(req.headers['x-nome-arquivo'] ?? 'arquivo')); } catch { /* fica arquivo */ }
-      return json(res, 200, await subir(deps, jwt, nome, dados));
-    }
-    const m = /^\/anexos\/([^/]+)$/.exec(url.pathname);
-    if (req.method === 'GET' && m) {
-      const a = await baixar(deps, jwt, m[1]);
-      res.writeHead(200, {
-        'content-type': 'application/octet-stream',
-        'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(a.nome)}`,
-        'x-content-type-options': 'nosniff', 'content-security-policy': "sandbox; default-src 'none'",
-        'cache-control': 'private, no-store', 'content-length': String(a.dados.length),
-      });
-      res.end(a.dados);
-      return;
-    }
-    throw new Recusa(404, 'Não encontrado');
-  } catch (e) {
-    if (e instanceof Recusa) return json(res, e.status, { erro: e.message });
-    log('erro', { erro: String(e) });
-    return json(res, 500, { erro: 'Erro no leitor' });
-  }
-}).listen(Number(process.env.PORT ?? 8080), () => log('erp-leitor no ar'));
+createServer(tratador({ deps, limite, origens: ORIGENS, quem })).listen(Number(process.env.PORT ?? 8080), () => log('erp-leitor no ar'));

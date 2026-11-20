@@ -7,6 +7,9 @@ import { type Bucket, type Deps, Recusa, baixar, pedidoIdentificar, subir } from
 import { converter } from './ia.ts';
 import { Limite } from './limite.ts';
 import { lerXml } from './xml.ts';
+import { analisar } from './xml.ts';
+import { createServer, request } from 'node:http';
+import { tratador } from './rotas.ts';
 
 const NFE = `<?xml version="1.0" encoding="UTF-8"?>
 <nfeProc versao="4.00" xmlns="http://www.portalfiscal.inf.br/nfe"><NFe><infNFe Id="NFe35261111222333000181550010000012341000012345" versao="4.00">
@@ -204,4 +207,55 @@ test('identificar: vencimento do boleto quando a nota não tem parcela', () => {
 test('limite por pessoa', () => {
   const l = new Limite(2, 1000);
   assert.ok(l.passa('a', 0)); assert.ok(l.passa('a', 1)); assert.ok(!l.passa('a', 2)); assert.ok(l.passa('b', 2)); assert.ok(l.passa('a', 1001));
+});
+
+test('XML malformado com muito lixo é recusado em tempo linear', () => {
+  const casos = ['<'.repeat(50_000), '<!--'.repeat(300_000), '<?'.repeat(300_000), '<![CDATA['.repeat(100_000), '<a>' + '<b x="1'.repeat(100_000)];
+  for (const c of casos) {
+    const t = performance.now();
+    assert.throws(() => analisar(c), /XML malformado/);
+    assert.ok(performance.now() - t < 500, `levou ${Math.round(performance.now() - t)} ms`);
+  }
+  assert.throws(() => analisar('<a>texto</a> <lixo'), /XML malformado/);
+});
+
+test('subir: XML acima de 2 MB não é lido, mas o arquivo fica', async () => {
+  const { deps, chamadas } = falsos();
+  const r = await subir(deps, 'ok', 'grande.xml', Buffer.from('<a>' + 'x'.repeat(2 * 1024 * 1024) + '</a>'));
+  assert.equal(r.leitura, null); assert.match(r.erro_leitura ?? '', /2 MB/);
+  assert.ok(!chamadas.includes('ia'));
+});
+
+// Sobe o tratador numa porta livre e faz um pedido; conta quantos bytes do corpo o servidor leu.
+async function pedido(quem: (j: string) => Promise<string | null>, cab: Record<string, string>, corpo: Buffer, limite = new Limite(30, 60_000)) {
+  const { deps, chamadas } = falsos();
+  const h = tratador({ deps, limite, origens: new Set(['https://erp.exemplo']), quem });
+  let lidos = 0;
+  const srv = createServer((req, res) => { req.on('data', (c: Buffer) => { lidos += c.length; }); return h(req, res); });
+  await new Promise<void>((ok) => srv.listen(0, ok));
+  const porta = (srv.address() as { port: number }).port;
+  const status = await new Promise<number>((ok) => {
+    const r = request({ port: porta, method: 'POST', path: '/anexos', headers: { 'content-length': String(corpo.length), ...cab } }, (res) => { res.resume(); ok(res.statusCode ?? 0); });
+    r.on('error', () => ok(-1));
+    r.end(corpo);
+  });
+  srv.close();
+  return { status, chamadas, lidos };
+}
+
+test('rotas: sem login ou com login inválido, recusa sem guardar e sem conferir no banco', async () => {
+  let perguntou = 0;
+  const quem = async (j: string) => { perguntou++; return j === 'bom' ? 'u1' : null; };
+  const sem = await pedido(quem, {}, Buffer.from(NFE));
+  assert.equal(sem.status, 401); assert.equal(perguntou, 0); assert.deepEqual(sem.chamadas, []);
+  const ruim = await pedido(quem, { authorization: 'Bearer forjado' }, Buffer.from(NFE));
+  assert.equal(ruim.status, 401); assert.deepEqual(ruim.chamadas, []);
+});
+
+test('rotas: o limite usa o id conferido, não o sub do JWT', async () => {
+  const limite = new Limite(1, 60_000);
+  const quem = async (j: string) => (j.startsWith('bom') ? 'u1' : null);
+  const a = await pedido(quem, { authorization: 'Bearer bom-a' }, Buffer.from('%PDF-1.7'), limite);
+  const b = await pedido(quem, { authorization: 'Bearer bom-b' }, Buffer.from('%PDF-1.7'), limite);
+  assert.notEqual(a.status, 429); assert.equal(b.status, 429);
 });

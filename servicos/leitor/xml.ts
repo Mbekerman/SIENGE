@@ -16,9 +16,12 @@ export function analisar(xml: string): No {
   if (/<!DOCTYPE/i.test(xml)) throw new Error('XML com DOCTYPE não é aceito');
   const raiz: No = { nome: '#', attrs: {}, filhos: [], texto: '' };
   const pilha: No[] = [raiz];
-  const re = /<!\[CDATA\[([\s\S]*?)\]\]>|<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<\/([^\s>]+)\s*>|<([^\s/>]+)((?:\s+[^\s=]+\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*(\/?)>|([^<]+)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(xml))) {
+  const re = /<!\[CDATA\[([\s\S]*?)\]\]>|<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<\/([^\s>]+)\s*>|<([^\s/>]+)((?:\s+[^\s=]+\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*(\/?)>|([^<]+)/y;
+  // sticky (/y): cada pedaço começa onde o anterior acabou. Com /g, um "<" ou "<!--" sem fechar fazia a busca
+  // recomeçar em cada posição seguinte (tempo quadrático); aqui, o que não casa é XML malformado, na hora.
+  while (re.lastIndex < xml.length) {
+    const m = re.exec(xml);
+    if (!m) throw new Error('XML malformado');
     const topo = pilha[pilha.length - 1];
     if (m[1] !== undefined) topo.texto += m[1];
     else if (m[2] !== undefined) {
