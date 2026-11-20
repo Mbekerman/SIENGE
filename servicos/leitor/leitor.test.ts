@@ -6,6 +6,7 @@ import { conferirLinha } from './boleto.ts';
 import { type Bucket, type Deps, Recusa, abrirComSenha, baixar, pedidoIdentificar, subir } from './fluxo.ts';
 import { chaveValida, converter, copiaColaValido, ESQUEMA, mascara } from './ia.ts';
 import { Limite } from './limite.ts';
+import { ENTRADA, SAIDA, lerArquivo, nomeSaida, pendentes } from './lote.ts';
 import { lerXml } from './xml.ts';
 import { analisar } from './xml.ts';
 import { createServer, request } from 'node:http';
@@ -418,4 +419,27 @@ test('PIX copia e cola de cada parcela: CRC conferido, errado sai com aviso', ()
   assert.equal(l.parcelas![2].pix_copia_cola, undefined);
   assert.equal(l.avisos?.length, 1);
   assert.match(l.avisos![0], /2ª parcela/);
+});
+
+// ---------- teste em escala (lote.ts) ----------
+
+test('lote: só os arquivos sem resultado, na ordem, até o limite', () => {
+  const ent = [ENTRADA, `${ENTRADA}b.pdf`, `${ENTRADA}a.pdf`, `${ENTRADA}c.pdf`, `${ENTRADA}pasta/`];
+  assert.equal(nomeSaida(`${ENTRADA}a.pdf`), `${SAIDA}a.pdf.json`);
+  assert.deepEqual(pendentes(ent, new Set([`${SAIDA}a.pdf.json`]), 10), [`${ENTRADA}b.pdf`, `${ENTRADA}c.pdf`]);
+  assert.deepEqual(pendentes(ent, new Set(), 1), [`${ENTRADA}a.pdf`]);
+});
+
+test('lote: lê como o leitor e guarda os tokens; a falha da IA fica para a próxima rodada', async () => {
+  const pdf = Buffer.from('%PDF-1.4\n%%EOF');
+  const leitura = { tipo: 'nfse' } as any;
+  const ia = async () => ({ leitura, modelo: 'm', uso: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: null, cache_creation_input_tokens: null } as any });
+  const r = await lerArquivo('a.pdf', pdf, ia, async () => null);
+  assert.equal(r.origem, 'ia'); assert.equal(r.leitura, leitura); assert.deepEqual(r.uso, { entrada: 10, saida: 5, cache_lido: 0, cache_criado: 0 });
+  const f = await lerArquivo('a.pdf', pdf, async () => { throw new Error('529'); }, async () => null);
+  assert.equal(f.erro_ia, true); assert.equal(f.erro, '529');
+  const z = await lerArquivo('a.zip', Buffer.from('PK\x03\x04'), ia, async () => null);
+  assert.match(z.erro!, /não é PDF/); assert.equal(z.erro_ia, undefined);
+  const s = await lerArquivo('s.pdf', Buffer.from('%PDF-1.4\n/Encrypt 5 0 R\n%%EOF'), ia, async () => null);
+  assert.match(s.erro!, /senha/);
 });
