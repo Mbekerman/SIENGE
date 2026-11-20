@@ -1,6 +1,6 @@
 // Títulos: lista agrupada pela etapa, com os contadores que filtram e a gaveta do título (tpl.js › fLancar, fGrupo, fGaveta).
 import { useQuery } from '@tanstack/react-query';
-import { AlertaRecebedor, SeloRecebedor, useDivergentes } from '../lib/recebedor';
+import { AlertaCredorNovo, AlertaRecebedor, SeloCredorNovo, SeloRecebedor, useCredoresNovos, useDivergentes } from '../lib/recebedor';
 import { Alerta, COR, Cab, Carregando, Chip, Colunas, Gaveta, Grupo, Ic, Kv, Li, Secao, Tiles, Vazio, type Cor, type CorChip, type Linha } from '../components/Comum';
 import { data, dataCurta, dataHora, documento, hojeISO, mes, reais } from '../lib/format';
 import { acha, usePagina } from '../lib/navegar';
@@ -37,6 +37,7 @@ export function Titulos() {
   const pg = usePagina<F>('/titulos');
   const q = useQuery({ queryKey: ['titulos'], queryFn: () => rpc<Titulo[]>('titulos') });
   const div = useDivergentes();
+  const novos = useCredoresNovos();
   const { eu } = useSessao();
   const [sp, setSp] = useSearchParams();
   const novo = sp.get('novo') === '1';
@@ -47,7 +48,7 @@ export function Titulos() {
   const grupos = G.filter(g => !pg.filtro || pg.filtro === g[0]);
   const linha = (t: Titulo): Linha => ({
     id: t.id,
-    titulo: div.has(t.id) ? <span className="selo-l">{t.fornecedor}<SeloRecebedor motivos={div.get(t.id)} /></span> : t.fornecedor,
+    titulo: div.has(t.id) || novos.has(t.id) ? <span className="selo-l">{t.fornecedor}<SeloRecebedor motivos={div.get(t.id)} /><SeloCredorNovo desde={novos.get(t.id)} /></span> : t.fornecedor,
     cels: [
       { c: chip(t) },
       { c: t.areas, x: true },
@@ -97,6 +98,7 @@ function GavetaTitulo({ id, fechar }: { id: string; fechar: () => void }) {
       <RastroBotoes id={t.id} />
       {t.etiquetas.length > 0 && <div className="etq-w">{t.etiquetas.map(x => <span key={x} className="etq">{x}</span>)}</div>}
       <AlertaRecebedor motivos={t.recebedor_divergente} />
+      <AlertaCredorNovo desde={t.credor_novo} />
       {recusa && <Alerta c="cr" t={`Recusado por ${recusa.por ?? '—'}${recusa.justificativa ? `: ${recusa.justificativa}` : ''}`} />}
       {t.etapa === 'erro_sienge' && <Alerta c="cr" t={`Não chegou ao Sienge${t.sienge_erro ? `: ${t.sienge_erro}` : ''}`} />}
       {t.etapa === 'aprovacao' && t.aprovacao_pendente && <Alerta c="at" t={`Esperando ${t.aprovacao_pendente}`} />}
