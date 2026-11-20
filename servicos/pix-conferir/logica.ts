@@ -1,4 +1,5 @@
-// Conferência do PIX copia e cola pelo Asaas (a tela e os avisos dizem só "conferido", sem a fonte; Moises, 20/11) (Moises, 20/nov/2026; revisão de segurança do #106): o código leva o
+// Conferência do PIX copia e cola pelo Asaas (Moises, 20/nov/2026; revisão de segurança do #106; a tela e os avisos dizem
+// só "conferido", sem a fonte): o código leva o
 // recebedor dentro dele, e só o banco do recebedor sabe quem recebe pelo código dinâmico. A função pergunta ao
 // Asaas (POST /v3/pix/qrCodes/decode, que só lê: pagar é outra chamada) e grava em erp.pix_conferencias como
 // erp_sistema; o banco dispensa a justificativa quando o documento de quem recebe é o do credor. A tela não grava a
