@@ -3,7 +3,8 @@
 -- IA, então o limite segura login roubado ou script com erro.
 --   - erp.usuarios.limite_leitor: nulo = o padrão (30); de 1 a 1000.
 --   - Quem muda: o administrador ou o master, como os outros dados do usuário (RLS e erp.tg_so_admin); ninguém muda o
---     próprio (erp.tg_usuario); fica na auditoria (t_aud_usuarios). Não é configuração de dinheiro.
+--     próprio (erp.tg_usuario); fica na auditoria (t_aud_usuarios). O limite segura o custo da IA (revisão do PR #101):
+--     o administrador (o TI) põe até 100; acima de 100, até 1000, só o master (ou o sistema). Gatilho t_limite_leitor.
 --   - api.eu() passa a trazer limite_leitor (o da pessoa ou o padrão): o leitor lê com o login da pessoa.
 --   - api.definir_limite_leitor(usuário, limite): a mesma regra, com erro claro quando não pode (o RLS só zeraria).
 -- Portabilidade: SQL puro.
@@ -11,6 +12,20 @@
 alter table erp.usuarios add column limite_leitor integer check (limite_leitor between 1 and 1000);
 comment on column erp.usuarios.limite_leitor is
   'Arquivos que a pessoa sobe ao leitor de notas a cada 10 minutos; nulo = o padrão (30)';
+
+create function erp.tg_limite_leitor() returns trigger language plpgsql as $$
+begin
+  if new.limite_leitor is distinct from old.limite_leitor and coalesce(new.limite_leitor, 0) > 100
+     and not (erp.sistema() or erp.sou_master()) then
+    raise exception 'Acima de 100 arquivos a cada 10 minutos, só o master muda o limite do leitor';
+  end if;
+  return new;
+end $$;
+revoke execute on function erp.tg_limite_leitor() from public;
+grant execute on function erp.tg_limite_leitor()
+  to authenticated, erp_sistema, erp_conferencia, erp_situacao, erp_reclassificacao, erp_acesso;
+create trigger t_limite_leitor before update of limite_leitor on erp.usuarios
+  for each row execute function erp.tg_limite_leitor();
 
 create or replace function api.eu() returns jsonb language sql stable security invoker set search_path = pg_catalog, pg_temp as $$
   select jsonb_build_object(
@@ -30,6 +45,9 @@ begin
   if p_usuario = erp.eu() then raise exception 'Ninguém muda o próprio limite do leitor'; end if;
   if p_limite is not null and (p_limite < 1 or p_limite > 1000) then
     raise exception 'O limite do leitor vai de 1 a 1000 arquivos a cada 10 minutos';
+  end if;
+  if p_limite > 100 and not erp.sou_master() then
+    raise exception 'Acima de 100 arquivos a cada 10 minutos, só o master muda o limite do leitor';
   end if;
   update erp.usuarios set limite_leitor = p_limite where id = p_usuario;
   if not found then raise exception 'Usuário não encontrado'; end if;
