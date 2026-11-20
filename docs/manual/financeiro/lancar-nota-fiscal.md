@@ -57,8 +57,21 @@ O botão **Lançar título** fica na página Títulos e abre uma janela com esta
 
 Ao clicar em **Lançar**, o título vai para a aprovação e abre na gaveta. Se faltar alguma coisa, o pé da janela diz o quê.
 
+🟡 **Ler a nota pelo arquivo, no PR #98** (ainda não juntado). O Lançar título ganha no topo o bloco **Arquivo da nota**:
+- **Preenchimento:** a pessoa arrasta ou escolhe o PDF, o XML ou a foto da nota, com até 20 MB. A tela se preenche com empresa, fornecedor, documento, datas, valor e parcelas (boleto ou PIX).
+- **Avisos do bloco:**
+  - nota já lançada;
+  - nota lida pela IA, que precisa de conferência;
+  - tomador que não é empresa da pessoa;
+  - emitente sem cadastro;
+  - retenções na nota: o título sai pelo valor bruto, porque a retenção ainda não existe na tela;
+  - boleto que o banco não confirmou;
+  - valor ou beneficiário diferentes do boleto.
+- **De onde a nota vem:** o bloco lista as origens possíveis (previsão, contrato, assinatura, conta de consumo ou pedido de compra), com a mais provável já marcada. Escolher uma origem preenche o rateio e a previsão; "Nenhum destes" limpa os dois.
+- **Depois de lido:** tudo continua editável, e o arquivo fica ligado à nota.
+- **No rastro do título**, o botão Anexos passa a baixar o arquivo.
+
 **Ainda não dá para fazer:**
-- ler o PDF ou o XML;
 - reter impostos ou caução;
 - adiantar sem nota;
 - salvar rascunho;
