@@ -64,9 +64,9 @@ Ao clicar em **Lançar**, o título vai para a aprovação e abre na gaveta. Se 
   - nota lida pela IA, que precisa de conferência;
   - tomador que não é empresa da pessoa;
   - emitente sem cadastro;
-  - retenções na nota: o título sai pelo valor bruto, porque a retenção ainda não existe na tela;
   - boleto que o banco não confirmou;
   - valor ou beneficiário diferentes do boleto.
+- **Nota com retenção trava o Lançar.** Quando a leitura acha tributo retido, ou um líquido abaixo do bruto, aparece um aviso vermelho: "Nota com retenção ainda não se lança… espere a tela de retenções". O Lançar só destrava se a pessoa marcar "Conferi o documento: a nota não tem retenção (a leitura errou)". ⚠️ Quem lança à mão, sem arquivo, uma nota com retenção ainda lança pelo valor bruto; isso vai ao Moises.
 - **De onde a nota vem:** o bloco lista as origens possíveis (previsão, contrato, assinatura, conta de consumo ou pedido de compra), com a mais provável já marcada. Escolher uma origem preenche o rateio e a previsão; "Nenhum destes" limpa os dois.
 - **Depois de lido:** tudo continua editável, e o arquivo fica ligado à nota.
 - **No rastro do título**, o botão Anexos passa a baixar o arquivo.
