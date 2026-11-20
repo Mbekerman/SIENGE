@@ -110,7 +110,7 @@ export interface Aprovacao {
 // Leitor de notas (servicos/leitor): o que volta de POST /anexos. A Leitura é a mesma de servicos/leitor/leitura.ts.
 export interface Leitura {
   origem: 'xml' | 'ia'; modelo?: string; formato?: string;
-  tipo?: 'nfe' | 'nfse' | 'fatura' | 'boleto' | 'recibo' | 'outro';
+  tipo?: 'nfe' | 'nfse' | 'fatura' | 'boleto' | 'iptu' | 'itbi' | 'darf' | 'darm' | 'dare' | 'recibo' | 'outro';
   emitente?: { documento?: string; nome?: string }; tomador?: { documento?: string; documento_mascara?: string; nome?: string };
   numero?: string; serie?: string; chave_acesso?: string; emissao?: string; competencia?: string;
   valor?: number; valor_liquido?: number;

@@ -2,7 +2,7 @@
 // Lançar título. Tudo opcional: o que o leitor não achou fica de fora, nunca vira zero (regra "não informado").
 // Valores em reais com ponto decimal; datas em AAAA-MM-DD; documentos só com os dígitos.
 
-export type TipoDocumento = 'nfe' | 'nfse' | 'fatura' | 'boleto' | 'recibo' | 'outro';
+export type TipoDocumento = 'nfe' | 'nfse' | 'fatura' | 'boleto' | 'iptu' | 'itbi' | 'darf' | 'darm' | 'dare' | 'recibo' | 'outro';
 
 export interface Pessoa { documento?: string; documento_mascara?: string; nome?: string }  // máscara: dígitos e * (ia.ts)
 

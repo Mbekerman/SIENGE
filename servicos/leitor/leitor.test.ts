@@ -114,6 +114,11 @@ test('tipo pelos bytes, não pelo nome', () => {
   assert.equal(c.at(-1), '1222333000144');
 });
 
+test('resposta da IA: guias de imposto têm tipo próprio (Moises, 20/11/2026); tipo desconhecido vira outro', () => {
+  for (const t of ['iptu', 'itbi', 'darf', 'darm', 'dare'] as const) assert.equal(converter({ tipo: t }, 'm').tipo, t);
+  assert.equal(converter({ tipo: 'gps' }, 'm').tipo, 'outro');
+});
+
 test('resposta da IA: nulos somem, valores zerados viram não informado, linha conferida', () => {
   const linha = linhaCobranca('341', '1638', '0000123456', '1234567890123456789012345');
   const l = converter({ tipo: 'fatura', emitente: { documento: '11.222.333/0001-81', nome: 'ENERGIA' }, tomador: { documento: null, nome: null },

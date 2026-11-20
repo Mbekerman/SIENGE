@@ -16,7 +16,7 @@ type PixTipo = 'cpf_cnpj' | 'email' | 'telefone' | 'aleatoria';
 export interface Linha { k: number; nucleo: string; centro: string; divisao: string; natureza: string; pct: string }
 interface Parcela { k: number; vencimento: string; valor: string; forma: Forma; pix_tipo: PixTipo; pix_chave: string; boleto: string; excecao: string; pix_cc: string; cc_exc: string; bol_exc: string }
 
-const TIPOS: [string, string][] = [['nfse', 'NFS-e'], ['nfe', 'NF-e'], ['fatura', 'Fatura'], ['boleto', 'Boleto'], ['recibo', 'Recibo'], ['outro', 'Outro']];
+const TIPOS: [string, string][] = [['nfse', 'NFS-e'], ['nfe', 'NF-e'], ['fatura', 'Fatura'], ['boleto', 'Boleto'], ['iptu', 'IPTU'], ['itbi', 'ITBI'], ['darf', 'DARF'], ['darm', 'DARM'], ['dare', 'DARE'], ['recibo', 'Recibo'], ['outro', 'Outro']];
 const PIX: [PixTipo, string][] = [['cpf_cnpj', 'CPF ou CNPJ'], ['email', 'E-mail'], ['telefone', 'Telefone'], ['aleatoria', 'Chave aleatória']];
 let seq = 1;
 export const novaLinha = (pct = '100'): Linha => ({ k: seq++, nucleo: '', centro: '', divisao: '', natureza: '', pct });
