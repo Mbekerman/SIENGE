@@ -6,11 +6,14 @@ import { LIMITE } from './arquivo.ts';
 import { type Deps, Recusa, baixar, subir } from './fluxo.ts';
 import type { Limite } from './limite.ts';
 
+export interface Pessoa { id: string; limite?: number }
+
 export interface Opcoes {
   deps: Deps;
   limite: Limite;
   origens: Set<string>;
-  quem: (jwt: string) => Promise<string | null>;   // id da pessoa, ou null se o login não vale
+  // id da pessoa e o limite dela (arquivos a cada 10 minutos; sem ele, o padrão), ou null se o login não vale
+  quem: (jwt: string) => Promise<Pessoa | null>;
 }
 
 export function tratador(o: Opcoes) {
@@ -49,11 +52,11 @@ export function tratador(o: Opcoes) {
       if (!post && !(req.method === 'GET' && m)) throw new Recusa(404, 'Não encontrado');
       const jwt = /^Bearer (\S+)$/.exec(req.headers.authorization ?? '')?.[1];
       if (!jwt || jwt.length > 8192) throw new Recusa(401, 'Entre de novo');
-      const id = await o.quem(jwt);
-      if (!id) throw new Recusa(401, 'Entre de novo');
+      const p = await o.quem(jwt);
+      if (!p) throw new Recusa(401, 'Entre de novo');
 
       if (post) {
-        if (!o.limite.passa(id)) throw new Recusa(429, 'Muitos arquivos em pouco tempo; espere alguns minutos');
+        if (!o.limite.passa(p.id, p.limite)) throw new Recusa(429, 'Muitos arquivos em pouco tempo; espere alguns minutos');
         const tam = Number(req.headers['content-length'] ?? 0);
         if (tam > LIMITE) throw new Recusa(413, 'O arquivo passa de 20 MB');
         const dados = await lerCorpo(req);

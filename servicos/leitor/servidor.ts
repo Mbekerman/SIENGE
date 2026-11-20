@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import type { Mime } from './arquivo.ts';
 import { clienteFederado, lerComIa } from './ia.ts';
 import { type Banco, type Bucket, type Deps, Recusa } from './fluxo.ts';
-import { tratador } from './rotas.ts';
+import { type Pessoa, tratador } from './rotas.ts';
 import { Limite } from './limite.ts';
 
 const env = (k: string) => { const v = process.env[k]; if (!v) throw new Error(`Falta a variável ${k}`); return v; };
@@ -110,21 +110,28 @@ const asaas: Deps['asaas'] = ASAAS_URL && ASAAS_CHAVE ? async (linha) => {
 
 const cliente = await clienteFederado();
 const deps: Deps = { banco, bucket, ia: (e) => lerComIa(cliente, e), asaas, abrirPdf, log };
-const limite = new Limite(30, 10 * 60_000);   // 30 arquivos por pessoa a cada 10 minutos
+const limite = new Limite(30, 10 * 60_000);   // 30 arquivos por pessoa a cada 10 minutos, ou o limite da pessoa no ERP
 
-// Confere o login no Supabase (GET /auth/v1/user) e devolve o id da pessoa; um minuto em memória por JWT.
-const vistos = new Map<string, { id: string; ate: number }>();
-async function quem(jwt: string): Promise<string | null> {
+// Confere o login no Supabase (GET /auth/v1/user) e devolve o id da pessoa e o limite dela (api.eu(), que lê
+// erp.usuarios.limite_leitor; sem cadastro no ERP, o padrão); um minuto em memória por JWT.
+const vistos = new Map<string, { p: Pessoa; ate: number }>();
+async function quem(jwt: string): Promise<Pessoa | null> {
   const c = vistos.get(jwt);
-  if (c && c.ate > Date.now()) return c.id;
+  if (c && c.ate > Date.now()) return c.p;
   const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: { apikey: SUPABASE_KEY, authorization: `Bearer ${jwt}` }, signal: AbortSignal.timeout(10_000) });
   if (r.status === 401 || r.status === 403) return null;
   if (!r.ok) throw new Recusa(502, 'Não consegui conferir o login');
   const id = ((await r.json()) as { id?: unknown }).id;
   if (typeof id !== 'string' || !id) return null;
+  let limite: number | undefined;
+  try {
+    const eu = await banco.rpc<{ limite_leitor?: unknown } | null>(jwt, 'eu', {});
+    if (typeof eu?.limite_leitor === 'number') limite = eu.limite_leitor;
+  } catch (e) { log('limite da pessoa não lido', { erro: String(e) }); }
+  const p: Pessoa = { id, limite };
   if (vistos.size > 5000) vistos.clear();
-  vistos.set(jwt, { id, ate: Date.now() + 60_000 });
-  return id;
+  vistos.set(jwt, { p, ate: Date.now() + 60_000 });
+  return p;
 }
 
 createServer(tratador({ deps, limite, origens: ORIGENS, quem })).listen(Number(process.env.PORT ?? 8080), () => log('erp-leitor no ar'));

@@ -8030,5 +8030,52 @@ select pg_temp.volta();
 rollback;
 select pg_temp.sis();
 
+-- Limite do leitor por pessoa (Moises, 20/11/2026): padrão 30; administrador ou master mudam o dos outros
+begin;
+select pg_temp.como(:'analista');
+select pg_temp.ok((select (j->>'limite_leitor')::int = 30 from api.eu() j), 'limite do leitor: sem valor, api.eu() traz o padrão 30');
+select pg_temp.erro_igual(format($$select api.definir_limite_leitor(%L, 100)$$, :'gestor'),
+  'Só o administrador ou o master muda o limite do leitor', 'limite do leitor: analista não muda o de outro');
+select pg_temp.ok((select count(*) = 0 from (select 1 from erp.usuarios where id = :'gestor' and limite_leitor is not null) x),
+  'limite do leitor: nada gravado');
+update erp.usuarios set limite_leitor = 500 where id = :'gestor';
+select pg_temp.como_dono(null);
+select pg_temp.ok((select limite_leitor is null from erp.usuarios where id = :'gestor'), 'limite do leitor: update direto do analista não grava (RLS)');
+select pg_temp.como(:'ti');
+select pg_temp.erro_igual(format($$select api.definir_limite_leitor(%L, 100)$$, :'ti'),
+  'Ninguém muda o próprio limite do leitor', 'limite do leitor: o administrador não muda o próprio');
+select pg_temp.erro_igual(format($$select api.definir_limite_leitor(%L, 0)$$, :'analista'),
+  'O limite do leitor vai de 1 a 1000 arquivos a cada 10 minutos', 'limite do leitor: fora de 1 a 1000 é recusado');
+select pg_temp.erro_igual($$select api.definir_limite_leitor('00000000-0000-0000-0000-0000000000ff', 50)$$,
+  'Usuário não encontrado', 'limite do leitor: usuário que não existe');
+select pg_temp.erro_igual(format($$select api.definir_limite_leitor(%L, 101)$$, :'analista'),
+  'Acima de 100 arquivos a cada 10 minutos, só o master muda o limite do leitor', 'limite do leitor: o administrador não passa de 100');
+select pg_temp.como_dono(:'ti');
+select pg_temp.erro_igual(format($$update erp.usuarios set limite_leitor = 500 where id = %L$$, :'analista'),
+  'Acima de 100 arquivos a cada 10 minutos, só o master muda o limite do leitor', 'limite do leitor: nem por update direto o administrador passa de 100');
+select pg_temp.erro_igual($$insert into erp.usuarios (login_id, nome, papel, ativo, limite_leitor) values ('novo-limite', 'Novo', 'leitura', false, 500)$$,
+  'Acima de 100 arquivos a cada 10 minutos, só o master muda o limite do leitor', 'limite do leitor: nem criando usuário o administrador passa de 100');
+select pg_temp.como(:'ti');
+select api.definir_limite_leitor(:'analista', 100);
+select pg_temp.como(:'analista');
+select pg_temp.ok((select (j->>'limite_leitor')::int = 100 from api.eu() j), 'limite do leitor: o administrador muda e api.eu() traz o valor');
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual($$update erp.usuarios set limite_leitor = 1000 where id = erp.eu()$$,
+  'Ninguém muda o próprio papel, acesso ou login', 'limite do leitor: nem o master muda o próprio por update direto');
+select pg_temp.como(:'diretor');
+select api.definir_limite_leitor(:'analista', 1000);
+select pg_temp.como(:'analista');
+select pg_temp.ok((select (j->>'limite_leitor')::int = 1000 from api.eu() j), 'limite do leitor: o master passa de 100');
+select pg_temp.como(:'diretor');
+select api.definir_limite_leitor(:'analista', null);
+select pg_temp.como(:'analista');
+select pg_temp.ok((select (j->>'limite_leitor')::int = 30 from api.eu() j), 'limite do leitor: o master volta ao padrão com nulo');
+select pg_temp.como_dono(null);
+select pg_temp.ok((select count(*) >= 2 from erp.auditoria where tabela = 'usuarios' and registro = :'analista'),
+  'limite do leitor: as mudanças ficam na auditoria');
+select pg_temp.como(null);
+rollback;
+select pg_temp.sis();
+
 \echo '# fim'
 do $$ begin raise notice 'TODOS OS TESTES PASSARAM'; end $$;
