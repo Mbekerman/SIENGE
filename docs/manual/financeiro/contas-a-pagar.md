@@ -55,6 +55,23 @@ Quando a nota chega e o título nasce, ele **consome** a previsão correspondent
 
 Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depois de criado, e a API aceita os impostos já na criação.
 
+#### Forma de pagamento e envio ao Sienge (PR #71)
+
+🟡 Código pronto no PR #71, ainda não juntado. As regras de boleto e PIX foram aprovadas pelo Moises em 17/nov/2026.
+
+- **Forma de pagamento de cada parcela:** quem lança a nota diz como cada parcela vai ser paga, por PIX (com o tipo e a chave) ou por boleto (com a linha digitável). O sistema confere a chave e os dígitos do boleto.
+- **Trava:** depois do primeiro voto da alçada, ou com o título já na fila do Sienge, ninguém muda mais a forma de pagamento, nem quem lançou. Ela só volta a mudar na revisão do título.
+- **Boleto** (Moises, 17/nov/2026): o valor impresso na linha digitável tem que ser o da parcela. Boleto sem valor impresso (zero) é aceito.
+- **PIX por CPF ou CNPJ** (Moises, 17/nov/2026): a chave tem que ser o documento do credor do título. A chave de outra pessoa só entra com uma justificativa, que aparece para quem aprova.
+- **Avisos em cada parcela, para quem aprova:**
+  - "A chave não é do documento do credor", para chave de e-mail, telefone ou aleatória;
+  - "Chave CPF/CNPJ de outra pessoa", seguido da justificativa;
+  - "Chave nova para este credor". Uma chave é nova quando nunca foi usada num título desse credor que já foi para o Sienge.
+- **Aviso crítico de chave nova:** quando o título aprovado vai ao Sienge com uma chave nova, o master e a lista AF recebem um aviso crítico. Esse aviso não se desliga, nem no sino nem no e-mail.
+- **Envio automático:** o título aprovado vai sozinho ao Sienge, já com a forma de pagamento. A situação do envio aparece no título: pendente, enviado, erro ou manual.
+- **Divisão em parcelas:** o valor se divide em partes iguais, e o centavo que sobra fica na primeira parcela, como o Sienge faz. Antes ficava na última.
+- **Limite desta primeira versão:** nota com retenção ou caução ainda não vai ao Sienge.
+
 ### Previsões de despesa na transição
 
 ✅ **Decidido** (Moises, 14/nov/2026, depois dos comentários do diretor financeiro). O módulo de Orçamentos fica para depois. Enquanto isso:
@@ -87,6 +104,18 @@ Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depo
 - Nota **emitida antes da previsão aprovada** é travada, porque senão a aprovação vira só uma etapa formal.
 - A **AF** ou a **AD** podem abrir exceção, com motivo.
 
+#### Contratos recorrentes e previsões no código (PR #72)
+
+🟡 Código pronto no PR #72, ainda não juntado:
+
+- **Aprovação do contrato recorrente e da assinatura:** aprovam o gestor do centro e alguém da AF ou da AO. Quem criou ou alterou o contrato não aprova. Mudar valores, datas, credor ou rateio pede aprovação de novo.
+- **Previsões do contrato** nascem aprovadas quando o contrato é aprovado. A previsão lançada à mão passa pela alçada do título.
+- **Nota menor que a previsão:** quem lança escolhe entre duas opções:
+  - **Saldo:** nasce outra previsão com o valor que sobrou, na data que a pessoa informar (hoje ou depois);
+  - **Saving:** a previsão só é encerrada.
+- **Previsão no Sienge:** a previsão aprovada vai ao Sienge como título PRV, sem forma de pagamento. Quando ela deixa de estar aberta, a linha entra na lista para o financeiro apagar no Sienge. O sistema marca a linha sozinho quando o título some de lá.
+- **Marcação do apagado (PR #76, ainda não ligado):** quando o financeiro apaga o título PRV no Sienge, o ERP marca a linha em poucos minutos, pelo aviso do Sienge; sem o aviso, em até 30 minutos. Se o título apagado era de uma previsão ainda aberta, o ERP cria outro no Sienge.
+
 🟡 Propostas ainda sem confirmação do Moises:
 
 - **Previsão vencida sem nota** há X dias aparece numa lista para quem lançou, que reprograma ou cancela com motivo.
@@ -103,6 +132,70 @@ Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depo
 ![Início, pedido aberto para aprovar e Novo pedido, no computador e no celular](../imagens/financeiro/pedido-pagamento-telas-2.png)
 
 ![Pedidos, ficha do pedido, Novo pedido, Adiantamento sem nota, Contas recorrentes, Nova conta (os dois tipos), No Sienge e Campanhas](../imagens/financeiro/contas-a-pagar-telas.png)
+
+#### Consultar títulos, previsões e contas recorrentes (PR #85)
+
+🟡 **Primeira tela de verdade, no PR #85, que espera o ok do Moises.** Ela só consulta; as telas de lançar vêm nos próximos PRs. O pedido do Moises, de 18/nov/2026, foi começar pelas telas de lançar título, previsões e contratos recorrentes, e pela de consultar.
+
+**Entrada:** pela conta Google @bkm.com.br. Quem não tem cadastro no ERP vê "Sem acesso ao ERP".
+
+**Menu Pedidos**, com três abas:
+
+1. **Títulos**
+   - **Contadores:** Rascunhos, Em aprovação, No Sienge e Pagos. Um clique filtra, e o segundo clique volta a mostrar tudo.
+   - **Grupos:** os títulos ficam agrupados, com o total de cada grupo. Os cancelados ficam num grupo fechado, no fim.
+   - **Etapas:** Rascunho, Em revisão, Recusado, Em aprovação, Aprovado, No Sienge, Não chegou ao Sienge, Pago e Cancelado.
+   - **Gaveta:** clicar na linha abre a gaveta do título. No topo vêm o valor, as etiquetas e os avisos: a recusa (quem recusou e por quê), o erro no envio e "Esperando …". Depois vêm os dados (fornecedor, documento, emissão, competência, empresa, número no Sienge e quem lançou), as parcelas com o PIX ou o boleto e onde o gasto entra (o rateio). Por último aparecem as retenções e a caução, as previsões consumidas e os votos.
+2. **Previsões**
+   - **Contadores:** Esperando aprovação, Abertas, Consumidas e Encerradas ou canceladas.
+   - **Saldo:** a previsão aberta mostra quanto ainda resta.
+   - **Gaveta:** data, competência, fornecedor ("Sem fornecedor" quando falta), onde entra, natureza, núcleo, origem, contrato e número no Sienge.
+3. **Contas recorrentes**
+   - **Contadores:** Ativas, Em aprovação, Vencem em 60 dias e Encerradas.
+   - **Grupos:** Contratos de serviço e Assinaturas, com o total por mês. A conta de consumo ainda não existe no banco.
+
+**Nas três abas:**
+- A busca na barra de cima procura fornecedor, nota ou número.
+- O link copiado abre a mesma tela, com o filtro aplicado.
+- Título e previsão de PJ só aparecem para o master e para quem ele designou.
+
+🟡 **Revisão visual no PR #90, que espera o ok do Moises.** As regras não mudam; muda o visual:
+- as abas ficam no lugar do título da página;
+- os contadores mostram o total em R$;
+- o cabeçalho das colunas fica fixo;
+- os grupos viram quadros;
+- a gaveta empurra a lista em vez de cobri-la, e no celular ocupa a tela inteira, com uma seta de voltar;
+- a lista vazia ganha o botão "Limpar filtro e busca";
+- o contador "Encerradas ou canceladas" passa a se chamar "Encerradas".
+
+O #90 também traz a navegação nova (Moises, 18/nov/2026):
+- **Menu em três níveis.** O menu lateral mostra os módulos: Início, Financeiro, Cadastros, Relatórios e Admin. Parar o mouse sobre um módulo abre uma gaveta com os submódulos; parar sobre um submódulo abre outra gaveta com as páginas. Em Financeiro › Contas a pagar, as páginas são Visão geral, Títulos, Previsões e Contas recorrentes. O que ainda não existe aparece apagado, com "Em breve". No alto da página ficam a trilha ("Financeiro › Contas a pagar") e as abas.
+- **Visão geral de Contas a pagar**, a página que abre primeiro. No topo ficam quatro números:
+  - quanto há a pagar nos próximos 7 dias;
+  - quanto venceu sem pagamento;
+  - quantos títulos e previsões esperam aprovação;
+  - quanto as contas recorrentes somam por mês.
+
+  Embaixo vem um cartão por seção, que explica o que se encontra nela e o que dá para fazer.
+
+🟡 **Rastro do título, no PR #91** (ainda não juntado). A gaveta do título ganha uma barra com 7 botões, e cada um abre uma janela:
+- **Origem:** o documento que veio antes do título e o título que ele substituiu.
+- **Aprovações:** todas as rodadas de aprovação.
+- **Alterações:** os pedidos de revisão com a resposta, e o antes e depois de cada ajuste.
+- **Histórico:** a linha do tempo do título.
+- **Anexos:** vazio por ora, com o botão marcado "em breve".
+- **Contrato:** valor, lançado, pago, saldo e os títulos do contrato. Só aparece quando o título vem de um contrato.
+- **Fornecedor:** o cadastro, os números e os últimos títulos. Conta só os títulos que a pessoa pode ver.
+
+As seções Previsões consumidas e Aprovação saem da gaveta e passam para essas janelas.
+
+As imagens abaixo são as do PR #85 e serão trocadas quando o #90 for juntado.
+
+![Títulos no computador](../imagens/financeiro/consulta-titulos-desk.png)
+
+![Gaveta de um título em aprovação](../imagens/financeiro/consulta-titulo-gaveta-desk.png)
+
+![Títulos no celular](../imagens/financeiro/consulta-titulos-cel.png)
 
 #### O que muda nas telas com o piloto do Marketing
 
@@ -140,22 +233,45 @@ Conta recorrente é a que se repete todo mês. Ela fica cadastrada uma vez e gan
 | Tipo | Exemplos | O que o cadastro guarda |
 | --- | --- | --- |
 | **Contrato de serviço** | software, contabilidade, vigilância, limpeza, mídia | fornecedor, empresa pagadora, valor mensal, vigência, reajuste, dia de vencimento, dados de pagamento (PIX, conta ou boleto), núcleo econômico, centro de custo, natureza, gestor e o PDF do contrato |
-| **Conta de consumo** | energia, água, telefone | faixa máxima por mês, teto no ano e o número da instalação ou do cliente (é ele que identifica a fatura quando a concessionária usa um CNPJ só para todas as contas) |
+| **Conta de consumo** | energia, água, telefone | média esperada por mês (o valor médio da fatura, não um máximo), teto no ano e o número da instalação ou do cliente (é ele que identifica a fatura quando a concessionária usa um CNPJ só para todas as contas) |
 
-**Aprovação do cadastro:** cada conta recorrente é aprovada pelo gestor e por alguém da AF ou da AO antes de valer. **Trocar PIX, conta, valor ou faixa exige nova aprovação.**
+**Aprovação do cadastro:** cada conta recorrente é aprovada pelo gestor e por alguém da AF ou da AO antes de valer. **Trocar PIX, conta, valor ou média esperada exige nova aprovação.**
 
 ### Tarefa: cadastrar uma conta recorrente
 
-> 🧪 Telas em protótipo (linha F), ainda sem código.
+> 🟡 **Tela no PR #96**, ainda não juntado. Os passos numerados mais abaixo seguem o protótipo (linha F).
+
+**Como fica no PR #96:**
+
+1. Em Financeiro › Contas a pagar › Contas recorrentes, clique em **Nova conta** e escolha um de três tipos:
+   - **Assinatura:** valor por mês ou por período;
+   - **Contrato de serviço:** valor total;
+   - **Conta de consumo:** concessionária, número da instalação (como está na fatura), **média esperada por mês** (o valor médio da fatura, não um máximo; Moises, 20/nov/2026), teto no ano e dia do vencimento. No PR #97 (ainda não juntado), o dia passa a ser opcional, com o aviso "Na conta de consumo, a fatura que chega preenche e atualiza o dia"; mudar o dia não abre versão nova da conta.
+2. Preencha empresa, fornecedor, descrição, vigência, vencimento e o rateio, como no Lançar título.
+3. Clique em **Enviar para aprovação**. Aprovam o gestor de cada área e alguém da AF ou da AO.
+
+**Para mudar uma conta ativa:** use **Alterar**, na gaveta da conta. O botão só aparece para quem lança naquela conta. O tipo não muda, e mudar valor, vigência, fornecedor, instalação ou rateio manda a conta de novo para aprovação.
+
+**Na lista**, as contas de consumo ganham um grupo próprio, com "média R$ X por mês".
+
+**Ainda falta:** a regra de aprovação da nota de cada mês, que entra no PR das notas.
+- **Contrato de serviço e assinatura:** a nota passa pelo gestor e depois por alguém da AF ou da AD.
+- **Conta de consumo** (Moises, 20/nov/2026): a fatura vai direto para a AF, a AO ou a AD quando cumpre duas condições:
+  - fica até X% acima da média esperada;
+  - somada ao que já se pagou no ano, fica dentro do teto anual.
+
+  Se não cumprir, passa antes pelo gestor. O X vale para a empresa toda e começa em 30%. Ele fica nas Configurações e, como é configuração de dinheiro, só muda por pedido de mudança com aprovação.
+
+**Como era no protótipo (linha F):**
 
 1. Abra **Pedidos**, aba **Contas recorrentes**, e clique em **Nova conta**.
 2. Escolha o tipo: **Contrato de serviço** (valor fixo por mês) ou **Conta de consumo** (luz, água, telefone).
 3. Preencha:
    - **Contrato de serviço:** fornecedor, valor mensal, vigência, reajuste (por exemplo, "IPCA, todo dezembro"), dia de vencimento, pagamento (vem do cadastro do fornecedor), núcleo econômico, centro de custo, natureza, gestor e o PDF do contrato;
-   - **Conta de consumo:** concessionária, número da instalação (como está na fatura; é por ele que o sistema acha a fatura), faixa por mês, teto no ano, vencimento, pagamento (por exemplo, boleto da fatura), núcleo econômico, centro de custo, natureza e gestor.
+   - **Conta de consumo:** concessionária, número da instalação (como está na fatura; é por ele que o sistema acha a fatura), média esperada por mês, teto no ano, vencimento, pagamento (por exemplo, boleto da fatura), núcleo econômico, centro de custo, natureza e gestor.
 4. Clique em **Enviar para aprovação**. Aprovam o gestor e alguém da AF ou da AO. Enquanto isso, a conta aparece com a marca **Cadastro em aprovação**.
 
-**Se precisar mudar:** trocar PIX, conta, valor ou faixa manda a conta de novo para aprovação.
+**Se precisar mudar:** trocar PIX, conta, valor ou média esperada manda a conta de novo para aprovação.
 
 
 > 🧪 Telas em protótipo (linha F), ainda sem código. Pedido do Moises, 8/nov/2026.
@@ -180,7 +296,7 @@ Conta recorrente é a que se repete todo mês. Ela fica cadastrada uma vez e gan
 - quem recebe a nota (o tomador) é a empresa pagadora certa;
 - o contrato está vigente;
 - o mês ainda não tem nota (não deixa mandar a nota duas vezes);
-- o valor cabe na regra: no contrato de serviço, o valor mensal com os reajustes aprovados; na conta de consumo, a faixa do mês e o teto do ano.
+- o valor cabe na regra: no contrato de serviço, o valor mensal com os reajustes aprovados; na conta de consumo, até X% acima da média esperada (começa em 30%) e dentro do teto do ano.
 
 O que não bate vira **exceção**: o pedido só segue com justificativa. Na tela, as marcas "CNPJ igual ao do contrato" e "igual ao contrato" aparecem embaixo do fornecedor e do valor.
 
@@ -280,6 +396,8 @@ Sem os dados de pagamento, o **Enviar** fica travado: o campo Pagamento fica em 
 1. No menu, abra **Aprovar**. Comece pelos grupos **Vencidos** e **Vencem esta semana**.
 2. Clique no pedido. Ele abre numa gaveta à direita, com o valor, os avisos (por exemplo, "Vencido, R$ 25,69 de multa, pede a AD"), as camadas de aprovação (quem já aprovou, de quem é a vez e quem vem depois), a nota, o centro de custo, o pagamento e o vencimento.
 3. Para decidir, desça pelo que está **por trás deste título**, só com cliques (ver abaixo).
+   - 🟡 **Selo "Recebedor não confere"** (PR #108, ainda não juntado). Quando quem recebe pelo PIX, pelo PIX copia e cola ou pelo boleto não é o fornecedor conferido, o título só entrou com a justificativa de quem lançou. O selo aparece na lista e em Aprovar, e a gaveta mostra "Quem recebe não é o fornecedor conferido. Fica marcado até o pagamento". Leia a justificativa antes de aprovar.
+   - 🟡 **Selo amarelo "Credor novo"** (PR #115, ainda não juntado). Aparece quando o fornecedor nunca teve outro título enviado ao Sienge ou pago, e mostra o dia do cadastro. Confira o cadastro antes de aprovar.
 4. Clique em **Aprovar** ou em **Recusar**. Os dois botões ficam embaixo da gaveta em qualquer nível.
 
 #### Ver o que está por trás do título

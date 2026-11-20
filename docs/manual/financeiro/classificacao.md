@@ -122,6 +122,127 @@ Hoje o Sienge tem 97 centros de custo, que misturam obra, tipo de gasto e moment
 
 ✅ **Decidido** (7/nov/2026): um gasto que serve a vários núcleos, centros de custo ou naturezas (campanha institucional, aluguel da sede) é dividido em percentuais. Cada parte conta para o seu núcleo e o seu centro de custo.
 
+## Agrupamentos, móveis, consórcio, empreendimento beneficiado e PDV
+
+Decisões do Moises de 16/nov/2026, ainda sem código. O detalhe está no [plano de naturezas](https://claude.ai/artifact/PvD4oxEJHpjEpWJU2b6DFD).
+
+- ✅ **Pessoal, Contas de consumo e Imóveis, móveis, veículos e equipamentos são agrupamentos de naturezas, não centros de custo.** O salário da analista de Marketing é natureza Salários no centro Marketing; assim o custo fica com quem o gerou.
+- ✅ **Móvel tem três naturezas, conforme onde fica:**
+  - **Mobiliário e decoração do PDV**: despesa comercial do empreendimento, fora do POC;
+  - **Mobiliário e decoração das áreas comuns**: Obra, entra no POC;
+  - **Móveis para uso próprio**: investimento (ativo), o que fica com a BKM.
+- ✅ **Consórcio é um centro de custo** da holding (núcleo Corporativo), com tudo dentro: parcelas, venda da carta, intermediação e impostos. A divisão é o empreendimento e o nível abaixo é a carta. Cada carta é cadastrada com administradora, grupo, cota, crédito, empreendimento de origem (nome do campo desde 17/nov/2026) e financiamento da Caixa; a divisão é escolhida uma vez, e as parcelas nascem com ela.
+- ✅ **Alavancagem é um centro de custo** (Moises, 16/nov/2026). Ele reúne as operações com investidores que põem dinheiro na SPE, e cada investidor é uma divisão: VERSI IV, SR IV e os que vierem. Consórcios continua centro à parte. As naturezas dessas operações:
+  - **Aporte de investidor**: movimentação, fora da DRE;
+  - **Custo de capital do investidor (DFM1)**: despesa financeira na DRE gerencial;
+  - **Prêmio de captação do investidor (DFM2)**: despesa financeira na DRE gerencial;
+  - **Recompra de cotas do investidor**: movimentação, fora da DRE. É a devolução do capital no fim.
+
+  A contabilidade registra DFM1 e DFM2 como distribuição de lucro, mas na gestão elas são custo de conseguir o dinheiro. Por isso a natureza guarda os dois tratamentos, o da DRE gerencial e o da contabilidade, e as duas DRE saem do mesmo lançamento. No Sienge são as contas 2030308 e 2030309. Antes elas ficavam no grupo Sócios, fora da DRE, o que deixava a margem dos empreendimentos maior do que é.
+- ✅ **Due Diligence Jurídica é natureza própria**, no grupo Consultorias e serviços profissionais. O grupo de estudos passa a se chamar **Projetos e Estudos Técnicos**, e a natureza "Estudos técnicos" perdeu os parênteses do nome, para servir a mais casos.
+- ✅ **Empreendimento beneficiado**, em dois modos:
+  - **Só gestão**: o custo fica na empresa que pagou e só aponta o empreendimento (caso do consórcio);
+  - **A reembolsar**: o custo é da SPE. O sistema gera a conta a pagar da SPE para a holding, com a natureza original, e mostra o saldo a reembolsar de cada SPE, com aviso de atraso.
+- ✅ **PDV** é cadastrado com as SPEs que atende e o percentual fixo de cada uma, por vigência. Todo título do PDV se divide sozinho pelos percentuais: entre núcleos da mesma empresa, por rateio; entre empresas diferentes, por repasse. A natureza "Custo fixo de PDV" deixa de existir. Se a SPE alugar o PDV no nome dela, cada conta usa o centro PDV com a natureza normal: aluguel, condomínio, energia... O custo fixo do PDV sai de um filtro desse centro, com a abertura por conta. O histórico da conta 2010503 do Sienge vai para "Repasse de custo do PDV entre empresas", a mesma natureza que a SPE usa daqui para frente no repasse.
+
+### Centros da holding e das SPEs (de-para dos centros do Sienge)
+
+Decidido pelo Moises em 17/nov/2026. O de-para completo está na planilha `/mnt/project-files/erp-bkm/naturezas/de-para-centros-sienge-2026-11-17.xlsx`.
+
+- ✅ **Novos Negócios é centro da holding**, no núcleo Corporativo, com o campo **Empreendimento beneficiado**. Serve aos terrenos que ainda não têm projeto aprovado e, por isso, ainda não têm SPE. Os centros antigos do Sienge desses terrenos vêm para cá: BKM 0X, SPE ES, Leo Becker, Xingu e Novos Negócios SP.
+- ✅ **Consórcios** é centro da holding, com o campo **Empreendimento de origem**.
+- ✅ **Aporte na SPE** é movimentação, fora da DRE.
+- ✅ **Projetos e Contratação Caixa** são centros próprios, cada um com o seu gestor e a sua alçada. Correspondem aos centros "PROJETOS" e "CUSTO CEF" de cada SPE no Sienge.
+- ✅ **Não haverá centro Viabilidade.** O pouco que havia no centro "VIABILIDADE" do Sienge migra pela natureza.
+- ✅ **Despesa da holding paga pela SPE:**
+  - A SPE continua pagando. O Moises recusou o bloqueio proposto.
+  - O lançamento mantém a natureza real (salário, aluguel...), para não perder o motivo do pagamento.
+  - A despesa entra num centro próprio da SPE, chamado **Kostyl**. Esse centro fica **fora da DRE do empreendimento**.
+  - É um conceito novo: um centro marcado como fora da DRE do núcleo.
+- ✅ **Na DRE da holding** (Moises, 17/nov/2026): o custo do Kostyl entra como despesa da holding, na linha da natureza de cada lançamento. Na DRE consolidada também aparece como despesa da holding.
+- ⏳ **A esclarecer:** falta dizer se esse caso também segue o procedimento de reembolso entre empresas, com a holding devendo o valor à SPE. A dúvida do contador sobre o saldo virar mútuo, com IOF, vale aqui também.
+
+### Despesa paga por uma empresa do grupo em nome de outra
+
+O procedimento completo, escrito para o financeiro e a contabilidade, está em [Despesas pagas entre empresas do grupo](https://claude.ai/artifact/PVniSPGxFYtMP8jrymAUGL). Em resumo:
+
+- ✅ **Vale para qualquer despesa e em qualquer direção**: holding pagando pela SPE, SPE pagando pela holding ou SPE pagando por outra SPE. O aluguel do PDV é só o caso mais comum.
+- ✅ **Uma nota não se divide entre empresas**, porque tem um só tomador. Quem paga cobra de volta cada empresa pela parte dela, de um destes dois jeitos:
+  - **Nota em nome de quem pagou**: quem pagou emite uma nota de débito para cada empresa pelo valor exato, sem margem. Cada empresa lança a parte dela com a natureza original, no centro de quem usou;
+  - **Nota em nome de quem usou**: quem pagou fica com um valor a receber dessa empresa até o acerto.
+- ✅ **A nota de débito sai sozinha** (Moises, 16/nov/2026): ao lançar a conta, quem paga marca a empresa (ou o PDV) que vai reembolsar, como já escolhe o centro. No fim do mês, o sistema junta os títulos marcados para cada empresa, cada um com a sua natureza, e gera a nota de débito.
+- ✅ **PDV de várias SPEs**: o percentual de cada SPE é fixo e tem data de início; muda só com nova vigência.
+- ✅ **Repasse ou rateio, nunca os dois** (Moises, 17/nov/2026):
+  - **A holding pagou:** o caminho é o repasse. A holding cobra cada SPE, e cada uma lança a sua parte na natureza "Repasse de custo do PDV entre empresas", que agora fica no grupo de ocupação.
+  - **PDV que atende mais de uma empresa:** o caminho é sempre o repasse, mesmo quando uma SPE pagou. Quem pagou cobra as outras empresas pelos percentuais do PDV (Moises, 17/nov/2026, mantendo a trava S-056 e a regra de 16/11).
+  - **Rateio direto:** vale só entre núcleos da mesma empresa, pelo PDV escolhido no lançamento.
+  - **Bloqueio:** a mesma nota nunca passa pelos dois caminhos. O sistema bloqueia o repasse de uma nota já rateada, senão o custo entraria duas vezes na DRE.
+- ✅ **Não existe divisão por PDV físico** (Moises, 17/nov/2026). O lançamento escolhe o PDV, e o PDV define o rateio entre os núcleos, por vigência. O lançamento guarda qual PDV foi.
+- ✅ **Árvore do Marketing e do PDV fechada** (Moises, 17/nov/2026). Ela tem 39 divisões nos centros Marketing, "PDV - Custo fixo" e "PDV - Construção e reforma". As naturezas liberadas e as regras de fronteira estão na planilha `/mnt/project-files/erp-bkm/naturezas/arvore-marketing-pdv-2026-11-17.xlsx`, aba "Regras de fronteira". As principais:
+  - Produção paga a confecção, e Mídia paga a veiculação.
+  - Promoção são as ações de rua, em empresas e porta a porta (PAP). Eventos são evento, feirão e festa, e tudo o que se contrata para o evento entra nele.
+  - A comunicação visual do PDV fica toda em Marketing › Mídia Off.
+  - Pessoal, no Marketing, é uma divisão de nível 1 sem filhos e recebe lançamento direto.
+  - Ocupação, no PDV, substitui "Imóvel e conservação" e junta as contas de consumo: energia, água, gás, telefonia e internet. O serviço de limpeza fica em Ocupação; o material de limpeza, em Copa e limpeza.
+- ✅ **Natureza nova "Ações promocionais de divulgação"**, no grupo 09. Com ela, o plano tem 217 naturezas.
+- ✅ **Consórcio é a exceção**: fica na holding, no modo só gestão, sem reembolso.
+- 🟡 **Prazo de acerto**: até o dia 10 do mês seguinte. É proposta, ainda não decidida.
+- 🟡 **Até o ERP entrar**, passo manual no Sienge: a holding não lança a despesa reembolsada na conta da despesa, e a SPE deixa de usar a conta 2010503 (Custo fixo de PDV). Ver [Passos manuais no Sienge](../transversais/passos-manuais-no-sienge.md).
+
+### Reembolso a colaborador
+
+- ✅ **Uma natureza só** (Moises, 16/nov/2026): "Despesas reembolsadas a colaboradores", no centro de quem gastou. Cada prestação de contas vira um título, com os comprovantes anexados, sem escolher natureza item por item. Motivo: no último ano foram 60 reembolsos, que somaram R$ 25,6 mil.
+- ✅ **Limites configuráveis**, um por item e outro acumulado no mês. O item acima do limite sai do reembolso e vai para a natureza própria, porque já é compra e não miudeza.
+- 🟡 Ainda sem decisão:
+  - o acumulado ser por colaborador (proposta), e não por centro;
+  - AF ou AD mudarem os limites, com registro de quem mudou e quando;
+  - os valores iniciais de R$ 1.000 por item e R$ 3.000 por colaborador no mês.
+
+⏳ Para o contador: o reembolso pelo custo exato fica fora da receita da holding? Qual o prazo máximo do saldo antes de virar mútuo (com IOF)? Precisa de contrato de compartilhamento de despesas por escrito?
+
+### Comissão, seguros, permuta, viagens e despachante
+
+Decidido pelo Moises em 16/nov/2026.
+
+- ✅ **Comissão de vendas é uma natureza só.** Todo título dela tem o campo obrigatório **Etapa da comissão**, com duas opções: Antecipação ou Saldo (pago após o registro). O título fica ligado à unidade ou ao contrato de venda, e isso permite duas coisas:
+  - no distrato, o sistema mostra quanto de antecipação ficou exposto;
+  - se alguém lança saldo de uma unidade ainda sem registro, o sistema avisa.
+- ✅ **Histórico da comissão no Sienge:** a conta 2010504 vira Antecipação e a 2010505 vira Saldo. A 2010203 (R$ 1,8 milhão no último ano) vira "Não informada", porque o Sienge não diz a etapa. Essa opção só existe para o histórico; um lançamento novo não a aceita.
+- ✅ **Seguros e garantias é um grupo de naturezas.** Ele tem as garantias do terrenista, a confissão de dívida, os três seguros que a Caixa exige (término de obra, risco de engenharia e garantia pós-obra) e as garantias que o investidor exige. Cada lançamento vai para o centro a que pertence.
+- ✅ **ITBI e registro das unidades dadas em permuta** é natureza própria, no grupo Terreno. É custo da permuta física, e não o ITBI do terreno.
+  - 🟡 **Cuidado com o POC:** esse custo só é pago na entrega das unidades. O orçamento de cada SPE precisa trazê-lo desde o lançamento; se não trouxer, a margem cai de uma vez no fim.
+- ✅ **Viagens é uma natureza só**: passagens, hospedagem e alimentação. É o centro que diz de quem é a viagem. Deslocamentos do dia a dia (táxi, aplicativo, km) continuam numa natureza à parte.
+- ✅ **"Despachante e assessoria documental"** fica no grupo Consultorias e serviços profissionais. O serviço de registro de habite-se, CND e averbação entra nela. O grupo Legalização guarda só as taxas e o que se paga ao cartório.
+
+### Perdas com clientes e distrato
+
+Decidido pelo Moises em 16/nov/2026. "Dedução" quer dizer venda desfeita; "perda" quer dizer dinheiro que o cliente deve e não vai pagar.
+
+- ✅ **O distrato é dedução da receita**, na natureza "Cancelamento de vendas (distrato)". A venda é desfeita, a receita já reconhecida é estornada e a unidade volta ao estoque.
+- ✅ **Parcela em atraso e despesa paga em nome do cliente** (ITBI, registro, juros de obra) **são despesa**, no grupo "Perdas com clientes", com quatro naturezas:
+  - Provisão de perda: parcelas em atraso;
+  - Provisão de perda: despesas pagas pelo cliente;
+  - Perda efetiva: parcelas;
+  - Perda efetiva: despesas pagas pelo cliente.
+
+  É despesa do período, no núcleo da SPE, fora do POC. Parcela atrasada não reduz a receita, porque a venda continua de pé.
+- ✅ **A provisão é automática** e aparece só na DRE gerencial. Nada vai para o Sienge nem para a contabilidade; se o contador quiser uma provisão contábil, usa os critérios dele.
+  - A base é o valor em atraso, e não o saldo inteiro do contrato.
+  - As faixas começam em 25% acima de 30 dias, 50% acima de 60 e 75% acima de 90.
+  - Uma rotina diária calcula a provisão. O fechamento do mês grava a diferença em relação ao mês anterior, e quando o cliente paga a provisão é revertida.
+- ✅ **As faixas são configuráveis**, com dias e percentuais, e as de parcelas podem ser diferentes das de despesas. A mudança segue a regra das configurações de dinheiro: AF ou AD pede, e o aprovador escolhido pelo master aprova. Vale do mês aberto em diante; mês fechado não é refeito.
+- ✅ **A perda efetiva acontece em três casos:**
+  - atraso acima de N dias, configurável;
+  - distrato sem retenção que cubra o valor;
+  - baixa aprovada por AF ou AD.
+- ✅ **"Verba de assistência técnica" sai do plano.** Assistência Técnica é centro de custo e usa as naturezas de obra.
+- ✅ **Provisão para assistência técnica** (Moises, 16/nov/2026), só gerencial, sem dinheiro reservado:
+  - **Natureza:** "Provisão para assistência técnica", no grupo Obra. É custo do empreendimento e entra no POC.
+  - **Cálculo:** todo mês, o sistema provisiona sozinho 2% do custo de obra lançado no mês, em cada empreendimento.
+  - **Uso:** depois da entrega, o gasto de assistência técnica consome o saldo da provisão, e o que passar do saldo vira despesa do mês.
+  - **Reversão:** o saldo que sobrar é revertido 5 anos depois da entrega.
+  - **Configuração:** o percentual e o prazo são configuráveis; 2% e 5 anos são os valores iniciais.
+
 ## Tarefa: criar uma natureza nova
 
 > ⏳ As telas ainda não existem.
