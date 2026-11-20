@@ -6245,13 +6245,23 @@ select pg_temp.erro_igual(format($$select erp._conferir_recebedores(%L)$$, :'tse
   'O beneficiário do boleto da parcela 2 não confere com o credor do título (confira o boleto de novo ou justifique a exceção)',
   'S-140: a conferência de novo (troca do credor e pedido do Sienge) também compara o nome');
 select pg_temp.volta();
+-- revisão do #115: o nome fantasia (que quem cadastra escolhe) não vale para a conferência
+select pg_temp.sis();
+update erp.pessoas set nome_fantasia = 'JOAO DA SILVA' where id = '10000000-0000-0000-0000-000000000007';
+select pg_temp.volta();
+delete from erp.parcela_pagamentos where titulo_id = :'tse' and numero = 2;
+select pg_temp.erro_igual(format($$insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (%L, 2, 'boleto', '34191090080000000212134567890008899990000015000')$$, :'tse'),
+  'O beneficiário do boleto da parcela 2 (JOAO DA SILVA ME, conferido) não é o credor (só com a justificativa da exceção)',
+  'S-140: credor com o nome fantasia igual ao nome conferido e outra razão social é recusado sem justificativa');
 rollback to savepoint sp_bol;
-select pg_temp.ok(erp.nome_confere('ACME ENG LTDA', 'Acme Engenharia Ltda.', null)
-                  and erp.nome_confere('BETA SERVICOS', 'Comunicação Visual ME', 'Beta')
-                  and erp.nome_confere(null, 'Acme', null)
-                  and not erp.nome_confere('JOAO DA SILVA', 'Acme Engenharia Ltda', 'Acme')
-                  and erp.nome_confere('LTDA', 'Acme', null),
-  'S-140: o nome confere pela primeira palavra (forma jurídica, ligações, acento e pontuação não contam; fantasia vale)');
+select pg_temp.ok(erp.nome_confere('ACME ENG LTDA', 'Acme Engenharia Ltda.')
+                  and erp.nome_confere('CONSTRUTORA ACME', 'Acme Construções e Serviços Ltda')
+                  and erp.nome_confere(null, 'Acme')
+                  and not erp.nome_confere('JOAO DA SILVA', 'Acme Engenharia Ltda')
+                  and not erp.nome_confere('CONSTRUTORA SILVA', 'Construtora Acme')
+                  and not erp.nome_confere('LTDA', 'Acme')
+                  and erp.nome_confere('SERVICOS GERAIS', 'Servicos Gerais ME'),
+  'S-140: o nome confere pela primeira palavra que identifica (forma jurídica, ligações e palavras genéricas não contam)');
 -- S-140: o selo "credor novo" (nunca teve outro título que foi ao Sienge ou foi pago)
 savepoint sp_novo;
 select pg_temp.sis();
@@ -6268,6 +6278,11 @@ select pg_temp.ok(erp.credor_novo(:'tnovo1') = current_date and exists (select 1
 select pg_temp.como(:'analista2');
 select pg_temp.ok(not erp.vejo_titulo(:'tnovo1') and erp.credor_novo(:'tnovo1') is null and not exists (select 1 from api.credores_novos() where id = :'tnovo1'),
   'S-140: sobre título que a pessoa não vê, a função não responde');
+savepoint sp_quit;
+select pg_temp.sis(); set local role erp_situacao; update erp.titulos set situacao = 'quitado' where id = :'tnovo2'; select pg_temp.volta();
+select pg_temp.como(:'diretor');
+select pg_temp.ok(erp.credor_novo(:'tnovo1') is null, 'S-140: credor com título já pago (mesmo fora do Sienge) não é novo');
+rollback to savepoint sp_quit;
 select pg_temp.sis(); insert into erp.sienge_envios (titulo_id, situacao, sienge_id) values (:'tnovo2', 'enviado', 999001); select pg_temp.volta();
 select pg_temp.como(:'diretor');
 select pg_temp.ok(erp.credor_novo(:'tnovo1') is null and (select j->'credor_novo' = 'null'::jsonb from api.titulo(:'tnovo1') j),
