@@ -966,10 +966,10 @@ select pg_temp.ok(not exists (select 1 from pg_class c join pg_namespace n on n.
                                                   and p.policyname = 'perfil_inclui' and 'authenticated' = any(p.roles))),
   'catálogo: authenticated só grava em tabela com política de gravação por perfil');
 select pg_temp.ok(not exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
-                               where n.nspname = 'erp' and c.relkind in ('r','p') and c.relname not in ('avisos_sucessao','eventos','envios_notificacao','pix_conferencias','conferencia_tentativas','boleto_conferencias')
+                               where n.nspname = 'erp' and c.relkind in ('r','p') and c.relname not in ('avisos_sucessao','eventos','envios_notificacao','pix_conferencias','conferencia_tentativas','boleto_conferencias','recebedores_arrecadacao')
                                  and not exists (select 1 from pg_policies p where p.schemaname = 'erp' and p.tablename = c.relname
                                                   and p.policyname = 'perfil_le' and 'authenticated' = any(p.roles))),
-  'catálogo: toda tabela tem a política de leitura por perfil (só os avisos da sucessão, os eventos, a fila de envio e a conferência do PIX, lida pelo erp.pix_conferido, ficam fora da API)');
+  'catálogo: toda tabela tem a política de leitura por perfil (só os avisos da sucessão, os eventos, a fila de envio e a conferência do PIX, lida pelo erp.pix_conferido, e os órgãos das guias, lidos pelo erp.completar_recebedor, ficam fora da API)');
 select pg_temp.ok(not has_table_privilege('authenticated', 'erp.lancamentos', 'INSERT,UPDATE,DELETE')
                   and not has_table_privilege('authenticated', 'erp.auditoria', 'INSERT,UPDATE,DELETE')
                   and not has_table_privilege('authenticated', 'erp.caucao_movimentos', 'INSERT,UPDATE,DELETE')
@@ -1007,7 +1007,7 @@ select pg_temp.ok(not exists (
        'cancelar_reclassificacao','pedir_mudanca_acesso','decidir_mudanca_acesso','cancelar_mudanca_acesso','passar_master',
        'pedir_sucessao_master','decidir_sucessao_master','vetar_sucessao_master','efetivar_sucessao_master',
        'pedir_mudanca_config','decidir_mudanca_config','cancelar_mudanca_config','marcar_notificacoes_lidas',
-       'designar_pj','retirar_pj','vejo_pj','vejo_auditoria','previsao_aprovada_vista','contrato_aprovado_visto','contrato_confere','compromisso_vinculos','pix_conferido','boleto_conferido')),
+       'designar_pj','retirar_pj','vejo_pj','vejo_auditoria','previsao_aprovada_vista','contrato_aprovado_visto','contrato_confere','compromisso_vinculos','pix_conferido','boleto_conferido','completar_recebedor')),
   'catálogo: das funções security definer, authenticated só executa as da lista (RPCs e conferências de quem está logado)');
 select pg_temp.ok(not has_function_privilege('authenticated', 'erp._aplicar_mudanca_acesso(uuid)', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp.gerar_avisos_sucessao()', 'EXECUTE')
@@ -7878,6 +7878,40 @@ select pg_temp.falha(format($$insert into erp.anexos (nome, tipo_mime, tamanho, 
 select api.gravar_leitura(:'anx', jsonb_build_object('valor', 900, 'emitente', :'doc_forn'));
 select pg_temp.ok((select a.criado_por = :'diretor' and a.lido_em is not null and a.leitura->>'valor' = '900' from erp.anexos a where a.id = :'anx'),
   'anexo: o banco põe quem subiu e grava a leitura');
+-- guias (Moises, 20/11/2026): tipos próprios e o CNPJ do órgão pelo código do recebedor na linha da guia
+select pg_temp.ok(erp.sienge_documento('itbi') = 'ITBI' and erp.sienge_documento('darm') = 'DARM' and erp.sienge_documento('dare') = 'DARE'
+                  and (select pg_get_constraintdef(oid) like '%darf%' from pg_constraint where conname = 'documentos_fiscais_tipo_check'),
+  'guias: IPTU, ITBI, DARF, DARM e DARE são tipos de documento, com o documento de mesmo nome no Sienge');
+select pg_temp.ok((select count(*) = 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                    where n.nspname = 'api' and p.prosrc like '%Tipo de documento inválido%' and p.prosrc like '%''darm''%')
+                  and (select count(*) >= 2 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                        where n.nspname = 'api' and p.prosrc like '%when ''itbi'' then ''ITBI''%'),
+  'guias: o Lançar título aceita os tipos novos e as telas mostram o nome deles');
+select pg_temp.ok(erp.codigo_arrecadacao('816000000000100099990000000000000000000000000000') = array['1', '9999']
+                  and erp.codigo_arrecadacao('86' || substr('816000000000100099990000000000000000000000000000', 3)) is null
+                  and erp.codigo_arrecadacao('34191090080000000212134567890008899990000015000') is null,
+  'guias: o código do recebedor sai da linha de arrecadação (segmento 6 e boleto de cobrança ficam de fora)');
+select pg_temp.ok(erp.completar_recebedor('{"boletos": [{"linha": "826700000068278700970918102694590609329178721737"}]}')->'emitente'->>'documento' = '43776517000180',
+  'guias: a carga inicial traz os órgãos que o financeiro usa no Sienge (código 0097 da conta de água)');
+select pg_temp.como(:'analista');
+select pg_temp.falha($$insert into erp.recebedores_arrecadacao values ('1', '9999', '11222333000181', 'PREFEITURA EXEMPLO')$$,
+  'guias: ninguém pela API cadastra o órgão de um código (só por migration ou SQL do master)');
+select pg_temp.como(:'diretor');
+select pg_temp.falha($$insert into erp.recebedores_arrecadacao values ('1', '9999', '11222333000181', 'PREFEITURA EXEMPLO')$$,
+  'guias: nem o master pela API');
+select pg_temp.como_dono(null);
+insert into erp.recebedores_arrecadacao values ('1', '9999', '11222333000181', 'PREFEITURA EXEMPLO');
+select pg_temp.como(:'diretor');
+select api.gravar_leitura(:'anx', jsonb_build_object('tipo', 'darm', 'emitente', jsonb_build_object('nome', ''),
+                                                     'boletos', jsonb_build_array(jsonb_build_object('linha', '816000000000100099990000000000000000000000000000'))));
+select pg_temp.ok((select a.leitura->'emitente'->>'documento' = '11222333000181' and a.leitura->'emitente'->>'nome' = 'PREFEITURA EXEMPLO'
+                          and a.leitura->'avisos'->>0 like 'CNPJ do emitente pelo código do recebedor%' from erp.anexos a where a.id = :'anx'),
+  'guias: sem o CNPJ lido, o emitente vem do código da guia, com aviso');
+select api.gravar_leitura(:'anx', jsonb_build_object('emitente', jsonb_build_object('documento', :'doc_forn'),
+                                                     'boletos', jsonb_build_array(jsonb_build_object('linha', '816000000000100099990000000000000000000000000000'))));
+select pg_temp.ok((select a.leitura->'emitente'->>'documento' = :'doc_forn' and a.leitura->'avisos' is null from erp.anexos a where a.id = :'anx'),
+  'guias: o CNPJ que o leitor achou fica como veio');
+select api.gravar_leitura(:'anx', jsonb_build_object('valor', 900, 'emitente', :'doc_forn'));
 select pg_temp.erro_igual(format($$update erp.anexos set sha256 = %L where id = %L$$, repeat('d', 64), :'anx'),
   'O arquivo do anexo não muda: suba outro', 'anexo: o arquivo (sha256, nome, tamanho) não muda depois de gravado');
 -- quem não subiu não vê, não lê pela api, não muda a leitura nem apaga

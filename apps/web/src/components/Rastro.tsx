@@ -17,7 +17,7 @@ const ABAS: [Aba, string, NomeIcone][] = [
   ['historico', 'Histórico', 'historico'], ['anexos', 'Anexos', 'anexo'], ['contrato', 'Contrato', 'money'], ['fornecedor', 'Fornecedor', 'predio'],
 ];
 const TIPO: Record<string, string> = { contrato: 'Contrato', pedido: 'Pedido', assinatura: 'Conta recorrente', avulsa: 'Compra avulsa', guia: 'Guia', folha: 'Folha' };
-const NOTA: Record<string, string> = { nfse: 'NFS-e', nfe: 'NF-e', fatura: 'Fatura', boleto: 'Boleto', guia: 'Guia', recibo: 'Recibo', outro: 'Documento' };
+const NOTA: Record<string, string> = { nfse: 'NFS-e', nfe: 'NF-e', fatura: 'Fatura', boleto: 'Boleto', guia: 'Guia', iptu: 'IPTU', itbi: 'ITBI', darf: 'DARF', darm: 'DARM', dare: 'DARE', recibo: 'Recibo', outro: 'Documento' };
 const PER: Record<string, string> = { mensal: 'por mês', bimestral: 'por bimestre', trimestral: 'por trimestre', semestral: 'por semestre', anual: 'por ano' };
 
 export function RastroBotoes({ id }: { id: string }) {

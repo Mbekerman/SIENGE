@@ -19,7 +19,7 @@ const pessoa = objeto({ documento: texto, nome: texto });
 const TRIBUTOS = ['iss', 'irrf', 'inss', 'pis', 'cofins', 'csll'];
 
 export const ESQUEMA = objeto({
-  tipo: { type: 'string', enum: ['nfe', 'nfse', 'fatura', 'boleto', 'recibo', 'outro'] },
+  tipo: { type: 'string', enum: ['nfe', 'nfse', 'fatura', 'boleto', 'iptu', 'itbi', 'darf', 'darm', 'dare', 'recibo', 'outro'] },
   emitente: pessoa,
   tomador: pessoa,
   numero: texto,
@@ -39,7 +39,10 @@ export const ESQUEMA = objeto({
 });
 
 const SISTEMA = `Você lê documentos de contas a pagar de uma incorporadora brasileira: nota fiscal de produto (NF-e/DANFE), \
-nota fiscal de serviço (NFS-e), fatura de concessionária (energia, água, gás, telefone, internet), boleto, recibo.
+nota fiscal de serviço (NFS-e), fatura de concessionária (energia, água, gás, telefone, internet), boleto, recibo e guias de \
+imposto. tipo das guias: iptu (carnê ou guia de IPTU), itbi (guia de ITBI, mesmo emitida como DAMSP ou DARM), darf \
+(Receita Federal), darm (outra guia municipal, como ISS retido no DAMSP) e dare (guia estadual, como a DARE-SP); \
+boleto é só o de cobrança bancária.
 Extraia só o que está escrito no documento. Nunca deduza nem invente: texto que não estiver legível ou não existir fica "" (vazio) e número fica null.
 - emitente é quem emite e recebe o pagamento (prestador, fornecedor, concessionária, beneficiário do boleto); \
 tomador é quem paga (destinatário, tomador do serviço, cliente, pagador). Preencha o tomador sempre que o documento \
@@ -133,7 +136,7 @@ export async function lerComIaDetalhe(cliente: Anthropic, e: Entrada, hoje = new
 
 // Da resposta da IA para a Leitura, normalizando e conferindo o que dá para conferir.
 export function converter(j: Record<string, any>, modelo: string, hoje = new Date()): Leitura {
-  const tipos: TipoDocumento[] = ['nfe', 'nfse', 'fatura', 'boleto', 'recibo', 'outro'];
+  const tipos: TipoDocumento[] = ['nfe', 'nfse', 'fatura', 'boleto', 'iptu', 'itbi', 'darf', 'darm', 'dare', 'recibo', 'outro'];
   const p = (x: any) => {
     const m = mascara(x?.documento);
     return { documento: m ? undefined : soDigitos(x?.documento) || undefined, documento_mascara: m, nome: str(x?.nome) };
