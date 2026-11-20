@@ -258,7 +258,7 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
               <input className="lt-in mono" aria-label="PIX copia e cola" placeholder={p.forma === 'boleto' ? 'PIX copia e cola do boleto (opcional)' : 'PIX copia e cola (opcional)'}
                 value={p.pix_cc} onChange={e => mudaP(p.k, { pix_cc: e.target.value.replace(/[\r\n]+/g, '') })} />
               {p.pix_cc.trim() && <RecebedorPix codigo={p.pix_cc} forma={p.forma} chaveParcela={p.forma === 'pix' ? chave(p.pix_tipo, p.pix_chave) : null}
-                docForn={forn?.documento ?? null} exc={p.cc_exc} mudaExc={v => mudaP(p.k, { cc_exc: v })} tentou={tentou} />}
+                docForn={forn?.documento ?? null} valor={(comValor ? digitados[i] : iguais[i]) ?? null} exc={p.cc_exc} mudaExc={v => mudaP(p.k, { cc_exc: v })} tentou={tentou} />}
             </div>
           ))}
           <button className="btn t sm" style={{ alignSelf: 'flex-start' }} onClick={() => setParcelas(ps => [...ps, novaParcela(ps[ps.length - 1])])}><Ic n="add" s={18} />Adicionar parcela</button>
@@ -498,10 +498,11 @@ export function empresasPelaMascara(m: string, empresas: OpcoesLancamento['empre
   return empresas.filter(e => e.documento && fecha(e.documento.replace(/\D/g, '')));
 }
 
-/** Quem recebe pelo PIX copia e cola: a leitura do código e a conferência no Asaas. Pede a justificativa quando o
- *  banco também vai pedir (a regra de verdade é do banco, no gatilho da parcela). */
-function RecebedorPix({ codigo, forma, chaveParcela, docForn, exc, mudaExc, tentou }: {
-  codigo: string; forma: Forma; chaveParcela: string | null; docForn: string | null; exc: string; mudaExc: (v: string) => void; tentou: boolean;
+/** Quem recebe pelo PIX copia e cola: a leitura do código e a conferência (pela função pix-conferir; a tela diz só
+ *  "conferido", sem a fonte, pedido do Moises de 20/11/2026). Pede a justificativa quando o banco também vai pedir (a
+ *  regra de verdade é do banco, no gatilho da parcela: conferência de até 1 dia, com o valor da parcela). */
+function RecebedorPix({ codigo, forma, chaveParcela, docForn, valor, exc, mudaExc, tentou }: {
+  codigo: string; forma: Forma; chaveParcela: string | null; docForn: string | null; valor: number | null; exc: string; mudaExc: (v: string) => void; tentou: boolean;
 }) {
   const c = codigo.trim();
   const r = recebedorPix(c);
@@ -511,7 +512,7 @@ function RecebedorPix({ codigo, forma, chaveParcela, docForn, exc, mudaExc, tent
       const { data, error } = await supabase.functions.invoke<Conferido & { erro?: string }>('pix-conferir', { body: { codigo: c } });
       if (error) {
         const corpo = await (error as { context?: Response }).context?.json?.().catch(() => null);
-        throw new Error(corpo?.erro ?? 'Não consegui conferir no Asaas');
+        throw new Error(corpo?.erro ?? 'Não consegui conferir');
       }
       return data as Conferido;
     },
@@ -519,17 +520,18 @@ function RecebedorPix({ codigo, forma, chaveParcela, docForn, exc, mudaExc, tent
   if (!r || (!r.chave && !r.url)) return <span className="nt cr">O código não traz o recebedor PIX.</span>;
   if (r.contas > 1) return <span className="nt cr">O código traz mais de uma conta PIX e não entra.</span>;
   const a = conf.data;
-  const peloAsaas = !!a?.cpf_cnpj && a.cpf_cnpj === docForn;
+  const outroValor = !!a?.cpf_cnpj && valor != null && a.valor !== valor;
+  const conferido = !!a?.cpf_cnpj && a.cpf_cnpj === docForn && !outroValor;
   const peloCodigo = !r.url && !!r.chave && (forma === 'pix' ? r.chave === chaveParcela : r.chave === docForn);
-  const ok = peloAsaas || peloCodigo;
+  const ok = conferido || peloCodigo;
   return (
     <div className="lt-exc">
       <span className="sec peq">Recebe pelo código: {r.nome ?? 'sem nome'} · {r.url ? 'QR dinâmico' : `chave ${r.chave}`}</span>
-      {conf.isFetching ? <span className="sec peq">Conferindo no Asaas quem recebe…</span>
-        : a?.cpf_cnpj ? <span className={`nt ${peloAsaas ? 'ok' : 'at'}`}>Conferido no Asaas: recebe {a.nome ?? 'sem nome'}{a.cpf_cnpj ? ` (${documento(a.cpf_cnpj)})` : ''}{a.banco ? `, ${a.banco}` : ''}{peloAsaas ? ', que é o fornecedor.' : ', que não é o fornecedor.'}</span>
-        : conf.error ? <span className="sec peq">Não deu para conferir no Asaas: {(conf.error as Error).message}</span> : null}
+      {conf.isFetching ? <span className="sec peq">Conferindo quem recebe…</span>
+        : a?.cpf_cnpj ? <span className={`nt ${conferido ? 'ok' : 'at'}`}>Conferido: recebe {a.nome ?? 'sem nome'} ({documento(a.cpf_cnpj)}){a.banco ? `, ${a.banco}` : ''}{a.cpf_cnpj !== docForn ? ', que não é o fornecedor.' : outroValor ? `, mas cobra ${a.valor != null ? reais(a.valor) : 'outro valor'}, não o valor da parcela.` : ', que é o fornecedor.'}</span>
+        : conf.error ? <span className="sec peq">Não deu para conferir: {(conf.error as Error).message}</span> : null}
       {!ok && !conf.isFetching && <>
-        <span className="nt at">{a?.cpf_cnpj ? 'Quem recebe não é o fornecedor.' : r.url ? 'Não dá para conferir quem recebe pelo código dinâmico sem o Asaas.'
+        <span className="nt at">{a?.cpf_cnpj && a.cpf_cnpj !== docForn ? 'Quem recebe não é o fornecedor.' : outroValor ? 'O valor cobrado pelo código não é o da parcela.' : r.url ? 'Não deu para conferir quem recebe pelo código dinâmico.'
           : forma === 'pix' ? 'A chave do código não é a chave PIX da parcela.' : 'A chave do código não é o CPF/CNPJ do fornecedor.'} Só entra com a justificativa, que quem aprova vê, e o AF recebe o alerta.</span>
         <input className={`lt-in ${tentou && !exc.trim() ? 'err' : ''}`} placeholder="Por que pagar por este código?" value={exc} onChange={e => mudaExc(e.target.value)} />
       </>}

@@ -26,5 +26,5 @@ export function recebedorPix(codigo: string): Recebedor | null {
   return r;
 }
 
-/** Quem recebe segundo o Asaas (função pix-conferir, que grava a conferência como sistema; o banco é quem decide). */
-export interface Conferido { cpf_cnpj: string | null; nome: string | null; banco: string | null }
+/** Quem recebe pelo código e o valor cobrado, conferidos pela função pix-conferir (grava como sistema; o banco é quem decide). */
+export interface Conferido { cpf_cnpj: string | null; nome: string | null; banco: string | null; valor: number | null }

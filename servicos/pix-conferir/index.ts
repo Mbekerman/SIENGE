@@ -29,27 +29,27 @@ const deps: Deps = {
     const id = ((await r.json()) as { id?: unknown }).id;
     return typeof id === 'string' && id ? id : null;
   },
-  recentes: (login) => comoSistema(async (tx) => (await tx`select erp.pix_conferencias_recentes(${login}) as n`)[0].n ?? 0),
+  tentativa: (login) => comoSistema(async (tx) => (await tx`select erp.conferencia_tentativa(${login}) as n`)[0].n ?? null),
   valido: (c) => comoSistema(async (tx) => (await tx`select erp.pix_copia_cola_valido(${c}) as ok`)[0].ok === true),
   guardado: (c) => comoSistema(async (tx) => {
-    const [r] = await tx`select cpf_cnpj, nome, banco, chave from erp.pix_conferencias
+    const [r] = await tx`select cpf_cnpj, nome, banco, chave, valor from erp.pix_conferencias
                           where codigo = ${c} and conferido_em > clock_timestamp() - interval '1 day'`;
-    return r ? { cpf_cnpj: r.cpf_cnpj, nome: r.nome, banco: r.banco, chave: r.chave } : null;
+    return r ? { cpf_cnpj: r.cpf_cnpj, nome: r.nome, banco: r.banco, chave: r.chave, valor: r.valor === null ? null : Number(r.valor) } : null;
   }),
   async asaas(c) {
     const k = await chaveAsaas();
-    if (!k) return { ok: false, erro: 'Conferência pelo Asaas desligada (sem a chave)' };
+    if (!k) return { ok: false, erro: 'Conferência desligada' };
     const r = await fetch(`${ASAAS_URL}/v3/pix/qrCodes/decode`, {
       method: 'POST', headers: { access_token: k, 'content-type': 'application/json', 'user-agent': 'erp-pix-conferir' },
       body: JSON.stringify({ payload: c }), signal: AbortSignal.timeout(15_000),
     });
     // deno-lint-ignore no-explicit-any
     const j = (await r.json().catch(() => ({}))) as any;
-    if (!r.ok) return { ok: false, erro: String(j?.errors?.[0]?.description ?? `Asaas ${r.status}`).slice(0, 300) };
+    if (!r.ok) return { ok: false, erro: String(j?.errors?.[0]?.description ?? `sem resposta (${r.status})`).slice(0, 300) };
     return { ok: true, r: recebedorAsaas(j) };
   },
   gravar: (c, r, login) => comoSistema(async (tx) => {
-    await tx`select erp.registrar_pix_conferencia(${c}, ${r.cpf_cnpj}, ${r.nome}, ${r.banco}, ${r.chave}, ${login})`;
+    await tx`select erp.registrar_pix_conferencia(${c}, ${r.cpf_cnpj}, ${r.nome}, ${r.banco}, ${r.chave}, ${r.valor}, ${login})`;
   }),
 };
 

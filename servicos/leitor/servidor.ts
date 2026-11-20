@@ -108,7 +108,7 @@ const asaas: Deps['asaas'] = ASAAS_URL && ASAAS_CHAVE ? async (linha) => {
     body: JSON.stringify(linha.length === 44 ? { barCode: linha } : { identificationField: linha }), signal: AbortSignal.timeout(15_000),
   });
   const j = await r.json().catch(() => ({})) as any;
-  if (!r.ok) return { ok: false, erro: String(j?.errors?.[0]?.description ?? `Asaas ${r.status}`).replace(/\.{2,}/g, '.').trim() };
+  if (!r.ok) return { ok: false, erro: String(j?.errors?.[0]?.description ?? `sem resposta (${r.status})`).replace(/\.{2,}/g, '.').trim() };
   const b = j?.bankSlipInfo ?? {};
   return { ok: true, valor: typeof b.value === 'number' ? b.value : undefined, vencimento: b.dueDate ?? undefined,
            beneficiario: b.beneficiaryName ?? b.companyName ?? undefined,

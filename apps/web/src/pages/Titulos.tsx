@@ -114,7 +114,7 @@ function GavetaTitulo({ id, fechar }: { id: string; fechar: () => void }) {
               : p.forma === 'boleto' ? <span className="mono">Boleto {p.boleto_linha}</span> : 'Forma de pagamento não informada'}{p.pix_copia_cola && <>
                 <span className="mono lt-cc">PIX copia e cola {p.pix_copia_cola}</span>
                 <span className="lt-cc">Recebe pelo código: {p.pix_copia_cola_recebedor?.nome ?? 'sem nome'} · {p.pix_copia_cola_recebedor?.chave ? `chave ${p.pix_copia_cola_recebedor.chave}` : 'QR dinâmico'} · credor: {t.fornecedor}</span>
-                {p.pix_copia_cola_conferido && <span className="lt-cc">Conferido no Asaas: recebe {p.pix_copia_cola_conferido.nome ?? 'sem nome'}{p.pix_copia_cola_conferido.cpf_cnpj ? ` (${p.pix_copia_cola_conferido.cpf_cnpj})` : ''}</span>}
+                {p.pix_copia_cola_conferido && <span className="lt-cc">Conferido: recebe {p.pix_copia_cola_conferido.nome ?? 'sem nome'}{p.pix_copia_cola_conferido.cpf_cnpj ? ` (${p.pix_copia_cola_conferido.cpf_cnpj})` : ''}</span>}
                 {p.pix_copia_cola_excecao && <span className="nt at lt-cc">Recebedor do código não conferido: {p.pix_copia_cola_excecao}</span>}
               </>}</>} />
         ))}
