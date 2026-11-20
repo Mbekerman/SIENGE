@@ -246,7 +246,7 @@ Conta recorrente é a que se repete todo mês. Ela fica cadastrada uma vez e gan
 1. Em Financeiro › Contas a pagar › Contas recorrentes, clique em **Nova conta** e escolha um de três tipos:
    - **Assinatura:** valor por mês ou por período;
    - **Contrato de serviço:** valor total;
-   - **Conta de consumo:** concessionária, número da instalação (como está na fatura), **média esperada por mês** (o valor médio da fatura, não um máximo; Moises, 20/nov/2026), teto no ano e dia do vencimento, que é obrigatório.
+   - **Conta de consumo:** concessionária, número da instalação (como está na fatura), **média esperada por mês** (o valor médio da fatura, não um máximo; Moises, 20/nov/2026), teto no ano e dia do vencimento. No PR #97 (ainda não juntado), o dia passa a ser opcional, com o aviso "Na conta de consumo, a fatura que chega preenche e atualiza o dia"; mudar o dia não abre versão nova da conta.
 2. Preencha empresa, fornecedor, descrição, vigência, vencimento e o rateio, como no Lançar título.
 3. Clique em **Enviar para aprovação**. Aprovam o gestor de cada área e alguém da AF ou da AO.
 
@@ -255,7 +255,7 @@ Conta recorrente é a que se repete todo mês. Ela fica cadastrada uma vez e gan
 **Na lista**, as contas de consumo ganham um grupo próprio, com "média R$ X por mês".
 
 **Ainda falta:** a regra de aprovação da nota de cada mês, que entra no PR das notas.
-- **Contrato de serviço:** a nota pede o gestor e alguém da AF ou da AD.
+- **Contrato de serviço e assinatura:** a nota passa pelo gestor e depois por alguém da AF ou da AD.
 - **Conta de consumo** (Moises, 20/nov/2026): a fatura vai direto para a AF, a AO ou a AD quando cumpre duas condições:
   - fica até X% acima da média esperada;
   - somada ao que já se pagou no ano, fica dentro do teto anual.
