@@ -65,6 +65,7 @@ Regra do Moises (8/nov/2026): controles, segurança da informação e SLA são a
 
 | Id | Gravidade | Onde | Desde |
 | --- | --- | --- | --- |
+| S-140 | Média (desenho) | Cadastro de pessoas × conferência do recebedor | 20/nov/2026 |
 | S-139 | Média (desenho) | Leitor e `erp.parcela_pagamentos` (beneficiário do boleto) | 20/nov/2026 |
 | S-116 | Média (dados reais no `bkm_dev`) | Espelho do Sienge no banco de desenvolvimento | 17/nov/2026 |
 | S-115 | Média (desenho) | Credencial do Sienge como segredo da Edge Function | 17/nov/2026 |
