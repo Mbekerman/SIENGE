@@ -14,7 +14,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Mime } from './arquivo.ts';
+import { type Mime, tentarSenhas } from './arquivo.ts';
 import { clienteFederado, lerComIa } from './ia.ts';
 import { type Banco, type Bucket, type Deps, Recusa } from './fluxo.ts';
 import { type Pessoa, tratador } from './rotas.ts';
@@ -80,22 +80,21 @@ const bucket: Bucket = {
 };
 
 // PDF com senha: qpdf no próprio contêiner, sem shell, com arquivos temporários apagados ao fim. Cada senha é
-// conferida com --requires-password (só lê a criptografia: 3 = a senha abre ou não precisa), e o arquivo é
-// decifrado uma vez só, com a que abriu. As senhas nunca vão a log.
-const qpdf = (args: string[]) => new Promise<number>((res) =>
-  execFile('qpdf', args, { timeout: 20_000 }, (err) => res(err ? ((err as { code?: unknown }).code as number ?? -1) : 0)));
+// conferida com --requires-password (só lê a criptografia; tentarSenhas para em código estranho e no prazo
+// total), e o arquivo é decifrado uma vez só, com a que abriu. As senhas nunca vão a log.
+const qpdf = (args: string[], prazoMs = 20_000) => new Promise<number>((res) =>
+  execFile('qpdf', args, { timeout: Math.max(1, Math.min(prazoMs, 20_000)) },
+    (err) => res(err ? (typeof (err as { code?: unknown }).code === 'number' ? (err as { code: number }).code : -1) : 0)));
 function abrirPdf(pdf: Buffer, senhas: string[]): Promise<Buffer | null> {
   return (async () => {
     const dir = await mkdtemp(join(tmpdir(), 'pdf-'));
     try {
       const e = join(dir, 'e.pdf'), o = join(dir, 's.pdf');
       await writeFile(e, pdf);
-      for (const senha of senhas) {
-        if (await qpdf(['--requires-password', `--password=${senha}`, e]) !== 3) continue;
-        const r = await qpdf([`--password=${senha}`, '--decrypt', e, o]);
-        return r === 0 || r === 3 ? await readFile(o) : null;   // 3 = aviso, arquivo gerado
-      }
-      return null;
+      const senha = await tentarSenhas(senhas, (s, resta) => qpdf(['--requires-password', `--password=${s}`, e], resta));
+      if (senha === null) return null;
+      const r = await qpdf([`--password=${senha}`, '--decrypt', e, o]);
+      return r === 0 || r === 3 ? await readFile(o) : null;   // 3 = aviso, arquivo gerado
     } catch { return null; } finally { await rm(dir, { recursive: true, force: true }); }
   })();
 }

@@ -1,7 +1,7 @@
 // Testes do leitor, só com dados inventados (nada das amostras reais entra no repositório, que é público).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { pdfCriptografado, senhasCandidatas, tipoPelosBytes } from './arquivo.ts';
+import { pdfCriptografado, senhasCandidatas, tentarSenhas, tipoPelosBytes } from './arquivo.ts';
 import { conferirLinha } from './boleto.ts';
 import { type Bucket, type Deps, Recusa, abrirComSenha, baixar, pedidoIdentificar, subir } from './fluxo.ts';
 import { converter, ESQUEMA } from './ia.ts';
@@ -357,4 +357,23 @@ test('rotas: o limite configurado da pessoa vale no lugar do padrão', async () 
   const st: number[] = [];
   for (let i = 0; i < 4; i++) st.push((await pedido(quem, { authorization: 'Bearer bom' }, Buffer.from('%PDF-1.7'), limite)).status);
   assert.ok(st.slice(0, 3).every((s) => s !== 429), st.join()); assert.equal(st[3], 429);
+});
+
+test('senhas do PDF: para na que abre, segue na errada, desiste em código estranho e no prazo total', async () => {
+  const vistas: string[] = [];
+  const conf = (codigos: Record<string, number>) => async (s: string) => { vistas.push(s); return codigos[s] ?? 0; };
+  assert.equal(await tentarSenhas(['a', 'b', 'c'], conf({ b: 3 })), 'b');
+  assert.deepEqual(vistas, ['a', 'b']);
+  vistas.length = 0;
+  assert.equal(await tentarSenhas(['a', 'b', 'c'], conf({ a: 2 })), null, '2 = não cifrado ou danificado');
+  assert.deepEqual(vistas, ['a'], 'sai na primeira tentativa');
+  vistas.length = 0;
+  assert.equal(await tentarSenhas(['a', 'b'], conf({ a: -1 })), null, 'tempo esgotado ou erro');
+  assert.deepEqual(vistas, ['a']);
+  // prazo: cada tentativa "leva" 6 s num relógio falso; com 15 s, a terceira já não roda
+  let t = 0; const restos: number[] = []; vistas.length = 0;
+  const lenta = async (s: string, resta: number) => { vistas.push(s); restos.push(resta); t += 6000; return 0; };
+  assert.equal(await tentarSenhas(['a', 'b', 'c', 'd'], lenta, 15_000, () => t), null);
+  assert.deepEqual(vistas, ['a', 'b', 'c']);
+  assert.deepEqual(restos, [15_000, 9_000, 3_000], 'cada qpdf recebe só o tempo que resta');
 });

@@ -45,3 +45,21 @@ export function senhasCandidatas(cnpjs: string[]): string[] {
   for (const d of ds) for (let n = 3; n <= 13; n++) s.add(d.slice(-n));
   return [...s];
 }
+
+// Tenta as senhas em ordem com conferir(senha), que devolve o código de saída do
+// `qpdf --requires-password`: 3 = a senha abre (ou o arquivo não pede senha), 0 = senha errada. Qualquer outro
+// código (2 = não cifrado ou danificado, tempo esgotado, erro) quer dizer que nenhuma senha vai servir: para
+// na hora. O prazo vale para todas as tentativas juntas (revisão do #103: um PDF danificado de 20 MB levava
+// 0,3 s por tentativa); conferir recebe o tempo que resta. Esgotado, devolve nulo e a tela pede a senha.
+export async function tentarSenhas(senhas: string[], conferir: (senha: string, restaMs: number) => Promise<number>,
+                                   prazoMs = 15_000, agora: () => number = Date.now): Promise<string | null> {
+  const fim = agora() + prazoMs;
+  for (const s of senhas) {
+    const resta = fim - agora();
+    if (resta <= 0) return null;
+    const c = await conferir(s, resta);
+    if (c === 3) return s;
+    if (c !== 0) return null;
+  }
+  return null;
+}
