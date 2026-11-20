@@ -982,6 +982,10 @@ select pg_temp.ok(not has_table_privilege('authenticated', 'erp.lancamentos', 'I
   'catálogo: livro, auditoria, caução e acesso não têm gravação direta pela API');
 select pg_temp.ok(not exists (select 1 from pg_roles where rolname like 'erp\_%' and has_schema_privilege(rolname, 'erp', 'CREATE')),
   'catálogo: nenhum papel erp_* fica com CREATE no esquema erp (dado só durante a troca de dono)');
+select pg_temp.ok(not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                               where n.nspname = 'erp' and p.prosecdef
+                                 and (p.proacl is null or exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0 and a.privilege_type = 'EXECUTE'))),
+  'catálogo: nenhuma definer do erp executável por PUBLIC (nem pelo grant que o dono dá ao criar)');
 -- EXECUTE: as invoker (rodam com o RLS de quem chama) e, das definer, só a lista abaixo
 select pg_temp.ok(not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
