@@ -7757,7 +7757,7 @@ select pg_temp.falha(format('select api.salvar_conta(%L::jsonb)', :'cbase'), 'co
 -- a conta de consumo pede instalação, faixa e teto; o rateio soma 100%
 select pg_temp.como(:'analista');
 select pg_temp.erro_igual(format('select api.salvar_conta(%L::jsonb)', (:'cbase'::jsonb - 'instalacao')::text),
-  'Informe a instalação, a faixa por mês, o teto no ano e o dia do vencimento', 'conta: consumo sem instalação é recusado');
+  'Informe a instalação, a média esperada por mês, o teto no ano e o dia do vencimento', 'conta: consumo sem instalação é recusado');
 select pg_temp.erro_igual(format('select api.salvar_conta(%L::jsonb)', jsonb_set(:'cbase'::jsonb, '{rateio,0,percentual}', '60')::text),
   'O rateio precisa somar 100%', 'conta: rateio que não soma 100% é recusado');
 select api.salvar_conta(:'cbase'::jsonb) as ccons \gset

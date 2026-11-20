@@ -66,7 +66,7 @@ export function ContaRecorrente({ id, fechar, salvo }: { id?: string; fechar: ()
   if (fim && inicio && fim < inicio) falta.push('o fim depois do início');
   if (consumo) {
     if (!instalacao.trim()) falta.push('o número da instalação');
-    if (!faixa || faixa <= 0) falta.push('a faixa por mês');
+    if (!faixa || faixa <= 0) falta.push('a média esperada por mês');
     if (!teto || teto <= 0) falta.push('o teto no ano');
   } else if (!valor || valor <= 0) falta.push(tipo === 'contrato' ? 'o valor do contrato' : 'o valor');
   if ((consumo || dia) && !(Number.isInteger(nDia) && nDia >= 1 && nDia <= 31)) falta.push('o dia do vencimento (1 a 31)');
@@ -130,7 +130,7 @@ export function ContaRecorrente({ id, fechar, salvo }: { id?: string; fechar: ()
                 <input className={`lt-in mono ${erro(!instalacao.trim())}`} value={instalacao} onChange={e => setInstalacao(e.target.value)} /></Campo>
             : <Campo r="Número do contrato"><input className="lt-in" placeholder="Opcional" value={numero} onChange={e => setNumero(e.target.value)} /></Campo>}
           {consumo ? <>
-            <Campo r="Faixa por mês" msg="Até quanto se espera a fatura de um mês.">
+            <Campo r="Média esperada por mês" msg="O valor médio da fatura de um mês.">
               <input className={`lt-in num lt-valor ${erro(!faixa)}`} inputMode="decimal" placeholder="R$ 0,00" value={faixaTxt} onChange={e => setFaixaTxt(e.target.value)} onBlur={reaisBlur(faixa, setFaixaTxt)} /></Campo>
             <Campo r="Teto no ano">
               <input className={`lt-in num lt-valor ${erro(!teto)}`} inputMode="decimal" placeholder="R$ 0,00" value={tetoTxt} onChange={e => setTetoTxt(e.target.value)} onBlur={reaisBlur(teto, setTetoTxt)} /></Campo>

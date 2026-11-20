@@ -24,7 +24,7 @@ const sit = (c: Contrato) => !ativo(c) ? <Chip t={c.situacao === 'cancelado' ? '
 const COLS = [30, 17, 19, 9, 12, 13];
 const ROT = [{ t: 'Fornecedor' }, { t: 'Natureza' }, { t: 'Área', x: true }, { t: 'Vence' }, { t: 'Situação' }, { t: 'Valor', r: true }];
 const valor = (c: Contrato) => c.valor_periodo != null ? reais(c.valor_periodo) : c.valor_total != null ? reais(c.valor_total)
-  : c.faixa_mensal != null ? `até ${reais(c.faixa_mensal)}` : '—';
+  : c.faixa_mensal != null ? `média ${reais(c.faixa_mensal)}` : '—';
 const TIPO: Record<Contrato['tipo'], string> = { contrato: 'Contrato de serviço', assinatura: 'Assinatura', consumo: 'Conta de consumo' };
 
 export function Contratos() {
@@ -74,7 +74,7 @@ export function Contratos() {
               <Colunas cols={COLS} rot={ROT} />
               <Grupo nome="Contratos de serviço" cor={COR.azul} linhas={ctr.map(linha)} total={soma(ctr) ? `${reais0(soma(ctr))} por mês` : undefined} sel={pg.id} abrir={pg.abrir} cols={COLS} />
               <Grupo nome="Assinaturas" cor={COR.verde} linhas={ass.map(linha)} total={soma(ass) ? `${reais0(soma(ass))} por mês` : undefined} sel={pg.id} abrir={pg.abrir} cols={COLS} />
-              <Grupo nome="Contas de consumo" cor={COR.roxo} linhas={cons.map(linha)} total={somaF(cons) ? `até ${reais0(somaF(cons))} por mês` : undefined} sel={pg.id} abrir={pg.abrir} cols={COLS} />
+              <Grupo nome="Contas de consumo" cor={COR.roxo} linhas={cons.map(linha)} total={somaF(cons) ? `média ${reais0(somaF(cons))} por mês` : undefined} sel={pg.id} abrir={pg.abrir} cols={COLS} />
             </>}
       </div>
       {pg.id && (
@@ -88,6 +88,7 @@ export function Contratos() {
               ['Descrição', sel.descricao],
               ['Número', sel.numero],
               ['Nº da instalação', sel.instalacao],
+              ['Média esperada por mês', sel.faixa_mensal != null ? reais(sel.faixa_mensal) : null],
               ['Teto no ano', sel.teto_anual != null ? reais(sel.teto_anual) : null],
               ['Vigência', `${data(sel.inicio)}${sel.fim ? ` a ${data(sel.fim)}` : ', sem prazo'}`],
               ['Vencimento', sel.dia_vencimento ? `dia ${sel.dia_vencimento}` : null],

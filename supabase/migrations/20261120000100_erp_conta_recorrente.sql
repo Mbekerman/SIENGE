@@ -1,7 +1,7 @@
 -- Cadastro das contas recorrentes pela tela (Moises, 19/11/2026: "a criação de contas recorrentes e contratos").
 --
 -- 1. Conta de consumo (luz, água, telefone, internet), tipo próprio decidido pelo Moises em 18/11/2026: número da
---    instalação (é por ele que a fatura se acha), faixa por mês (o valor aceitável no mês) e teto no ano. Aprova como
+--    instalação (é por ele que a fatura se acha), média esperada por mês (coluna faixa_mensal: o valor MÉDIO da fatura, não um máximo; Moises, 20/11/2026) e teto no ano. Aprova como
 --    o contrato: gestor de cada centro do rateio e AF ou AO; mudar instalação, faixa ou teto pede aprovação de novo.
 --    Não gera previsões sozinha (o valor muda todo mês); o que a nota fora da faixa faz fica para o PR das notas.
 -- 2. api.salvar_conta grava o contrato de serviço (valor total), a assinatura (valor por período) e a conta de
@@ -56,7 +56,7 @@ begin
   return new;
 end $$;
 
--- A tela Para aprovar e a identificação da nota passam a ver a conta de consumo (valor = a faixa por mês).
+-- A tela Para aprovar e a identificação da nota passam a ver a conta de consumo (valor = a média esperada por mês).
 do $$
 declare v text;
 begin
@@ -81,7 +81,7 @@ end $$;
 --     ficariam presos ao contrato de outro fornecedor. Sem nada ligado, a troca vale (corrige cadastro errado).
 --   - o valor total do contrato não fica abaixo do que já se lançou nele: as notas não canceladas mais os títulos
 --     sem nota não cancelados (o mesmo "lançado" do rastro do título, em valor bruto).
--- A empresa já não muda (tg_empresa_fixa). A faixa por mês e o teto no ano da conta de consumo não são trava de
+-- A empresa já não muda (tg_empresa_fixa). A média esperada por mês e o teto no ano da conta de consumo não são trava de
 -- nota nesta versão (só mudam a aprovação, no PR das notas); por isso podem baixar.
 -- O gatilho vale para qualquer caminho de gravação, não só api.salvar_conta. A leitura dos vínculos passa por baixo
 -- do RLS (quem altera pode não ver todas as notas do contrato): definer do erp_conferencia, que só lê.
@@ -203,7 +203,7 @@ begin
   end if;
   if v_tipo = 'consumo' and (length(trim(coalesce(p->>'instalacao', ''))) = 0 or nullif(p->>'faixa_mensal', '') is null
                               or nullif(p->>'teto_anual', '') is null or nullif(p->>'dia_vencimento', '') is null) then
-    raise exception 'Informe a instalação, a faixa por mês, o teto no ano e o dia do vencimento';
+    raise exception 'Informe a instalação, a média esperada por mês, o teto no ano e o dia do vencimento';
   end if;
 
   if v_id is null then
