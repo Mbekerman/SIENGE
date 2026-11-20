@@ -369,3 +369,11 @@ button.lt-o:hover{background:#f1f4f9}
 .nc-tipo b{font-weight:500}
 .lt-in.nc-dia{flex:0 0 72px;width:72px}
 @media (max-width:760px){ .nc-tipos{grid-template-columns:1fr} }
+/* Lançar título › Arquivo da nota */
+.lt-arq{display:flex;align-items:center;gap:12px;padding:12px 16px;border:1px solid #c4c7c5;border-radius:12px;background:#fff;font:inherit;color:inherit;text-align:left;min-width:0}
+.lt-arq.ok{border-color:#dde3ea;background:#f6f8fc}
+.lt-solta{border-style:dashed;cursor:pointer;width:100%}
+.lt-solta:hover,.lt-solta.on{background:#e8f0fe;border-color:#0b57d0}
+.lt-solta>svg{color:#0b57d0;flex:none}
+.lt-arqn{display:block;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lt-sec .nt{display:block;padding:8px 12px;border-radius:8px;font-size:13px;line-height:18px}

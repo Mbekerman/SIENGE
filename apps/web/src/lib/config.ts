@@ -30,3 +30,7 @@ export const SUPABASE_KEY = CHAVE_RECUSADA ? undefined : CHAVE;
 export const AMBIENTE = meta('bkm-ambiente') ?? (import.meta.env.VITE_AMBIENTE as string | undefined) ?? '';
 /** Domínio do Google Workspace que entra no sistema. */
 export const DOMINIO = 'bkm.com.br';
+/** Endereço do leitor de notas (serviço erp-leitor no Cloud Run): recebe o arquivo, guarda e lê. Sem ele, a tela
+ *  lança só à mão. Só https (ou http://localhost no desenvolvimento). */
+const LEITOR = (meta('erp-leitor-url') ?? (import.meta.env.VITE_LEITOR_URL as string | undefined))?.replace(/\/$/, '');
+export const LEITOR_URL = LEITOR && /^(https:\/\/[a-z0-9.-]+|http:\/\/localhost(:\d+)?)$/.test(LEITOR) ? LEITOR : undefined;
