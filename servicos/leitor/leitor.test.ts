@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { pdfCriptografado, senhasCandidatas, tentarSenhas, tipoPelosBytes } from './arquivo.ts';
 import { conferirLinha } from './boleto.ts';
 import { type Bucket, type Deps, Recusa, abrirComSenha, baixar, pedidoIdentificar, subir } from './fluxo.ts';
-import { converter, ESQUEMA } from './ia.ts';
+import { chaveValida, converter, ESQUEMA } from './ia.ts';
 import { Limite } from './limite.ts';
 import { lerXml } from './xml.ts';
 import { analisar } from './xml.ts';
@@ -376,4 +376,20 @@ test('senhas do PDF: para na que abre, segue na errada, desiste em código estra
   assert.equal(await tentarSenhas(['a', 'b', 'c', 'd'], lenta, 15_000, () => t), null);
   assert.deepEqual(vistas, ['a', 'b', 'c']);
   assert.deepEqual(restos, [15_000, 9_000, 3_000], 'cada qpdf recebe só o tempo que resta');
+});
+
+test('chave de acesso lida pela IA: dígito verificador conferido, errada sai com aviso', () => {
+  const base = '3526111122233300018155001000001234100001234';
+  const certas = [...'0123456789'].filter((d) => chaveValida(base + d));
+  assert.equal(certas.length, 1, 'um só dígito verificador fecha');
+  const boa = base + certas[0];
+  const ruim = base + ((Number(certas[0]) + 1) % 10);
+  const l1 = converter({ tipo: 'nfe', chave_acesso: boa.replace(/(\d{4})/g, '$1 ').trim() }, 'm');
+  assert.equal(l1.chave_acesso, boa, 'com espaços, guarda só os dígitos');
+  assert.equal(l1.avisos, undefined);
+  const l2 = converter({ tipo: 'nfe', chave_acesso: ruim }, 'm');
+  assert.equal(l2.chave_acesso, undefined);
+  assert.match(l2.avisos![0], /dígito verificador/);
+  assert.equal(converter({ tipo: 'nfse', chave_acesso: 'AB12-CD34' }, 'm').chave_acesso, 'AB12-CD34', 'NFS-e passa como veio');
+  assert.equal(chaveValida('123'), false);
 });
