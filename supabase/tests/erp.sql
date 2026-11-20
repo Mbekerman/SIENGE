@@ -7783,6 +7783,20 @@ select api.salvar_conta(:'cbase'::jsonb || jsonb_build_object('id', :'ccons'));
 select pg_temp.ok((select aprovacao_versao = :cver from erp.compromissos where id = :'ccons'), 'conta: salvar igual não muda a versão');
 select api.salvar_conta(:'cbase'::jsonb || jsonb_build_object('id', :'ccons', 'faixa_mensal', 1800));
 select pg_temp.ok((select aprovacao_versao = :cver + 1 and faixa_mensal = 1800 from erp.compromissos where id = :'ccons'), 'conta: mudar a faixa pede aprovação de novo');
+select api.salvar_conta(:'cbase'::jsonb || jsonb_build_object('id', :'ccons', 'faixa_mensal', 1800, 'instalacao', '0099'));
+select pg_temp.ok((select aprovacao_versao = :cver + 2 and instalacao = '0099' from erp.compromissos where id = :'ccons'), 'conta: mudar a instalação pede aprovação de novo');
+select api.salvar_conta(:'cbase'::jsonb || jsonb_build_object('id', :'ccons', 'faixa_mensal', 1800, 'instalacao', '0099', 'teto_anual', 99000));
+select pg_temp.ok((select aprovacao_versao = :cver + 3 and teto_anual = 99000 from erp.compromissos where id = :'ccons'), 'conta: mudar o teto pede aprovação de novo');
+-- quem só lê vê a conta sem poder alterar; quem não lança no centro também não
+select pg_temp.como(:'leitor');
+select pg_temp.ok((select coalesce(bool_and(not x.posso_alterar), true) and count(*) > 0 from api.contratos() x where x.id = :'ccons'), 'conta: quem só lê vê a conta e não altera');
+select pg_temp.sis();
+insert into erp.excecoes_centro (user_id, nucleo_economico_id, centro_custo_id, nivel) values (:'analista2', :'ne_vm', :'cc_mkt', 'leitor')
+  on conflict (user_id, nucleo_economico_id, centro_custo_id) do update set nivel = 'leitor', fim = null;
+select pg_temp.volta();
+select pg_temp.como(:'analista2');
+select pg_temp.ok((select coalesce(bool_and(not x.posso_alterar), true) and count(*) > 0 from api.contratos() x where x.id = :'ccons'), 'conta: quem vê e não lança no centro não altera');
+select pg_temp.como(:'analista');
 -- o tipo não muda pela alteração
 select pg_temp.erro_igual(format('select api.salvar_conta(%L::jsonb)', (:'cbase'::jsonb || jsonb_build_object('id', :'ccons', 'tipo', 'assinatura',
   'valor_periodo', 100, 'periodicidade', 'mensal'))::text), 'Conta não encontrada, encerrada ou sem permissão para alterar', 'conta: o tipo não muda');
@@ -7795,11 +7809,48 @@ select pg_temp.ok((select c.tipo = 'contrato' and c.valor_total = 24000 and c.in
 select pg_temp.erro_igual(format('select api.salvar_conta(%L::jsonb)', jsonb_build_object('empresa', :'spe', 'tipo', 'assinatura',
   'fornecedor', '10000000-0000-0000-0000-000000000007', 'descricao', 'Software', 'inicio', '2026-12-01', 'valor_periodo', 200,
   'rateio', :'cbase'::jsonb->'rateio')::text), 'Informe o valor e a periodicidade', 'conta: assinatura sem periodicidade é recusada');
+-- conta encerrada não se altera e sai do "posso alterar"
+select pg_temp.sis();
+update erp.compromissos set situacao = 'encerrado' where id = :'ccons';
+select pg_temp.volta();
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format('select api.salvar_conta(%L::jsonb)', (:'cbase'::jsonb || jsonb_build_object('id', :'ccons', 'faixa_mensal', 2000))::text),
+  'Conta não encontrada, encerrada ou sem permissão para alterar', 'conta: conta encerrada não se altera');
+select pg_temp.ok((select not x.posso_alterar from api.contratos() x where x.id = :'ccons'), 'conta: conta encerrada sai do posso alterar');
 -- contrato sem nada ligado: o fornecedor e o valor mudam (corrige cadastro errado)
 select api.salvar_conta(jsonb_build_object('id', :'cctr', 'empresa', :'spe', 'tipo', 'contrato', 'fornecedor', '10000000-0000-0000-0000-000000000005',
   'descricao', 'Agência 12 meses', 'inicio', '2026-12-01', 'fim', '2027-11-30', 'valor_total', 1, 'rateio', :'cbase'::jsonb->'rateio'));
 select pg_temp.ok((select pessoa_id = '10000000-0000-0000-0000-000000000005' and valor_total = 1 from erp.compromissos where id = :'cctr'),
   'conta: sem nota, título ou previsão, o fornecedor e o valor mudam');
+-- contrato só com nota (cancelada): já está ligado, mas o cancelado não conta no lançado
+select pg_temp.sis();
+update erp.compromissos set valor_total = 10000 where id = :'cctr';
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, compromisso_id, tipo, numero, emissao, competencia, valor_bruto, situacao)
+values ('70000000-0000-0000-0000-0000000096a1', :'spe', '10000000-0000-0000-0000-000000000005', :'cctr', 'nfse', '96-1', '2026-12-05', '2026-12-01', 4000, 'rascunho');
+set local role erp_situacao;
+update erp.documentos_fiscais set situacao = 'cancelado' where id = '70000000-0000-0000-0000-0000000096a1';
+reset role;
+select pg_temp.ok((select v.ligado and v.lancado = 0 from erp.compromisso_vinculos(:'cctr') v), 'conta: contrato só com nota cancelada está ligado e não tem lançado');
+select pg_temp.volta();
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format('update erp.compromissos set pessoa_id = %L where id = %L', '10000000-0000-0000-0000-000000000007', :'cctr'),
+  'O fornecedor não muda: o contrato já tem nota, título ou previsão; encerre e cadastre outro', 'conta: contrato só com nota não troca de fornecedor');
+-- título sem nota conta no lançado; nota não cancelada também
+select pg_temp.sis();
+select pg_temp.como(:'analista');
+set local role erp_situacao;
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, compromisso_id, emissao, competencia, valor, situacao)
+values ('81000000-0000-0000-0000-0000000096a1', :'spe', 'avulso', '10000000-0000-0000-0000-000000000005', :'cctr', '2026-12-05', '2026-12-01', 300, 'rascunho');
+reset role;
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, compromisso_id, tipo, numero, emissao, competencia, valor_bruto)
+values ('70000000-0000-0000-0000-0000000096a2', :'spe', '10000000-0000-0000-0000-000000000005', :'cctr', 'nfse', '96-2', '2026-12-05', '2026-12-01', 200);
+select pg_temp.ok((select v.lancado = 500 from erp.compromisso_vinculos(:'cctr') v), 'conta: lançado = título sem nota + nota não cancelada');
+select pg_temp.volta();
+select pg_temp.como(:'analista');
+select pg_temp.falha(format('update erp.compromissos set valor_total = 499.99 where id = %L', :'cctr'), 'conta: o valor não fica abaixo do título sem nota + nota');
+-- direto no banco, sem a api: consumo sem instalação é recusado
+select pg_temp.falha(format($$insert into erp.compromissos (empresa_id, tipo, pessoa_id, descricao, inicio, periodicidade, dia_vencimento, faixa_mensal, teto_anual)
+  values (%L, 'consumo', '10000000-0000-0000-0000-000000000007', 'X', '2026-12-01', 'mensal', 5, 10, 100)$$, :'spe'), 'conta: consumo sem instalação é recusado também direto no banco');
 -- contrato com nota ligada (CT-1, revisão do #96): o fornecedor não muda e o valor não fica abaixo do lançado, em qualquer caminho
 select pg_temp.sis();
 select pg_temp.ok((select v.ligado and v.lancado > 1 from erp.compromisso_vinculos('60000000-0000-0000-0000-000000000002') v),
