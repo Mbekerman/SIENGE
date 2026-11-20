@@ -239,7 +239,24 @@ Conta recorrente é a que se repete todo mês. Ela fica cadastrada uma vez e gan
 
 ### Tarefa: cadastrar uma conta recorrente
 
-> 🧪 Telas em protótipo (linha F), ainda sem código.
+> 🟡 **Tela no PR #96**, ainda não juntado. Os passos numerados mais abaixo seguem o protótipo (linha F).
+
+**Como fica no PR #96:**
+
+1. Em Financeiro › Contas a pagar › Contas recorrentes, clique em **Nova conta** e escolha um de três tipos:
+   - **Assinatura:** valor por mês ou por período;
+   - **Contrato de serviço:** valor total;
+   - **Conta de consumo:** concessionária, número da instalação (como está na fatura), faixa de valor por mês, teto no ano e dia do vencimento, que é obrigatório.
+2. Preencha empresa, fornecedor, descrição, vigência, vencimento e o rateio, como no Lançar título.
+3. Clique em **Enviar para aprovação**. Aprovam o gestor de cada área e alguém da AF ou da AO.
+
+**Para mudar uma conta ativa:** use **Alterar**, na gaveta da conta. O botão só aparece para quem lança naquela conta. O tipo não muda, e mudar valor, vigência, fornecedor, instalação ou rateio manda a conta de novo para aprovação.
+
+**Na lista**, as contas de consumo ganham um grupo próprio, com "até R$ X por mês".
+
+**Ainda falta:** a regra de aprovação de cada nota do mês. No contrato, a nota pede o gestor e a AF ou a AD. Na conta de consumo, a nota dentro da faixa vai direto para a AF, a AO ou a AD.
+
+**Como era no protótipo (linha F):**
 
 1. Abra **Pedidos**, aba **Contas recorrentes**, e clique em **Nova conta**.
 2. Escolha o tipo: **Contrato de serviço** (valor fixo por mês) ou **Conta de consumo** (luz, água, telefone).
