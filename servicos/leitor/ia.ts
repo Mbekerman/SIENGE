@@ -31,7 +31,7 @@ export const ESQUEMA = objeto({
   valor_liquido: nulo('number'),
   retencoes: { type: 'array', items: objeto({ tributo: { type: 'string', enum: TRIBUTOS }, valor: { type: 'number' } }) },
   descricao: texto,
-  parcelas: { type: 'array', items: objeto({ numero: texto, vencimento: texto, valor: nulo('number') }) },
+  parcelas: { type: 'array', items: objeto({ numero: texto, vencimento: texto, valor: nulo('number'), pix_copia_e_cola: texto }) },
   linhas_digitaveis: { type: 'array', items: { type: 'string' } },
   pix: objeto({ chave: texto, copia_e_cola: texto }),
   consumo: objeto({ instalacao: texto, referencia: texto, vencimento: texto }),
@@ -58,7 +58,9 @@ impresso, valor fica null (o sistema soma as parcelas).
 - retencoes: uma linha por tributo retido na fonte que a nota mostra como retido (tributo e valor); lista vazia se nenhum. \
 ISS só quando a nota diz que é retido.
 - parcelas: as duplicatas ou vencimentos que o documento lista, na ordem e com o valor de cada uma exatamente como \
-impresso (não redistribua centavos). Num arquivo com vários boletos de um mesmo documento, uma parcela por boleto.
+impresso (não redistribua centavos). Num arquivo com vários boletos de um mesmo documento, uma parcela por boleto. \
+pix_copia_e_cola da parcela: o código PIX copia e cola (começa por 000201) impresso no boleto ou na parcela dela, \
+exatamente como impresso, sem espaços; vazio se não houver.
 - linhas_digitaveis: cada linha digitável de boleto ou código de barras de arrecadação exatamente como impresso, \
 só os dígitos. Não confunda com a chave de acesso da NF-e (44 dígitos, começa pelo código da UF).
 - chave_acesso: a chave de 44 dígitos da NF-e, ou o código de verificação da NFS-e.
@@ -148,9 +150,10 @@ export function converter(j: Record<string, any>, modelo: string, hoje = new Dat
     valor: pos(j.valor) ?? somaParcelas(j.parcelas), valor_liquido: pos(j.valor_liquido),
     retencoes: retencoes(j.retencoes),
     descricao: str(j.descricao)?.slice(0, 300),
-    parcelas: (Array.isArray(j.parcelas) ? j.parcelas : []).map((x: any) => ({ numero: str(x?.numero), vencimento: data(x?.vencimento), valor: pos(x?.valor) })),
+    parcelas: (Array.isArray(j.parcelas) ? j.parcelas : []).map((x: any, i: number) => ({ numero: str(x?.numero), vencimento: data(x?.vencimento), valor: pos(x?.valor),
+      pix_copia_cola: copiaCola(x?.pix_copia_e_cola, `da ${i + 1}ª parcela`, avisos) })),
     boletos,
-    pix: { chave: str(j.pix?.chave), copia_e_cola: str(j.pix?.copia_e_cola) },
+    pix: { chave: str(j.pix?.chave), copia_e_cola: copiaCola(j.pix?.copia_e_cola, 'do documento', avisos) },
     consumo: { instalacao: str(j.consumo?.instalacao), referencia: refConsumo, vencimento: data(j.consumo?.vencimento) },
     avisos,
   });
@@ -196,6 +199,26 @@ export function mascara(x: unknown): string | undefined {
   if (typeof x !== 'string' || !/[*xX•]/.test(x)) return undefined;
   const m = x.replace(/[xX•]/g, '*').replace(/[^\d*]/g, '');
   return /\d/.test(m) && m.replace(/\*/g, '').length >= 4 && m.includes('*') ? m : undefined;
+}
+// PIX copia e cola (BR Code): começa por 000201 e termina no CRC16-CCITT (6304 + 4 hexadecimais), conferido aqui e de
+// novo no banco (erp.pix_copia_cola_valido). Lido errado, sai vazio com aviso.
+export function crc16Pix(s: string): string {
+  let c = 0xffff;
+  for (const b of Buffer.from(s, 'utf8')) {
+    c ^= b << 8;
+    for (let k = 0; k < 8; k++) c = c & 0x8000 ? ((c << 1) ^ 0x1021) & 0xffff : (c << 1) & 0xffff;
+  }
+  return c.toString(16).toUpperCase().padStart(4, '0');
+}
+export function copiaColaValido(s: string): boolean {
+  return /^000201[ -~]+6304[0-9A-F]{4}$/.test(s) && s.length <= 512 && crc16Pix(s.slice(0, -4)) === s.slice(-4);
+}
+function copiaCola(x: unknown, onde: string, avisos: string[]): string | undefined {
+  const s = typeof x === 'string' ? x.replace(/[\r\n]+/g, '').trim() : '';
+  if (!s) return undefined;
+  if (copiaColaValido(s)) return s;
+  avisos.push(`O PIX copia e cola ${onde} não confere (código ou dígitos de controle) e ficou de fora: copie do documento.`);
+  return undefined;
 }
 const str = (x: unknown) => (typeof x === 'string' && x.trim() ? x.trim() : undefined);
 const pos = (x: unknown) => { const n = numero(x); return n !== undefined && n > 0 ? Math.round(n * 100) / 100 : undefined; };

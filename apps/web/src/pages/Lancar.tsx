@@ -6,14 +6,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alerta, Carregando, Chip, Ic } from '../components/Comum';
 import { Popup } from '../components/Rastro';
 import { data, dividir, documento, hojeISO, lerReais, reais } from '../lib/format';
-import { mensagemErro, rpc } from '../lib/supabase';
+import { recebedorPix, type Conferido } from '../lib/pix';
+import { mensagemErro, rpc, supabase } from '../lib/supabase';
 import { abrirComSenha, leitorLigado, subirArquivo, TIPOS_ACEITOS } from '../lib/leitor';
 import type { FornecedorBusca, Identificacao, Leitura, NaturezaLancavel, OpcoesLancamento, PrevisaoParaNota, ResultadoLeitor } from '../lib/tipos';
 
 type Forma = 'pix' | 'boleto';
 type PixTipo = 'cpf_cnpj' | 'email' | 'telefone' | 'aleatoria';
 export interface Linha { k: number; nucleo: string; centro: string; divisao: string; natureza: string; pct: string }
-interface Parcela { k: number; vencimento: string; valor: string; forma: Forma; pix_tipo: PixTipo; pix_chave: string; boleto: string; excecao: string }
+interface Parcela { k: number; vencimento: string; valor: string; forma: Forma; pix_tipo: PixTipo; pix_chave: string; boleto: string; excecao: string; pix_cc: string; cc_exc: string }
 
 const TIPOS: [string, string][] = [['nfse', 'NFS-e'], ['nfe', 'NF-e'], ['fatura', 'Fatura'], ['boleto', 'Boleto'], ['recibo', 'Recibo'], ['outro', 'Outro']];
 const PIX: [PixTipo, string][] = [['cpf_cnpj', 'CPF ou CNPJ'], ['email', 'E-mail'], ['telefone', 'Telefone'], ['aleatoria', 'Chave aleatória']];
@@ -21,7 +22,7 @@ let seq = 1;
 export const novaLinha = (pct = '100'): Linha => ({ k: seq++, nucleo: '', centro: '', divisao: '', natureza: '', pct });
 const novaParcela = (base?: Parcela, doc?: string | null): Parcela => ({
   k: seq++, vencimento: '', valor: '', forma: base?.forma ?? 'pix', pix_tipo: base?.pix_tipo ?? 'cpf_cnpj',
-  pix_chave: base?.pix_chave ?? (doc ?? ''), boleto: '', excecao: base?.excecao ?? '',
+  pix_chave: base?.pix_chave ?? (doc ?? ''), boleto: '', excecao: base?.excecao ?? '', pix_cc: '', cc_exc: '',
 });
 
 /** A chave como o banco aceita: CPF/CNPJ só dígitos, e-mail minúsculo, telefone com +55. */
@@ -140,8 +141,8 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
       compromisso: contratos.length === 1 ? contratos[0] : null,
       rateio: linhas.map(l => ({ nucleo: l.nucleo, centro: l.centro, divisao: l.divisao || null, natureza: l.natureza, percentual: Number(l.pct.replace(',', '.')) })),
       parcelas: parcelas.map(p => p.forma === 'pix'
-        ? { vencimento: p.vencimento, ...(comValor ? { valor: lerReais(p.valor) } : {}), forma: 'pix', pix_tipo: p.pix_tipo, pix_chave: chave(p.pix_tipo, p.pix_chave), pix_excecao: p.excecao.trim() || null }
-        : { vencimento: p.vencimento, ...(comValor ? { valor: lerReais(p.valor) } : {}), forma: 'boleto', boleto_linha: p.boleto.replace(/\D/g, '') }),
+        ? { vencimento: p.vencimento, ...(comValor ? { valor: lerReais(p.valor) } : {}), forma: 'pix', pix_tipo: p.pix_tipo, pix_chave: chave(p.pix_tipo, p.pix_chave), pix_excecao: p.excecao.trim() || null, pix_copia_cola: p.pix_cc.trim() || null, pix_copia_cola_excecao: (p.pix_cc.trim() && p.cc_exc.trim()) || null }
+        : { vencimento: p.vencimento, ...(comValor ? { valor: lerReais(p.valor) } : {}), forma: 'boleto', boleto_linha: p.boleto.replace(/\D/g, ''), pix_copia_cola: p.pix_cc.trim() || null, pix_copia_cola_excecao: (p.pix_cc.trim() && p.cc_exc.trim()) || null }),
       previsoes: prevs, etiquetas: etq, anexos: arq ? [arq.anexo.id] : [],
     } }),
     onSuccess: id => { qc.invalidateQueries({ queryKey: ['titulos'] }); qc.invalidateQueries({ queryKey: ['previsoes'] }); lancado(id); },
@@ -254,6 +255,10 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
               </> : (
                 <input className={`lt-in mono ${tentou && !p.boleto.replace(/\D/g, '') ? 'err' : ''}`} placeholder="Linha digitável (47 dígitos)" value={p.boleto} onChange={e => mudaP(p.k, { boleto: e.target.value })} />
               )}
+              <input className="lt-in mono" aria-label="PIX copia e cola" placeholder={p.forma === 'boleto' ? 'PIX copia e cola do boleto (opcional)' : 'PIX copia e cola (opcional)'}
+                value={p.pix_cc} onChange={e => mudaP(p.k, { pix_cc: e.target.value.replace(/[\r\n]+/g, '') })} />
+              {p.pix_cc.trim() && <RecebedorPix codigo={p.pix_cc} forma={p.forma} chaveParcela={p.forma === 'pix' ? chave(p.pix_tipo, p.pix_chave) : null}
+                docForn={forn?.documento ?? null} valor={(comValor ? digitados[i] : iguais[i]) ?? null} exc={p.cc_exc} mudaExc={v => mudaP(p.k, { cc_exc: v })} tentou={tentou} />}
             </div>
           ))}
           <button className="btn t sm" style={{ alignSelf: 'flex-start' }} onClick={() => setParcelas(ps => [...ps, novaParcela(ps[ps.length - 1])])}><Ic n="add" s={18} />Adicionar parcela</button>
@@ -371,9 +376,11 @@ export function parcelasLidas(l: NonNullable<ResultadoLeitor['leitura']>, pag: I
     const b = bol[i];
     const vencimento = venc[i]?.vencimento ?? (b?.conferido_asaas?.ok ? b.conferido_asaas.vencimento : undefined) ?? b?.vencimento ?? l.consumo?.vencimento ?? '';
     const valor = valores?.[i] ?? '';
-    if (b) return { ...novaParcela(), vencimento, valor, forma: 'boleto', boleto: b.linha };
+    // o PIX copia e cola da parcela (o do boleto híbrido), senão, com uma parcela só, o do documento
+    const pix_cc = (venc.length ? venc[i] : l.parcelas?.[i])?.pix_copia_cola ?? (n === 1 ? l.pix?.copia_e_cola : undefined) ?? '';
+    if (b) return { ...novaParcela(), vencimento, valor, forma: 'boleto', boleto: b.linha, pix_cc };
     const pix = pag?.forma === 'pix' && pag.pix_chave ? { pix_tipo: (pag.pix_tipo ?? 'cpf_cnpj') as PixTipo, pix_chave: pag.pix_chave } : { pix_tipo: 'cpf_cnpj' as PixTipo, pix_chave: doc ?? '' };
-    return { ...novaParcela(), vencimento, valor, forma: pag?.forma === 'boleto' ? 'boleto' : 'pix', ...pix };
+    return { ...novaParcela(), vencimento, valor, forma: pag?.forma === 'boleto' ? 'boleto' : 'pix', ...pix, pix_cc };
   });
 }
 
@@ -489,4 +496,45 @@ export function empresasPelaMascara(m: string, empresas: OpcoesLancamento['empre
   const ini = m.slice(0, m.indexOf('*')), fim = m.slice(m.lastIndexOf('*') + 1);
   const fecha = (d: string) => (m.length === d.length ? [...m].every((c, i) => c === '*' || c === d[i]) : d.startsWith(ini) && d.endsWith(fim));
   return empresas.filter(e => e.documento && fecha(e.documento.replace(/\D/g, '')));
+}
+
+/** Quem recebe pelo PIX copia e cola: a leitura do código e a conferência (pela função pix-conferir; a tela diz só
+ *  "conferido", sem a fonte, pedido do Moises de 20/11/2026). Pede a justificativa quando o banco também vai pedir (a
+ *  regra de verdade é do banco, no gatilho da parcela: conferência de até 1 dia, com o valor da parcela). */
+function RecebedorPix({ codigo, forma, chaveParcela, docForn, valor, exc, mudaExc, tentou }: {
+  codigo: string; forma: Forma; chaveParcela: string | null; docForn: string | null; valor: number | null; exc: string; mudaExc: (v: string) => void; tentou: boolean;
+}) {
+  const c = codigo.trim();
+  const r = recebedorPix(c);
+  const conf = useQuery({
+    queryKey: ['pix-conferir', c], enabled: !!r && r.contas === 1 && c.length >= 30, retry: false, staleTime: 60 * 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.functions.invoke<Conferido & { erro?: string }>('pix-conferir', { body: { codigo: c } });
+      if (error) {
+        const corpo = await (error as { context?: Response }).context?.json?.().catch(() => null);
+        throw new Error(corpo?.erro ?? 'Não consegui conferir');
+      }
+      return data as Conferido;
+    },
+  });
+  if (!r || (!r.chave && !r.url)) return <span className="nt cr">O código não traz o recebedor PIX.</span>;
+  if (r.contas > 1) return <span className="nt cr">O código traz mais de uma conta PIX e não entra.</span>;
+  const a = conf.data;
+  const outroValor = !!a?.cpf_cnpj && valor != null && a.valor !== valor;
+  const conferido = !!a?.cpf_cnpj && a.cpf_cnpj === docForn && !outroValor;
+  const peloCodigo = !r.url && !!r.chave && (forma === 'pix' ? r.chave === chaveParcela : r.chave === docForn);
+  const ok = conferido || peloCodigo;
+  return (
+    <div className="lt-exc">
+      <span className="sec peq">Recebe pelo código: {r.nome ?? 'sem nome'} · {r.url ? 'QR dinâmico' : `chave ${r.chave}`}</span>
+      {conf.isFetching ? <span className="sec peq">Conferindo quem recebe…</span>
+        : a?.cpf_cnpj ? <span className={`nt ${conferido ? 'ok' : 'at'}`}>Conferido: recebe {a.nome ?? 'sem nome'} ({documento(a.cpf_cnpj)}){a.banco ? `, ${a.banco}` : ''}{a.cpf_cnpj !== docForn ? ', que não é o fornecedor.' : outroValor ? `, mas cobra ${a.valor != null ? reais(a.valor) : 'outro valor'}, não o valor da parcela.` : ', que é o fornecedor.'}</span>
+        : conf.error ? <span className="sec peq">Não deu para conferir: {(conf.error as Error).message}</span> : null}
+      {!ok && !conf.isFetching && <>
+        <span className="nt at">{a?.cpf_cnpj && a.cpf_cnpj !== docForn ? 'Quem recebe não é o fornecedor.' : outroValor ? 'O valor cobrado pelo código não é o da parcela.' : r.url ? 'Não deu para conferir quem recebe pelo código dinâmico.'
+          : forma === 'pix' ? 'A chave do código não é a chave PIX da parcela.' : 'A chave do código não é o CPF/CNPJ do fornecedor.'} Só entra com a justificativa, que quem aprova vê, e o AF recebe o alerta.</span>
+        <input className={`lt-in ${tentou && !exc.trim() ? 'err' : ''}`} placeholder="Por que pagar por este código?" value={exc} onChange={e => mudaExc(e.target.value)} />
+      </>}
+    </div>
+  );
 }

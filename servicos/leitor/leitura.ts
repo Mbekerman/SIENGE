@@ -6,7 +6,7 @@ export type TipoDocumento = 'nfe' | 'nfse' | 'fatura' | 'boleto' | 'recibo' | 'o
 
 export interface Pessoa { documento?: string; documento_mascara?: string; nome?: string }  // máscara: dígitos e * (ia.ts)
 
-export interface Parcela { numero?: string; vencimento?: string; valor?: number }
+export interface Parcela { numero?: string; vencimento?: string; valor?: number; pix_copia_cola?: string }
 
 export interface Boleto {
   linha: string;                 // só dígitos, 47 (cobrança) ou 48 (arrecadação/concessionária)
