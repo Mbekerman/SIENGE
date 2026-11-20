@@ -14,7 +14,7 @@ import type { FornecedorBusca, Identificacao, Leitura, NaturezaLancavel, OpcoesL
 type Forma = 'pix' | 'boleto';
 type PixTipo = 'cpf_cnpj' | 'email' | 'telefone' | 'aleatoria';
 export interface Linha { k: number; nucleo: string; centro: string; divisao: string; natureza: string; pct: string }
-interface Parcela { k: number; vencimento: string; valor: string; forma: Forma; pix_tipo: PixTipo; pix_chave: string; boleto: string; excecao: string; pix_cc: string; cc_exc: string }
+interface Parcela { k: number; vencimento: string; valor: string; forma: Forma; pix_tipo: PixTipo; pix_chave: string; boleto: string; excecao: string; pix_cc: string; cc_exc: string; bol_exc: string }
 
 const TIPOS: [string, string][] = [['nfse', 'NFS-e'], ['nfe', 'NF-e'], ['fatura', 'Fatura'], ['boleto', 'Boleto'], ['recibo', 'Recibo'], ['outro', 'Outro']];
 const PIX: [PixTipo, string][] = [['cpf_cnpj', 'CPF ou CNPJ'], ['email', 'E-mail'], ['telefone', 'Telefone'], ['aleatoria', 'Chave aleatória']];
@@ -22,7 +22,7 @@ let seq = 1;
 export const novaLinha = (pct = '100'): Linha => ({ k: seq++, nucleo: '', centro: '', divisao: '', natureza: '', pct });
 const novaParcela = (base?: Parcela, doc?: string | null): Parcela => ({
   k: seq++, vencimento: '', valor: '', forma: base?.forma ?? 'pix', pix_tipo: base?.pix_tipo ?? 'cpf_cnpj',
-  pix_chave: base?.pix_chave ?? (doc ?? ''), boleto: '', excecao: base?.excecao ?? '', pix_cc: '', cc_exc: '',
+  pix_chave: base?.pix_chave ?? (doc ?? ''), boleto: '', excecao: base?.excecao ?? '', pix_cc: '', cc_exc: '', bol_exc: '',
 });
 
 /** A chave como o banco aceita: CPF/CNPJ só dígitos, e-mail minúsculo, telefone com +55. */
@@ -142,7 +142,7 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
       rateio: linhas.map(l => ({ nucleo: l.nucleo, centro: l.centro, divisao: l.divisao || null, natureza: l.natureza, percentual: Number(l.pct.replace(',', '.')) })),
       parcelas: parcelas.map(p => p.forma === 'pix'
         ? { vencimento: p.vencimento, ...(comValor ? { valor: lerReais(p.valor) } : {}), forma: 'pix', pix_tipo: p.pix_tipo, pix_chave: chave(p.pix_tipo, p.pix_chave), pix_excecao: p.excecao.trim() || null, pix_copia_cola: p.pix_cc.trim() || null, pix_copia_cola_excecao: (p.pix_cc.trim() && p.cc_exc.trim()) || null }
-        : { vencimento: p.vencimento, ...(comValor ? { valor: lerReais(p.valor) } : {}), forma: 'boleto', boleto_linha: p.boleto.replace(/\D/g, ''), pix_copia_cola: p.pix_cc.trim() || null, pix_copia_cola_excecao: (p.pix_cc.trim() && p.cc_exc.trim()) || null }),
+        : { vencimento: p.vencimento, ...(comValor ? { valor: lerReais(p.valor) } : {}), forma: 'boleto', boleto_linha: p.boleto.replace(/\D/g, ''), boleto_excecao: p.bol_exc.trim() || null, pix_copia_cola: p.pix_cc.trim() || null, pix_copia_cola_excecao: (p.pix_cc.trim() && p.cc_exc.trim()) || null }),
       previsoes: prevs, etiquetas: etq, anexos: arq ? [arq.anexo.id] : [],
     } }),
     onSuccess: id => { qc.invalidateQueries({ queryKey: ['titulos'] }); qc.invalidateQueries({ queryKey: ['previsoes'] }); lancado(id); },
@@ -252,9 +252,11 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
                   <div className="lt-exc"><span className="nt at">A chave não é o documento do fornecedor. Só entra com a justificativa, que quem aprova vê.</span>
                     <input className="lt-in" placeholder="Por que pagar em outra chave?" value={p.excecao} onChange={e => mudaP(p.k, { excecao: e.target.value })} /></div>
                 )}
-              </> : (
+              </> : <>
                 <input className={`lt-in mono ${tentou && !p.boleto.replace(/\D/g, '') ? 'err' : ''}`} placeholder="Linha digitável (47 dígitos)" value={p.boleto} onChange={e => mudaP(p.k, { boleto: e.target.value })} />
-              )}
+                {[47, 48].includes(p.boleto.replace(/\D/g, '').length) && <RecebedorBoleto linha={p.boleto.replace(/\D/g, '')} docForn={forn?.documento ?? null}
+                  valor={(comValor ? digitados[i] : iguais[i]) ?? null} exc={p.bol_exc} mudaExc={v => mudaP(p.k, { bol_exc: v })} tentou={tentou} />}
+              </>}
               <input className="lt-in mono" aria-label="PIX copia e cola" placeholder={p.forma === 'boleto' ? 'PIX copia e cola do boleto (opcional)' : 'PIX copia e cola (opcional)'}
                 value={p.pix_cc} onChange={e => mudaP(p.k, { pix_cc: e.target.value.replace(/[\r\n]+/g, '') })} />
               {p.pix_cc.trim() && <RecebedorPix codigo={p.pix_cc} forma={p.forma} chaveParcela={p.forma === 'pix' ? chave(p.pix_tipo, p.pix_chave) : null}
@@ -498,7 +500,7 @@ export function empresasPelaMascara(m: string, empresas: OpcoesLancamento['empre
   return empresas.filter(e => e.documento && fecha(e.documento.replace(/\D/g, '')));
 }
 
-/** Quem recebe pelo PIX copia e cola: a leitura do código e a conferência (pela função pix-conferir; a tela diz só
+/** Quem recebe pelo PIX copia e cola: a leitura do código e a conferência (pela função conferir-pagamento; a tela diz só
  *  "conferido", sem a fonte, pedido do Moises de 20/11/2026). Pede a justificativa quando o banco também vai pedir (a
  *  regra de verdade é do banco, no gatilho da parcela: conferência de até 1 dia, com o valor da parcela). */
 function RecebedorPix({ codigo, forma, chaveParcela, docForn, valor, exc, mudaExc, tentou }: {
@@ -507,14 +509,9 @@ function RecebedorPix({ codigo, forma, chaveParcela, docForn, valor, exc, mudaEx
   const c = codigo.trim();
   const r = recebedorPix(c);
   const conf = useQuery({
-    queryKey: ['pix-conferir', c], enabled: !!r && r.contas === 1 && c.length >= 30, retry: false, staleTime: 60 * 60_000,
+    queryKey: ['conferir-pagamento', 'pix', c], enabled: !!r && r.contas === 1 && c.length >= 30, retry: false, staleTime: 60 * 60_000,
     queryFn: async () => {
-      const { data, error } = await supabase.functions.invoke<Conferido & { erro?: string }>('pix-conferir', { body: { codigo: c } });
-      if (error) {
-        const corpo = await (error as { context?: Response }).context?.json?.().catch(() => null);
-        throw new Error(corpo?.erro ?? 'Não consegui conferir');
-      }
-      return data as Conferido;
+      return conferirPagamento({ codigo: c });
     },
   });
   if (!r || (!r.chave && !r.url)) return <span className="nt cr">O código não traz o recebedor PIX.</span>;
@@ -532,8 +529,40 @@ function RecebedorPix({ codigo, forma, chaveParcela, docForn, valor, exc, mudaEx
         : conf.error ? <span className="sec peq">Não deu para conferir: {(conf.error as Error).message}</span> : null}
       {!ok && !conf.isFetching && <>
         <span className="nt at">{a?.cpf_cnpj && a.cpf_cnpj !== docForn ? 'Quem recebe não é o fornecedor.' : outroValor ? 'O valor cobrado pelo código não é o da parcela.' : r.url ? 'Não deu para conferir quem recebe pelo código dinâmico.'
-          : forma === 'pix' ? 'A chave do código não é a chave PIX da parcela.' : 'A chave do código não é o CPF/CNPJ do fornecedor.'} Só entra com a justificativa, que quem aprova vê, e o AF recebe o alerta.</span>
+          : forma === 'pix' ? 'A chave do código não é a chave PIX da parcela.' : 'A chave do código não é o CPF/CNPJ do fornecedor.'} Só entra com a justificativa, que quem aprova vê, a AF recebe o alerta e o título fica marcado até o pagamento.</span>
         <input className={`lt-in ${tentou && !exc.trim() ? 'err' : ''}`} placeholder="Por que pagar por este código?" value={exc} onChange={e => mudaExc(e.target.value)} />
+      </>}
+    </div>
+  );
+}
+
+/** Pede a conferência de quem recebe (função conferir-pagamento, que grava como sistema; o banco é quem decide). */
+async function conferirPagamento(body: { codigo: string } | { linha: string }): Promise<Conferido> {
+  const { data, error } = await supabase.functions.invoke<Conferido & { erro?: string }>('conferir-pagamento', { body });
+  if (error) {
+    const corpo = await (error as { context?: Response }).context?.json?.().catch(() => null);
+    throw new Error(corpo?.erro ?? 'Não consegui conferir');
+  }
+  return data as Conferido;
+}
+
+/** O beneficiário do boleto, conferido como o recebedor do PIX copia e cola (Moises, 20/11/2026): entra direto quando é o
+ *  fornecedor e o valor registrado é o da parcela; senão, só com a justificativa (a regra de verdade é do banco). */
+function RecebedorBoleto({ linha, docForn, valor, exc, mudaExc, tentou }: {
+  linha: string; docForn: string | null; valor: number | null; exc: string; mudaExc: (v: string) => void; tentou: boolean;
+}) {
+  const conf = useQuery({ queryKey: ['conferir-pagamento', 'boleto', linha], retry: false, staleTime: 60 * 60_000, queryFn: () => conferirPagamento({ linha }) });
+  const a = conf.data;
+  const outroValor = !!a?.cpf_cnpj && valor != null && a.valor != null && a.valor !== valor;
+  const ok = !!a?.cpf_cnpj && a.cpf_cnpj === docForn && !outroValor;
+  return (
+    <div className="lt-exc">
+      {conf.isFetching ? <span className="sec peq">Conferindo o beneficiário…</span>
+        : a?.cpf_cnpj ? <span className={`nt ${ok ? 'ok' : 'at'}`}>Conferido: beneficiário {a.nome ?? 'sem nome'} ({documento(a.cpf_cnpj)}){a.cpf_cnpj !== docForn ? ', que não é o fornecedor.' : outroValor ? `, mas o boleto é de ${reais(a.valor!)}, não do valor da parcela.` : ', que é o fornecedor.'}</span>
+        : conf.error ? <span className="sec peq">Não deu para conferir: {(conf.error as Error).message}</span> : null}
+      {!ok && !conf.isFetching && <>
+        <span className="nt at">{a?.cpf_cnpj && a.cpf_cnpj !== docForn ? 'O beneficiário não é o fornecedor.' : outroValor ? 'O valor do boleto não é o da parcela.' : 'O beneficiário não foi conferido.'} Só entra com a justificativa, que quem aprova vê, a AF recebe o alerta e o título fica marcado até o pagamento.</span>
+        <input className={`lt-in ${tentou && !exc.trim() ? 'err' : ''}`} placeholder="Por que pagar este boleto?" value={exc} onChange={e => mudaExc(e.target.value)} />
       </>}
     </div>
   );
