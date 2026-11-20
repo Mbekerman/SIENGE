@@ -7444,6 +7444,27 @@ select pg_temp.ok((select valor = 300 from erp.titulos where id = :'tval')
 select pg_temp.erro_igual(format($$select erp.lancar_documento(%L, array['2026-11-20','2026-12-20']::date[], null, array[300]::numeric[])$$,
                                  (select documento_id from erp.titulos where id = :'tval')),
   'O documento já foi lançado', 'parcelas: a função da nota continua recusando nota já lançada');
+-- revisão de segurança do #102: a quantidade de valores e o líquido (com retenção) são conferidos
+select pg_temp.como(null);
+select pg_temp.sis();
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+values ('70000000-0000-0000-0000-000000000886', :'spe', '10000000-0000-0000-0000-000000000007', 'nfse', 'T-886', '2026-11-05', '2026-11-01', 300);
+insert into erp.documento_retencoes (documento_id, imposto, valor, orgao_id, vencimento) values
+  ('70000000-0000-0000-0000-000000000886', 'iss', 30, '10000000-0000-0000-0000-000000000006', '2026-12-10');
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('70000000-0000-0000-0000-000000000886', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select pg_temp.volta();
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual($$select erp.lancar_documento('70000000-0000-0000-0000-000000000886', array['2026-11-20','2026-12-20']::date[], null, array[270]::numeric[])$$,
+  'Informe o valor de cada parcela', 'parcelas: menos valores que vencimentos é recusado, mesmo somando o líquido');
+select pg_temp.erro_igual($$select erp.lancar_documento('70000000-0000-0000-0000-000000000886', array['2026-11-20','2026-12-20']::date[], null, array[100, 100, 70]::numeric[])$$,
+  'Informe o valor de cada parcela', 'parcelas: mais valores que vencimentos é recusado, mesmo somando o líquido');
+select pg_temp.erro_igual($$select erp.lancar_documento('70000000-0000-0000-0000-000000000886', array['2026-11-20','2026-12-20']::date[], null, array[100, 200]::numeric[])$$,
+  'As parcelas somam 300,00, e o valor líquido do título é 270,00', 'parcelas: com retenção, a soma igual ao bruto é recusada');
+select erp.lancar_documento('70000000-0000-0000-0000-000000000886', array['2026-11-20','2026-12-20']::date[], null, array[100, 170]::numeric[]) as tret \gset
+select pg_temp.ok((select valor = 270 from erp.titulos where id = :'tret')
+                  and (select array_agg(valor order by numero) from erp.parcelas where titulo_id = :'tret') = array[100, 170]::numeric[],
+  'parcelas: com retenção, a soma igual ao líquido entra');
 -- na revisão, o reenvio relança a nota com os mesmos valores
 select pg_temp.como(null);
 select pg_temp.sis(); insert into erp.centro_aprovadores values (:'cc_mkt', :'gestor') on conflict do nothing; select pg_temp.volta();
@@ -7453,10 +7474,28 @@ select pg_temp.como(:'diretor');
 select erp.reenviar_titulo(:'tval', 'conferido') as tval2 \gset
 select pg_temp.ok(:'tval2' <> :'tval' and (select array_agg(valor order by numero) from erp.parcelas where titulo_id = :'tval2') = array[100, 200]::numeric[],
   'parcelas: o reenvio da revisão mantém o valor de cada parcela');
+-- outra quantidade de parcelas no reenvio: a divisão igual
+select pg_temp.como(:'gestor');
+select erp.decidir_titulo(:'tval2', false, 'três parcelas', true);
+select pg_temp.como(:'diretor');
+select erp.reenviar_titulo(:'tval2', 'em três', array['2026-11-20','2026-12-20','2027-01-20']::date[]) as tval3 \gset
+select pg_temp.ok((select array_agg(valor order by numero) from erp.parcelas where titulo_id = :'tval3') = array[100, 100, 100]::numeric[],
+  'parcelas: o reenvio com outra quantidade de parcelas volta à divisão igual');
+-- retenção nova na revisão muda o líquido: os valores antigos não fecham e as parcelas saem iguais
+select pg_temp.como(:'gestor');
+select erp.decidir_titulo(:'tret', false, 'falta o IRRF', true);
+select pg_temp.como(:'diretor');
+insert into erp.documento_retencoes (documento_id, imposto, valor, orgao_id, vencimento) values
+  ('70000000-0000-0000-0000-000000000886', 'irrf', 20, '10000000-0000-0000-0000-000000000006', '2026-12-20');
+select erp.reenviar_titulo(:'tret', 'IRRF incluído') as tret2 \gset
+select pg_temp.ok((select valor = 250 from erp.titulos where id = :'tret2')
+                  and (select array_agg(valor order by numero) from erp.parcelas where titulo_id = :'tret2') = array[125, 125]::numeric[],
+  'parcelas: líquido mudado na revisão faz as parcelas saírem iguais, sem travar o reenvio');
 select pg_temp.como(null);
 select pg_temp.ok(erp._parcelas_iguais(1, 3) = array[0.34, 0.33, 0.33]::numeric[] and erp._parcelas_iguais(900.01, 2) = array[450.01, 450]::numeric[],
   'parcelas: a divisão igual é a do Sienge');
 select pg_temp.ok(not has_function_privilege('authenticated', 'erp._parcelas_iguais(numeric, int)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp._liquido_documento(uuid)', 'EXECUTE')
                   and has_function_privilege('authenticated', 'erp.lancar_documento(uuid, date[], uuid[], numeric[])', 'EXECUTE')
                   and (select prosecdef and pg_get_userbyid(proowner) = 'erp_situacao' from pg_proc
                         where oid = 'erp.lancar_documento(uuid, date[], uuid[], numeric[])'::regprocedure)

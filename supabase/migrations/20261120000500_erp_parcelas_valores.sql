@@ -7,7 +7,8 @@
 -- erp.lancar_documento ganha p_valores (novo argumento com padrão: a função antiga sai, e a nova
 -- volta a definer de erp_situacao com o mesmo EXECUTE). Os valores entram antes de a alçada ser
 -- fixada (_confirmar_titulo), então o comprometido e o livro já nascem com eles.
--- erp.reenviar_titulo mantém os valores diferentes quando a quantidade de parcelas não muda.
+-- erp.reenviar_titulo mantém os valores diferentes quando a quantidade de parcelas e o líquido não mudam;
+-- senão, as parcelas voltam a sair iguais.
 -- api.lancar_titulo aceita "valor" em cada parcela.
 --
 -- O envio ao Sienge não muda aqui: o POST /bills divide igual e a conferência das parcelas para
@@ -22,6 +23,18 @@ revoke execute on function erp._parcelas_iguais(numeric, int) from public;
 grant execute on function erp._parcelas_iguais(numeric, int) to erp_sistema, erp_conferencia, erp_situacao, erp_reclassificacao, erp_acesso, erp_config;
 
 drop function erp.lancar_documento(uuid, date[], uuid[]);
+
+-- O líquido do título que a nota gera (bruto − retenções − caução), a mesma conta do erp.lancar_documento.
+-- O reenvio da revisão usa para saber se os valores antigos das parcelas ainda fecham.
+create function erp._liquido_documento(p_documento uuid) returns numeric language sql stable as $$
+  select d.valor_bruto
+         - coalesce((select sum(r.valor) from erp.documento_retencoes r where r.documento_id = d.id), 0)
+         - coalesce(d.caucao_valor, round(d.valor_bruto * coalesce((select c.caucao_percentual from erp.compromissos c
+                                                                    where c.id = d.compromisso_id), 0) / 100, 2))
+    from erp.documentos_fiscais d where d.id = p_documento
+$$;
+revoke execute on function erp._liquido_documento(uuid) from public;
+grant execute on function erp._liquido_documento(uuid) to erp_sistema, erp_conferencia, erp_situacao, erp_reclassificacao, erp_acesso, erp_config;
 
 create function erp.lancar_documento(p_documento uuid, p_vencimentos date[], p_previsoes uuid[] default null,
                                      p_valores numeric[] default null)
@@ -154,6 +167,10 @@ begin
       v_val := null;
     end if;
     perform erp._desfazer_titulos(t.id, 'revisao');
+    -- se o ajuste da revisão mudou o líquido (retenção ou caução), os valores antigos não fecham: saem iguais
+    if v_val is not null and (select sum(v) from unnest(v_val) v) <> erp._liquido_documento(t.documento_id) then
+      v_val := null;
+    end if;
     if p_previsoes is null then
       select * into d from erp.documentos_fiscais where id = t.documento_id;
       select coalesce(array_agg(pr.id), '{}') into v_prev
