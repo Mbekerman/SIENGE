@@ -6,8 +6,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alerta, Carregando, Chip, Ic } from '../components/Comum';
 import { Popup } from '../components/Rastro';
 import { data, dividir, documento, hojeISO, lerReais, reais } from '../lib/format';
-import { recebedorPix } from '../lib/pix';
-import { mensagemErro, rpc } from '../lib/supabase';
+import { recebedorPix, type Conferido } from '../lib/pix';
+import { mensagemErro, rpc, supabase } from '../lib/supabase';
 import { abrirComSenha, leitorLigado, subirArquivo, TIPOS_ACEITOS } from '../lib/leitor';
 import type { FornecedorBusca, Identificacao, Leitura, NaturezaLancavel, OpcoesLancamento, PrevisaoParaNota, ResultadoLeitor } from '../lib/tipos';
 
@@ -257,22 +257,8 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
               )}
               <input className="lt-in mono" aria-label="PIX copia e cola" placeholder={p.forma === 'boleto' ? 'PIX copia e cola do boleto (opcional)' : 'PIX copia e cola (opcional)'}
                 value={p.pix_cc} onChange={e => mudaP(p.k, { pix_cc: e.target.value.replace(/[\r\n]+/g, '') })} />
-              {p.pix_cc.trim() && (() => {
-                const r = recebedorPix(p.pix_cc);
-                if (!r || (!r.chave && !r.url)) return <span className="nt cr">O código não traz o recebedor PIX.</span>;
-                const ok = !!r.chave && (p.forma === 'pix' ? r.chave === chave(p.pix_tipo, p.pix_chave) : r.chave === forn?.documento);
-                return (
-                  <div className="lt-exc">
-                    <span className="sec peq">Recebe pelo código: {r.nome ?? 'sem nome'} · {r.chave ? `chave ${r.chave}` : 'QR dinâmico (o recebedor só o banco dele sabe)'}</span>
-                    {!ok && <>
-                      <span className="nt at">{r.chave
-                        ? (p.forma === 'pix' ? 'A chave do código não é a chave PIX da parcela.' : 'A chave do código não é o CPF/CNPJ do fornecedor.')
-                        : 'Não dá para conferir quem recebe por este código.'} Só entra com a justificativa, que quem aprova vê, e o AF recebe o alerta.</span>
-                      <input className={`lt-in ${tentou && !p.cc_exc.trim() ? 'err' : ''}`} placeholder="Por que pagar por este código?" value={p.cc_exc} onChange={e => mudaP(p.k, { cc_exc: e.target.value })} />
-                    </>}
-                  </div>
-                );
-              })()}
+              {p.pix_cc.trim() && <RecebedorPix codigo={p.pix_cc} forma={p.forma} chaveParcela={p.forma === 'pix' ? chave(p.pix_tipo, p.pix_chave) : null}
+                docForn={forn?.documento ?? null} exc={p.cc_exc} mudaExc={v => mudaP(p.k, { cc_exc: v })} tentou={tentou} />}
             </div>
           ))}
           <button className="btn t sm" style={{ alignSelf: 'flex-start' }} onClick={() => setParcelas(ps => [...ps, novaParcela(ps[ps.length - 1])])}><Ic n="add" s={18} />Adicionar parcela</button>
@@ -510,4 +496,43 @@ export function empresasPelaMascara(m: string, empresas: OpcoesLancamento['empre
   const ini = m.slice(0, m.indexOf('*')), fim = m.slice(m.lastIndexOf('*') + 1);
   const fecha = (d: string) => (m.length === d.length ? [...m].every((c, i) => c === '*' || c === d[i]) : d.startsWith(ini) && d.endsWith(fim));
   return empresas.filter(e => e.documento && fecha(e.documento.replace(/\D/g, '')));
+}
+
+/** Quem recebe pelo PIX copia e cola: a leitura do código e a conferência no Asaas. Pede a justificativa quando o
+ *  banco também vai pedir (a regra de verdade é do banco, no gatilho da parcela). */
+function RecebedorPix({ codigo, forma, chaveParcela, docForn, exc, mudaExc, tentou }: {
+  codigo: string; forma: Forma; chaveParcela: string | null; docForn: string | null; exc: string; mudaExc: (v: string) => void; tentou: boolean;
+}) {
+  const c = codigo.trim();
+  const r = recebedorPix(c);
+  const conf = useQuery({
+    queryKey: ['pix-conferir', c], enabled: !!r && r.contas === 1 && c.length >= 30, retry: false, staleTime: 60 * 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.functions.invoke<Conferido & { erro?: string }>('pix-conferir', { body: { codigo: c } });
+      if (error) {
+        const corpo = await (error as { context?: Response }).context?.json?.().catch(() => null);
+        throw new Error(corpo?.erro ?? 'Não consegui conferir no Asaas');
+      }
+      return data as Conferido;
+    },
+  });
+  if (!r || (!r.chave && !r.url)) return <span className="nt cr">O código não traz o recebedor PIX.</span>;
+  if (r.contas > 1) return <span className="nt cr">O código traz mais de uma conta PIX e não entra.</span>;
+  const a = conf.data;
+  const peloAsaas = !!a?.cpf_cnpj && a.cpf_cnpj === docForn;
+  const peloCodigo = !r.url && !!r.chave && (forma === 'pix' ? r.chave === chaveParcela : r.chave === docForn);
+  const ok = peloAsaas || peloCodigo;
+  return (
+    <div className="lt-exc">
+      <span className="sec peq">Recebe pelo código: {r.nome ?? 'sem nome'} · {r.url ? 'QR dinâmico' : `chave ${r.chave}`}</span>
+      {conf.isFetching ? <span className="sec peq">Conferindo no Asaas quem recebe…</span>
+        : a?.cpf_cnpj ? <span className={`nt ${peloAsaas ? 'ok' : 'at'}`}>Conferido no Asaas: recebe {a.nome ?? 'sem nome'}{a.cpf_cnpj ? ` (${documento(a.cpf_cnpj)})` : ''}{a.banco ? `, ${a.banco}` : ''}{peloAsaas ? ', que é o fornecedor.' : ', que não é o fornecedor.'}</span>
+        : conf.error ? <span className="sec peq">Não deu para conferir no Asaas: {(conf.error as Error).message}</span> : null}
+      {!ok && !conf.isFetching && <>
+        <span className="nt at">{a?.cpf_cnpj ? 'Quem recebe não é o fornecedor.' : r.url ? 'Não dá para conferir quem recebe pelo código dinâmico sem o Asaas.'
+          : forma === 'pix' ? 'A chave do código não é a chave PIX da parcela.' : 'A chave do código não é o CPF/CNPJ do fornecedor.'} Só entra com a justificativa, que quem aprova vê, e o AF recebe o alerta.</span>
+        <input className={`lt-in ${tentou && !exc.trim() ? 'err' : ''}`} placeholder="Por que pagar por este código?" value={exc} onChange={e => mudaExc(e.target.value)} />
+      </>}
+    </div>
+  );
 }

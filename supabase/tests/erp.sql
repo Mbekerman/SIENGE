@@ -966,10 +966,10 @@ select pg_temp.ok(not exists (select 1 from pg_class c join pg_namespace n on n.
                                                   and p.policyname = 'perfil_inclui' and 'authenticated' = any(p.roles))),
   'catálogo: authenticated só grava em tabela com política de gravação por perfil');
 select pg_temp.ok(not exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
-                               where n.nspname = 'erp' and c.relkind in ('r','p') and c.relname not in ('avisos_sucessao','eventos','envios_notificacao')
+                               where n.nspname = 'erp' and c.relkind in ('r','p') and c.relname not in ('avisos_sucessao','eventos','envios_notificacao','pix_conferencias')
                                  and not exists (select 1 from pg_policies p where p.schemaname = 'erp' and p.tablename = c.relname
                                                   and p.policyname = 'perfil_le' and 'authenticated' = any(p.roles))),
-  'catálogo: toda tabela tem a política de leitura por perfil (só os avisos da sucessão, os eventos e a fila de envio ficam fora da API)');
+  'catálogo: toda tabela tem a política de leitura por perfil (só os avisos da sucessão, os eventos, a fila de envio e a conferência do PIX, lida pelo erp.pix_conferido, ficam fora da API)');
 select pg_temp.ok(not has_table_privilege('authenticated', 'erp.lancamentos', 'INSERT,UPDATE,DELETE')
                   and not has_table_privilege('authenticated', 'erp.auditoria', 'INSERT,UPDATE,DELETE')
                   and not has_table_privilege('authenticated', 'erp.caucao_movimentos', 'INSERT,UPDATE,DELETE')
@@ -1007,7 +1007,7 @@ select pg_temp.ok(not exists (
        'cancelar_reclassificacao','pedir_mudanca_acesso','decidir_mudanca_acesso','cancelar_mudanca_acesso','passar_master',
        'pedir_sucessao_master','decidir_sucessao_master','vetar_sucessao_master','efetivar_sucessao_master',
        'pedir_mudanca_config','decidir_mudanca_config','cancelar_mudanca_config','marcar_notificacoes_lidas',
-       'designar_pj','retirar_pj','vejo_pj','vejo_auditoria','previsao_aprovada_vista','contrato_aprovado_visto','contrato_confere','compromisso_vinculos')),
+       'designar_pj','retirar_pj','vejo_pj','vejo_auditoria','previsao_aprovada_vista','contrato_aprovado_visto','contrato_confere','compromisso_vinculos','pix_conferido')),
   'catálogo: das funções security definer, authenticated só executa as da lista (RPCs e conferências de quem está logado)');
 select pg_temp.ok(not has_function_privilege('authenticated', 'erp._aplicar_mudanca_acesso(uuid)', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp.gerar_avisos_sucessao()', 'EXECUTE')
@@ -6072,7 +6072,7 @@ select pg_temp.erro_igual(format($$update erp.parcela_pagamentos set pix_copia_c
 select pg_temp.falha(format($$update erp.parcela_pagamentos set pix_copia_cola = '00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***630485E7' where titulo_id = %L and numero = 1$$, :'tse'),
   'pix copia e cola: CRC errado é recusado');
 -- o recebedor (revisão de segurança, 20/11/2026): o código leva quem recebe, e ele tem de ser o da parcela ou do credor
-select pg_temp.ok(erp.pix_copia_cola_recebedor('00020126390014br.gov.bcb.pix0117outra@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304168B') = '{"chave": "outra@example.com", "url": null, "nome": "FORNECEDOR EXEMPLO"}'::jsonb
+select pg_temp.ok(erp.pix_copia_cola_recebedor('00020126390014br.gov.bcb.pix0117outra@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304168B') = '{"chave": "outra@example.com", "url": null, "nome": "FORNECEDOR EXEMPLO", "contas": 1}'::jsonb
                   and erp.pix_copia_cola_recebedor('00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF')->>'url' = 'pix.example.com/qr/v2/cobv/0123456789abcdef'
                   and erp.pix_copia_cola_recebedor('00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF')->>'chave' is null,
   'pix copia e cola: o recebedor sai do campo 26 (chave no estático, URL no dinâmico) e o nome do 59');
@@ -6091,13 +6091,41 @@ select pg_temp.erro_igual(format($$insert into erp.parcela_pagamentos (titulo_id
   'A chave do PIX copia e cola da parcela 2 não é a do CPF/CNPJ do credor (só com a justificativa da exceção)',
   'pix copia e cola: no boleto, chave que não é o CPF/CNPJ do credor é recusada sem justificativa');
 select pg_temp.erro_igual(format($$insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha, pix_copia_cola) values (%L, 2, 'boleto', '34191090080000000212134567890008199990000000000', '00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF')$$, :'tse'),
-  'O PIX copia e cola da parcela 2 é dinâmico e o recebedor não se confere (só com a justificativa da exceção)',
+  'O PIX copia e cola da parcela 2 é dinâmico e quem recebe não foi conferido no Asaas (só com a justificativa da exceção)',
   'pix copia e cola: código dinâmico sem justificativa é recusado');
 select pg_temp.falha(format($$insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha, pix_copia_cola, pix_copia_cola_excecao) values (%L, 2, 'boleto', '34191090080000000212134567890008199990000000000', '00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', '   ')$$, :'tse'),
   'pix copia e cola: justificativa em branco não vale');
 insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha, pix_copia_cola) values (:'tse', 2, 'boleto', '34191090080000000212134567890008199990000000000', '00020126360014br.gov.bcb.pix0114777777770001775204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***63049C9D');
 select pg_temp.ok((select pix_copia_cola is not null and pix_copia_cola_excecao is null from erp.parcela_pagamentos where titulo_id = :'tse' and numero = 2),
   'pix copia e cola: entra também no boleto (o QR do boleto híbrido) com o CNPJ do credor, e sem valor no código passa');
+-- segunda revisão: chave do credor com URL é dinâmico (o banco paga a quem a URL indicar), e duas contas PIX não entram
+select pg_temp.erro_igual(format($$update erp.parcela_pagamentos set pix_copia_cola = '00020126730014br.gov.bcb.pix0114777777770001772533pix.example.com/qr/v2/cobv/fraude5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304AA19' where titulo_id = %L and numero = 2$$, :'tse'),
+  'O PIX copia e cola da parcela 2 é dinâmico e quem recebe não foi conferido no Asaas (só com a justificativa da exceção)',
+  'pix copia e cola: a chave do credor com uma URL junto é tratada como dinâmico e pede a justificativa');
+select pg_temp.erro_igual(format($$update erp.parcela_pagamentos set pix_copia_cola = '00020126360014br.gov.bcb.pix01147777777700017727400014br.gov.bcb.pix0118fraude@example.com5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304D94E', pix_copia_cola_excecao = 'x' where titulo_id = %L and numero = 2$$, :'tse'),
+  'O PIX copia e cola da parcela 2 traz mais de uma conta PIX', 'pix copia e cola: código com duas contas PIX é recusado, mesmo com justificativa');
+-- a conferência pelo Asaas: só o sistema grava, e com o documento do credor dispensa a justificativa (também no dinâmico)
+select pg_temp.falha(format($$select erp.registrar_pix_conferencia(%L, '77777777000177', 'X', 'Banco', null, 'x')$$, '00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF'),
+  'pix conferência: pela API, ninguém grava a conferência pela função');
+select pg_temp.falha(format($$insert into erp.pix_conferencias (codigo, cpf_cnpj) values (%L, '77777777000177')$$, '00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF'),
+  'pix conferência: pela API, ninguém grava a conferência direto na tabela');
+select pg_temp.sis();
+select erp.registrar_pix_conferencia('00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', '77.777.777/0001-77', 'FORNECEDOR EXEMPLO LTDA', 'Banco Exemplo', null,
+  (select login_id from erp.usuarios where id = :'diretor'));
+select pg_temp.ok(erp.pix_conferencias_recentes((select login_id from erp.usuarios where id = :'diretor')) = 1,
+  'pix conferência: o sistema conta as conferências da pessoa (o limite da função)');
+select pg_temp.volta();
+update erp.parcela_pagamentos set pix_copia_cola = '00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', pix_copia_cola_excecao = null where titulo_id = :'tse' and numero = 2;
+select pg_temp.ok((select pix_copia_cola_excecao is null from erp.parcela_pagamentos where titulo_id = :'tse' and numero = 2)
+                  and (select j->'parcelas'->1->'pix_copia_cola_conferido'->>'cpf_cnpj' = '77777777000177' from api.titulo(:'tse') j),
+  'pix conferência: o dinâmico conferido no Asaas com o documento do credor entra sem justificativa, e o título mostra a conferência');
+select pg_temp.sis();
+select erp.registrar_pix_conferencia('00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', '29732041000154', 'OUTRA PESSOA', 'Banco Exemplo', null,
+  (select login_id from erp.usuarios where id = :'diretor'));
+select pg_temp.volta();
+select pg_temp.erro_igual(format($$update erp.parcela_pagamentos set pix_copia_cola_excecao = null, boleto_linha = boleto_linha where titulo_id = %L and numero = 2$$, :'tse'),
+  'Quem recebe pelo PIX copia e cola da parcela 2 (OUTRA PESSOA, conferido no Asaas) não é o credor (só com a justificativa da exceção)',
+  'pix conferência: quem recebe conferido no Asaas sendo outra pessoa pede a justificativa');
 update erp.parcela_pagamentos set pix_copia_cola = '00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', pix_copia_cola_excecao = 'QR dinâmico do banco do boleto' where titulo_id = :'tse' and numero = 2;
 select pg_temp.ok((select pix_copia_cola_excecao is not null from erp.parcela_pagamentos where titulo_id = :'tse' and numero = 2),
   'pix copia e cola: o dinâmico entra com a justificativa');

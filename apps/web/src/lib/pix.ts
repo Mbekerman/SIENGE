@@ -9,17 +9,22 @@ function campo(p: string, id: string): string | undefined {
   }
   return undefined;
 }
-export interface Recebedor { chave: string | null; url: string | null; nome: string | null }
+export interface Recebedor { chave: string | null; url: string | null; nome: string | null; contas: number }
 export function recebedorPix(codigo: string): Recebedor | null {
   const p = codigo.trim();
   if (!p.startsWith('000201')) return null;
+  let r: Recebedor | null = null;
   for (let i = 26; i <= 51; i++) {
     const v = campo(p, String(i));
     if (v && (campo(v, '00') ?? '').toLowerCase() === 'br.gov.bcb.pix') {
+      if (r) { r.contas++; continue; }
       let c = campo(v, '01')?.trim() || null;
       if (c && (c.includes('@') || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(c))) c = c.toLowerCase();
-      return { chave: c, url: campo(v, '25')?.trim() || null, nome: campo(p, '59')?.trim() || null };
+      r = { chave: c, url: campo(v, '25')?.trim() || null, nome: campo(p, '59')?.trim() || null, contas: 1 };
     }
   }
-  return null;
+  return r;
 }
+
+/** Quem recebe segundo o Asaas (função pix-conferir, que grava a conferência como sistema; o banco é quem decide). */
+export interface Conferido { cpf_cnpj: string | null; nome: string | null; banco: string | null }

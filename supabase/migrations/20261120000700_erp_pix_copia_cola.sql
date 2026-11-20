@@ -12,7 +12,13 @@
 --     chave) entra quando a chave é a da parcela (forma PIX) ou o CPF/CNPJ do credor (forma boleto); código dinâmico
 --     (subcampo 25 = URL, o recebedor só o banco dele sabe) ou com a chave de outro só entra com a justificativa da
 --     exceção (pix_copia_cola_excecao), que o título mostra a quem aprova e que gera o alerta crítico
---     pix_copia_cola_excecao para o AF quando o título vai à fila do Sienge. Código sem o recebedor PIX é recusado.
+--     pix_copia_cola_excecao para o AF quando o título vai à fila do Sienge. Código sem o recebedor PIX é recusado, e
+--     o com mais de uma conta PIX também (o app do banco pode escolher a outra). Código com URL é dinâmico mesmo que
+--     traga uma chave: quem paga paga a quem a URL indicar (segunda revisão, 20/nov/2026);
+--   - a conferência pelo Asaas (Moises, 20/nov/2026): a função pix-conferir (Edge Function, papel do sistema) pergunta
+--     ao Asaas quem recebe pelo código (POST /v3/pix/qrCodes/decode, receiver.cpfCnpj) e grava em
+--     erp.pix_conferencias; quando o documento de quem recebe é o do credor, a justificativa não é pedida, também no
+--     código dinâmico. Só o sistema grava a conferência: a tela não consegue dizer que conferiu;
 --   - a conferência roda na gravação da forma. Se o valor da parcela mudar depois, o gatilho não confere de novo: hoje
 --     a parcela só muda no relançamento, que recria a forma de pagamento.
 
@@ -85,23 +91,79 @@ end $$;
 -- Quem recebe pelo código: {chave, url, nome}. A conta do recebedor é o campo de 26 a 51 com o GUI br.gov.bcb.pix
 -- (subcampo 00); a chave é o subcampo 01 (código estático), a URL o 25 (dinâmico); o nome, o campo 59. Nulo quando
 -- o código não vale ou não traz conta PIX.
+-- `contas` diz quantos campos trazem o GUI: com mais de um, chave e URL são as do primeiro, e o código é recusado.
 create function erp.pix_copia_cola_recebedor(p text) returns jsonb language plpgsql immutable
 set search_path = pg_catalog, pg_temp as $$
-declare i int; v text; c text;
+declare i int; v text; c text; u text; n int := 0;
 begin
   if not erp.pix_copia_cola_valido(p) then return null; end if;
   for i in 26 .. 51 loop
     v := erp._pix_campo(p, i::text);
     if v is not null and lower(coalesce(erp._pix_campo(v, '00'), '')) = 'br.gov.bcb.pix' then
-      c := nullif(trim(erp._pix_campo(v, '01')), '');
-      -- a chave como o banco guarda a da parcela: e-mail e aleatória em minúsculas
-      if c ~ '@' or c ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then c := lower(c); end if;
-      return jsonb_build_object('chave', c, 'url', nullif(trim(erp._pix_campo(v, '25')), ''),
-                                'nome', nullif(trim(erp._pix_campo(p, '59')), ''));
+      n := n + 1;
+      if n = 1 then
+        c := nullif(trim(erp._pix_campo(v, '01')), '');
+        -- a chave como o banco guarda a da parcela: e-mail e aleatória em minúsculas
+        if c ~ '@' or c ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then c := lower(c); end if;
+        u := nullif(trim(erp._pix_campo(v, '25')), '');
+      end if;
     end if;
   end loop;
-  return null;
+  if n = 0 then return null; end if;
+  return jsonb_build_object('chave', c, 'url', u, 'nome', nullif(trim(erp._pix_campo(p, '59')), ''), 'contas', n);
 end $$;
+
+-- Quem recebe pelo código segundo o Asaas (o mesmo que o banco mostra ao pagar). Só o sistema grava, pela função
+-- pix-conferir; a leitura passa pelo erp.pix_conferido (definer), que devolve só a conferência do código que a pessoa
+-- já tem nas mãos.
+create table erp.pix_conferencias (
+  codigo       text primary key check (erp.pix_copia_cola_valido(codigo)),
+  cpf_cnpj     text check (cpf_cnpj ~ '^[0-9*]{11,14}$'),   -- como o Asaas devolve (pode vir mascarado no CPF)
+  nome         text,
+  banco        text,
+  chave        text,
+  por          uuid references erp.usuarios,
+  conferido_em timestamptz not null default clock_timestamp()
+);
+alter table erp.pix_conferencias enable row level security;
+alter table erp.pix_conferencias force row level security;
+create policy sistema on erp.pix_conferencias using (erp.sistema()) with check (erp.sistema());
+create policy conferencia on erp.pix_conferencias for select to erp_conferencia using (true);
+revoke all on erp.pix_conferencias from public;
+do $$ begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then revoke all on erp.pix_conferencias from anon; end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then revoke all on erp.pix_conferencias from authenticated; end if;
+end $$;
+grant select, insert, update on erp.pix_conferencias to erp_sistema;
+grant select on erp.pix_conferencias to erp_conferencia;
+create trigger t_nao_trunca before truncate on erp.pix_conferencias for each statement execute function erp.tg_recusa_truncate();
+
+-- Grava a conferência (só o sistema, pela pix-conferir). p_login é o id do login de quem pediu; devolve quantas
+-- conferências a pessoa pediu nos últimos 10 minutos (o limite fica na função).
+create function erp.registrar_pix_conferencia(p_codigo text, p_cpf_cnpj text, p_nome text, p_banco text, p_chave text, p_login text)
+returns void language plpgsql as $$
+declare v_por uuid;
+begin
+  if not erp.sistema() then raise exception 'Só o sistema grava a conferência do PIX'; end if;
+  select id into v_por from erp.usuarios where login_id = p_login and ativo;
+  if v_por is null then raise exception 'Quem pediu a conferência não é usuário ativo do ERP'; end if;
+  insert into erp.pix_conferencias (codigo, cpf_cnpj, nome, banco, chave, por)
+  values (p_codigo, nullif(regexp_replace(coalesce(p_cpf_cnpj, ''), '[^0-9*]', '', 'g'), ''), nullif(trim(p_nome), ''),
+          nullif(trim(p_banco), ''), nullif(trim(p_chave), ''), v_por)
+  on conflict (codigo) do update set cpf_cnpj = excluded.cpf_cnpj, nome = excluded.nome, banco = excluded.banco,
+    chave = excluded.chave, por = excluded.por, conferido_em = clock_timestamp();
+end $$;
+
+-- Quantas conferências o login pediu nos últimos 10 minutos (limite da pix-conferir); só o sistema
+create function erp.pix_conferencias_recentes(p_login text) returns int language sql stable as $$
+  select case when erp.sistema() then
+    (select count(*)::int from erp.pix_conferencias c join erp.usuarios u on u.id = c.por
+      where u.login_id = p_login and c.conferido_em > clock_timestamp() - interval '10 minutes') end $$;
+
+-- A conferência do código, para o gatilho, a tela e o título
+create function erp.pix_conferido(p_codigo text) returns jsonb language sql stable as $$
+  select jsonb_build_object('cpf_cnpj', c.cpf_cnpj, 'nome', c.nome, 'banco', c.banco, 'em', c.conferido_em)
+    from erp.pix_conferencias c where c.codigo = p_codigo $$;
 
 alter table erp.parcela_pagamentos add column pix_copia_cola text
   check (pix_copia_cola is null or erp.pix_copia_cola_valido(pix_copia_cola));
@@ -112,7 +174,7 @@ alter table erp.parcela_pagamentos add column pix_copia_cola_excecao text   -- j
 -- a trava de depois do primeiro voto continua a do t_parcela_pagamento). Lê o credor por baixo do RLS, como o
 -- t_parcela_pagamento (o mesmo dono).
 create function erp.tg_parcela_pix_copia_cola() returns trigger language plpgsql as $$
-declare v_pix numeric; v_parcela numeric; r jsonb; v_doc text;
+declare v_pix numeric; v_parcela numeric; r jsonb; c jsonb; v_doc text;
 begin
   if new.pix_copia_cola is null then new.pix_copia_cola_excecao := null; return new; end if;
   v_pix := erp.pix_copia_cola_valor(new.pix_copia_cola);
@@ -126,18 +188,27 @@ begin
   if r is null or (r->>'chave' is null and r->>'url' is null) then
     raise exception 'O PIX copia e cola da parcela % não traz o recebedor PIX', new.numero;
   end if;
+  if (r->>'contas')::int > 1 then
+    raise exception 'O PIX copia e cola da parcela % traz mais de uma conta PIX', new.numero;
+  end if;
   select p.documento into v_doc from erp.titulos t join erp.pessoas p on p.id = t.pessoa_id where t.id = new.titulo_id;
-  if r->>'chave' is not null and ((new.forma = 'pix' and r->>'chave' = new.pix_chave)
-                                  or (new.forma = 'boleto' and r->>'chave' = v_doc)) then
+  c := erp.pix_conferido(new.pix_copia_cola);
+  if (c is not null and c->>'cpf_cnpj' = v_doc)   -- o Asaas diz que quem recebe é o credor
+     or (r->>'url' is null and r->>'chave' is not null    -- estático: a chave é a da parcela ou o documento do credor
+         and ((new.forma = 'pix' and r->>'chave' = new.pix_chave) or (new.forma = 'boleto' and r->>'chave' = v_doc))) then
     new.pix_copia_cola_excecao := null;   -- recebedor conferido: a exceção some
     return new;
   end if;
   if length(trim(coalesce(new.pix_copia_cola_excecao, ''))) = 0 then
-    if r->>'chave' is not null then
+    if c is not null then
+      raise exception 'Quem recebe pelo PIX copia e cola da parcela % (%, conferido no Asaas) não é o credor (só com a justificativa da exceção)',
+        new.numero, coalesce(c->>'nome', c->>'cpf_cnpj');
+    end if;
+    if r->>'url' is null then
       raise exception 'A chave do PIX copia e cola da parcela % não é a % (só com a justificativa da exceção)', new.numero,
         case when new.forma = 'pix' then 'chave PIX da parcela' else 'do CPF/CNPJ do credor' end;
     end if;
-    raise exception 'O PIX copia e cola da parcela % é dinâmico e o recebedor não se confere (só com a justificativa da exceção)', new.numero;
+    raise exception 'O PIX copia e cola da parcela % é dinâmico e quem recebe não foi conferido no Asaas (só com a justificativa da exceção)', new.numero;
   end if;
   return new;
 end $$;
@@ -157,6 +228,19 @@ grant execute on function erp.pix_copia_cola_valido(text), erp._crc16_pix(text),
   to authenticated, erp_sistema, erp_conferencia, erp_situacao, erp_reclassificacao, erp_acesso, erp_config;
 grant execute on function erp.tg_parcela_pix_copia_cola()
   to erp_sistema, erp_conferencia, erp_situacao, erp_reclassificacao, erp_acesso, erp_config;
+revoke execute on function erp.registrar_pix_conferencia(text, text, text, text, text, text), erp.pix_conferencias_recentes(text),
+  erp.pix_conferido(text) from public;
+do $$ begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    revoke execute on function erp.registrar_pix_conferencia(text, text, text, text, text, text), erp.pix_conferencias_recentes(text),
+      erp.pix_conferido(text) from anon;
+  end if;
+end $$;
+grant execute on function erp.registrar_pix_conferencia(text, text, text, text, text, text), erp.pix_conferencias_recentes(text)
+  to erp_sistema;
+grant execute on function erp.pix_conferido(text)
+  to authenticated, erp_sistema, erp_conferencia, erp_situacao, erp_reclassificacao, erp_acesso, erp_config;
+alter function erp.pix_conferido(text) security definer set search_path = erp, pg_catalog, pg_temp;
 -- o gatilho é do mesmo dono do t_parcela_pagamento (o novo dono precisa de CREATE no esquema para receber a função:
 -- dado só aqui e tirado logo depois, se ele não tinha; no Supabase o postgres não é superusuário)
 alter function erp.tg_parcela_pix_copia_cola() security definer set search_path = erp, pg_catalog, pg_temp;
@@ -166,6 +250,7 @@ do $$ declare v text; begin
   for v in select r from _pixcc_create_dado loop execute format('grant create on schema erp to %I', v); end loop;
 end $$;
 alter function erp.tg_parcela_pix_copia_cola() owner to erp_conferencia;
+alter function erp.pix_conferido(text) owner to erp_conferencia;
 do $$ declare v text; begin
   for v in select r from _pixcc_create_dado loop execute format('revoke create on schema erp from %I', v); end loop;
 end $$;
@@ -186,6 +271,7 @@ $r$, $r$    n := n + 1;
       perform erp.registrar_evento('pix_copia_cola_excecao', 'titulos', r.titulo_id::text, r.onde[1], r.onde[2],
         jsonb_build_object('titulo_id', r.titulo_id, 'pessoa_id', r.pessoa_id,
           'parcelas', (select jsonb_agg(jsonb_build_object('numero', g.numero, 'recebedor', erp.pix_copia_cola_recebedor(g.pix_copia_cola),
+                                                           'asaas', erp.pix_conferido(g.pix_copia_cola),
                                                            'justificativa', g.pix_copia_cola_excecao) order by g.numero)
                          from erp.parcela_pagamentos g where g.titulo_id = r.titulo_id and g.pix_copia_cola_excecao is not null),
           'motivo', 'PIX copia e cola com recebedor não conferido'));
@@ -222,7 +308,8 @@ declare v_def text; v_novo text;
 begin
   v_def := pg_get_functiondef('api.titulo(uuid)'::regprocedure);
   v_novo := replace(v_def, $r$'pix_excecao', f.pix_excecao)$r$, $r$'pix_excecao', f.pix_excecao, 'pix_copia_cola', f.pix_copia_cola,
-                   'pix_copia_cola_recebedor', erp.pix_copia_cola_recebedor(f.pix_copia_cola), 'pix_copia_cola_excecao', f.pix_copia_cola_excecao)$r$);
+                   'pix_copia_cola_recebedor', erp.pix_copia_cola_recebedor(f.pix_copia_cola),
+                   'pix_copia_cola_conferido', erp.pix_conferido(f.pix_copia_cola), 'pix_copia_cola_excecao', f.pix_copia_cola_excecao)$r$);
   if v_novo = v_def then raise exception 'api.titulo: ponto de troca não achado'; end if;
   execute v_novo;
 end $$;
