@@ -982,6 +982,10 @@ select pg_temp.ok(not has_table_privilege('authenticated', 'erp.lancamentos', 'I
   'catálogo: livro, auditoria, caução e acesso não têm gravação direta pela API');
 select pg_temp.ok(not exists (select 1 from pg_roles where rolname like 'erp\_%' and has_schema_privilege(rolname, 'erp', 'CREATE')),
   'catálogo: nenhum papel erp_* fica com CREATE no esquema erp (dado só durante a troca de dono)');
+select pg_temp.ok(not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                               where n.nspname = 'erp' and p.prosecdef
+                                 and (p.proacl is null or exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0 and a.privilege_type = 'EXECUTE'))),
+  'catálogo: nenhuma definer do erp executável por PUBLIC (nem pelo grant que o dono dá ao criar)');
 -- EXECUTE: as invoker (rodam com o RLS de quem chama) e, das definer, só a lista abaixo
 select pg_temp.ok(not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -7757,7 +7761,7 @@ select pg_temp.falha(format('select api.salvar_conta(%L::jsonb)', :'cbase'), 'co
 -- a conta de consumo pede instalação, faixa e teto; o rateio soma 100%
 select pg_temp.como(:'analista');
 select pg_temp.erro_igual(format('select api.salvar_conta(%L::jsonb)', (:'cbase'::jsonb - 'instalacao')::text),
-  'Informe a instalação, a média esperada por mês, o teto no ano e o dia do vencimento', 'conta: consumo sem instalação é recusado');
+  'Informe a instalação, a média esperada por mês e o teto no ano', 'conta: consumo sem instalação é recusado');
 select pg_temp.erro_igual(format('select api.salvar_conta(%L::jsonb)', jsonb_set(:'cbase'::jsonb, '{rateio,0,percentual}', '60')::text),
   'O rateio precisa somar 100%', 'conta: rateio que não soma 100% é recusado');
 select api.salvar_conta(:'cbase'::jsonb) as ccons \gset
@@ -7787,6 +7791,11 @@ select api.salvar_conta(:'cbase'::jsonb || jsonb_build_object('id', :'ccons', 'f
 select pg_temp.ok((select aprovacao_versao = :cver + 2 and instalacao = '0099' from erp.compromissos where id = :'ccons'), 'conta: mudar a instalação pede aprovação de novo');
 select api.salvar_conta(:'cbase'::jsonb || jsonb_build_object('id', :'ccons', 'faixa_mensal', 1800, 'instalacao', '0099', 'teto_anual', 99000));
 select pg_temp.ok((select aprovacao_versao = :cver + 3 and teto_anual = 99000 from erp.compromissos where id = :'ccons'), 'conta: mudar o teto pede aprovação de novo');
+-- o vencimento do consumo é opcional e muda sem nova aprovação (é o que a fatura traz; Moises, 20/11/2026)
+select api.salvar_conta(:'cbase'::jsonb || jsonb_build_object('id', :'ccons', 'faixa_mensal', 1800, 'instalacao', '0099', 'teto_anual', 99000, 'dia_vencimento', 12));
+select pg_temp.ok((select aprovacao_versao = :cver + 3 and dia_vencimento = 12 from erp.compromissos where id = :'ccons'), 'conta: mudar o vencimento do consumo não pede aprovação de novo');
+select api.salvar_conta((:'cbase'::jsonb - 'dia_vencimento') || jsonb_build_object('id', :'ccons', 'faixa_mensal', 1800, 'instalacao', '0099', 'teto_anual', 99000));
+select pg_temp.ok((select aprovacao_versao = :cver + 3 and dia_vencimento is null from erp.compromissos where id = :'ccons'), 'conta: o consumo fica sem vencimento');
 -- quem só lê vê a conta sem poder alterar; quem não lança no centro também não
 select pg_temp.como(:'leitor');
 select pg_temp.ok((select coalesce(bool_and(not x.posso_alterar), true) and count(*) > 0 from api.contratos() x where x.id = :'ccons'), 'conta: quem só lê vê a conta e não altera');

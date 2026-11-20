@@ -69,7 +69,7 @@ export function ContaRecorrente({ id, fechar, salvo }: { id?: string; fechar: ()
     if (!faixa || faixa <= 0) falta.push('a média esperada por mês');
     if (!teto || teto <= 0) falta.push('o teto no ano');
   } else if (!valor || valor <= 0) falta.push(tipo === 'contrato' ? 'o valor do contrato' : 'o valor');
-  if ((consumo || dia) && !(Number.isInteger(nDia) && nDia >= 1 && nDia <= 31)) falta.push('o dia do vencimento (1 a 31)');
+  if (dia && !(Number.isInteger(nDia) && nDia >= 1 && nDia <= 31)) falta.push('o dia do vencimento (1 a 31)');
   if (linhas.some(l => !l.nucleo || !l.centro || !l.natureza || (divisoesDe(o, l.centro).length > 0 && !l.divisao))) falta.push('o rateio completo');
   else if (Math.abs(somaPct - 100) > 0.00005) falta.push('o rateio somando 100%');
 
@@ -149,9 +149,9 @@ export function ContaRecorrente({ id, fechar, salvo }: { id?: string; fechar: ()
               <input type="date" className={`lt-in ${erro(Boolean(fim && fim < inicio))}`} value={fim} onChange={e => setFim(e.target.value)} aria-label="Fim" />
             </div>
           </Campo>
-          <Campo r="Vencimento">
+          <Campo r="Vencimento" msg={consumo ? 'Na conta de consumo, a fatura que chega preenche e atualiza o dia.' : undefined}>
             <div className="lt-lin"><span className="sec">dia</span>
-              <input className={`lt-in num nc-dia ${erro((consumo || Boolean(dia)) && !(nDia >= 1 && nDia <= 31))}`} inputMode="numeric" placeholder={consumo ? '' : 'Opcional'} value={dia} onChange={e => setDia(e.target.value.replace(/\D/g, '').slice(0, 2))} aria-label="Dia do vencimento" />
+              <input className={`lt-in num nc-dia ${erro(Boolean(dia) && !(nDia >= 1 && nDia <= 31))}`} inputMode="numeric" placeholder="Opcional" value={dia} onChange={e => setDia(e.target.value.replace(/\D/g, '').slice(0, 2))} aria-label="Dia do vencimento" />
             </div>
           </Campo>
         </div></section>
