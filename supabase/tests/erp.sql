@@ -7411,6 +7411,60 @@ select pg_temp.falha(format($$select api.lancar_titulo(%L)$$, jsonb_build_object
   'rateio', jsonb_build_array(jsonb_build_object('nucleo', :'ne_vm', 'centro', :'cc_mkt', 'natureza', pg_temp.nat('05.01.04'), 'percentual', 100)),
   'parcelas', '[{"vencimento": "2026-11-20", "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"}]'::jsonb)),
   'lançar: a mesma nota do mesmo fornecedor não entra duas vezes');
+-- parcelas com o valor do documento (boletos de valores diferentes; pedido do Moises, 20/11/2026)
+create temp table nota_val as select jsonb_build_object(
+  'empresa', :'spe', 'fornecedor', '10000000-0000-0000-0000-000000000007', 'tipo', 'nfse', 'numero', 'T-885',
+  'emissao', '2026-11-05', 'competencia', '2026-11-01', 'valor', 300,
+  'rateio', jsonb_build_array(jsonb_build_object('nucleo', :'ne_vm', 'centro', :'cc_mkt', 'natureza', pg_temp.nat('05.01.04'), 'percentual', 100))) j;
+grant select on nota_val to public;
+select pg_temp.erro_igual(format($$select api.lancar_titulo(%L)$$, (select j || jsonb_build_object('parcelas',
+  '[{"vencimento": "2026-11-20", "valor": 100, "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"},
+    {"vencimento": "2026-12-20", "valor": 150, "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"}]'::jsonb) from nota_val)),
+  'As parcelas somam 250,00, e o valor líquido do título é 300,00', 'parcelas: os valores têm de somar o valor líquido');
+select pg_temp.erro_igual(format($$select api.lancar_titulo(%L)$$, (select j || jsonb_build_object('parcelas',
+  '[{"vencimento": "2026-11-20", "valor": 100, "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"},
+    {"vencimento": "2026-12-20", "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"}]'::jsonb) from nota_val)),
+  'Informe o valor de todas as parcelas, ou de nenhuma', 'parcelas: valor em todas ou em nenhuma');
+select pg_temp.erro_igual(format($$select api.lancar_titulo(%L)$$, (select j || jsonb_build_object('parcelas',
+  '[{"vencimento": "2026-11-20", "valor": 300, "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"},
+    {"vencimento": "2026-12-20", "valor": 0, "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"}]'::jsonb) from nota_val)),
+  'O valor de cada parcela é maior que zero, com até 2 casas', 'parcelas: parcela zerada não entra');
+select pg_temp.erro_igual(format($$select api.lancar_titulo(%L)$$, (select j || jsonb_build_object('parcelas',
+  '[{"vencimento": "2026-11-20", "valor": 100.005, "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"},
+    {"vencimento": "2026-12-20", "valor": 199.995, "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"}]'::jsonb) from nota_val)),
+  'O valor de cada parcela é maior que zero, com até 2 casas', 'parcelas: mais de 2 casas não entra');
+select pg_temp.ok(not exists (select 1 from erp.documentos_fiscais where numero = 'T-885'), 'parcelas: a recusa não deixa a nota');
+select api.lancar_titulo((select j || jsonb_build_object('parcelas',
+  '[{"vencimento": "2026-11-20", "valor": 100, "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"},
+    {"vencimento": "2026-12-20", "valor": 200, "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"}]'::jsonb) from nota_val)) as tval \gset
+select pg_temp.ok((select valor = 300 from erp.titulos where id = :'tval')
+                  and (select array_agg(valor order by numero) from erp.parcelas where titulo_id = :'tval') = array[100, 200]::numeric[]
+                  and (select coalesce(sum(l.valor), 0) = -300 from erp.lancamentos l where l.titulo_id = :'tval' and l.estagio = 'comprometido'),
+  'parcelas: cada parcela fica com o valor do documento, e o comprometido é o do título');
+select pg_temp.erro_igual(format($$select erp.lancar_documento(%L, array['2026-11-20','2026-12-20']::date[], null, array[300]::numeric[])$$,
+                                 (select documento_id from erp.titulos where id = :'tval')),
+  'O documento já foi lançado', 'parcelas: a função da nota continua recusando nota já lançada');
+-- na revisão, o reenvio relança a nota com os mesmos valores
+select pg_temp.como(null);
+select pg_temp.sis(); insert into erp.centro_aprovadores values (:'cc_mkt', :'gestor') on conflict do nothing; select pg_temp.volta();
+select pg_temp.como(:'gestor');
+select erp.decidir_titulo(:'tval', false, 'conferir o fornecedor', true);
+select pg_temp.como(:'diretor');
+select erp.reenviar_titulo(:'tval', 'conferido') as tval2 \gset
+select pg_temp.ok(:'tval2' <> :'tval' and (select array_agg(valor order by numero) from erp.parcelas where titulo_id = :'tval2') = array[100, 200]::numeric[],
+  'parcelas: o reenvio da revisão mantém o valor de cada parcela');
+select pg_temp.como(null);
+select pg_temp.ok(erp._parcelas_iguais(1, 3) = array[0.34, 0.33, 0.33]::numeric[] and erp._parcelas_iguais(900.01, 2) = array[450.01, 450]::numeric[],
+  'parcelas: a divisão igual é a do Sienge');
+select pg_temp.ok(not has_function_privilege('authenticated', 'erp._parcelas_iguais(numeric, int)', 'EXECUTE')
+                  and has_function_privilege('authenticated', 'erp.lancar_documento(uuid, date[], uuid[], numeric[])', 'EXECUTE')
+                  and (select prosecdef and pg_get_userbyid(proowner) = 'erp_situacao' from pg_proc
+                        where oid = 'erp.lancar_documento(uuid, date[], uuid[], numeric[])'::regprocedure)
+                  and (select prosecdef and pg_get_userbyid(proowner) = 'erp_situacao' from pg_proc
+                        where oid = 'erp.reenviar_titulo(uuid, text, date[], uuid[])'::regprocedure)
+                  and not exists (select 1 from pg_proc where oid::regprocedure::text = 'erp.lancar_documento(uuid,date[],uuid[])'),
+  'parcelas: a função da nota continua definer de erp_situacao, e a versão antiga saiu');
+select pg_temp.como(:'diretor');
 -- quem não lança na linha não lança pela tela (o perfil do erp vale aqui também)
 select pg_temp.como(:'analista2');
 select pg_temp.ok(not exists (select 1 from api.naturezas_lancaveis(:'ne_vm', :'cc_obra', null) n

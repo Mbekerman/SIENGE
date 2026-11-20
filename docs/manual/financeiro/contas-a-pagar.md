@@ -341,6 +341,7 @@ O título tem uma **Conversa**: uma linha do tempo com o lançamento, as aprova�
 | Você pode | Situação |
 | --- | --- |
 | Lançar um título com muitas parcelas, inclusive de longo prazo (ex.: terreno em 36 vezes) | ✅ |
+| Parcelas de valores diferentes, como estão no documento (ex.: dois boletos de R$ 100 e R$ 200) | ✅ Na tela Lançar título, digite o valor de cada parcela (todas ou nenhuma; a soma tem de dar o valor da nota). Sem valor, as parcelas saem iguais, com o centavo que sobra na primeira. Quando o leitor acha o valor de cada parcela ou boleto, já preenche (Moises, 20/nov/2026) |
 | Pagar uma parcela inteira com uma operação (o caso comum) | ✅ |
 | Pagar só parte de uma parcela e o resto depois | ✅ (Moises, 7/nov/2026) |
 | Adiantar dinheiro a um fornecedor, ligado ou não a um título, e abater aos poucos em várias parcelas e títulos | ✅ (Moises, 7/nov/2026) |

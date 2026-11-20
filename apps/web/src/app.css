@@ -325,6 +325,8 @@ select.lt-in{padding-right:8px}
 .lt-pn{flex:0 0 44px;font-weight:500}
 .lt-parc .lt-lin>input[type=date]{flex:0 0 170px}
 .lt-pv{flex:1;text-align:right;color:#444746}
+input.lt-pv{color:#1f1f1f}
+@media (max-width:760px){ .lt-parc .lt-lin>input[type=date]{flex:1 1 140px} .lt-parc .lt-lin>input.lt-pv{flex:1 1 130px} }
 .lt-exc{display:flex;flex-direction:column;gap:6px}
 .lt-busca{position:relative}
 .lt-op{position:absolute;left:0;right:0;top:44px;z-index:5;background:#fff;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.18);max-height:280px;overflow:auto;padding:4px 0}
