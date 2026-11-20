@@ -1,13 +1,14 @@
 // Lançar título (com nota): a janela do protótipo aprovado (tpl.js › fNovo), lendo e gravando pelo esquema api
 // (migration 20261119000200_api_lancar_titulo.sql). Tudo grava numa chamada só (api.lancar_titulo): se o banco
 // recusar algo, nada fica pela metade e a mensagem dele aparece no pé da janela.
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alerta, Carregando, Chip, Ic } from '../components/Comum';
 import { Popup } from '../components/Rastro';
 import { data, dividir, documento, hojeISO, lerReais, reais } from '../lib/format';
 import { mensagemErro, rpc } from '../lib/supabase';
-import type { FornecedorBusca, NaturezaLancavel, OpcoesLancamento, PrevisaoParaNota } from '../lib/tipos';
+import { leitorLigado, subirArquivo, TIPOS_ACEITOS } from '../lib/leitor';
+import type { FornecedorBusca, Identificacao, Leitura, NaturezaLancavel, OpcoesLancamento, PrevisaoParaNota, ResultadoLeitor } from '../lib/tipos';
 
 type Forma = 'pix' | 'boleto';
 type PixTipo = 'cpf_cnpj' | 'email' | 'telefone' | 'aleatoria';
@@ -54,6 +55,10 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   const [prevs, setPrevs] = useState<string[]>([]);
   const [etq, setEtq] = useState<string[]>([]);
   const [tentou, setTentou] = useState(false);
+  const [arq, setArq] = useState<ResultadoLeitor | null>(null);
+  const [cand, setCand] = useState<string | null>(null);
+  const [semRet, setSemRet] = useState(false);
+  const [buscaForn, setBuscaForn] = useState('');
 
   const o = op.data;
   const emp = o?.empresas.find(e => e.id === empresa);
@@ -72,10 +77,41 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   const previsoes = pq.data ?? [];
   useEffect(() => { setPrevs(p => p.filter(id => previsoes.some(x => x.id === id))); }, [pq.data]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // o arquivo: sobe ao leitor, que guarda, lê e diz o que casa; a tela se preenche e tudo continua editável
+  const subir = useMutation({ mutationFn: subirArquivo, onSuccess: r => { setArq(r); setSemRet(false); preencher(r); } });
+  const comRet = Boolean(arq?.leitura && temRetencao(arq.leitura));
+  const usarCandidato = (c: Identificacao['candidatos'][number] | null) => {
+    setCand(c?.id ?? null);
+    if (!c) { setPrevs([]); return; }
+    if (c.empresa_id && c.empresa_id !== empresa) setEmpresa(c.empresa_id);
+    if (c.rateio.length) setLinhas(c.rateio.map(x => ({ ...novaLinha(String(x.percentual)), nucleo: x.nucleo, centro: x.centro, divisao: x.divisao ?? '', natureza: x.natureza })));
+    setPrevs(c.tipo === 'previsao' ? [c.id] : []);
+  };
+  function preencher(r: ResultadoLeitor) {
+    const l = r.leitura, id = r.identificacao;
+    if (!l) return;
+    if (id?.empresa) { setEmpresa(id.empresa.id); setLinhas([novaLinha()]); }
+    const f = id?.fornecedor;
+    const fb: FornecedorBusca | null = f ? { id: f.id, nome: f.nome, nome_fantasia: null, documento: f.documento, tipo: (f.documento ?? '').length === 11 ? 'fisica' : 'juridica' } : null;
+    setForn(fb);
+    setBuscaForn(fb ? '' : l.emitente?.documento ?? l.emitente?.nome ?? '');
+    if (l.tipo && TIPOS.some(([k]) => k === l.tipo)) setTipo(l.tipo);
+    if (l.numero) setNumero(l.numero);
+    setSerie(l.serie ?? '');
+    if (l.emissao) setEmissao(l.emissao);
+    const c = l.competencia ?? l.consumo?.referencia ?? l.emissao?.slice(0, 7);
+    if (c) setComp(c);
+    if (l.valor) setValorTxt(reais(l.valor));
+    setParcelas(parcelasLidas(l, id?.pagamento ?? null, fb?.documento ?? null));
+    const melhor = id?.candidatos.find(x => !id.empresa || x.empresa_id === id.empresa.id) ?? null;
+    usarCandidato(melhor);
+  }
+
   const muda = (k: number, m: Partial<Linha>) => setLinhas(ls => ls.map(l => (l.k === k ? { ...l, ...m } : l)));
   const mudaP = (k: number, m: Partial<Parcela>) => setParcelas(ps => ps.map(p => (p.k === k ? { ...p, ...m } : p)));
 
   const falta: string[] = [];
+  if (comRet && !semRet) falta.push('confirmar que a nota não tem retenção (nota com retenção ainda não se lança)');
   if (!empresa) falta.push('a empresa');
   if (!forn) falta.push('o fornecedor');
   if (!numero.trim()) falta.push('o número do documento');
@@ -96,7 +132,7 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
       parcelas: parcelas.map(p => p.forma === 'pix'
         ? { vencimento: p.vencimento, forma: 'pix', pix_tipo: p.pix_tipo, pix_chave: chave(p.pix_tipo, p.pix_chave), pix_excecao: p.excecao.trim() || null }
         : { vencimento: p.vencimento, forma: 'boleto', boleto_linha: p.boleto.replace(/\D/g, '') }),
-      previsoes: prevs, etiquetas: etq,
+      previsoes: prevs, etiquetas: etq, anexos: arq ? [arq.anexo.id] : [],
     } }),
     onSuccess: id => { qc.invalidateQueries({ queryKey: ['titulos'] }); qc.invalidateQueries({ queryKey: ['previsoes'] }); lancado(id); },
   });
@@ -113,6 +149,16 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
       {op.isLoading ? <Carregando /> : op.error ? <Alerta c="cr" t={mensagemErro(op.error)} /> : !o ? <Alerta c="at" t="Seu papel só permite consulta: você não lança títulos." /> : <>
         <p className="sec lt-intro">A nota vira um título que vai para a aprovação. Aprovado, ele segue sozinho para o Sienge com a forma de pagamento de cada parcela.</p>
 
+        {leitorLigado && <ArquivoNota r={arq} subindo={subir.isPending} erro={subir.error ? mensagemErro(subir.error) : null}
+          escolher={f => subir.mutate(f)} valor={valor} cand={cand} usar={usarCandidato} />}
+        {comRet && arq?.leitura && (
+          <div className="lt-sec">
+            <span className="nt cr">A leitura achou retenção de imposto ({descRetencao(arq.leitura)}). Nota com retenção ainda não se lança: o título sairia pelo valor bruto e a BKM pagaria ao fornecedor o imposto que ela mesma tem de recolher. Espere a tela de retenções.</span>
+            <label className="ab-l"><input type="checkbox" checked={semRet} onChange={e => setSemRet(e.target.checked)} />
+              <span>Conferi o documento: a nota não tem retenção (a leitura errou)</span></label>
+          </div>
+        )}
+
         <section className="lt-sec"><h3>Documento</h3><div className="kv lt-kv">
           <Campo r="Empresa">
             <select className={`lt-in ${tentou && !empresa ? 'err' : ''}`} value={empresa} onChange={e => { setEmpresa(e.target.value); setLinhas([novaLinha()]); }}>
@@ -120,7 +166,7 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
               {o.empresas.map(e => <option key={e.id} value={e.id}>{e.nome}{e.documento ? ` · ${documento(e.documento)}` : ''}</option>)}
             </select>
           </Campo>
-          <Campo r="Fornecedor"><BuscaFornecedor v={forn} erro={tentou && !forn} mudar={f => { setForn(f); setParcelas(ps => ps.map((p, i) => (i === 0 && !p.pix_chave && f?.documento ? { ...p, pix_tipo: 'cpf_cnpj', pix_chave: f.documento } : p))); }} /></Campo>
+          <Campo r="Fornecedor"><BuscaFornecedor key={buscaForn} inicial={buscaForn} v={forn} erro={tentou && !forn} mudar={f => { setForn(f); setParcelas(ps => ps.map((p, i) => (i === 0 && !p.pix_chave && f?.documento ? { ...p, pix_tipo: 'cpf_cnpj', pix_chave: f.documento } : p))); }} /></Campo>
           <Campo r="Documento">
             <div className="lt-lin">
               <select className="lt-in lt-tipo" value={tipo} onChange={e => setTipo(e.target.value)}>{TIPOS.map(([k, r]) => <option key={k} value={k}>{r}</option>)}</select>
@@ -262,9 +308,9 @@ export function LinhaRateio({ l, o, emp, varias, valor, tentou, mudar, tirar }: 
   );
 }
 
-export function BuscaFornecedor({ v, mudar, erro }: { v: FornecedorBusca | null; mudar: (f: FornecedorBusca | null) => void; erro: boolean }) {
-  const [txt, setTxt] = useState('');
-  const [busca, setBusca] = useState('');
+export function BuscaFornecedor({ v, mudar, erro, inicial = '' }: { v: FornecedorBusca | null; mudar: (f: FornecedorBusca | null) => void; erro: boolean; inicial?: string }) {
+  const [txt, setTxt] = useState(inicial);
+  const [busca, setBusca] = useState(inicial);
   const [ab, setAb] = useState(false);
   useEffect(() => { const t = setTimeout(() => setBusca(txt), 250); return () => clearTimeout(t); }, [txt]);
   const q = useQuery({ queryKey: ['fornecedores', busca], queryFn: () => rpc<FornecedorBusca[]>('fornecedores', { p_busca: busca }), enabled: ab && busca.trim().length >= 2 });
@@ -290,3 +336,103 @@ export function BuscaFornecedor({ v, mudar, erro }: { v: FornecedorBusca | null;
     </div>
   );
 }
+
+/** As parcelas pelo que o leitor achou: os vencimentos da nota, senão os dos boletos (o do Asaas primeiro), senão o da
+ *  fatura; a linha de cada boleto válido vai na parcela da mesma ordem; sem boleto, a última chave PIX usada com o
+ *  fornecedor ou o documento dele. */
+export function parcelasLidas(l: NonNullable<ResultadoLeitor['leitura']>, pag: Identificacao['pagamento'], doc: string | null): Parcela[] {
+  const venc = (l.parcelas ?? []).filter(p => p.vencimento);
+  const bol = (l.boletos ?? []).filter(b => b.valida);
+  const n = Math.max(venc.length, bol.length, 1);
+  return Array.from({ length: n }, (_, i) => {
+    const b = bol[i];
+    const vencimento = venc[i]?.vencimento ?? (b?.conferido_asaas?.ok ? b.conferido_asaas.vencimento : undefined) ?? b?.vencimento ?? l.consumo?.vencimento ?? '';
+    if (b) return { ...novaParcela(), vencimento, forma: 'boleto', boleto: b.linha };
+    const pix = pag?.forma === 'pix' && pag.pix_chave ? { pix_tipo: (pag.pix_tipo ?? 'cpf_cnpj') as PixTipo, pix_chave: pag.pix_chave } : { pix_tipo: 'cpf_cnpj' as PixTipo, pix_chave: doc ?? '' };
+    return { ...novaParcela(), vencimento, forma: pag?.forma === 'boleto' ? 'boleto' : 'pix', ...pix };
+  });
+}
+
+const NOME_TIPO: Record<string, string> = Object.fromEntries(TIPOS);
+const COMP: Record<string, string> = { contrato: 'Contrato', assinatura: 'Assinatura', consumo: 'Conta de consumo', pedido: 'Pedido de compra' };
+
+/** O que o leitor achou: os avisos dele, a nota repetida e os processos que podem ter gerado o título. */
+function avisosLidos(r: ResultadoLeitor, valor: number | null): { c: 'cr' | 'at' | 'inf'; t: ReactNode }[] {
+  const l = r.leitura, id = r.identificacao, out: { c: 'cr' | 'at' | 'inf'; t: ReactNode }[] = [];
+  if (r.erro_leitura) out.push({ c: 'at', t: `${r.erro_leitura}. O arquivo ficou guardado; preencha à mão.` });
+  for (const d of [...r.repetido_em, ...(id?.nota_repetida ?? [])].filter((x, i, a) => a.findIndex(y => y.documento_id === x.documento_id) === i))
+    out.push({ c: 'cr', t: <>Esta nota já foi lançada: {NOME_TIPO[d.tipo] ?? d.tipo} {d.numero} de {data(d.emissao)}, {reais(d.valor)}{d.titulo_id && <> · <a href={`/titulos/${d.titulo_id}`} target="_blank" rel="noreferrer">abrir o título</a></>}.</> });
+  if (!l) return out;
+  if (l.origem === 'ia') out.push({ c: 'inf', t: 'Lido pela IA a partir da imagem do documento: confira cada campo antes de lançar.' });
+  if (l.tomador?.documento && !id?.empresa) out.push({ c: 'at', t: `O tomador da nota (${documento(l.tomador.documento)}) não é uma empresa em que você lança.` });
+  if (l.emitente?.documento && !id?.fornecedor) out.push({ c: 'at', t: `O emitente ${l.emitente.nome ?? ''} (${documento(l.emitente.documento)}) não está cadastrado. Procure pelo nome ou peça o cadastro.` });
+  else if (id?.fornecedor && !id.fornecedor.fornecedor) out.push({ c: 'at', t: `${id.fornecedor.nome} está cadastrado, mas não como fornecedor.` });
+  for (const b of l.boletos ?? []) {
+    const a = b.conferido_asaas;
+    if (!b.valida || !a) continue;
+    if (!a.ok) out.push({ c: 'at', t: `O banco não confirmou o boleto: ${a.erro ?? 'sem resposta'}.` });
+    else if (valor && a.valor && Math.abs(a.valor - valor) > 0.009) out.push({ c: 'at', t: `O boleto registrado no banco é de ${reais(a.valor)}, diferente do valor da nota.` });
+    if (a.ok && a.beneficiario_documento && l.emitente?.documento && a.beneficiario_documento !== l.emitente.documento)
+      out.push({ c: 'at', t: `O beneficiário do boleto no banco é ${a.beneficiario ?? documento(a.beneficiario_documento)}, não o emitente da nota.` });
+  }
+  for (const x of l.avisos ?? []) out.push({ c: 'at', t: x });
+  return out;
+}
+
+function ArquivoNota({ r, subindo, erro, escolher, valor, cand, usar }: {
+  r: ResultadoLeitor | null; subindo: boolean; erro: string | null; escolher: (f: File) => void; valor: number | null;
+  cand: string | null; usar: (c: Identificacao['candidatos'][number] | null) => void;
+}) {
+  const inp = useRef<HTMLInputElement>(null);
+  const [sobre, setSobre] = useState(false);
+  const pegar = (f?: File | null) => { if (f && !subindo) escolher(f); };
+  const avisos = r ? avisosLidos(r, valor) : [];
+  const cands = r?.identificacao?.candidatos ?? [];
+  return (
+    <section className="lt-sec"><h3>Arquivo da nota</h3>
+      <input ref={inp} type="file" accept={TIPOS_ACEITOS} hidden onChange={e => { pegar(e.target.files?.[0]); e.target.value = ''; }} />
+      {subindo ? <div className="lt-arq"><Carregando /><span className="sec">Guardando e lendo o arquivo…</span></div>
+        : r ? (
+          <div className="lt-arq ok">
+            <Ic n="anexo" s={22} />
+            <span style={{ flex: 1, minWidth: 0 }}><b className="lt-arqn" title={r.anexo.nome}>{r.anexo.nome}</b>
+              <span className="sec peq" style={{ display: 'block' }}>{r.leitura ? (r.leitura.origem === 'xml' ? `Lido do XML${r.leitura.formato ? ` (${r.leitura.formato})` : ''}` : 'Lido pela IA') : 'Guardado, sem leitura'}</span></span>
+            <button className="btn t sm" onClick={() => inp.current?.click()}>Trocar</button>
+          </div>
+        ) : (
+          <button className={`lt-arq lt-solta ${sobre ? 'on' : ''}`} onClick={() => inp.current?.click()}
+            onDragOver={e => { e.preventDefault(); setSobre(true); }} onDragLeave={() => setSobre(false)}
+            onDrop={e => { e.preventDefault(); setSobre(false); pegar(e.dataTransfer.files?.[0]); }}>
+            <Ic n="upload" s={28} />
+            <span><b>Comece pelo arquivo</b><span className="sec peq" style={{ display: 'block' }}>Arraste ou escolha o PDF, o XML ou a foto da nota, fatura ou boleto (até 20 MB). A tela se preenche e você confere. Ou preencha à mão abaixo.</span></span>
+          </button>
+        )}
+      {erro && <span className="lt-erro"><Ic n="warn" s={18} />{erro}</span>}
+      {avisos.map((a, i) => <span key={i} className={`nt ${a.c}`}>{a.t}</span>)}
+      {cands.length > 0 && <>
+        <span className="sec peq">De onde vem esta nota? Escolher preenche o rateio e a previsão; dá para mudar depois.</span>
+        {cands.map(c => (
+          <label key={c.id} className="ab-l lt-prev">
+            <input type="radio" name="lt-cand" checked={cand === c.id} onChange={() => usar(c)} />
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <b>{c.tipo === 'previsao' ? `Previsão${c.data ? ` de ${data(c.data)}` : ''}` : `${COMP[c.compromisso_tipo ?? ''] ?? 'Contrato'}${c.numero ? ` ${c.numero}` : ''}`}</b>
+              {c.tipo === 'previsao' && c.compromisso_tipo && <> <Chip t={`${COMP[c.compromisso_tipo] ?? 'Contrato'}${c.numero ? ` ${c.numero}` : ''}`} c="ci" /></>}
+              <span className="sec peq" style={{ display: 'block' }}>{[c.descricao, c.motivos.join(', ')].filter(Boolean).join(' · ')}</span>
+            </span>
+            <span className="num" style={{ textAlign: 'right' }}>{c.valor != null ? reais(c.valor) : ''}</span>
+          </label>
+        ))}
+        <label className="ab-l lt-prev"><input type="radio" name="lt-cand" checked={cand === null} onChange={() => usar(null)} /><span>Nenhum destes</span></label>
+      </>}
+    </section>
+  );
+}
+
+const RET: [keyof NonNullable<Leitura['retencoes']>, string][] = [['iss', 'ISS'], ['irrf', 'IRRF'], ['inss', 'INSS'], ['pis', 'PIS'], ['cofins', 'COFINS'], ['csll', 'CSLL']];
+/** Retenção lida: algum tributo retido ou o líquido abaixo do bruto. Até a tela de retenções, essa nota não se lança
+ *  (o envio ao Sienge só barra a nota com retenção registrada, e o Lançar título não registra retenção). */
+export const temRetencao = (l: Leitura) => RET.some(([k]) => (l.retencoes?.[k] ?? 0) > 0) || Boolean(l.valor && l.valor_liquido && l.valor_liquido < l.valor - 0.009);
+const descRetencao = (l: Leitura) => {
+  const it = RET.filter(([k]) => (l.retencoes?.[k] ?? 0) > 0).map(([k, n]) => `${n} ${reais(l.retencoes![k]!)}`);
+  return it.length ? it.join(', ') : `líquido ${reais(l.valor_liquido!)} de ${reais(l.valor!)}`;
+};

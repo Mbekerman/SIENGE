@@ -49,6 +49,24 @@ jobs:
       - run: node --test --experimental-strip-types servicos/sienge-aviso/logica.test.ts
       - run: node --test pagina/prv.test.mjs
 
+  leitor:
+    name: Leitor de notas (tipos e regras)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: servicos/leitor
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: servicos/leitor/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: node --test --experimental-strip-types leitor.test.ts
+
   web:
     name: Front (tipos e build)
     runs-on: ubuntu-24.04

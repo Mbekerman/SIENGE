@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState, type ReactNode } from 'react';
 import { data, dataHora, documento, mes, reais } from '../lib/format';
 import type { NomeIcone } from '../lib/icones';
+import { baixarAnexo, leitorLigado } from '../lib/leitor';
 import { mensagemErro, rpc } from '../lib/supabase';
 import type { Rastro as R } from '../lib/tipos';
 import { ETAPA } from '../pages/Titulos';
@@ -188,23 +189,29 @@ function Historico({ r }: { r: R }) {
 
 const tam = (b: number) => b >= 1048576 ? `${(b / 1048576).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} MB` : `${Math.max(1, Math.round(b / 1024))} KB`;
 function Anexos({ r }: { r: R }) {
+  const [erro, setErro] = useState<string | null>(null);
+  const [baixando, setBaixando] = useState<string | null>(null);
+  const baixar = (id: string, nome: string) => {
+    setErro(null); setBaixando(id);
+    baixarAnexo(id, nome).catch(e => setErro(mensagemErro(e))).finally(() => setBaixando(null));
+  };
   return (
     <>
       <div className="rs-anx">
         {r.anexos.map(a => (
-          <a key={a.id} className="rs-ax" href={a.url ?? undefined} target="_blank" rel="noreferrer">
-            <span className={`rs-th ${a.mime.startsWith('image/') ? 'img' : a.mime === 'application/pdf' ? 'pdf' : ''}`}>
-              <Ic n={a.mime.startsWith('image/') || a.mime.startsWith('video/') ? 'imagem' : 'doc'} s={28} />
-              <span className="rs-ext">{a.nome.split('.').pop()?.toUpperCase()}</span>
+          <button key={a.id} className="rs-ax" onClick={() => baixar(a.id, a.nome)} disabled={!leitorLigado || baixando === a.id} title={leitorLigado ? 'Baixar o arquivo' : 'O leitor de notas não está ligado neste ambiente'}>
+            <span className={`rs-th ${a.tipo_mime.startsWith('image/') ? 'img' : a.tipo_mime === 'application/pdf' ? 'pdf' : ''}`}>
+              <Ic n={a.tipo_mime.startsWith('image/') ? 'imagem' : 'doc'} s={28} />
+              <span className="rs-ext">{a.nome.includes('.') ? a.nome.split('.').pop()?.toUpperCase() : ''}</span>
             </span>
             <b title={a.nome}>{a.nome}</b>
-            <span className="sec peq">{a.categoria} · {tam(a.tamanho)}</span>
-            <span className="sec peq">{a.por} · {data(a.em)}</span>
-          </a>
+            <span className="sec peq">{baixando === a.id ? 'Baixando…' : `Nota · ${tam(a.tamanho)}`}</span>
+            <span className="sec peq">{a.enviado_por ?? ''} · {data(a.enviado_em)}</span>
+          </button>
         ))}
-        <button className="rs-ax rs-add" disabled title="Em breve"><Ic n="upload" s={28} /><b>Adicionar anexo</b><span className="sec peq">Em breve: nota, contrato, foto ou vídeo</span></button>
       </div>
-      {!r.anexos.length && <Nada t="Nenhum anexo ainda. Guardar arquivos no título chega na próxima entrega." />}
+      {erro && <span className="lt-erro"><Ic n="warn" s={18} />{erro}</span>}
+      {!r.anexos.length && <Nada t="Nenhum arquivo neste título. O arquivo entra ao lançar a nota pelo arquivo." />}
     </>
   );
 }

@@ -69,7 +69,7 @@ export interface Rastro {
   alteracoes: { rodada: number; area: string | null; motivo: string; pedida_por: string | null; pedida_em: string; resposta: string | null;
                 reenviada_por: string | null; reenviada_em: string | null; ajustes: { campo: string; antes: string | null; depois: string | null }[] }[];
   historico: { em: string; por: string | null; texto: string }[];
-  anexos: { id: string; nome: string; categoria: string; mime: string; tamanho: number; por: string | null; em: string; url: string | null }[];
+  anexos: { id: string; nome: string; tipo_mime: string; tamanho: number; enviado_por: string | null; enviado_em: string }[];
   contrato: { tipo: string; numero: string | null; descricao: string; valor_total: number | null; valor_periodo: number | null; periodicidade: string | null;
               lancado: number; pago: number; saldo: number | null;
               titulos: { id: string; documento: string | null; competencia: string; valor: number; etapa: EtapaTitulo; pago_em: string | null; este: boolean }[] } | null;
@@ -100,4 +100,38 @@ export interface Aprovacao {
   lancado_por: string | null; lancado_em: string | null; esperando: string | null;
   /** é a vez de quem vê; `motivo` diz por que não (a mesma mensagem que a decisão daria) */
   vez: boolean; motivo: string | null;
+}
+
+// Leitor de notas (servicos/leitor): o que volta de POST /anexos. A Leitura é a mesma de servicos/leitor/leitura.ts.
+export interface Leitura {
+  origem: 'xml' | 'ia'; modelo?: string; formato?: string;
+  tipo?: 'nfe' | 'nfse' | 'fatura' | 'boleto' | 'recibo' | 'outro';
+  emitente?: { documento?: string; nome?: string }; tomador?: { documento?: string; nome?: string };
+  numero?: string; serie?: string; chave_acesso?: string; emissao?: string; competencia?: string;
+  valor?: number; valor_liquido?: number;
+  retencoes?: { iss?: number; irrf?: number; inss?: number; pis?: number; cofins?: number; csll?: number };
+  descricao?: string;
+  parcelas?: { numero?: string; vencimento?: string; valor?: number }[];
+  boletos?: { linha: string; valida: boolean; valor?: number; vencimento?: string; banco?: string;
+              conferido_asaas?: { ok: boolean; valor?: number; vencimento?: string; beneficiario?: string; beneficiario_documento?: string; erro?: string } }[];
+  pix?: { chave?: string; copia_e_cola?: string };
+  consumo?: { instalacao?: string; referencia?: string; vencimento?: string };
+  avisos?: string[];
+}
+/** api.identificar_nota (migration 20261119000400_erp_anexos.sql) */
+export interface Identificacao {
+  empresa: { id: string; nome: string; documento: string } | null;
+  fornecedor: { id: string; nome: string; documento: string | null; fornecedor: boolean } | null;
+  nota_repetida: { documento_id: string; titulo_id: string | null; tipo: string; numero: string; serie: string | null; emissao: string; valor: number; situacao: string }[];
+  candidatos: { tipo: 'previsao' | 'contrato'; id: string; compromisso_id: string | null; compromisso_tipo: string | null; numero: string | null;
+                descricao: string | null; valor: number | null; data: string | null; empresa_id: string; pontos: number; motivos: string[];
+                rateio: { nucleo: string; centro: string; divisao: string | null; natureza: string; percentual: number }[] }[];
+  pagamento: { forma: 'pix' | 'boleto'; pix_tipo: 'cpf_cnpj' | 'email' | 'telefone' | 'aleatoria' | null; pix_chave: string | null; de_titulo: string } | null;
+}
+export interface ResultadoLeitor {
+  anexo: { id: string; nome: string; tipo_mime: string; tamanho: number };
+  repetido_em: { documento_id: string; tipo: string; numero: string; emissao: string; valor: number; titulo_id: string | null }[];
+  leitura: Leitura | null;
+  erro_leitura?: string;
+  identificacao: Identificacao | null;
 }
