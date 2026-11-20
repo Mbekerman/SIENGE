@@ -233,7 +233,12 @@ test('identificar: vencimento do boleto quando a nota não tem parcela', () => {
 
 test('limite por pessoa', () => {
   const l = new Limite(2, 1000);
-  assert.ok(l.passa('a', 0)); assert.ok(l.passa('a', 1)); assert.ok(!l.passa('a', 2)); assert.ok(l.passa('b', 2)); assert.ok(l.passa('a', 1001));
+  assert.ok(l.passa('a', undefined, 0)); assert.ok(l.passa('a', undefined, 1)); assert.ok(!l.passa('a', undefined, 2));
+  assert.ok(l.passa('b', undefined, 2)); assert.ok(l.passa('a', undefined, 1001));
+  // o limite da pessoa vale no lugar do padrão; valor inválido cai no padrão
+  const m = new Limite(2, 1000);
+  for (let i = 0; i < 5; i++) assert.ok(m.passa('c', 5, i)); assert.ok(!m.passa('c', 5, 6));
+  assert.ok(m.passa('d', 0, 0)); assert.ok(m.passa('d', -1, 1)); assert.ok(!m.passa('d', 1.5, 2));
 });
 
 test('XML malformado com muito lixo é recusado em tempo linear', () => {
@@ -254,7 +259,7 @@ test('subir: XML acima de 2 MB não é lido, mas o arquivo fica', async () => {
 });
 
 // Sobe o tratador numa porta livre e faz um pedido; conta quantos bytes do corpo o servidor leu.
-async function pedido(quem: (j: string) => Promise<string | null>, cab: Record<string, string>, corpo: Buffer, limite = new Limite(30, 60_000)) {
+async function pedido(quem: (j: string) => Promise<{ id: string; limite?: number } | null>, cab: Record<string, string>, corpo: Buffer, limite = new Limite(30, 60_000)) {
   const { deps, chamadas } = falsos();
   const h = tratador({ deps, limite, origens: new Set(['https://erp.exemplo']), quem });
   let lidos = 0;
@@ -272,7 +277,7 @@ async function pedido(quem: (j: string) => Promise<string | null>, cab: Record<s
 
 test('rotas: sem login ou com login inválido, recusa sem guardar e sem conferir no banco', async () => {
   let perguntou = 0;
-  const quem = async (j: string) => { perguntou++; return j === 'bom' ? 'u1' : null; };
+  const quem = async (j: string) => { perguntou++; return j === 'bom' ? { id: 'u1' } : null; };
   const sem = await pedido(quem, {}, Buffer.from(NFE));
   assert.equal(sem.status, 401); assert.equal(perguntou, 0); assert.deepEqual(sem.chamadas, []);
   const ruim = await pedido(quem, { authorization: 'Bearer forjado' }, Buffer.from(NFE));
@@ -281,8 +286,16 @@ test('rotas: sem login ou com login inválido, recusa sem guardar e sem conferir
 
 test('rotas: o limite usa o id conferido, não o sub do JWT', async () => {
   const limite = new Limite(1, 60_000);
-  const quem = async (j: string) => (j.startsWith('bom') ? 'u1' : null);
+  const quem = async (j: string) => (j.startsWith('bom') ? { id: 'u1' } : null);
   const a = await pedido(quem, { authorization: 'Bearer bom-a' }, Buffer.from('%PDF-1.7'), limite);
   const b = await pedido(quem, { authorization: 'Bearer bom-b' }, Buffer.from('%PDF-1.7'), limite);
   assert.notEqual(a.status, 429); assert.equal(b.status, 429);
+});
+
+test('rotas: o limite configurado da pessoa vale no lugar do padrão', async () => {
+  const limite = new Limite(1, 60_000);
+  const quem = async (j: string) => (j === 'bom' ? { id: 'u2', limite: 3 } : null);
+  const st: number[] = [];
+  for (let i = 0; i < 4; i++) st.push((await pedido(quem, { authorization: 'Bearer bom' }, Buffer.from('%PDF-1.7'), limite)).status);
+  assert.ok(st.slice(0, 3).every((s) => s !== 429), st.join()); assert.equal(st[3], 429);
 });
