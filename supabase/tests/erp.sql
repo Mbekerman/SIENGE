@@ -8053,6 +8053,8 @@ select pg_temp.erro_igual(format($$select api.definir_limite_leitor(%L, 101)$$, 
 select pg_temp.como_dono(:'ti');
 select pg_temp.erro_igual(format($$update erp.usuarios set limite_leitor = 500 where id = %L$$, :'analista'),
   'Acima de 100 arquivos a cada 10 minutos, só o master muda o limite do leitor', 'limite do leitor: nem por update direto o administrador passa de 100');
+select pg_temp.erro_igual($$insert into erp.usuarios (login_id, nome, papel, ativo, limite_leitor) values ('novo-limite', 'Novo', 'leitura', false, 500)$$,
+  'Acima de 100 arquivos a cada 10 minutos, só o master muda o limite do leitor', 'limite do leitor: nem criando usuário o administrador passa de 100');
 select pg_temp.como(:'ti');
 select api.definir_limite_leitor(:'analista', 100);
 select pg_temp.como(:'analista');

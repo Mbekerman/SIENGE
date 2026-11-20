@@ -15,7 +15,7 @@ comment on column erp.usuarios.limite_leitor is
 
 create function erp.tg_limite_leitor() returns trigger language plpgsql as $$
 begin
-  if new.limite_leitor is distinct from old.limite_leitor and coalesce(new.limite_leitor, 0) > 100
+  if (tg_op = 'INSERT' or new.limite_leitor is distinct from old.limite_leitor) and coalesce(new.limite_leitor, 0) > 100
      and not (erp.sistema() or erp.sou_master()) then
     raise exception 'Acima de 100 arquivos a cada 10 minutos, só o master muda o limite do leitor';
   end if;
@@ -24,7 +24,7 @@ end $$;
 revoke execute on function erp.tg_limite_leitor() from public;
 grant execute on function erp.tg_limite_leitor()
   to authenticated, erp_sistema, erp_conferencia, erp_situacao, erp_reclassificacao, erp_acesso;
-create trigger t_limite_leitor before update of limite_leitor on erp.usuarios
+create trigger t_limite_leitor before insert or update of limite_leitor on erp.usuarios
   for each row execute function erp.tg_limite_leitor();
 
 create or replace function api.eu() returns jsonb language sql stable security invoker set search_path = pg_catalog, pg_temp as $$
