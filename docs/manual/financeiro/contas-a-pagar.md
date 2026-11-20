@@ -396,6 +396,7 @@ Sem os dados de pagamento, o **Enviar** fica travado: o campo Pagamento fica em 
 1. No menu, abra **Aprovar**. Comece pelos grupos **Vencidos** e **Vencem esta semana**.
 2. Clique no pedido. Ele abre numa gaveta à direita, com o valor, os avisos (por exemplo, "Vencido, R$ 25,69 de multa, pede a AD"), as camadas de aprovação (quem já aprovou, de quem é a vez e quem vem depois), a nota, o centro de custo, o pagamento e o vencimento.
 3. Para decidir, desça pelo que está **por trás deste título**, só com cliques (ver abaixo).
+   - 🟡 **Selo "Recebedor não confere"** (PR #108, ainda não juntado). Quando quem recebe pelo PIX, pelo PIX copia e cola ou pelo boleto não é o fornecedor conferido, o título só entrou com a justificativa de quem lançou. O selo aparece na lista e em Aprovar, e a gaveta mostra "Quem recebe não é o fornecedor conferido. Fica marcado até o pagamento". Leia a justificativa antes de aprovar.
 4. Clique em **Aprovar** ou em **Recusar**. Os dois botões ficam embaixo da gaveta em qualquer nível.
 
 #### Ver o que está por trás do título
