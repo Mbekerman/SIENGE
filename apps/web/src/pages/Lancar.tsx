@@ -13,7 +13,7 @@ import type { FornecedorBusca, Identificacao, Leitura, NaturezaLancavel, OpcoesL
 type Forma = 'pix' | 'boleto';
 type PixTipo = 'cpf_cnpj' | 'email' | 'telefone' | 'aleatoria';
 export interface Linha { k: number; nucleo: string; centro: string; divisao: string; natureza: string; pct: string }
-interface Parcela { k: number; vencimento: string; valor: string; forma: Forma; pix_tipo: PixTipo; pix_chave: string; boleto: string; excecao: string }
+interface Parcela { k: number; vencimento: string; valor: string; forma: Forma; pix_tipo: PixTipo; pix_chave: string; boleto: string; excecao: string; pix_cc: string }
 
 const TIPOS: [string, string][] = [['nfse', 'NFS-e'], ['nfe', 'NF-e'], ['fatura', 'Fatura'], ['boleto', 'Boleto'], ['recibo', 'Recibo'], ['outro', 'Outro']];
 const PIX: [PixTipo, string][] = [['cpf_cnpj', 'CPF ou CNPJ'], ['email', 'E-mail'], ['telefone', 'Telefone'], ['aleatoria', 'Chave aleatória']];
@@ -21,7 +21,7 @@ let seq = 1;
 export const novaLinha = (pct = '100'): Linha => ({ k: seq++, nucleo: '', centro: '', divisao: '', natureza: '', pct });
 const novaParcela = (base?: Parcela, doc?: string | null): Parcela => ({
   k: seq++, vencimento: '', valor: '', forma: base?.forma ?? 'pix', pix_tipo: base?.pix_tipo ?? 'cpf_cnpj',
-  pix_chave: base?.pix_chave ?? (doc ?? ''), boleto: '', excecao: base?.excecao ?? '',
+  pix_chave: base?.pix_chave ?? (doc ?? ''), boleto: '', excecao: base?.excecao ?? '', pix_cc: '',
 });
 
 /** A chave como o banco aceita: CPF/CNPJ só dígitos, e-mail minúsculo, telefone com +55. */
@@ -140,8 +140,8 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
       compromisso: contratos.length === 1 ? contratos[0] : null,
       rateio: linhas.map(l => ({ nucleo: l.nucleo, centro: l.centro, divisao: l.divisao || null, natureza: l.natureza, percentual: Number(l.pct.replace(',', '.')) })),
       parcelas: parcelas.map(p => p.forma === 'pix'
-        ? { vencimento: p.vencimento, ...(comValor ? { valor: lerReais(p.valor) } : {}), forma: 'pix', pix_tipo: p.pix_tipo, pix_chave: chave(p.pix_tipo, p.pix_chave), pix_excecao: p.excecao.trim() || null }
-        : { vencimento: p.vencimento, ...(comValor ? { valor: lerReais(p.valor) } : {}), forma: 'boleto', boleto_linha: p.boleto.replace(/\D/g, '') }),
+        ? { vencimento: p.vencimento, ...(comValor ? { valor: lerReais(p.valor) } : {}), forma: 'pix', pix_tipo: p.pix_tipo, pix_chave: chave(p.pix_tipo, p.pix_chave), pix_excecao: p.excecao.trim() || null, pix_copia_cola: p.pix_cc.trim() || null }
+        : { vencimento: p.vencimento, ...(comValor ? { valor: lerReais(p.valor) } : {}), forma: 'boleto', boleto_linha: p.boleto.replace(/\D/g, ''), pix_copia_cola: p.pix_cc.trim() || null }),
       previsoes: prevs, etiquetas: etq, anexos: arq ? [arq.anexo.id] : [],
     } }),
     onSuccess: id => { qc.invalidateQueries({ queryKey: ['titulos'] }); qc.invalidateQueries({ queryKey: ['previsoes'] }); lancado(id); },
@@ -254,6 +254,8 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
               </> : (
                 <input className={`lt-in mono ${tentou && !p.boleto.replace(/\D/g, '') ? 'err' : ''}`} placeholder="Linha digitável (47 dígitos)" value={p.boleto} onChange={e => mudaP(p.k, { boleto: e.target.value })} />
               )}
+              <input className="lt-in mono" aria-label="PIX copia e cola" placeholder={p.forma === 'boleto' ? 'PIX copia e cola do boleto (opcional)' : 'PIX copia e cola (opcional)'}
+                value={p.pix_cc} onChange={e => mudaP(p.k, { pix_cc: e.target.value.replace(/[\r\n]+/g, '') })} />
             </div>
           ))}
           <button className="btn t sm" style={{ alignSelf: 'flex-start' }} onClick={() => setParcelas(ps => [...ps, novaParcela(ps[ps.length - 1])])}><Ic n="add" s={18} />Adicionar parcela</button>
@@ -371,9 +373,11 @@ export function parcelasLidas(l: NonNullable<ResultadoLeitor['leitura']>, pag: I
     const b = bol[i];
     const vencimento = venc[i]?.vencimento ?? (b?.conferido_asaas?.ok ? b.conferido_asaas.vencimento : undefined) ?? b?.vencimento ?? l.consumo?.vencimento ?? '';
     const valor = valores?.[i] ?? '';
-    if (b) return { ...novaParcela(), vencimento, valor, forma: 'boleto', boleto: b.linha };
+    // o PIX copia e cola da parcela (o do boleto híbrido), senão, com uma parcela só, o do documento
+    const pix_cc = (venc.length ? venc[i] : l.parcelas?.[i])?.pix_copia_cola ?? (n === 1 ? l.pix?.copia_e_cola : undefined) ?? '';
+    if (b) return { ...novaParcela(), vencimento, valor, forma: 'boleto', boleto: b.linha, pix_cc };
     const pix = pag?.forma === 'pix' && pag.pix_chave ? { pix_tipo: (pag.pix_tipo ?? 'cpf_cnpj') as PixTipo, pix_chave: pag.pix_chave } : { pix_tipo: 'cpf_cnpj' as PixTipo, pix_chave: doc ?? '' };
-    return { ...novaParcela(), vencimento, valor, forma: pag?.forma === 'boleto' ? 'boleto' : 'pix', ...pix };
+    return { ...novaParcela(), vencimento, valor, forma: pag?.forma === 'boleto' ? 'boleto' : 'pix', ...pix, pix_cc };
   });
 }
 

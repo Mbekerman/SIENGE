@@ -6057,6 +6057,27 @@ insert into erp.parcela_pagamentos (titulo_id, numero, forma, pix_tipo, pix_chav
 select pg_temp.ok((select pix_chave = '77777777000177' from erp.parcela_pagamentos where titulo_id = :'tse' and numero = 2),
   'S-125: boleto sem valor impresso entra, e a chave CPF/CNPJ do próprio credor também');
 rollback to savepoint sp_forma;
+-- PIX copia e cola da parcela (20/11/2026): formato e CRC conferidos, e o valor do código é o da parcela
+savepoint sp_pixcc;
+select pg_temp.ok(erp.pix_copia_cola_valido('00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***630485E6') and erp.pix_copia_cola_valido('00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***63045E2F')
+                  and not erp.pix_copia_cola_valido('00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***630485E7') and not erp.pix_copia_cola_valido('26390014br.gov.bcb.pix0117teste@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***630485E6')
+                  and not erp.pix_copia_cola_valido('00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***630485E60') and erp.pix_copia_cola_valor('00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***630485E6') = 150
+                  and erp.pix_copia_cola_valor('00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***63045E2F') is null,
+  'pix copia e cola: CRC, começo e campos conferidos; o valor vem do campo 54');
+update erp.parcela_pagamentos set pix_copia_cola = '00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***630485E6' where titulo_id = :'tse' and numero = 1;
+select pg_temp.ok((select pix_copia_cola is not null from erp.parcela_pagamentos where titulo_id = :'tse' and numero = 1),
+  'pix copia e cola: entra na parcela com o valor dela (150 de 300 em duas)');
+select pg_temp.erro_igual(format($$update erp.parcela_pagamentos set pix_copia_cola = '00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406100.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304AAB7' where titulo_id = %L and numero = 1$$, :'tse'),
+  'O valor do PIX copia e cola (100.00) não é o da parcela 1 (150.00)', 'pix copia e cola: valor diferente do da parcela é recusado');
+select pg_temp.falha(format($$update erp.parcela_pagamentos set pix_copia_cola = '00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***630485E7' where titulo_id = %L and numero = 1$$, :'tse'),
+  'pix copia e cola: CRC errado é recusado');
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha, pix_copia_cola)
+values (:'tse', 2, 'boleto', '34191090080000000212134567890008199990000000000', '00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***63045E2F');
+select pg_temp.ok((select pix_copia_cola is not null from erp.parcela_pagamentos where titulo_id = :'tse' and numero = 2),
+  'pix copia e cola: entra também no boleto (o QR do boleto híbrido), e sem valor no código passa');
+select pg_temp.ok(not has_function_privilege('anon', 'erp.pix_copia_cola_valido(text)', 'EXECUTE'),
+  'pix copia e cola: a conferência não é de public');
+rollback to savepoint sp_pixcc;
 insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (:'tse', 2, 'boleto', '34191090080000000212134567890008899990000015000');
 select pg_temp.ok((select count(*) = 2 from erp.parcela_pagamentos where titulo_id = :'tse'),
   'sienge: antes do primeiro voto, quem lança informa a forma de pagamento de cada parcela');
@@ -7435,12 +7456,15 @@ select pg_temp.erro_igual(format($$select api.lancar_titulo(%L)$$, (select j || 
   'O valor de cada parcela é maior que zero, com até 2 casas', 'parcelas: mais de 2 casas não entra');
 select pg_temp.ok(not exists (select 1 from erp.documentos_fiscais where numero = 'T-885'), 'parcelas: a recusa não deixa a nota');
 select api.lancar_titulo((select j || jsonb_build_object('parcelas',
-  '[{"vencimento": "2026-11-20", "valor": 100, "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"},
+  '[{"vencimento": "2026-11-20", "valor": 100, "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com", "pix_copia_cola": " 00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406100.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304AAB7 "},
     {"vencimento": "2026-12-20", "valor": 200, "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"}]'::jsonb) from nota_val)) as tval \gset
 select pg_temp.ok((select valor = 300 from erp.titulos where id = :'tval')
                   and (select array_agg(valor order by numero) from erp.parcelas where titulo_id = :'tval') = array[100, 200]::numeric[]
                   and (select coalesce(sum(l.valor), 0) = -300 from erp.lancamentos l where l.titulo_id = :'tval' and l.estagio = 'comprometido'),
   'parcelas: cada parcela fica com o valor do documento, e o comprometido é o do título');
+select pg_temp.ok((select pix_copia_cola = '00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406100.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304AAB7' from erp.parcela_pagamentos where titulo_id = :'tval' and numero = 1)
+                  and (select j->'parcelas'->0->>'pix_copia_cola' = '00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406100.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304AAB7' and j->'parcelas'->1->'pix_copia_cola' = 'null'::jsonb from api.titulo(:'tval') j),
+  'pix copia e cola: o Lançar título grava o código da parcela (sem os espaços das pontas) e a gaveta do título mostra');
 select pg_temp.erro_igual(format($$select erp.lancar_documento(%L, array['2026-11-20','2026-12-20']::date[], null, array[300]::numeric[])$$,
                                  (select documento_id from erp.titulos where id = :'tval')),
   'O documento já foi lançado', 'parcelas: a função da nota continua recusando nota já lançada');

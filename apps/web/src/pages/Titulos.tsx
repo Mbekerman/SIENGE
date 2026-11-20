@@ -110,8 +110,8 @@ function GavetaTitulo({ id, fechar }: { id: string; fechar: () => void }) {
       <Secao t={t.parcelas.length > 1 ? `${t.parcelas.length} parcelas` : 'Pagamento'}>
         {t.parcelas.map(p => (
           <Li key={p.numero} a={`${t.parcelas.length > 1 ? `${p.numero}ª · ` : ''}vence ${data(p.vencimento)}`} b={reais(p.valor)}
-            c={p.forma === 'pix' ? `PIX ${p.pix_tipo ?? ''} ${p.pix_chave ?? ''}${p.pix_excecao ? ` · exceção: ${p.pix_excecao}` : ''}`
-              : p.forma === 'boleto' ? <span className="mono">Boleto {p.boleto_linha}</span> : 'Forma de pagamento não informada'} />
+            c={<>{p.forma === 'pix' ? `PIX ${p.pix_tipo ?? ''} ${p.pix_chave ?? ''}${p.pix_excecao ? ` · exceção: ${p.pix_excecao}` : ''}`
+              : p.forma === 'boleto' ? <span className="mono">Boleto {p.boleto_linha}</span> : 'Forma de pagamento não informada'}{p.pix_copia_cola && <span className="mono lt-cc">PIX copia e cola {p.pix_copia_cola}</span>}</>} />
         ))}
       </Secao>
       {t.rateio.length > 0 && (

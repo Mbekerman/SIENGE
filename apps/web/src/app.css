@@ -380,3 +380,4 @@ button.lt-o:hover{background:#f1f4f9}
 .lt-arqn{display:block;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lt-sec .nt{display:block;padding:8px 12px;border-radius:8px;font-size:13px;line-height:18px}
 .lt-senha,.lt-sug{display:flex;flex-direction:column;gap:8px}
+.lt-cc{display:block;overflow-wrap:anywhere;margin-top:2px}

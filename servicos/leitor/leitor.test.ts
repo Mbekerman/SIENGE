@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { pdfCriptografado, senhasCandidatas, tentarSenhas, tipoPelosBytes } from './arquivo.ts';
 import { conferirLinha } from './boleto.ts';
 import { type Bucket, type Deps, Recusa, abrirComSenha, baixar, pedidoIdentificar, subir } from './fluxo.ts';
-import { chaveValida, converter, ESQUEMA, mascara } from './ia.ts';
+import { chaveValida, converter, copiaColaValido, ESQUEMA, mascara } from './ia.ts';
 import { Limite } from './limite.ts';
 import { lerXml } from './xml.ts';
 import { analisar } from './xml.ts';
@@ -403,4 +403,19 @@ test('CNPJ mascarado do tomador: guarda a máscara, nunca dígitos inventados', 
   assert.equal(l.tomador?.documento, undefined);
   assert.equal(l.tomador?.documento_mascara, '28**********92');
   assert.equal(l.tomador?.nome, 'EMPRESA EXEMPLO');
+});
+
+test('PIX copia e cola de cada parcela: CRC conferido, errado sai com aviso', () => {
+  const p150 = '00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***630485E6';
+  assert.ok(copiaColaValido(p150));
+  assert.ok(!copiaColaValido(p150.slice(0, -1) + '7'));
+  const l = converter({ tipo: 'boleto', parcelas: [
+    { numero: '1', vencimento: '2026-12-10', valor: 150, pix_copia_e_cola: p150.slice(0, 60) + '\n' + p150.slice(60) },
+    { numero: '2', vencimento: '2027-01-10', valor: 150, pix_copia_e_cola: p150.slice(0, -1) + '7' },
+    { numero: '3', vencimento: '2027-02-10', valor: 150, pix_copia_e_cola: '' }] }, 'm');
+  assert.equal(l.parcelas![0].pix_copia_cola, p150, 'quebra de linha no meio sai');
+  assert.equal(l.parcelas![1].pix_copia_cola, undefined);
+  assert.equal(l.parcelas![2].pix_copia_cola, undefined);
+  assert.equal(l.avisos?.length, 1);
+  assert.match(l.avisos![0], /2ª parcela/);
 });

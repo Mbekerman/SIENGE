@@ -345,6 +345,7 @@ O título tem uma **Conversa**: uma linha do tempo com o lançamento, as aprova�
 | Subir o PDF de uma fatura com senha | ✅ O sistema tenta abrir com os primeiros e com os últimos dígitos do CNPJ das empresas (de 3 dígitos até o CNPJ inteiro). Se nenhum abrir, a tela pede a senha: digite e clique em **Abrir**. A senha não fica guardada. Se não souber, preencha à mão (Moises, 20/nov/2026) |
 | Chave de acesso lida pela IA com um dígito errado | ✅ O sistema confere o dígito verificador da chave da NF-e. Se não fechar, a chave fica em branco e aparece o aviso para conferir no documento (20/nov/2026) |
 | Fatura com o CNPJ de quem paga mascarado (ex.: 28.***.***/****-92) | ✅ A tela mostra as empresas que fecham com os dígitos à vista e o botão **Usar …**. Confira e clique; o sistema não escolhe sozinho (20/nov/2026) |
+| Guardar o PIX copia e cola de cada parcela (o QR do boleto ou da fatura) | ✅ Cada parcela tem o campo **PIX copia e cola**, opcional. Quando o boleto traz o QR, o leitor já preenche. O sistema recusa código com erro de digitação ou com valor diferente do da parcela. O código fica no nosso sistema e não vai ao Sienge (20/nov/2026) |
 | Pagar uma parcela inteira com uma operação (o caso comum) | ✅ |
 | Pagar só parte de uma parcela e o resto depois | ✅ (Moises, 7/nov/2026) |
 | Adiantar dinheiro a um fornecedor, ligado ou não a um título, e abater aos poucos em várias parcelas e títulos | ✅ (Moises, 7/nov/2026) |
