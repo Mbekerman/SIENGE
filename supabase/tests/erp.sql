@@ -6205,6 +6205,49 @@ select pg_temp.sis(); set local role erp_situacao; update erp.titulos set situac
 select pg_temp.ok((select j->'recebedor_divergente' = '[]'::jsonb from api.titulo(:'tse') j) and not exists (select 1 from api.recebedores_divergentes() where id = :'tse'),
   'selo: pago, o título deixa de mostrar o selo');
 rollback to savepoint sp_bol;
+-- revisão do #108: o credor trocado depois da conferência (o fraudador conferido, o fornecedor de verdade no título)
+savepoint sp_bol;
+set constraints erp.t_titulo_recebedor immediate;
+select pg_temp.sis();
+select erp.registrar_boleto_conferencia('34191090080000000212134567890008899990000015000', '77777777000177', 'AGÊNCIA BETA', 150, null, (select login_id from erp.usuarios where id = :'diretor'));
+select erp._criar_titulo(:'spe', 'pagar', 'avulso', '10000000-0000-0000-0000-000000000007', null, null, '2026-06-02', '2026-06-01',
+  150, array['2026-07-01']::date[], null, null, 'rascunho do credor trocado') as trasc \gset
+select pg_temp.volta();
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (:'trasc', 1, 'boleto', '34191090080000000212134567890008899990000015000');
+select pg_temp.erro_igual(format($$update erp.titulos set pessoa_id = '10000000-0000-0000-0000-000000000008' where id = %L$$, :'trasc'),
+  'O beneficiário do boleto da parcela 1 não confere com o credor do título (confira o boleto de novo ou justifique a exceção)',
+  'boleto: no rascunho, trocar o credor depois do boleto conferido é recusado');
+delete from erp.parcela_pagamentos where titulo_id = :'trasc';
+update erp.titulos set pessoa_id = '10000000-0000-0000-0000-000000000008' where id = :'trasc';
+select pg_temp.ok((select pessoa_id = '10000000-0000-0000-0000-000000000008' from erp.titulos where id = :'trasc'),
+  'boleto: sem a forma conferida, o credor muda (a forma nova se confere com ele)');
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (:'tse', 2, 'boleto', '34191090080000000212134567890008899990000015000');
+select pg_temp.sis();
+update erp.boleto_conferencias set cpf_cnpj = '88888888000188' where linha = '34191090080000000212134567890008899990000015000';
+select pg_temp.volta();
+select pg_temp.erro_igual(format($$select erp._conferir_recebedores(%L)$$, :'tse'),
+  'permission denied for function _conferir_recebedores', 'recebedor: a nova conferência não é da API');
+select pg_temp.sis();
+select pg_temp.erro_igual(format($$select erp._conferir_recebedores(%L)$$, :'tse'),
+  'O beneficiário do boleto da parcela 2 não confere com o credor do título (confira o boleto de novo ou justifique a exceção)',
+  'boleto: a conferência de novo pega o beneficiário que deixou de ser o credor');
+select pg_temp.ok(pg_get_functiondef('erp.sienge_pedido(uuid)'::regprocedure) like '%perform erp._conferir_recebedores(t.id);%',
+  'boleto: o pedido do Sienge confere de novo quem recebe contra o credor de agora');
+select pg_temp.volta();
+rollback to savepoint sp_bol;
+savepoint sp_bol;
+set constraints erp.t_titulo_recebedor immediate;
+select pg_temp.sis();
+select erp.registrar_pix_conferencia('00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', '77777777000177', 'AGÊNCIA BETA', 'Banco Exemplo', null, 150, (select login_id from erp.usuarios where id = :'diretor'));
+select erp._criar_titulo(:'spe', 'pagar', 'avulso', '10000000-0000-0000-0000-000000000007', null, null, '2026-06-02', '2026-06-01',
+  150, array['2026-07-01']::date[], null, null, 'rascunho do credor trocado') as trasc \gset
+select pg_temp.volta();
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, pix_tipo, pix_chave, pix_copia_cola)
+values (:'trasc', 1, 'pix', 'email', 'teste@example.com', '00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF');
+select pg_temp.erro_igual(format($$update erp.titulos set pessoa_id = '10000000-0000-0000-0000-000000000008' where id = %L$$, :'trasc'),
+  'Quem recebe pelo PIX copia e cola da parcela 1 não confere com o credor do título (confira o código de novo ou justifique a exceção)',
+  'pix copia e cola: trocar o credor depois do código conferido é recusado');
+rollback to savepoint sp_bol;
 select pg_temp.ok(not has_function_privilege('anon', 'erp.boleto_conferido(text)', 'EXECUTE') and not has_function_privilege('anon', 'api.recebedores_divergentes()', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp.registrar_boleto_conferencia(text,text,text,numeric,date,text)', 'EXECUTE')
                   and (select p.prosecdef and pg_get_userbyid(p.proowner) = 'erp_conferencia' from pg_proc p where p.oid = 'erp.tg_parcela_boleto_recebedor()'::regprocedure),

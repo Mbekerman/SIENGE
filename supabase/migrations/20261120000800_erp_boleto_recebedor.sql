@@ -87,7 +87,7 @@ begin
   return new;
 end $$;
 -- o nome vem depois de t_parcela_pagamento (gatilhos rodam por ordem alfabética): a linha e o valor dela se conferem antes
-create trigger t_parcela_recebedor_boleto before insert or update of forma, boleto_linha, boleto_excecao on erp.parcela_pagamentos
+create trigger t_parcela_recebedor_boleto before insert or update of titulo_id, numero, forma, boleto_linha, boleto_excecao on erp.parcela_pagamentos
   for each row execute function erp.tg_parcela_boleto_recebedor();
 
 -- O que não bate entre quem recebe e o credor, por título, até ele ser pago (vazio quando bate ou já foi pago).
@@ -102,21 +102,69 @@ create function erp.recebedor_divergente(p_titulo uuid) returns text[] language 
         (3, case when g.boleto_excecao is not null then format('Parcela %s: beneficiário do boleto não é o fornecedor (%s)', g.numero, g.boleto_excecao) end)) x(o, m)
      where g.titulo_id = p_titulo and t.situacao not in ('quitado', 'cancelado') and x.m is not null) y $$;
 
+-- Revisão do #108: o credor do título pode mudar depois da forma de pagamento (rascunho ou revisão), e o valor da
+-- parcela também, sem passar pelos gatilhos da parcela. Esta função confere de novo, contra o credor e o valor de agora,
+-- cada boleto e cada PIX copia e cola sem a justificativa da exceção, pela conferência guardada e sem o prazo de 1 dia
+-- (o prazo vale para entrar; aqui se confere se o que entrou continua sendo do credor). Roda na troca do credor (no fim
+-- da transação, para o lançamento que troca credor e formas de uma vez) e ao montar o pedido do Sienge.
+create function erp._conferir_recebedores(p_titulo uuid) returns void language plpgsql stable as $$
+declare g record; v_doc text; c jsonb; r jsonb; v_pix numeric;
+begin
+  select p.documento into v_doc from erp.titulos t join erp.pessoas p on p.id = t.pessoa_id where t.id = p_titulo;
+  for g in select pp.numero, pp.forma, pp.pix_chave, pp.boleto_linha, pp.boleto_excecao, pp.pix_copia_cola,
+                  pp.pix_copia_cola_excecao, pa.valor
+             from erp.parcela_pagamentos pp
+             left join erp.parcelas pa on pa.titulo_id = pp.titulo_id and pa.numero = pp.numero
+            where pp.titulo_id = p_titulo order by pp.numero loop
+    if g.forma = 'boleto' and g.boleto_excecao is null then
+      c := erp.boleto_conferido(g.boleto_linha);
+      if c is null or c->>'cpf_cnpj' is distinct from v_doc
+         or (c->>'valor' is not null and (c->>'valor')::numeric is distinct from g.valor) then
+        raise exception 'O beneficiário do boleto da parcela % não confere com o credor do título (confira o boleto de novo ou justifique a exceção)', g.numero;
+      end if;
+    end if;
+    if g.pix_copia_cola is not null and g.pix_copia_cola_excecao is null then
+      v_pix := erp.pix_copia_cola_valor(g.pix_copia_cola);
+      r := erp.pix_copia_cola_recebedor(g.pix_copia_cola);
+      c := erp.pix_conferido(g.pix_copia_cola);
+      if (v_pix is not null and v_pix is distinct from g.valor)
+         or not ((c is not null and c->>'cpf_cnpj' = v_doc and (c->>'valor')::numeric is not distinct from g.valor)
+                 or (r->>'url' is null and r->>'chave' is not null
+                     and ((g.forma = 'pix' and r->>'chave' = g.pix_chave) or (g.forma = 'boleto' and r->>'chave' = v_doc)))) then
+        raise exception 'Quem recebe pelo PIX copia e cola da parcela % não confere com o credor do título (confira o código de novo ou justifique a exceção)', g.numero;
+      end if;
+    end if;
+  end loop;
+end $$;
+
+create function erp.tg_titulo_recebedor() returns trigger language plpgsql as $$
+begin
+  if new.pessoa_id is distinct from old.pessoa_id then perform erp._conferir_recebedores(new.id); end if;
+  return null;
+end $$;
+-- adiado para o fim da transação: o lançamento troca o credor e as formas de pagamento juntos
+create constraint trigger t_titulo_recebedor after update of pessoa_id on erp.titulos
+  deferrable initially deferred for each row execute function erp.tg_titulo_recebedor();
+
 revoke execute on function erp.registrar_boleto_conferencia(text, text, text, numeric, date, text),
-  erp.boleto_conferido(text), erp.tg_parcela_boleto_recebedor(), erp.recebedor_divergente(uuid) from public;
+  erp.boleto_conferido(text), erp.tg_parcela_boleto_recebedor(), erp.recebedor_divergente(uuid),
+  erp._conferir_recebedores(uuid), erp.tg_titulo_recebedor() from public;
 do $$ begin
   if exists (select 1 from pg_roles where rolname = 'anon') then
     revoke execute on function erp.registrar_boleto_conferencia(text, text, text, numeric, date, text),
-      erp.boleto_conferido(text), erp.tg_parcela_boleto_recebedor(), erp.recebedor_divergente(uuid) from anon;
+      erp.boleto_conferido(text), erp.tg_parcela_boleto_recebedor(), erp.recebedor_divergente(uuid),
+      erp._conferir_recebedores(uuid), erp.tg_titulo_recebedor() from anon;
   end if;
 end $$;
 grant execute on function erp.registrar_boleto_conferencia(text, text, text, numeric, date, text) to erp_sistema;
 grant execute on function erp.boleto_conferido(text), erp.recebedor_divergente(uuid)
   to authenticated, erp_sistema, erp_conferencia, erp_situacao, erp_reclassificacao, erp_acesso, erp_config;
-grant execute on function erp.tg_parcela_boleto_recebedor()
+grant execute on function erp.tg_parcela_boleto_recebedor(), erp._conferir_recebedores(uuid), erp.tg_titulo_recebedor()
   to erp_sistema, erp_conferencia, erp_situacao, erp_reclassificacao, erp_acesso, erp_config;
 alter function erp.boleto_conferido(text) security definer set search_path = erp, pg_catalog, pg_temp;
 alter function erp.tg_parcela_boleto_recebedor() security definer set search_path = erp, pg_catalog, pg_temp;
+alter function erp._conferir_recebedores(uuid) security definer set search_path = erp, pg_catalog, pg_temp;
+alter function erp.tg_titulo_recebedor() security definer set search_path = erp, pg_catalog, pg_temp;
 create temp table _bol_create_dado as
   select r from unnest(array['erp_conferencia']) r where not has_schema_privilege(r, 'erp', 'create');
 do $$ declare v text; begin
@@ -124,6 +172,8 @@ do $$ declare v text; begin
 end $$;
 alter function erp.boleto_conferido(text) owner to erp_conferencia;
 alter function erp.tg_parcela_boleto_recebedor() owner to erp_conferencia;
+alter function erp._conferir_recebedores(uuid) owner to erp_conferencia;
+alter function erp.tg_titulo_recebedor() owner to erp_conferencia;
 do $$ declare v text; begin
   for v in select r from _bol_create_dado loop execute format('revoke create on schema erp from %I', v); end loop;
 end $$;
@@ -149,6 +199,21 @@ $r$, $r$    n := n + 1;
     end if;
 $r$);
   if v_novo = v_def then raise exception 'erp.sienge_enfileirar: ponto de troca não achado'; end if;
+  execute v_novo;
+end $$;
+
+-- O pedido do Sienge confere de novo quem recebe contra o credor e o valor de agora (revisão do #108)
+do $$
+declare v_def text; v_novo text;
+begin
+  v_def := pg_get_functiondef('erp.sienge_pedido(uuid)'::regprocedure);
+  v_novo := replace(v_def, $r$     from erp.parcela_pagamentos g where g.titulo_id = t.id;
+$r$, $r$     from erp.parcela_pagamentos g where g.titulo_id = t.id;
+  perform erp._conferir_recebedores(t.id);
+$r$);
+  if v_novo = v_def or v_novo like '%_conferir_recebedores(t.id);%_conferir_recebedores(t.id);%' then
+    raise exception 'erp.sienge_pedido: ponto de troca não achado (ou achado mais de uma vez)';
+  end if;
   execute v_novo;
 end $$;
 
