@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { pdfCriptografado, senhasCandidatas, tipoPelosBytes } from './arquivo.ts';
 import { conferirLinha } from './boleto.ts';
-import { type Bucket, type Deps, Recusa, baixar, pedidoIdentificar, subir } from './fluxo.ts';
+import { type Bucket, type Deps, Recusa, abrirComSenha, baixar, pedidoIdentificar, subir } from './fluxo.ts';
 import { converter, ESQUEMA } from './ia.ts';
 import { Limite } from './limite.ts';
 import { lerXml } from './xml.ts';
@@ -172,7 +172,8 @@ function falsos(extra: Partial<Deps> = {}) {
       if (fn === 'identificar_nota') return { recebido: args.p } as never;
       if (fn === 'lancamento_opcoes') return { empresas: [{ documento: '44555666000199' }] } as never;
       if (fn === 'anexo') return (args.p_id === '00000000-0000-4000-8000-000000000001'
-        ? { id: args.p_id, nome: 'n.xml', tipo_mime: 'application/xml', sha256: (extra as any).sha ?? 'x' } : null) as never;
+        ? { id: args.p_id, nome: (extra as any).nomeAnexo ?? 'n.xml', tipo_mime: (extra as any).mimeAnexo ?? 'application/xml', sha256: (extra as any).sha ?? 'x' } : null) as never;
+      if (fn === 'meus_anexos_soltos') return ((extra as any).soltos ?? [{ id: '00000000-0000-4000-8000-000000000001' }]) as never;
       return null as never;
     } },
     bucket, ia: async () => { chamadas.push('ia'); return { origem: 'ia', tipo: 'nfse', valor: 10 }; },
@@ -217,7 +218,44 @@ test('subir: PDF com senha tenta os CNPJs das empresas e só então chama a IA',
   assert.deepEqual(tentadas, ['', '4455', '44555']); assert.equal(r.leitura?.valor, 10);
   const { deps: d2 } = falsos({ abrirPdf: async () => null });
   const r2 = await subir(d2, 'ok', 'f.pdf', Buffer.from('%PDF-1.4\ntrailer << /Encrypt 5 0 R >>'));
-  assert.match(r2.erro_leitura!, /senha/);
+  assert.match(r2.erro_leitura!, /senha/); assert.equal(r2.pede_senha, true);
+});
+
+test('senha do PDF: a digitada abre o guardado e lê; errada pede de novo; sem chamar a IA à toa', async () => {
+  const { createHash } = await import('node:crypto');
+  const pdf = Buffer.from('%PDF-1.4\ntrailer << /Encrypt 5 0 R >>');
+  const sha = createHash('sha256').update(pdf).digest('hex');
+  const id = '00000000-0000-4000-8000-000000000001';
+  const tentadas: string[] = [];
+  const { deps, chamadas } = falsos({ sha, mimeAnexo: 'application/pdf', nomeAnexo: 'f.pdf',
+    abrirPdf: async (_p: Buffer, s: string) => { tentadas.push(s); return s === 'x9!' ? Buffer.from('%PDF-aberto') : null; } } as never);
+  const r0 = await subir(deps, 'ok', 'f.pdf', pdf);
+  assert.equal(r0.pede_senha, true);
+  chamadas.length = 0;
+  const r1 = await abrirComSenha(deps, 'ok', id, 'errada');
+  assert.equal(r1.pede_senha, true); assert.equal(r1.erro_leitura, 'A senha não abriu o PDF'); assert.equal(r1.leitura, null);
+  assert.ok(!chamadas.includes('ia'));
+  const r2 = await abrirComSenha(deps, 'ok', id, 'x9!');
+  assert.equal(r2.leitura?.valor, 10); assert.equal(r2.pede_senha, undefined); assert.equal(r2.anexo.nome, 'f.pdf');
+  assert.ok(chamadas.includes('gravar_leitura ok'));
+  assert.deepEqual(tentadas.slice(-2), ['errada', 'x9!']);
+  await assert.rejects(abrirComSenha(deps, 'ok', id, ''), (e: Recusa) => e.status === 400);
+  await assert.rejects(abrirComSenha(deps, 'ok', id, 'a\nb'), (e: Recusa) => e.status === 400);
+  await assert.rejects(abrirComSenha(deps, 'ok', id, 'x'.repeat(101)), (e: Recusa) => e.status === 400);
+});
+
+test('senha do PDF: só no anexo solto da própria pessoa, conferido antes de ler o arquivo', async () => {
+  const { deps, chamadas } = falsos({ soltos: [], mimeAnexo: 'application/pdf', abrirPdf: async () => Buffer.from('%PDF') } as never);
+  await assert.rejects(abrirComSenha(deps, 'ok', '00000000-0000-4000-8000-000000000001', 's'), (e: Recusa) => e.status === 404);
+  assert.deepEqual(chamadas, ['meus_anexos_soltos ok']);
+});
+
+test('senha do PDF: arquivo sem senha é recusado', async () => {
+  const { createHash } = await import('node:crypto');
+  const sha = createHash('sha256').update(NFE).digest('hex');
+  const { deps } = falsos({ sha } as never);
+  await subir(deps, 'ok', 'n.xml', Buffer.from(NFE));
+  await assert.rejects(abrirComSenha(deps, 'ok', '00000000-0000-4000-8000-000000000001', 's'), (e: Recusa) => e.status === 400);
 });
 
 test('baixar: só quem vê o anexo, e o arquivo confere com o sha256', async () => {
