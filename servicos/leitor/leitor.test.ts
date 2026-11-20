@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { pdfCriptografado, senhasCandidatas, tentarSenhas, tipoPelosBytes } from './arquivo.ts';
 import { conferirLinha } from './boleto.ts';
 import { type Bucket, type Deps, Recusa, abrirComSenha, baixar, pedidoIdentificar, subir } from './fluxo.ts';
-import { chaveValida, converter, ESQUEMA } from './ia.ts';
+import { chaveValida, converter, ESQUEMA, mascara } from './ia.ts';
 import { Limite } from './limite.ts';
 import { lerXml } from './xml.ts';
 import { analisar } from './xml.ts';
@@ -392,4 +392,15 @@ test('chave de acesso lida pela IA: dígito verificador conferido, errada sai co
   assert.match(l2.avisos![0], /dígito verificador/);
   assert.equal(converter({ tipo: 'nfse', chave_acesso: 'AB12-CD34' }, 'm').chave_acesso, 'AB12-CD34', 'NFS-e passa como veio');
   assert.equal(chaveValida('123'), false);
+});
+
+test('CNPJ mascarado do tomador: guarda a máscara, nunca dígitos inventados', () => {
+  assert.equal(mascara('28.***.***/****-92'), '28**********92');
+  assert.equal(mascara('42xxxxxxxxxx01'), '42**********01');
+  assert.equal(mascara('**.***.***/****-*2'), undefined, 'menos de 4 dígitos à vista');
+  assert.equal(mascara('12.345.678/0001-90'), undefined, 'sem máscara');
+  const l = converter({ tipo: 'fatura', tomador: { documento: '28.***.***/****-92', nome: 'EMPRESA EXEMPLO' } }, 'm');
+  assert.equal(l.tomador?.documento, undefined);
+  assert.equal(l.tomador?.documento_mascara, '28**********92');
+  assert.equal(l.tomador?.nome, 'EMPRESA EXEMPLO');
 });

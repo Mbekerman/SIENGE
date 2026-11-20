@@ -106,7 +106,7 @@ export interface Aprovacao {
 export interface Leitura {
   origem: 'xml' | 'ia'; modelo?: string; formato?: string;
   tipo?: 'nfe' | 'nfse' | 'fatura' | 'boleto' | 'recibo' | 'outro';
-  emitente?: { documento?: string; nome?: string }; tomador?: { documento?: string; nome?: string };
+  emitente?: { documento?: string; nome?: string }; tomador?: { documento?: string; documento_mascara?: string; nome?: string };
   numero?: string; serie?: string; chave_acesso?: string; emissao?: string; competencia?: string;
   valor?: number; valor_liquido?: number;
   retencoes?: { iss?: number; irrf?: number; inss?: number; pis?: number; cofins?: number; csll?: number };

@@ -44,7 +44,8 @@ Extraia só o que está escrito no documento. Nunca deduza nem invente: texto qu
 - emitente é quem emite e recebe o pagamento (prestador, fornecedor, concessionária, beneficiário do boleto); \
 tomador é quem paga (destinatário, tomador do serviço, cliente, pagador). Preencha o tomador sempre que o documento \
 mostrar o cliente ou pagador, mesmo sem CNPJ (só o nome) e mesmo em fatura de concessionária.
-- documento: CNPJ ou CPF só com os dígitos. nome: a razão social inteira, exatamente como impressa, sem cortar nem \
+- documento: CNPJ ou CPF só com os dígitos. Se o documento vem mascarado (parte trocada por *, x ou •), copie \
+como impresso, com a máscara (ex.: 28.***.***/****-92); nunca complete os dígitos que faltam. nome: a razão social inteira, exatamente como impressa, sem cortar nem \
 abreviar o começo ou o fim.
 - numero: o número do próprio documento. Na fatura de concessionária ou de telefonia, é o número da fatura ou da conta; \
 se ela traz também uma nota fiscal embutida (NF-e, NFCom, NF3e), o número dessa nota vai em observacoes, não em numero. \
@@ -125,7 +126,10 @@ export async function lerComIa(cliente: Anthropic, e: Entrada, hoje = new Date()
 // Da resposta da IA para a Leitura, normalizando e conferindo o que dá para conferir.
 export function converter(j: Record<string, any>, modelo: string, hoje = new Date()): Leitura {
   const tipos: TipoDocumento[] = ['nfe', 'nfse', 'fatura', 'boleto', 'recibo', 'outro'];
-  const p = (x: any) => ({ documento: soDigitos(x?.documento) || undefined, nome: str(x?.nome) });
+  const p = (x: any) => {
+    const m = mascara(x?.documento);
+    return { documento: m ? undefined : soDigitos(x?.documento) || undefined, documento_mascara: m, nome: str(x?.nome) };
+  };
   const emissao = data(j.emissao);
   const ref = emissao ? new Date(`${emissao}T12:00:00Z`) : hoje;
   const avisos: string[] = (Array.isArray(j.observacoes) ? j.observacoes : []).filter((s: unknown) => typeof s === 'string' && s.trim());
@@ -185,6 +189,13 @@ function chaveConferida(c: string | undefined, avisos: string[]): string | undef
   if (chaveValida(d)) return d;
   avisos.push('A chave de acesso lida não confere pelo dígito verificador e ficou de fora: confira no documento.');
   return undefined;
+}
+// CNPJ ou CPF mascarado no documento (28.***.***/****-92): fica só com os dígitos e um * por posição escondida, para a
+// tela sugerir a empresa que fecha com o começo e o fim. Exige 4 dígitos visíveis; sem máscara, undefined.
+export function mascara(x: unknown): string | undefined {
+  if (typeof x !== 'string' || !/[*xX•]/.test(x)) return undefined;
+  const m = x.replace(/[xX•]/g, '*').replace(/[^\d*]/g, '');
+  return /\d/.test(m) && m.replace(/\*/g, '').length >= 4 && m.includes('*') ? m : undefined;
 }
 const str = (x: unknown) => (typeof x === 'string' && x.trim() ? x.trim() : undefined);
 const pos = (x: unknown) => { const n = numero(x); return n !== undefined && n > 0 ? Math.round(n * 100) / 100 : undefined; };
