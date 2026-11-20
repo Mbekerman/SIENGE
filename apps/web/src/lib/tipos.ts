@@ -17,6 +17,7 @@ export interface Titulo {
 export interface ParcelaDetalhe {
   numero: number; vencimento: string; valor: number; saldo: number | null; forma: 'pix' | 'boleto' | null;
   pix_tipo: string | null; pix_chave: string | null; boleto_linha: string | null; pix_excecao: string | null; pix_copia_cola?: string | null;
+  pix_copia_cola_recebedor?: { chave: string | null; url: string | null; nome: string | null } | null; pix_copia_cola_excecao?: string | null;
 }
 
 /* api.titulo: a linha da lista mais o detalhe; ali `parcelas` é a lista das parcelas, não a contagem. */

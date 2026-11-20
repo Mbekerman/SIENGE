@@ -6067,18 +6067,45 @@ select pg_temp.ok(erp.pix_copia_cola_valido('00020126390014br.gov.bcb.pix0117tes
 update erp.parcela_pagamentos set pix_copia_cola = '00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***630485E6' where titulo_id = :'tse' and numero = 1;
 select pg_temp.ok((select pix_copia_cola is not null from erp.parcela_pagamentos where titulo_id = :'tse' and numero = 1),
   'pix copia e cola: entra na parcela com o valor dela (150 de 300 em duas)');
-select pg_temp.erro_igual(format($$update erp.parcela_pagamentos set pix_copia_cola = '00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406100.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304AAB7' where titulo_id = %L and numero = 1$$, :'tse'),
+select pg_temp.erro_igual(format($$update erp.parcela_pagamentos set pix_copia_cola = '00020126410014br.gov.bcb.pix0119agencia@example.com5204000053039865406100.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***63046CD8' where titulo_id = %L and numero = 1$$, :'tse'),
   'O valor do PIX copia e cola (100.00) não é o da parcela 1 (150.00)', 'pix copia e cola: valor diferente do da parcela é recusado');
 select pg_temp.falha(format($$update erp.parcela_pagamentos set pix_copia_cola = '00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***630485E7' where titulo_id = %L and numero = 1$$, :'tse'),
   'pix copia e cola: CRC errado é recusado');
-insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha, pix_copia_cola)
-values (:'tse', 2, 'boleto', '34191090080000000212134567890008199990000000000', '00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***63045E2F');
-select pg_temp.ok((select pix_copia_cola is not null from erp.parcela_pagamentos where titulo_id = :'tse' and numero = 2),
-  'pix copia e cola: entra também no boleto (o QR do boleto híbrido), e sem valor no código passa');
+-- o recebedor (revisão de segurança, 20/11/2026): o código leva quem recebe, e ele tem de ser o da parcela ou do credor
+select pg_temp.ok(erp.pix_copia_cola_recebedor('00020126390014br.gov.bcb.pix0117outra@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304168B') = '{"chave": "outra@example.com", "url": null, "nome": "FORNECEDOR EXEMPLO"}'::jsonb
+                  and erp.pix_copia_cola_recebedor('00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF')->>'url' = 'pix.example.com/qr/v2/cobv/0123456789abcdef'
+                  and erp.pix_copia_cola_recebedor('00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF')->>'chave' is null,
+  'pix copia e cola: o recebedor sai do campo 26 (chave no estático, URL no dinâmico) e o nome do 59');
+select pg_temp.erro_igual(format($$update erp.parcela_pagamentos set pix_copia_cola = '00020126390014br.gov.bcb.pix0117outra@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304168B' where titulo_id = %L and numero = 1$$, :'tse'),
+  'A chave do PIX copia e cola da parcela 1 não é a chave PIX da parcela (só com a justificativa da exceção)',
+  'pix copia e cola: chave de outro no código da parcela PIX é recusada sem justificativa');
+update erp.parcela_pagamentos set pix_copia_cola = '00020126390014br.gov.bcb.pix0117outra@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304168B', pix_copia_cola_excecao = 'Pedido do fornecedor por escrito' where titulo_id = :'tse' and numero = 1;
+select pg_temp.ok((select pix_copia_cola_excecao = 'Pedido do fornecedor por escrito' from erp.parcela_pagamentos where titulo_id = :'tse' and numero = 1)
+                  and (select j->'parcelas'->0->'pix_copia_cola_recebedor'->>'chave' = 'outra@example.com'
+                          and j->'parcelas'->0->>'pix_copia_cola_excecao' = 'Pedido do fornecedor por escrito' from api.titulo(:'tse') j),
+  'pix copia e cola: com a justificativa entra, e o título mostra a quem aprova o recebedor e a justificativa');
+update erp.parcela_pagamentos set pix_copia_cola = '00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***630485E6' where titulo_id = :'tse' and numero = 1;
+select pg_temp.ok((select pix_copia_cola_excecao is null from erp.parcela_pagamentos where titulo_id = :'tse' and numero = 1),
+  'pix copia e cola: voltando à chave da parcela, a exceção some');
+select pg_temp.erro_igual(format($$insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha, pix_copia_cola) values (%L, 2, 'boleto', '34191090080000000212134567890008199990000000000', '00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***63045E2F')$$, :'tse'),
+  'A chave do PIX copia e cola da parcela 2 não é a do CPF/CNPJ do credor (só com a justificativa da exceção)',
+  'pix copia e cola: no boleto, chave que não é o CPF/CNPJ do credor é recusada sem justificativa');
+select pg_temp.erro_igual(format($$insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha, pix_copia_cola) values (%L, 2, 'boleto', '34191090080000000212134567890008199990000000000', '00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF')$$, :'tse'),
+  'O PIX copia e cola da parcela 2 é dinâmico e o recebedor não se confere (só com a justificativa da exceção)',
+  'pix copia e cola: código dinâmico sem justificativa é recusado');
+select pg_temp.falha(format($$insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha, pix_copia_cola, pix_copia_cola_excecao) values (%L, 2, 'boleto', '34191090080000000212134567890008199990000000000', '00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', '   ')$$, :'tse'),
+  'pix copia e cola: justificativa em branco não vale');
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha, pix_copia_cola) values (:'tse', 2, 'boleto', '34191090080000000212134567890008199990000000000', '00020126360014br.gov.bcb.pix0114777777770001775204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***63049C9D');
+select pg_temp.ok((select pix_copia_cola is not null and pix_copia_cola_excecao is null from erp.parcela_pagamentos where titulo_id = :'tse' and numero = 2),
+  'pix copia e cola: entra também no boleto (o QR do boleto híbrido) com o CNPJ do credor, e sem valor no código passa');
+update erp.parcela_pagamentos set pix_copia_cola = '00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', pix_copia_cola_excecao = 'QR dinâmico do banco do boleto' where titulo_id = :'tse' and numero = 2;
+select pg_temp.ok((select pix_copia_cola_excecao is not null from erp.parcela_pagamentos where titulo_id = :'tse' and numero = 2),
+  'pix copia e cola: o dinâmico entra com a justificativa');
 select pg_temp.ok(not has_function_privilege('anon', 'erp.pix_copia_cola_valido(text)', 'EXECUTE'),
   'pix copia e cola: a conferência não é de public');
 rollback to savepoint sp_pixcc;
-insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (:'tse', 2, 'boleto', '34191090080000000212134567890008899990000015000');
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha, pix_copia_cola, pix_copia_cola_excecao)
+values (:'tse', 2, 'boleto', '34191090080000000212134567890008899990000015000', '00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', 'QR dinâmico do banco do boleto');
 select pg_temp.ok((select count(*) = 2 from erp.parcela_pagamentos where titulo_id = :'tse'),
   'sienge: antes do primeiro voto, quem lança informa a forma de pagamento de cada parcela');
 select pg_temp.ok((select count(*) = 1 from erp.auditoria where tabela = 'parcela_pagamentos' and registro = :'tse' and acao = 'insert' and depois->>'forma' = 'pix'),
@@ -6155,6 +6182,17 @@ select pg_temp.ok((select count(*) = 1 and bool_and(e.dados->'parcelas' = '[{"nu
                   and (select critico from erp.tipos_evento where codigo = 'chave_pix_nova')
                   and exists (select 1 from erp.regras_notificacao where tipo = 'chave_pix_nova' and destino = 'lista' and lista = 'AF' and ativa),
   'S-125: título com chave PIX nunca usada com o credor gera o alerta crítico, para o master e a AF, só da chave nova');
+select pg_temp.ok((select count(*) = 1 and bool_and(e.dados->'parcelas'->0->>'numero' = '2'
+                                                    and e.dados->'parcelas'->0->'recebedor'->>'url' = 'pix.example.com/qr/v2/cobv/0123456789abcdef'
+                                                    and e.dados->'parcelas'->0->>'justificativa' = 'QR dinâmico do banco do boleto')
+                     from erp.eventos e where e.tipo = 'pix_copia_cola_excecao' and e.registro = :'tse')
+                  and exists (select 1 from erp.notificacoes n join erp.eventos e on e.id = n.evento_id
+                               where e.tipo = 'pix_copia_cola_excecao' and e.registro = :'tse' and n.critico and n.user_id = :'diretor'),
+  'pix copia e cola: título com recebedor não conferido gera o alerta crítico ao ir para a fila do Sienge');
+select pg_temp.ok((select p.prosecdef and pg_get_userbyid(p.proowner) = 'erp_conferencia' from pg_proc p
+                    where p.oid = 'erp.tg_parcela_pix_copia_cola()'::regprocedure)
+                  and not has_schema_privilege('erp_conferencia', 'erp', 'create'),
+  'pix copia e cola: a conferência do recebedor lê o credor por baixo do RLS (definer de erp_conferencia), sem CREATE no esquema');
 select pg_temp.ok(erp.sienge_enfileirar() = 0, 'sienge: enfileirar de novo não repete');
 select pg_temp.ok(not exists (select 1 from erp.sienge_envios e join erp.titulos t on t.id = e.titulo_id
                                where t.tipo not in ('fornecedor','avulso') or not erp.titulo_aprovado(t.id)),
@@ -7456,14 +7494,14 @@ select pg_temp.erro_igual(format($$select api.lancar_titulo(%L)$$, (select j || 
   'O valor de cada parcela é maior que zero, com até 2 casas', 'parcelas: mais de 2 casas não entra');
 select pg_temp.ok(not exists (select 1 from erp.documentos_fiscais where numero = 'T-885'), 'parcelas: a recusa não deixa a nota');
 select api.lancar_titulo((select j || jsonb_build_object('parcelas',
-  '[{"vencimento": "2026-11-20", "valor": 100, "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com", "pix_copia_cola": " 00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406100.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304AAB7 "},
+  '[{"vencimento": "2026-11-20", "valor": 100, "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com", "pix_copia_cola": " 00020126410014br.gov.bcb.pix0119agencia@example.com5204000053039865406100.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***63046CD8 "},
     {"vencimento": "2026-12-20", "valor": 200, "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"}]'::jsonb) from nota_val)) as tval \gset
 select pg_temp.ok((select valor = 300 from erp.titulos where id = :'tval')
                   and (select array_agg(valor order by numero) from erp.parcelas where titulo_id = :'tval') = array[100, 200]::numeric[]
                   and (select coalesce(sum(l.valor), 0) = -300 from erp.lancamentos l where l.titulo_id = :'tval' and l.estagio = 'comprometido'),
   'parcelas: cada parcela fica com o valor do documento, e o comprometido é o do título');
-select pg_temp.ok((select pix_copia_cola = '00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406100.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304AAB7' from erp.parcela_pagamentos where titulo_id = :'tval' and numero = 1)
-                  and (select j->'parcelas'->0->>'pix_copia_cola' = '00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406100.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304AAB7' and j->'parcelas'->1->'pix_copia_cola' = 'null'::jsonb from api.titulo(:'tval') j),
+select pg_temp.ok((select pix_copia_cola = '00020126410014br.gov.bcb.pix0119agencia@example.com5204000053039865406100.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***63046CD8' from erp.parcela_pagamentos where titulo_id = :'tval' and numero = 1)
+                  and (select j->'parcelas'->0->>'pix_copia_cola' = '00020126410014br.gov.bcb.pix0119agencia@example.com5204000053039865406100.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***63046CD8' and j->'parcelas'->1->'pix_copia_cola' = 'null'::jsonb from api.titulo(:'tval') j),
   'pix copia e cola: o Lançar título grava o código da parcela (sem os espaços das pontas) e a gaveta do título mostra');
 select pg_temp.erro_igual(format($$select erp.lancar_documento(%L, array['2026-11-20','2026-12-20']::date[], null, array[300]::numeric[])$$,
                                  (select documento_id from erp.titulos where id = :'tval')),
