@@ -7256,8 +7256,8 @@ begin
        or exists (select id from erp.previsoes where sentido = 'pagar' except select id from api.previsoes()) then
       raise exception 'FALHOU: api.previsoes difere do RLS para %', r.u;
     end if;
-    if exists (select id from api.contratos() except select id from erp.compromissos where tipo in ('contrato','assinatura'))
-       or exists (select id from erp.compromissos where tipo in ('contrato','assinatura') except select id from api.contratos()) then
+    if exists (select id from api.contratos() except select id from erp.compromissos where tipo in ('contrato','assinatura','consumo'))
+       or exists (select id from erp.compromissos where tipo in ('contrato','assinatura','consumo') except select id from api.contratos()) then
       raise exception 'FALHOU: api.contratos difere do RLS para %', r.u;
     end if;
   end loop;
@@ -7631,6 +7631,12 @@ rollback;
 
 \echo '# tela Para aprovar (api.aprovacoes e api.decidir, 19/11/2026)'
 select pg_temp.como(null);
+-- transação só de leitura (GET do PostgREST): erro claro, nunca "não é a vez" em tudo (revisão de segurança do #95)
+select pg_temp.como(:'gestor');
+begin read only;
+select pg_temp.erro_igual('select * from api.aprovacoes()', 'api.aprovacoes precisa de transação de escrita (chamar por POST)', 'aprovar: só leitura dá erro claro');
+rollback;
+select pg_temp.como(null);
 begin;
 select pg_temp.sis();
 insert into erp.pessoa_papeis values ('10000000-0000-0000-0000-000000000007', 'fornecedor') on conflict do nothing;
@@ -7659,10 +7665,6 @@ grant select on apr_conta to public;
 select pg_temp.como(:'leitor');
 select pg_temp.ok(not exists (select 1 from api.aprovacoes()), 'aprovar: quem só consulta não recebe a lista');
 select pg_temp.falha(format($$select api.decidir('titulo', %L, 'aprovar')$$, :'tap'), 'aprovar: quem só consulta não decide');
--- transação só de leitura (GET do PostgREST): erro claro, nunca "não é a vez" em tudo (revisão de segurança do #95)
-begin read only;
-select pg_temp.erro_igual('select * from api.aprovacoes()', 'api.aprovacoes precisa de transação de escrita (chamar por POST)', 'aprovar: só leitura dá erro claro');
-commit;
 -- a vez: o gestor do centro primeiro; quem lançou vê o motivo
 select pg_temp.como(:'gestor');
 select pg_temp.ok((select a.vez and a.esperando = 'gestor do centro, depois AF' and a.area = 'Marketing' and a.valor = 900
@@ -7734,6 +7736,67 @@ end $$;
 select pg_temp.ok(true, 'aprovar: para cada usuário, a lista só traz títulos, previsões e contratos que ele vê');
 select pg_temp.como(null);
 rollback;
+
+\echo '# contas recorrentes pela tela (api.salvar_conta e conta de consumo, 20/11/2026)'
+select pg_temp.como(null);
+begin;
+select pg_temp.sis();
+insert into erp.pessoa_papeis values ('10000000-0000-0000-0000-000000000007', 'fornecedor') on conflict do nothing;
+insert into erp.centro_aprovadores values (:'cc_mkt', :'gestor') on conflict do nothing;
+insert into erp.listas_financeiro (lista, user_id) values ('AF', :'contador') on conflict do nothing;
+select pg_temp.volta();
+select pg_temp.como(:'analista');
+select n.id as nat_cr from api.naturezas_lancaveis(:'ne_vm', :'cc_mkt', null) n order by n.codigo limit 1 \gset
+select jsonb_build_object('empresa', :'spe', 'tipo', 'consumo', 'fornecedor', '10000000-0000-0000-0000-000000000007',
+         'descricao', 'Luz do PDV', 'inicio', '2026-11-01', 'dia_vencimento', 6, 'instalacao', '0012.345-6',
+         'faixa_mensal', 1500, 'teto_anual', 16000,
+         'rateio', jsonb_build_array(jsonb_build_object('nucleo', :'ne_vm', 'centro', :'cc_mkt', 'natureza', :'nat_cr', 'percentual', 100))) as cbase \gset
+-- quem só consulta não grava
+select pg_temp.como(:'leitor');
+select pg_temp.falha(format('select api.salvar_conta(%L::jsonb)', :'cbase'), 'conta: quem só consulta não cadastra');
+-- a conta de consumo pede instalação, faixa e teto; o rateio soma 100%
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format('select api.salvar_conta(%L::jsonb)', (:'cbase'::jsonb - 'instalacao')::text),
+  'Informe a instalação, a faixa por mês, o teto no ano e o dia do vencimento', 'conta: consumo sem instalação é recusado');
+select pg_temp.erro_igual(format('select api.salvar_conta(%L::jsonb)', jsonb_set(:'cbase'::jsonb, '{rateio,0,percentual}', '60')::text),
+  'O rateio precisa somar 100%', 'conta: rateio que não soma 100% é recusado');
+select api.salvar_conta(:'cbase'::jsonb) as ccons \gset
+select pg_temp.ok((select c.tipo = 'consumo' and c.periodicidade = 'mensal' and c.faixa_mensal = 1500
+                     and c.valor_periodo is null from erp.compromissos c where c.id = :'ccons'), 'conta: consumo gravado, mensal');
+select aprovacao_versao as cver from erp.compromissos where id = :'ccons' \gset
+select pg_temp.ok((select not x.aprovado and x.instalacao = '0012.345-6' and x.teto_anual = 16000 and x.posso_alterar
+                     from api.contratos() x where x.id = :'ccons'), 'conta: aparece na lista, em aprovação, e quem lançou altera');
+-- a mesma instalação (escrita de outro jeito) do mesmo fornecedor na mesma empresa não entra duas vezes
+select pg_temp.falha(format('select api.salvar_conta(%L::jsonb)', jsonb_set(:'cbase'::jsonb, '{instalacao}', '"00123456"')::text),
+  'conta: a mesma instalação não entra duas vezes');
+-- vai para a tela Para aprovar com a faixa como valor; o gestor tem a vez, quem lançou não
+select pg_temp.como(:'gestor');
+select pg_temp.ok((select a.vez and a.valor = 1500 from api.aprovacoes() a where a.tipo = 'contrato' and a.id = :'ccons'),
+  'conta: consumo na tela Para aprovar, na vez do gestor, pela faixa');
+select pg_temp.como(:'analista');
+select pg_temp.ok((select not a.vez from api.aprovacoes() a where a.tipo = 'contrato' and a.id = :'ccons'), 'conta: quem lançou não aprova a conta');
+-- api.conta devolve o cadastro para alterar
+select pg_temp.ok((select (x->>'instalacao') = '0012.345-6' and jsonb_array_length(x->'rateio') = 1
+                     and (x->'rateio'->0->>'percentual')::numeric = 100 from api.conta(:'ccons') x), 'conta: o cadastro volta para a tela de alterar');
+-- alterar sem mudar nada não reabre a aprovação; mudar a faixa reabre
+select api.salvar_conta(:'cbase'::jsonb || jsonb_build_object('id', :'ccons'));
+select pg_temp.ok((select aprovacao_versao = :cver from erp.compromissos where id = :'ccons'), 'conta: salvar igual não muda a versão');
+select api.salvar_conta(:'cbase'::jsonb || jsonb_build_object('id', :'ccons', 'faixa_mensal', 1800));
+select pg_temp.ok((select aprovacao_versao = :cver + 1 and faixa_mensal = 1800 from erp.compromissos where id = :'ccons'), 'conta: mudar a faixa pede aprovação de novo');
+-- o tipo não muda pela alteração
+select pg_temp.erro_igual(format('select api.salvar_conta(%L::jsonb)', (:'cbase'::jsonb || jsonb_build_object('id', :'ccons', 'tipo', 'assinatura',
+  'valor_periodo', 100, 'periodicidade', 'mensal'))::text), 'Conta não encontrada, encerrada ou sem permissão para alterar', 'conta: o tipo não muda');
+-- contrato de serviço por valor total e assinatura mensal
+select api.salvar_conta(jsonb_build_object('empresa', :'spe', 'tipo', 'contrato', 'fornecedor', '10000000-0000-0000-0000-000000000007',
+  'descricao', 'Agência 12 meses', 'inicio', '2026-12-01', 'fim', '2027-11-30', 'valor_total', 24000, 'instalacao', 'X',
+  'rateio', :'cbase'::jsonb->'rateio')) as cctr \gset
+select pg_temp.ok((select c.tipo = 'contrato' and c.valor_total = 24000 and c.instalacao is null from erp.compromissos c where c.id = :'cctr'),
+  'conta: contrato de serviço gravado sem campos de consumo');
+select pg_temp.erro_igual(format('select api.salvar_conta(%L::jsonb)', jsonb_build_object('empresa', :'spe', 'tipo', 'assinatura',
+  'fornecedor', '10000000-0000-0000-0000-000000000007', 'descricao', 'Software', 'inicio', '2026-12-01', 'valor_periodo', 200,
+  'rateio', :'cbase'::jsonb->'rateio')::text), 'Informe o valor e a periodicidade', 'conta: assinatura sem periodicidade é recusada');
+rollback;
+select pg_temp.como(null);
 
 \echo '# pessoa PJ: o cadastro só o master e os designados veem (Moises, 19/11/2026)'
 begin;

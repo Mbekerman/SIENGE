@@ -11,13 +11,13 @@ import type { FornecedorBusca, NaturezaLancavel, OpcoesLancamento, PrevisaoParaN
 
 type Forma = 'pix' | 'boleto';
 type PixTipo = 'cpf_cnpj' | 'email' | 'telefone' | 'aleatoria';
-interface Linha { k: number; nucleo: string; centro: string; divisao: string; natureza: string; pct: string }
+export interface Linha { k: number; nucleo: string; centro: string; divisao: string; natureza: string; pct: string }
 interface Parcela { k: number; vencimento: string; forma: Forma; pix_tipo: PixTipo; pix_chave: string; boleto: string; excecao: string }
 
 const TIPOS: [string, string][] = [['nfse', 'NFS-e'], ['nfe', 'NF-e'], ['fatura', 'Fatura'], ['boleto', 'Boleto'], ['recibo', 'Recibo'], ['outro', 'Outro']];
 const PIX: [PixTipo, string][] = [['cpf_cnpj', 'CPF ou CNPJ'], ['email', 'E-mail'], ['telefone', 'Telefone'], ['aleatoria', 'Chave aleatória']];
 let seq = 1;
-const novaLinha = (pct = '100'): Linha => ({ k: seq++, nucleo: '', centro: '', divisao: '', natureza: '', pct });
+export const novaLinha = (pct = '100'): Linha => ({ k: seq++, nucleo: '', centro: '', divisao: '', natureza: '', pct });
 const novaParcela = (base?: Parcela, doc?: string | null): Parcela => ({
   k: seq++, vencimento: '', forma: base?.forma ?? 'pix', pix_tipo: base?.pix_tipo ?? 'cpf_cnpj',
   pix_chave: base?.pix_chave ?? (doc ?? ''), boleto: '', excecao: base?.excecao ?? '',
@@ -31,7 +31,7 @@ function chave(t: PixTipo, v: string): string {
   return s.toLowerCase();
 }
 
-function Campo({ r, children, msg, topo }: { r: string; children: ReactNode; msg?: ReactNode; topo?: boolean }) {
+export function Campo({ r, children, msg, topo }: { r: string; children: ReactNode; msg?: ReactNode; topo?: boolean }) {
   return <>
     <div className="k" style={topo ? { alignSelf: 'start', paddingTop: 14 } : undefined}>{r}</div>
     <div className="v lt-v">{children}{msg && <span className="sec peq">{msg}</span>}</div>
@@ -212,10 +212,10 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   );
 }
 
-const divisoesDe = (o: OpcoesLancamento | null | undefined, centro: string) => o?.centros.find(c => c.id === centro)?.divisoes ?? [];
-const juntar = (l: string[]) => (l.length < 2 ? l.join('') : `${l.slice(0, -1).join(', ')} e ${l[l.length - 1]}`);
+export const divisoesDe = (o: OpcoesLancamento | null | undefined, centro: string) => o?.centros.find(c => c.id === centro)?.divisoes ?? [];
+export const juntar = (l: string[]) => (l.length < 2 ? l.join('') : `${l.slice(0, -1).join(', ')} e ${l[l.length - 1]}`);
 
-function LinhaRateio({ l, o, emp, varias, valor, tentou, mudar, tirar }: {
+export function LinhaRateio({ l, o, emp, varias, valor, tentou, mudar, tirar }: {
   l: Linha; o: OpcoesLancamento; emp: OpcoesLancamento['empresas'][number]; varias: boolean; valor: number | null; tentou: boolean;
   mudar: (m: Partial<Linha>) => void; tirar: () => void;
 }) {
@@ -262,7 +262,7 @@ function LinhaRateio({ l, o, emp, varias, valor, tentou, mudar, tirar }: {
   );
 }
 
-function BuscaFornecedor({ v, mudar, erro }: { v: FornecedorBusca | null; mudar: (f: FornecedorBusca | null) => void; erro: boolean }) {
+export function BuscaFornecedor({ v, mudar, erro }: { v: FornecedorBusca | null; mudar: (f: FornecedorBusca | null) => void; erro: boolean }) {
   const [txt, setTxt] = useState('');
   const [busca, setBusca] = useState('');
   const [ab, setAb] = useState(false);

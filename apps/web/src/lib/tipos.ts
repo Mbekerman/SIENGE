@@ -41,10 +41,18 @@ export interface Previsao {
 }
 
 export interface Contrato {
-  id: string; tipo: 'contrato' | 'assinatura'; situacao: 'ativo' | 'encerrado' | 'cancelado'; aprovado: boolean | null;
+  id: string; tipo: 'contrato' | 'assinatura' | 'consumo'; situacao: 'ativo' | 'encerrado' | 'cancelado'; aprovado: boolean | null;
   fornecedor: string | null; numero: string | null; descricao: string; inicio: string; fim: string | null;
   periodicidade: string | null; valor_periodo: number | null; valor_total: number | null; dia_vencimento: number | null;
-  areas: string | null; naturezas: string | null; empresa: string | null; previsoes_abertas: number; lancado_por: string | null; meu: boolean;
+  instalacao: string | null; faixa_mensal: number | null; teto_anual: number | null;
+  areas: string | null; naturezas: string | null; empresa: string | null; previsoes_abertas: number; lancado_por: string | null; meu: boolean; posso_alterar: boolean;
+}
+/** O cadastro de uma conta para alterar (api.conta): o rateio vem com a divisão de último nível. */
+export interface ContaCadastro {
+  id: string; empresa: string; tipo: Contrato['tipo']; numero: string | null; descricao: string; fornecedor: FornecedorBusca | null;
+  inicio: string; fim: string | null; periodicidade: string | null; valor_periodo: number | null; valor_total: number | null; dia_vencimento: number | null;
+  caucao_percentual: number | null; instalacao: string | null; faixa_mensal: number | null; teto_anual: number | null; situacao: string;
+  rateio: { nucleo: string | null; centro: string | null; divisao: string | null; natureza: string; percentual: number }[];
 }
 
 /** Rastro do título (api.titulo_rastro): de onde veio, quem aprovou, o que mudou, os anexos, o contrato e o fornecedor. */
