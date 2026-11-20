@@ -159,8 +159,8 @@ grant select, insert, update on erp.pix_conferencias to erp_sistema;
 grant select on erp.pix_conferencias to erp_conferencia;
 create trigger t_nao_trunca before truncate on erp.pix_conferencias for each statement execute function erp.tg_recusa_truncate();
 
--- Grava a conferência (só o sistema, pela pix-conferir). p_login é o id do login de quem pediu; devolve quantas
--- conferências a pessoa pediu nos últimos 10 minutos (o limite fica na função).
+-- Grava a conferência (só o sistema, pela pix-conferir). p_login é o id do login de quem pediu; o limite de pedidos
+-- fica em erp.conferencia_tentativa.
 create function erp.registrar_pix_conferencia(p_codigo text, p_cpf_cnpj text, p_nome text, p_banco text, p_chave text, p_valor numeric, p_login text)
 returns void language plpgsql as $$
 declare v_por uuid;
