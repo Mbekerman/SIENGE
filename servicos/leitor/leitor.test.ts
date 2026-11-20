@@ -1,7 +1,7 @@
 // Testes do leitor, só com dados inventados (nada das amostras reais entra no repositório, que é público).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { pdfCriptografado, senhasCandidatas, tipoPelosBytes } from './arquivo.ts';
+import { pdfCriptografado, senhasCandidatas, tentarSenhas, tipoPelosBytes } from './arquivo.ts';
 import { conferirLinha } from './boleto.ts';
 import { type Bucket, type Deps, Recusa, abrirComSenha, baixar, pedidoIdentificar, subir } from './fluxo.ts';
 import { converter, ESQUEMA } from './ia.ts';
@@ -104,7 +104,13 @@ test('tipo pelos bytes, não pelo nome', () => {
   assert.equal(tipoPelosBytes(Buffer.from([0x3c, 0xff, 0xfe])), null, 'começa com < mas não é UTF-8');
   assert.equal(pdfCriptografado(Buffer.from('%PDF-1.4\ntrailer << /Encrypt 5 0 R >>')), true);
   assert.equal(pdfCriptografado(Buffer.from('%PDF-1.4\ntrailer << /Root 1 0 R >>')), false);
-  assert.deepEqual(senhasCandidatas(['44.555.666/0001-99', '1']), ['4455', '44555', '445556', '44555666']);
+  const c = senhasCandidatas(['44.555.666/0001-99', '1', '44555666000199', '11222333000144']);
+  assert.equal(c.length, 2 * (12 + 11), 'CNPJ curto e repetido ficam de fora');
+  assert.deepEqual(c.slice(0, 3), ['445', '4455', '44555']);
+  assert.equal(c[11], '44555666000199'); assert.equal(c[12], '112');
+  assert.deepEqual(c.slice(24, 27), ['199', '0199', '00199']);
+  assert.equal(c[34], '4555666000199', 'o último final é todos menos o primeiro dígito');
+  assert.equal(c.at(-1), '1222333000144');
 });
 
 test('resposta da IA: nulos somem, valores zerados viram não informado, linha conferida', () => {
@@ -211,11 +217,17 @@ test('subir: falha da IA não perde o arquivo e não grava leitura', async () =>
   assert.ok(!chamadas.some((c) => c.startsWith('gravar_leitura')));
 });
 
+// o falso do qpdf: tenta as senhas em ordem, como o servidor
+const uma = (f: (s: string) => Promise<Buffer | null>) => async (_p: Buffer, ss: string[]) => {
+  for (const s of ss) { const r = await f(s); if (r) return r; }
+  return null;
+};
+
 test('subir: PDF com senha tenta os CNPJs das empresas e só então chama a IA', async () => {
   const tentadas: string[] = [];
-  const { deps } = falsos({ abrirPdf: async (_p, s) => { tentadas.push(s); return s === '44555' ? Buffer.from('%PDF-aberto') : null; } });
+  const { deps } = falsos({ abrirPdf: uma(async (s) => { tentadas.push(s); return s === '44555' ? Buffer.from('%PDF-aberto') : null; }) });
   const r = await subir(deps, 'ok', 'f.pdf', Buffer.from('%PDF-1.4\ntrailer << /Encrypt 5 0 R >>'));
-  assert.deepEqual(tentadas, ['', '4455', '44555']); assert.equal(r.leitura?.valor, 10);
+  assert.deepEqual(tentadas, ['', '445', '4455', '44555']); assert.equal(r.leitura?.valor, 10);
   const { deps: d2 } = falsos({ abrirPdf: async () => null });
   const r2 = await subir(d2, 'ok', 'f.pdf', Buffer.from('%PDF-1.4\ntrailer << /Encrypt 5 0 R >>'));
   assert.match(r2.erro_leitura!, /senha/); assert.equal(r2.pede_senha, true);
@@ -228,7 +240,7 @@ test('senha do PDF: a digitada abre o guardado e lê; errada pede de novo; sem c
   const id = '00000000-0000-4000-8000-000000000001';
   const tentadas: string[] = [];
   const { deps, chamadas } = falsos({ sha, mimeAnexo: 'application/pdf', nomeAnexo: 'f.pdf',
-    abrirPdf: async (_p: Buffer, s: string) => { tentadas.push(s); return s === 'x9!' ? Buffer.from('%PDF-aberto') : null; } } as never);
+    abrirPdf: uma(async (s) => { tentadas.push(s); return s === 'x9!' ? Buffer.from('%PDF-aberto') : null; }) } as never);
   const r0 = await subir(deps, 'ok', 'f.pdf', pdf);
   assert.equal(r0.pede_senha, true);
   chamadas.length = 0;
@@ -345,4 +357,23 @@ test('rotas: o limite configurado da pessoa vale no lugar do padrão', async () 
   const st: number[] = [];
   for (let i = 0; i < 4; i++) st.push((await pedido(quem, { authorization: 'Bearer bom' }, Buffer.from('%PDF-1.7'), limite)).status);
   assert.ok(st.slice(0, 3).every((s) => s !== 429), st.join()); assert.equal(st[3], 429);
+});
+
+test('senhas do PDF: para na que abre, segue na errada, desiste em código estranho e no prazo total', async () => {
+  const vistas: string[] = [];
+  const conf = (codigos: Record<string, number>) => async (s: string) => { vistas.push(s); return codigos[s] ?? 0; };
+  assert.equal(await tentarSenhas(['a', 'b', 'c'], conf({ b: 3 })), 'b');
+  assert.deepEqual(vistas, ['a', 'b']);
+  vistas.length = 0;
+  assert.equal(await tentarSenhas(['a', 'b', 'c'], conf({ a: 2 })), null, '2 = não cifrado ou danificado');
+  assert.deepEqual(vistas, ['a'], 'sai na primeira tentativa');
+  vistas.length = 0;
+  assert.equal(await tentarSenhas(['a', 'b'], conf({ a: -1 })), null, 'tempo esgotado ou erro');
+  assert.deepEqual(vistas, ['a']);
+  // prazo: cada tentativa "leva" 6 s num relógio falso; com 15 s, a terceira já não roda
+  let t = 0; const restos: number[] = []; vistas.length = 0;
+  const lenta = async (s: string, resta: number) => { vistas.push(s); restos.push(resta); t += 6000; return 0; };
+  assert.equal(await tentarSenhas(['a', 'b', 'c', 'd'], lenta, 15_000, () => t), null);
+  assert.deepEqual(vistas, ['a', 'b', 'c']);
+  assert.deepEqual(restos, [15_000, 9_000, 3_000], 'cada qpdf recebe só o tempo que resta');
 });

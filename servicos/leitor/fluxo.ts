@@ -25,7 +25,7 @@ export interface Deps {
   bucket: Bucket;
   ia: ((e: Entrada) => Promise<Leitura>) | null;
   asaas: ((linha: string) => Promise<NonNullable<Boleto['conferido_asaas']>>) | null;
-  abrirPdf: ((pdf: Buffer, senha: string) => Promise<Buffer | null>) | null;  // null = senha errada
+  abrirPdf: ((pdf: Buffer, senhas: string[]) => Promise<Buffer | null>) | null;  // a primeira que abre; null = nenhuma
   log: (msg: string, extra?: Record<string, unknown>) => void;
 }
 
@@ -91,7 +91,7 @@ export async function abrirComSenha(d: Deps, jwt: string, id: string, senha: str
   if (a.mime !== 'application/pdf' || !pdfCriptografado(a.dados)) throw new Recusa(400, 'Este arquivo não é um PDF com senha');
   if (!d.ia) throw new Recusa(503, 'Leitura por IA indisponível');
   return concluir(d, jwt, { id, nome: a.nome, tipo_mime: 'application/pdf', tamanho: a.dados.length }, [], async () => {
-    const aberto = d.abrirPdf ? await d.abrirPdf(a.dados, senha) : null;
+    const aberto = d.abrirPdf ? await d.abrirPdf(a.dados, [senha]) : null;
     if (!aberto) throw new SemSenha('A senha não abriu o PDF');
     return d.ia!({ tipo: 'pdf', dados: aberto });
   });
@@ -122,14 +122,8 @@ async function ler(d: Deps, jwt: string, mime: Mime, dados: Buffer): Promise<Lei
 // PDF com senha: tenta os primeiros dígitos do CNPJ das empresas que a pessoa vê (a sem senha de usuário abre direto).
 async function abrir(d: Deps, jwt: string, pdf: Buffer): Promise<Buffer | null> {
   if (!d.abrirPdf) return null;
-  const sem = await d.abrirPdf(pdf, '');
-  if (sem) return sem;
   const op = await d.banco.rpc<{ empresas?: { documento?: string }[] } | null>(jwt, 'lancamento_opcoes', {});
-  for (const s of senhasCandidatas((op?.empresas ?? []).map((e) => e.documento ?? ''))) {
-    const r = await d.abrirPdf(pdf, s);
-    if (r) return r;
-  }
-  return null;
+  return d.abrirPdf(pdf, ['', ...senhasCandidatas((op?.empresas ?? []).map((e) => e.documento ?? ''))]);
 }
 
 // O corpo de api.identificar_nota: o vencimento é o primeiro da nota, do boleto ou da fatura.
