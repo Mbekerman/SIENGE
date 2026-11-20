@@ -76,6 +76,52 @@ begin
   execute v;
 end $$;
 
+-- Contrato com nota, título ou previsão ligada (revisão de segurança do PR #96, 20/11/2026):
+--   - o fornecedor não muda: a nota e o título já ligados foram conferidos contra ele (erp.contrato_confere, #93) e
+--     ficariam presos ao contrato de outro fornecedor. Sem nada ligado, a troca vale (corrige cadastro errado).
+--   - o valor total do contrato não fica abaixo do que já se lançou nele: as notas não canceladas mais os títulos
+--     sem nota não cancelados (o mesmo "lançado" do rastro do título, em valor bruto).
+-- A empresa já não muda (tg_empresa_fixa). A faixa por mês e o teto no ano da conta de consumo não são trava de
+-- nota nesta versão (só mudam a aprovação, no PR das notas); por isso podem baixar.
+-- O gatilho vale para qualquer caminho de gravação, não só api.salvar_conta. A leitura dos vínculos passa por baixo
+-- do RLS (quem altera pode não ver todas as notas do contrato): definer do erp_conferencia, que só lê.
+create function erp.compromisso_vinculos(p_id uuid, out ligado boolean, out lancado numeric)
+language sql stable security definer set search_path = erp, pg_catalog, pg_temp as $$
+  select exists (select 1 from erp.documentos_fiscais d where d.compromisso_id = p_id)
+      or exists (select 1 from erp.titulos t where t.compromisso_id = p_id)
+      or exists (select 1 from erp.previsoes p where p.compromisso_id = p_id),
+         coalesce((select sum(d.valor_bruto) from erp.documentos_fiscais d where d.compromisso_id = p_id and d.situacao <> 'cancelado'), 0)
+       + coalesce((select sum(t.valor) from erp.titulos t where t.compromisso_id = p_id and t.documento_id is null and t.situacao <> 'cancelado'), 0) $$;
+alter function erp.compromisso_vinculos(uuid) owner to erp_conferencia;
+revoke execute on function erp.compromisso_vinculos(uuid) from public;
+do $$ begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then revoke execute on function erp.compromisso_vinculos(uuid) from anon; end if;
+  if exists (select 1 from pg_roles where rolname = 'service_role') then revoke execute on function erp.compromisso_vinculos(uuid) from service_role; end if;
+end $$;
+grant execute on function erp.compromisso_vinculos(uuid)
+  to authenticated, erp_sistema, erp_conferencia, erp_situacao, erp_reclassificacao, erp_acesso;
+
+create function erp.tg_compromisso_vinculado() returns trigger language plpgsql as $$
+declare v record;
+begin
+  if new.pessoa_id is not distinct from old.pessoa_id
+     and (new.valor_total is null or new.valor_total >= coalesce(old.valor_total, 0)) then return new; end if;
+  v := erp.compromisso_vinculos(new.id);
+  if new.pessoa_id is distinct from old.pessoa_id and v.ligado then
+    raise exception 'O fornecedor não muda: o contrato já tem nota, título ou previsão; encerre e cadastre outro';
+  end if;
+  if new.valor_total is not null and new.valor_total < v.lancado then
+    raise exception 'O valor do contrato não pode ficar abaixo do já lançado nele (R$ %)',
+      translate(to_char(v.lancado, 'FM999,999,999,990.00'), ',.', '.,');
+  end if;
+  return new;
+end $$;
+revoke execute on function erp.tg_compromisso_vinculado() from public;
+grant execute on function erp.tg_compromisso_vinculado()
+  to authenticated, erp_sistema, erp_conferencia, erp_situacao, erp_reclassificacao, erp_acesso;
+create trigger t_compromisso_vinculado before update of pessoa_id, valor_total on erp.compromissos
+  for each row execute function erp.tg_compromisso_vinculado();
+
 -- ---------------------------------------------------------------------------------------------
 -- 2. Lista, cadastro e gravação pela API
 -- ---------------------------------------------------------------------------------------------

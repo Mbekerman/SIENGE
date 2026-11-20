@@ -1003,7 +1003,7 @@ select pg_temp.ok(not exists (
        'cancelar_reclassificacao','pedir_mudanca_acesso','decidir_mudanca_acesso','cancelar_mudanca_acesso','passar_master',
        'pedir_sucessao_master','decidir_sucessao_master','vetar_sucessao_master','efetivar_sucessao_master',
        'pedir_mudanca_config','decidir_mudanca_config','cancelar_mudanca_config','marcar_notificacoes_lidas',
-       'designar_pj','retirar_pj','vejo_pj','vejo_auditoria','previsao_aprovada_vista','contrato_aprovado_visto','contrato_confere')),
+       'designar_pj','retirar_pj','vejo_pj','vejo_auditoria','previsao_aprovada_vista','contrato_aprovado_visto','contrato_confere','compromisso_vinculos')),
   'catálogo: das funções security definer, authenticated só executa as da lista (RPCs e conferências de quem está logado)');
 select pg_temp.ok(not has_function_privilege('authenticated', 'erp._aplicar_mudanca_acesso(uuid)', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp.gerar_avisos_sucessao()', 'EXECUTE')
@@ -7795,6 +7795,27 @@ select pg_temp.ok((select c.tipo = 'contrato' and c.valor_total = 24000 and c.in
 select pg_temp.erro_igual(format('select api.salvar_conta(%L::jsonb)', jsonb_build_object('empresa', :'spe', 'tipo', 'assinatura',
   'fornecedor', '10000000-0000-0000-0000-000000000007', 'descricao', 'Software', 'inicio', '2026-12-01', 'valor_periodo', 200,
   'rateio', :'cbase'::jsonb->'rateio')::text), 'Informe o valor e a periodicidade', 'conta: assinatura sem periodicidade é recusada');
+-- contrato sem nada ligado: o fornecedor e o valor mudam (corrige cadastro errado)
+select api.salvar_conta(jsonb_build_object('id', :'cctr', 'empresa', :'spe', 'tipo', 'contrato', 'fornecedor', '10000000-0000-0000-0000-000000000005',
+  'descricao', 'Agência 12 meses', 'inicio', '2026-12-01', 'fim', '2027-11-30', 'valor_total', 1, 'rateio', :'cbase'::jsonb->'rateio'));
+select pg_temp.ok((select pessoa_id = '10000000-0000-0000-0000-000000000005' and valor_total = 1 from erp.compromissos where id = :'cctr'),
+  'conta: sem nota, título ou previsão, o fornecedor e o valor mudam');
+-- contrato com nota ligada (CT-1, revisão do #96): o fornecedor não muda e o valor não fica abaixo do lançado, em qualquer caminho
+select pg_temp.sis();
+select pg_temp.ok((select v.ligado and v.lancado > 1 from erp.compromisso_vinculos('60000000-0000-0000-0000-000000000002') v),
+  'conta: (teste) o CT-1 tem nota ligada e valor lançado');
+select (erp.compromisso_vinculos('60000000-0000-0000-0000-000000000002')).lancado as ct1_lanc \gset
+select pg_temp.volta();
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual($$update erp.compromissos set pessoa_id = '10000000-0000-0000-0000-000000000007' where id = '60000000-0000-0000-0000-000000000002'$$,
+  'O fornecedor não muda: o contrato já tem nota, título ou previsão; encerre e cadastre outro', 'conta: o fornecedor do contrato com nota não muda');
+select pg_temp.falha($$update erp.compromissos set valor_total = 1 where id = '60000000-0000-0000-0000-000000000002'$$,
+  'conta: o valor do contrato não fica abaixo do já lançado');
+select pg_temp.falha(format('update erp.compromissos set valor_total = %s where id = %L', :ct1_lanc - 0.01, '60000000-0000-0000-0000-000000000002'),
+  'conta: um centavo abaixo do lançado também é recusado');
+update erp.compromissos set valor_total = :ct1_lanc where id = '60000000-0000-0000-0000-000000000002';
+select pg_temp.ok((select valor_total = :ct1_lanc from erp.compromissos where id = '60000000-0000-0000-0000-000000000002'),
+  'conta: o valor igual ao lançado é aceito');
 rollback;
 select pg_temp.como(null);
 
