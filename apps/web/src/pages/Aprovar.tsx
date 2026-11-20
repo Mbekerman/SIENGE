@@ -1,6 +1,7 @@
 // Para aprovar (tpl.js › fAprovar e fGaveta): o que espera aprovação e a pessoa vê, numa lista só, com "é a sua vez?".
 // A vez vem do banco (api.aprovacoes simula a própria decisão), e a decisão é api.decidir, a RPC de sempre por baixo.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { AlertaRecebedor, SeloRecebedor, useDivergentes } from '../lib/recebedor';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Alerta, COR, Cab, Carregando, Chip, Colunas, Gaveta, Grupo, Ic, Kv, Tiles, Vazio, type Cor, type CorChip, type Linha } from '../components/Comum';
@@ -29,6 +30,7 @@ const soma = (l: Aprovacao[]) => l.reduce((s, a) => s + valorVez(a), 0);
 export function Aprovar() {
   const pg = usePagina<F>('/aprovar');
   const q = useQuery({ queryKey: ['aprovacoes'], queryFn: () => rpc<Aprovacao[]>('aprovacoes') });
+  const div = useDivergentes();
   const [aviso, setAviso] = useState<string | null>(null);
   const [marcados, setMarcados] = useState<Set<string>>(new Set());
   const qc = useQueryClient();
@@ -70,8 +72,8 @@ export function Aprovar() {
       id: chave(a),
       titulo: a.vez
         ? <span className="apr-ck"><input type="checkbox" checked={marcados.has(chave(a))} aria-label={`Marcar ${a.fornecedor ?? a.descricao ?? 'item'}`}
-            onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()} onChange={() => trocar(chave(a))} />{a.fornecedor ?? a.descricao ?? '—'}</span>
-        : <span className="apr-ck"><span className="apr-ck-v" />{a.fornecedor ?? a.descricao ?? '—'}</span>,
+            onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()} onChange={() => trocar(chave(a))} />{a.fornecedor ?? a.descricao ?? '—'}{a.tipo === 'titulo' && <SeloRecebedor motivos={div.get(a.id)} />}</span>
+        : <span className="apr-ck"><span className="apr-ck-v" />{a.fornecedor ?? a.descricao ?? '—'}{a.tipo === 'titulo' && <SeloRecebedor motivos={div.get(a.id)} />}</span>,
       cels: [
         { c: <Chip t={TIPO[a.tipo][0]} c={TIPO[a.tipo][1]} /> },
         { c: a.area, x: true },
@@ -119,7 +121,7 @@ export function Aprovar() {
             </>}
       </div>
       {pg.id && (aberto
-        ? <GavetaAprovar key={pg.id} a={aberto} fechar={pg.fechar} feito={m => { setAviso(m); pg.fechar(); }} />
+        ? <GavetaAprovar key={pg.id} a={aberto} motivos={aberto.tipo === 'titulo' ? div.get(aberto.id) : undefined} fechar={pg.fechar} feito={m => { setAviso(m); pg.fechar(); }} />
         : !q.isLoading && <Gaveta titulo="Para aprovar" fechar={pg.fechar}><Vazio t="Este item não espera mais aprovação, ou você não o vê." /></Gaveta>)}
       {aviso && <div className="snack" role="status" style={{ position: 'fixed' }}><span>{aviso}</span><button onClick={() => setAviso(null)}>Fechar</button></div>}
     </>
@@ -132,7 +134,7 @@ const RES: Record<string, string> = {
   revisao: 'Voltou para quem lançou ajustar.',
 };
 
-function GavetaAprovar({ a, fechar, feito }: { a: Aprovacao; fechar: () => void; feito: (m: string) => void }) {
+function GavetaAprovar({ a, motivos, fechar, feito }: { a: Aprovacao; motivos?: string[]; fechar: () => void; feito: (m: string) => void }) {
   const qc = useQueryClient();
   const [modo, setModo] = useState<Modo>(null);
   const [just, setJust] = useState('');
@@ -168,6 +170,7 @@ function GavetaAprovar({ a, fechar, feito }: { a: Aprovacao; fechar: () => void;
         {a.data && <div className="sec">{a.tipo === 'contrato' ? 'começa' : a.tipo === 'previsao' ? 'prevista para' : 'vence'} {data(a.data)}</div>}
       </div>
       {a.tipo === 'titulo' && <RastroBotoes id={a.id} />}
+      <AlertaRecebedor motivos={motivos} />
       {!a.vez && a.motivo && <Alerta c="at" t={a.motivo} />}
       {modo && (
         <label className="apr-just">

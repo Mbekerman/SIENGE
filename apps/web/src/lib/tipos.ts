@@ -19,6 +19,7 @@ export interface ParcelaDetalhe {
   pix_tipo: string | null; pix_chave: string | null; boleto_linha: string | null; pix_excecao: string | null; pix_copia_cola?: string | null;
   pix_copia_cola_recebedor?: { chave: string | null; url: string | null; nome: string | null } | null; pix_copia_cola_excecao?: string | null;
   pix_copia_cola_conferido?: { cpf_cnpj: string | null; nome: string | null; banco: string | null; valor: number | null; em: string } | null;
+  boleto_conferido?: { cpf_cnpj: string | null; nome: string | null; valor: number | null; vencimento: string | null; em: string } | null; boleto_excecao?: string | null;
 }
 
 /* api.titulo: a linha da lista mais o detalhe; ali `parcelas` é a lista das parcelas, não a contagem. */
@@ -32,6 +33,8 @@ export interface TituloDetalhe extends Omit<Titulo, 'parcelas'> {
   etiquetas: string[];
   previsoes: { id: string; valor: number; data_prevista: string }[];
   sienge_erro: string | null;
+  /** o que não bate entre quem recebe e o fornecedor, até o pagamento (erp.recebedor_divergente) */
+  recebedor_divergente?: string[];
 }
 
 export type AprovacaoPrevisao = 'aprovada' | 'esperando' | 'cancelada';
