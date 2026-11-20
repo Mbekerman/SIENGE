@@ -7909,8 +7909,17 @@ select pg_temp.ok((select a.leitura->'emitente'->>'documento' = '11222333000181'
   'guias: sem o CNPJ lido, o emitente vem do código da guia, com aviso');
 select api.gravar_leitura(:'anx', jsonb_build_object('emitente', jsonb_build_object('documento', :'doc_forn'),
                                                      'boletos', jsonb_build_array(jsonb_build_object('linha', '816000000000100099990000000000000000000000000000'))));
-select pg_temp.ok((select a.leitura->'emitente'->>'documento' = :'doc_forn' and a.leitura->'avisos' is null from erp.anexos a where a.id = :'anx'),
-  'guias: o CNPJ que o leitor achou fica como veio');
+select pg_temp.ok((select a.leitura->'emitente'->>'documento' = :'doc_forn'
+                          and a.leitura->'avisos'->>0 like 'O código do recebedor na linha da guia é de PREFEITURA EXEMPLO, e não do CNPJ%'
+                          and jsonb_array_length(a.leitura->'avisos') = 1 from erp.anexos a where a.id = :'anx'),
+  'guias: o CNPJ que o leitor achou fica como veio, com aviso quando o código da guia é de outro CNPJ');
+select api.gravar_leitura(:'anx', jsonb_build_object('emitente', jsonb_build_object('documento', '11.222.333/0002-62'),
+                                                     'boletos', jsonb_build_array(jsonb_build_object('linha', '816000000000100099990000000000000000000000000000'))));
+select pg_temp.ok((select a.leitura->'emitente'->>'documento' = '11.222.333/0002-62' and a.leitura->'avisos' is null from erp.anexos a where a.id = :'anx'),
+  'guias: outra filial do mesmo órgão (mesma raiz do CNPJ) não avisa');
+select pg_temp.ok(erp.completar_recebedor(jsonb_build_object('emitente', jsonb_build_object('documento', :'doc_forn'),
+                    'boletos', jsonb_build_array(jsonb_build_object('linha', '34191090080000000212134567890008899990000015000')))) ->'avisos' is null,
+  'guias: boleto de cobrança não avisa divergência');
 select api.gravar_leitura(:'anx', jsonb_build_object('valor', 900, 'emitente', :'doc_forn'));
 select pg_temp.erro_igual(format($$update erp.anexos set sha256 = %L where id = %L$$, repeat('d', 64), :'anx'),
   'O arquivo do anexo não muda: suba outro', 'anexo: o arquivo (sha256, nome, tamanho) não muda depois de gravado');
