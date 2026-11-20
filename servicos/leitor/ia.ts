@@ -47,8 +47,9 @@ mostrar o cliente ou pagador, mesmo sem CNPJ (só o nome) e mesmo em fatura de c
 - documento: CNPJ ou CPF só com os dígitos. nome: a razão social inteira, exatamente como impressa, sem cortar nem \
 abreviar o começo ou o fim.
 - numero: o número do próprio documento. Na fatura de concessionária ou de telefonia, é o número da fatura ou da conta; \
-se ela traz uma NF-e ou NFCom embutida, o número dessa nota vai em observacoes, não em numero. Na NFS-e, o número da \
-nota, não o do RPS ou da DPS.
+se ela traz também uma nota fiscal embutida (NF-e, NFCom, NF3e), o número dessa nota vai em observacoes, não em numero. \
+Se a fatura não tem número de fatura ou de conta próprio, numero é o da nota embutida (com a série em serie). Na NFS-e, \
+o número da nota, não o do RPS ou da DPS.
 - Datas em AAAA-MM-DD; competencia em AAAA-MM; valores em reais como número com ponto decimal (1.234,56 vira 1234.56).
 - valor é o valor bruto do documento (total da nota, valor dos serviços, total a pagar da fatura); valor_liquido é o \
 valor líquido depois das retenções, quando a nota mostra. Se o arquivo traz só os boletos das parcelas, sem total \
@@ -131,13 +132,14 @@ export function converter(j: Record<string, any>, modelo: string, hoje = new Dat
   const boletos = (Array.isArray(j.linhas_digitaveis) ? j.linhas_digitaveis : [])
     .map((l: unknown) => conferirLinha(String(l ?? ''), ref)).filter((b): b is Boleto => b !== null);
   for (const b of boletos) if (!b.valida) avisos.push(`Linha do boleto com dígito verificador errado: ${b.linha}`);
+  const chave = chaveConferida(str(j.chave_acesso), avisos);
   const comp = typeof j.competencia === 'string' && /^\d{4}-\d{2}$/.test(j.competencia) ? j.competencia : undefined;
   const refConsumo = typeof j.consumo?.referencia === 'string' && /^\d{4}-\d{2}/.test(j.consumo.referencia) ? j.consumo.referencia.slice(0, 7) : undefined;
   return limpar({
     origem: 'ia', modelo,
     tipo: tipos.includes(j.tipo) ? j.tipo : 'outro',
     emitente: p(j.emitente), tomador: p(j.tomador),
-    numero: str(j.numero), serie: str(j.serie), chave_acesso: str(j.chave_acesso),
+    numero: str(j.numero), serie: str(j.serie), chave_acesso: chave,
     emissao, competencia: comp,
     valor: pos(j.valor) ?? somaParcelas(j.parcelas), valor_liquido: pos(j.valor_liquido),
     retencoes: retencoes(j.retencoes),
@@ -165,6 +167,24 @@ function somaParcelas(ps: unknown): number | undefined {
   if (!Array.isArray(ps) || !ps.length) return undefined;
   const v = ps.map((x) => pos(x?.valor));
   return v.every((n) => n !== undefined) ? Math.round(v.reduce((a, n) => a + n!, 0) * 100) / 100 : undefined;
+}
+// Chave de 44 dígitos (NF-e, NFC-e, CT-e, NFCom, NF3e): o último dígito é o verificador em módulo 11 (pesos 2 a 9 da
+// direita para a esquerda; resto 0 ou 1 dá 0). Chave lida com o dígito errado sai vazia, com aviso: uma chave errada
+// é pior que nenhuma. Outro formato (o código de verificação da NFS-e) passa como veio.
+export function chaveValida(d: string): boolean {
+  if (!/^\d{44}$/.test(d)) return false;
+  let soma = 0;
+  for (let i = 42, peso = 2; i >= 0; i--, peso = peso === 9 ? 2 : peso + 1) soma += Number(d[i]) * peso;
+  const r = soma % 11;
+  return (r < 2 ? 0 : 11 - r) === Number(d[43]);
+}
+function chaveConferida(c: string | undefined, avisos: string[]): string | undefined {
+  if (!c) return undefined;
+  const d = soDigitos(c);
+  if (d.length !== 44) return c;
+  if (chaveValida(d)) return d;
+  avisos.push('A chave de acesso lida não confere pelo dígito verificador e ficou de fora: confira no documento.');
+  return undefined;
 }
 const str = (x: unknown) => (typeof x === 'string' && x.trim() ? x.trim() : undefined);
 const pos = (x: unknown) => { const n = numero(x); return n !== undefined && n > 0 ? Math.round(n * 100) / 100 : undefined; };
