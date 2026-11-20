@@ -8,7 +8,7 @@ import { Popup } from '../components/Rastro';
 import { data, dividir, documento, hojeISO, lerReais, reais } from '../lib/format';
 import { mensagemErro, rpc } from '../lib/supabase';
 import { leitorLigado, subirArquivo, TIPOS_ACEITOS } from '../lib/leitor';
-import type { FornecedorBusca, Identificacao, NaturezaLancavel, OpcoesLancamento, PrevisaoParaNota, ResultadoLeitor } from '../lib/tipos';
+import type { FornecedorBusca, Identificacao, Leitura, NaturezaLancavel, OpcoesLancamento, PrevisaoParaNota, ResultadoLeitor } from '../lib/tipos';
 
 type Forma = 'pix' | 'boleto';
 type PixTipo = 'cpf_cnpj' | 'email' | 'telefone' | 'aleatoria';
@@ -57,6 +57,7 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   const [tentou, setTentou] = useState(false);
   const [arq, setArq] = useState<ResultadoLeitor | null>(null);
   const [cand, setCand] = useState<string | null>(null);
+  const [semRet, setSemRet] = useState(false);
   const [buscaForn, setBuscaForn] = useState('');
 
   const o = op.data;
@@ -77,7 +78,8 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   useEffect(() => { setPrevs(p => p.filter(id => previsoes.some(x => x.id === id))); }, [pq.data]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // o arquivo: sobe ao leitor, que guarda, lê e diz o que casa; a tela se preenche e tudo continua editável
-  const subir = useMutation({ mutationFn: subirArquivo, onSuccess: r => { setArq(r); preencher(r); } });
+  const subir = useMutation({ mutationFn: subirArquivo, onSuccess: r => { setArq(r); setSemRet(false); preencher(r); } });
+  const comRet = Boolean(arq?.leitura && temRetencao(arq.leitura));
   const usarCandidato = (c: Identificacao['candidatos'][number] | null) => {
     setCand(c?.id ?? null);
     if (!c) { setPrevs([]); return; }
@@ -109,6 +111,7 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   const mudaP = (k: number, m: Partial<Parcela>) => setParcelas(ps => ps.map(p => (p.k === k ? { ...p, ...m } : p)));
 
   const falta: string[] = [];
+  if (comRet && !semRet) falta.push('confirmar que a nota não tem retenção (nota com retenção ainda não se lança)');
   if (!empresa) falta.push('a empresa');
   if (!forn) falta.push('o fornecedor');
   if (!numero.trim()) falta.push('o número do documento');
@@ -148,6 +151,13 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
 
         {leitorLigado && <ArquivoNota r={arq} subindo={subir.isPending} erro={subir.error ? mensagemErro(subir.error) : null}
           escolher={f => subir.mutate(f)} valor={valor} cand={cand} usar={usarCandidato} />}
+        {comRet && arq?.leitura && (
+          <div className="lt-sec">
+            <span className="nt cr">A leitura achou retenção de imposto ({descRetencao(arq.leitura)}). Nota com retenção ainda não se lança: o título sairia pelo valor bruto e a BKM pagaria ao fornecedor o imposto que ela mesma tem de recolher. Espere a tela de retenções.</span>
+            <label className="ab-l"><input type="checkbox" checked={semRet} onChange={e => setSemRet(e.target.checked)} />
+              <span>Conferi o documento: a nota não tem retenção (a leitura errou)</span></label>
+          </div>
+        )}
 
         <section className="lt-sec"><h3>Documento</h3><div className="kv lt-kv">
           <Campo r="Empresa">
@@ -357,7 +367,6 @@ function avisosLidos(r: ResultadoLeitor, valor: number | null): { c: 'cr' | 'at'
   if (l.tomador?.documento && !id?.empresa) out.push({ c: 'at', t: `O tomador da nota (${documento(l.tomador.documento)}) não é uma empresa em que você lança.` });
   if (l.emitente?.documento && !id?.fornecedor) out.push({ c: 'at', t: `O emitente ${l.emitente.nome ?? ''} (${documento(l.emitente.documento)}) não está cadastrado. Procure pelo nome ou peça o cadastro.` });
   else if (id?.fornecedor && !id.fornecedor.fornecedor) out.push({ c: 'at', t: `${id.fornecedor.nome} está cadastrado, mas não como fornecedor.` });
-  if (l.valor_liquido && l.valor && l.valor_liquido < l.valor) out.push({ c: 'at', t: `A nota tem retenções (líquido ${reais(l.valor_liquido)}). Nesta versão o título sai pelo valor bruto.` });
   for (const b of l.boletos ?? []) {
     const a = b.conferido_asaas;
     if (!b.valida || !a) continue;
@@ -418,3 +427,12 @@ function ArquivoNota({ r, subindo, erro, escolher, valor, cand, usar }: {
     </section>
   );
 }
+
+const RET: [keyof NonNullable<Leitura['retencoes']>, string][] = [['iss', 'ISS'], ['irrf', 'IRRF'], ['inss', 'INSS'], ['pis', 'PIS'], ['cofins', 'COFINS'], ['csll', 'CSLL']];
+/** Retenção lida: algum tributo retido ou o líquido abaixo do bruto. Até a tela de retenções, essa nota não se lança
+ *  (o envio ao Sienge só barra a nota com retenção registrada, e o Lançar título não registra retenção). */
+export const temRetencao = (l: Leitura) => RET.some(([k]) => (l.retencoes?.[k] ?? 0) > 0) || Boolean(l.valor && l.valor_liquido && l.valor_liquido < l.valor - 0.009);
+const descRetencao = (l: Leitura) => {
+  const it = RET.filter(([k]) => (l.retencoes?.[k] ?? 0) > 0).map(([k, n]) => `${n} ${reais(l.retencoes![k]!)}`);
+  return it.length ? it.join(', ') : `líquido ${reais(l.valor_liquido!)} de ${reais(l.valor!)}`;
+};
