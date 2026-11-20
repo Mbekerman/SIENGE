@@ -1007,7 +1007,7 @@ select pg_temp.ok(not exists (
        'cancelar_reclassificacao','pedir_mudanca_acesso','decidir_mudanca_acesso','cancelar_mudanca_acesso','passar_master',
        'pedir_sucessao_master','decidir_sucessao_master','vetar_sucessao_master','efetivar_sucessao_master',
        'pedir_mudanca_config','decidir_mudanca_config','cancelar_mudanca_config','marcar_notificacoes_lidas',
-       'designar_pj','retirar_pj','vejo_pj','vejo_auditoria','previsao_aprovada_vista','contrato_aprovado_visto','contrato_confere','compromisso_vinculos','pix_conferido','boleto_conferido','completar_recebedor')),
+       'designar_pj','retirar_pj','vejo_pj','vejo_auditoria','previsao_aprovada_vista','contrato_aprovado_visto','contrato_confere','compromisso_vinculos','pix_conferido','boleto_conferido','completar_recebedor','credor_novo')),
   'catálogo: das funções security definer, authenticated só executa as da lista (RPCs e conferências de quem está logado)');
 select pg_temp.ok(not has_function_privilege('authenticated', 'erp._aplicar_mudanca_acesso(uuid)', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp.gerar_avisos_sucessao()', 'EXECUTE')
@@ -6022,9 +6022,9 @@ select pg_temp.ok(not has_function_privilege('authenticated', 'erp.titulo_aprova
 -- o beneficiário dos boletos dos testes, conferido pelo sistema (20/11/2026: sem conferência, o boleto só entra com a
 -- justificativa; os testes do beneficiário ficam no bloco do PIX copia e cola)
 select pg_temp.sis();
-select erp.registrar_boleto_conferencia(l, d, 'FORNECEDOR EXEMPLO LTDA', v, null, (select login_id from erp.usuarios where id = :'diretor'))
-  from (values ('34191090080000000212134567890008199990000000000', '77777777000177', null::numeric),
-               ('34191090080000000212134567890008899990000015000', '29.732.041/0001-54', 150)) x(l, d, v);
+select erp.registrar_boleto_conferencia(l, d, n, v, null, (select login_id from erp.usuarios where id = :'diretor'))
+  from (values ('34191090080000000212134567890008199990000000000', '77777777000177', 'AGENCIA BETA LTDA', null::numeric),
+               ('34191090080000000212134567890008899990000015000', '29.732.041/0001-54', 'FORNECEDOR EXEMPLO LTDA', 150)) x(l, d, n, v);
 select pg_temp.volta();
 insert into erp.parcela_pagamentos (titulo_id, numero, forma, pix_tipo, pix_chave) values (:'tse', 1, 'pix', 'email', 'teste@example.com');
 select pg_temp.falha(format($$insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (%L, 2, 'boleto', '34191090080000000212134567890008999990000015000')$$, :'tse'),
@@ -6121,7 +6121,7 @@ select pg_temp.falha(format($$select erp.registrar_pix_conferencia(%L, '77777777
 select pg_temp.falha(format($$insert into erp.pix_conferencias (codigo, cpf_cnpj) values (%L, '77777777000177')$$, '00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF'),
   'pix conferência: pela API, ninguém grava a conferência direto na tabela');
 select pg_temp.sis();
-select erp.registrar_pix_conferencia('00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', '77.777.777/0001-77', 'FORNECEDOR EXEMPLO LTDA', 'Banco Exemplo', null, 100,
+select erp.registrar_pix_conferencia('00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', '77.777.777/0001-77', 'AGENCIA BETA LTDA', 'Banco Exemplo', null, 100,
   (select login_id from erp.usuarios where id = :'diretor'));
 select pg_temp.ok(erp.conferencia_tentativa((select login_id from erp.usuarios where id = :'diretor')) = 1
                   and erp.conferencia_tentativa((select login_id from erp.usuarios where id = :'diretor')) = 2
@@ -6133,7 +6133,7 @@ select pg_temp.erro_igual(format($$update erp.parcela_pagamentos set pix_copia_c
   'O PIX copia e cola da parcela 2 é dinâmico e quem recebe não foi conferido (só com a justificativa da exceção)',
   'pix conferência: a conferência com o valor cobrado diferente do da parcela não dispensa a justificativa');
 select pg_temp.sis();
-select erp.registrar_pix_conferencia('00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', '77.777.777/0001-77', 'FORNECEDOR EXEMPLO LTDA', 'Banco Exemplo', null, 150,
+select erp.registrar_pix_conferencia('00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', '77.777.777/0001-77', 'AGENCIA BETA LTDA', 'Banco Exemplo', null, 150,
   (select login_id from erp.usuarios where id = :'diretor'));
 update erp.pix_conferencias set conferido_em = clock_timestamp() - interval '25 hours' where codigo = '00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF';
 select pg_temp.volta();
@@ -6154,6 +6154,25 @@ select pg_temp.volta();
 select pg_temp.erro_igual(format($$update erp.parcela_pagamentos set pix_copia_cola_excecao = null, boleto_linha = boleto_linha where titulo_id = %L and numero = 2$$, :'tse'),
   'Quem recebe pelo PIX copia e cola da parcela 2 (OUTRA PESSOA, conferido) não é o credor (só com a justificativa da exceção)',
   'pix conferência: quem recebe conferido no Asaas sendo outra pessoa pede a justificativa');
+-- S-140: o mesmo CPF/CNPJ do credor, mas outro nome (o credor cadastrado com o documento de quem frauda)
+select pg_temp.sis();
+select erp.registrar_pix_conferencia('00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', '77777777000177', 'JOAO DA SILVA', 'Banco Exemplo', null, 150,
+  (select login_id from erp.usuarios where id = :'diretor'));
+select pg_temp.volta();
+select pg_temp.erro_igual(format($$update erp.parcela_pagamentos set pix_copia_cola_excecao = null, boleto_linha = boleto_linha where titulo_id = %L and numero = 2$$, :'tse'),
+  'Quem recebe pelo PIX copia e cola da parcela 2 (JOAO DA SILVA, conferido) não é o credor (só com a justificativa da exceção)',
+  'S-140: PIX copia e cola conferido com o documento do credor e outro nome pede a justificativa');
+select pg_temp.sis();
+select erp.registrar_pix_conferencia('00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', '77777777000177', 'AGENCIA BETA COMUNICACAO E PUBLICIDADE LTDA', 'Banco Exemplo', null, 150,
+  (select login_id from erp.usuarios where id = :'diretor'));
+select pg_temp.volta();
+update erp.parcela_pagamentos set pix_copia_cola_excecao = null, boleto_linha = boleto_linha where titulo_id = :'tse' and numero = 2;
+select pg_temp.ok((select pix_copia_cola_excecao is null from erp.parcela_pagamentos where titulo_id = :'tse' and numero = 2),
+  'S-140: o nome completo do banco confere com o nome curto do cadastro (a primeira palavra)');
+select pg_temp.sis();
+select erp.registrar_pix_conferencia('00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', '29732041000154', 'OUTRA PESSOA', 'Banco Exemplo', null, 150,
+  (select login_id from erp.usuarios where id = :'diretor'));
+select pg_temp.volta();
 update erp.parcela_pagamentos set pix_copia_cola = '00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', pix_copia_cola_excecao = 'QR dinâmico do banco do boleto' where titulo_id = :'tse' and numero = 2;
 select pg_temp.ok((select pix_copia_cola_excecao is not null from erp.parcela_pagamentos where titulo_id = :'tse' and numero = 2),
   'pix copia e cola: o dinâmico entra com a justificativa');
@@ -6172,13 +6191,13 @@ select pg_temp.falha(format($$select erp.registrar_boleto_conferencia(%L, '77777
 select pg_temp.falha(format($$insert into erp.boleto_conferencias (linha, cpf_cnpj) values (%L, '77777777000177')$$, '34191090080000000212134567890008899990000015000'),
   'boleto: pela API, ninguém grava a conferência direto na tabela');
 select pg_temp.sis();
-select erp.registrar_boleto_conferencia('34191090080000000212134567890008899990000015000', '77777777000177', 'FORNECEDOR EXEMPLO LTDA', 100, null, (select login_id from erp.usuarios where id = :'diretor'));
+select erp.registrar_boleto_conferencia('34191090080000000212134567890008899990000015000', '77777777000177', 'AGENCIA BETA LTDA', 100, null, (select login_id from erp.usuarios where id = :'diretor'));
 select pg_temp.volta();
 select pg_temp.erro_igual(format($$insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (%L, 2, 'boleto', %L)$$, :'tse', '34191090080000000212134567890008899990000015000'),
   'O beneficiário do boleto da parcela 2 não foi conferido (só com a justificativa da exceção)',
   'boleto: conferência com o valor registrado diferente do da parcela não vale');
 select pg_temp.sis();
-select erp.registrar_boleto_conferencia('34191090080000000212134567890008899990000015000', '77777777000177', 'FORNECEDOR EXEMPLO LTDA', 150, null, (select login_id from erp.usuarios where id = :'diretor'));
+select erp.registrar_boleto_conferencia('34191090080000000212134567890008899990000015000', '77777777000177', 'AGENCIA BETA LTDA', 150, null, (select login_id from erp.usuarios where id = :'diretor'));
 update erp.boleto_conferencias set conferido_em = clock_timestamp() - interval '25 hours' where linha = '34191090080000000212134567890008899990000015000';
 select pg_temp.volta();
 select pg_temp.erro_igual(format($$insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (%L, 2, 'boleto', %L)$$, :'tse', '34191090080000000212134567890008899990000015000'),
@@ -6205,6 +6224,72 @@ select pg_temp.sis(); set local role erp_situacao; update erp.titulos set situac
 select pg_temp.ok((select j->'recebedor_divergente' = '[]'::jsonb from api.titulo(:'tse') j) and not exists (select 1 from api.recebedores_divergentes() where id = :'tse'),
   'selo: pago, o título deixa de mostrar o selo');
 rollback to savepoint sp_bol;
+-- S-140: o boleto conferido com o documento do credor e outro nome
+savepoint sp_bol;
+select pg_temp.sis();
+select erp.registrar_boleto_conferencia('34191090080000000212134567890008899990000015000', '77777777000177', 'JOAO DA SILVA ME', 150, null, (select login_id from erp.usuarios where id = :'diretor'));
+select pg_temp.volta();
+select pg_temp.erro_igual(format($$insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (%L, 2, 'boleto', '34191090080000000212134567890008899990000015000')$$, :'tse'),
+  'O beneficiário do boleto da parcela 2 (JOAO DA SILVA ME, conferido) não é o credor (só com a justificativa da exceção)',
+  'S-140: boleto conferido com o documento do credor e outro nome pede a justificativa');
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha, boleto_excecao) values (:'tse', 2, 'boleto', '34191090080000000212134567890008899990000015000', 'Conta no nome do sócio');
+select pg_temp.ok(exists (select 1 from api.recebedores_divergentes() where id = :'tse'),
+  'S-140: com a justificativa entra, e o selo do recebedor fica até o pagamento');
+select pg_temp.sis();
+update erp.boleto_conferencias set nome = 'Agência Beta' where linha = '34191090080000000212134567890008899990000015000';
+select pg_temp.volta();
+update erp.parcela_pagamentos set boleto_excecao = null where titulo_id = :'tse' and numero = 2;
+select pg_temp.sis();
+update erp.boleto_conferencias set nome = 'JOAO DA SILVA ME' where linha = '34191090080000000212134567890008899990000015000';
+select pg_temp.erro_igual(format($$select erp._conferir_recebedores(%L)$$, :'tse'),
+  'O beneficiário do boleto da parcela 2 não confere com o credor do título (confira o boleto de novo ou justifique a exceção)',
+  'S-140: a conferência de novo (troca do credor e pedido do Sienge) também compara o nome');
+select pg_temp.volta();
+-- revisão do #115: o nome fantasia (que quem cadastra escolhe) não vale para a conferência
+select pg_temp.sis();
+update erp.pessoas set nome_fantasia = 'JOAO DA SILVA' where id = '10000000-0000-0000-0000-000000000007';
+select pg_temp.volta();
+delete from erp.parcela_pagamentos where titulo_id = :'tse' and numero = 2;
+select pg_temp.erro_igual(format($$insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (%L, 2, 'boleto', '34191090080000000212134567890008899990000015000')$$, :'tse'),
+  'O beneficiário do boleto da parcela 2 (JOAO DA SILVA ME, conferido) não é o credor (só com a justificativa da exceção)',
+  'S-140: credor com o nome fantasia igual ao nome conferido e outra razão social é recusado sem justificativa');
+rollback to savepoint sp_bol;
+select pg_temp.ok(erp.nome_confere('ACME ENG LTDA', 'Acme Engenharia Ltda.')
+                  and erp.nome_confere('CONSTRUTORA ACME', 'Acme Construções e Serviços Ltda')
+                  and erp.nome_confere(null, 'Acme')
+                  and not erp.nome_confere('JOAO DA SILVA', 'Acme Engenharia Ltda')
+                  and not erp.nome_confere('CONSTRUTORA SILVA', 'Construtora Acme')
+                  and not erp.nome_confere('LTDA', 'Acme')
+                  and erp.nome_confere('SERVICOS GERAIS', 'Servicos Gerais ME'),
+  'S-140: o nome confere pela primeira palavra que identifica (forma jurídica, ligações e palavras genéricas não contam)');
+-- S-140: o selo "credor novo" (nunca teve outro título que foi ao Sienge ou foi pago)
+savepoint sp_novo;
+select pg_temp.sis();
+insert into erp.pessoas (id, tipo, nome, documento) values ('10000000-0000-0000-0000-0000000000c1', 'juridica', 'Credor Recém Cadastrado', '12345678000195');
+select erp._criar_titulo(:'spe', 'pagar', 'avulso', '10000000-0000-0000-0000-0000000000c1', null, null, '2026-06-02', '2026-06-01',
+  150, array['2026-07-01']::date[], null, null, 'primeiro do credor novo') as tnovo1 \gset
+select erp._criar_titulo(:'spe', 'pagar', 'avulso', '10000000-0000-0000-0000-0000000000c1', null, null, '2026-06-03', '2026-06-01',
+  90, array['2026-07-02']::date[], null, null, 'segundo do credor novo') as tnovo2 \gset
+select pg_temp.volta();
+select pg_temp.como(:'diretor');
+select pg_temp.ok(erp.credor_novo(:'tnovo1') = current_date and exists (select 1 from api.credores_novos() where id = :'tnovo1' and desde = current_date)
+                  and (select (j->>'credor_novo')::date = current_date from api.titulo(:'tnovo1') j),
+  'S-140: credor sem título que já foi ao Sienge ou foi pago aparece como novo, nas listas e na gaveta');
+select pg_temp.como(:'analista2');
+select pg_temp.ok(not erp.vejo_titulo(:'tnovo1') and erp.credor_novo(:'tnovo1') is null and not exists (select 1 from api.credores_novos() where id = :'tnovo1'),
+  'S-140: sobre título que a pessoa não vê, a função não responde');
+savepoint sp_quit;
+select pg_temp.sis(); set local role erp_situacao; update erp.titulos set situacao = 'quitado' where id = :'tnovo2'; select pg_temp.volta();
+select pg_temp.como(:'diretor');
+select pg_temp.ok(erp.credor_novo(:'tnovo1') is null, 'S-140: credor com título já pago (mesmo fora do Sienge) não é novo');
+rollback to savepoint sp_quit;
+select pg_temp.sis(); insert into erp.sienge_envios (titulo_id, situacao, sienge_id) values (:'tnovo2', 'enviado', 999001); select pg_temp.volta();
+select pg_temp.como(:'diretor');
+select pg_temp.ok(erp.credor_novo(:'tnovo1') is null and (select j->'credor_novo' = 'null'::jsonb from api.titulo(:'tnovo1') j),
+  'S-140: depois que outro título do credor foi ao Sienge, ele deixa de ser novo');
+select pg_temp.ok(erp.credor_novo(:'tnovo2') = current_date,
+  'S-140: o próprio título que foi ao Sienge não conta para ele mesmo');
+rollback to savepoint sp_novo;
 -- revisão do #108: o credor trocado depois da conferência (o fraudador conferido, o fornecedor de verdade no título)
 savepoint sp_bol;
 set constraints erp.t_titulo_recebedor immediate;

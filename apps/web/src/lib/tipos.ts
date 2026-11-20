@@ -35,6 +35,8 @@ export interface TituloDetalhe extends Omit<Titulo, 'parcelas'> {
   sienge_erro: string | null;
   /** o que não bate entre quem recebe e o fornecedor, até o pagamento (erp.recebedor_divergente) */
   recebedor_divergente?: string[];
+  /** dia do cadastro do credor quando ele nunca teve título que foi ao Sienge ou foi pago (erp.credor_novo) */
+  credor_novo?: string | null;
 }
 
 export type AprovacaoPrevisao = 'aprovada' | 'esperando' | 'cancelada';

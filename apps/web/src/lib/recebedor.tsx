@@ -20,3 +20,22 @@ export function AlertaRecebedor({ motivos }: { motivos?: string[] | null }) {
   if (!motivos?.length) return null;
   return <Alerta c="cr" t={<><b>Quem recebe não é o fornecedor conferido.</b> Fica marcado até o pagamento.{motivos.map(m => <span key={m} style={{ display: 'block' }}>{m}</span>)}</>} />;
 }
+
+// O selo "credor novo" (S-140, Moises, 20/11/2026): o credor nunca teve outro título que foi ao Sienge ou foi pago. Quem
+// decide é o banco (erp.credor_novo). Serve para quem aprova olhar com mais cuidado o cadastro (documento e nome).
+/** Os títulos a pagar de credor novo que a pessoa vê, com o dia do cadastro do credor. */
+export function useCredoresNovos(): Map<string, string> {
+  const q = useQuery({ queryKey: ['titulos', 'credores-novos'], queryFn: () => rpc<{ id: string; desde: string }[]>('credores_novos') });
+  return new Map((q.data ?? []).map(d => [d.id, d.desde]));
+}
+
+const dia = (d: string) => d.split('-').reverse().join('/');
+
+export function SeloCredorNovo({ desde }: { desde?: string | null }) {
+  return desde ? <span title={`Cadastrado em ${dia(desde)}, sem pagamento anterior pelo sistema`}><Chip t="Credor novo" c="at" /></span> : null;
+}
+
+export function AlertaCredorNovo({ desde }: { desde?: string | null }) {
+  if (!desde) return null;
+  return <Alerta c="at" t={<><b>Credor novo.</b> Cadastrado em {dia(desde)} e sem pagamento anterior pelo sistema. Confira se o CPF/CNPJ é mesmo do fornecedor antes de aprovar.</>} />;
+}
