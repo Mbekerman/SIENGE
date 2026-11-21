@@ -3,11 +3,13 @@
 # em 21/11/2026: certificado no Secret Manager do bkm-erp, lido só por uma conta de serviço própria, e tudo apagado no fim.
 # Rodar no Cloud Shell do projeto bkm-erp, pelo Moises (dono do projeto):
 #   1. Suba o .pfx da BKM 03 para o Cloud Shell (menu ⋮ › Fazer upload).
-#   2. bash ~/SIENGE/servicos/teste-adn/rodar-dev.sh ~/arquivo.pfx      (pede a senha sem mostrar; apaga o .pfx no fim)
+#   2. bash ~/SIENGE/servicos/teste-adn/rodar-dev.sh ~/arquivo.pfx      (pede o CNPJ e a senha; apaga o .pfx no fim)
 #   3. O resumo sai no fim (contagens por mês e por município, sem XML e sem CNPJ de terceiros).
 #   4. bash ~/SIENGE/servicos/teste-adn/rodar-dev.sh --apagar            (apaga job, segredos e conta)
 # Regras (revisão do #117): a conta erp-teste-adn não tem papel nenhum no projeto, só secretAccessor nos dois segredos;
 # nunca dar a ela papel de deploy; a conta compute do build não pode ler esses segredos (o script confere e para).
+# Durante o teste, só o Moises tem run.admin e serviceAccountUser nessa conta (quem tem os dois publica outro código
+# com ela e lê o certificado); papel herdado da pasta ou da organização não aparece na checagem do script.
 set -euo pipefail
 P=bkm-erp-515119
 R=southamerica-east1
@@ -15,7 +17,6 @@ NOME=erp-teste-adn
 SA=$NOME@$P.iam.gserviceaccount.com
 S_PFX=adn-cert-pfx
 S_SENHA=adn-cert-senha
-CNPJ=${ADN_CNPJ:-42858322000116}   # BKM 03 INCORPORACAO DE IMOVEIS SPE S.A. (CNPJ é dado público)
 gcloud config set project "$P" >/dev/null
 
 if [ "${1:-}" = "--apagar" ]; then
@@ -27,6 +28,9 @@ if [ "${1:-}" = "--apagar" ]; then
 fi
 
 PFX=${1:?"informe o caminho do .pfx: bash rodar-dev.sh ~/arquivo.pfx"}
+CNPJ=${ADN_CNPJ:-}
+[ -n "$CNPJ" ] || read -r -p "CNPJ da empresa do certificado (só números): " CNPJ
+CNPJ=${CNPJ//[^0-9]/}; [ ${#CNPJ} -eq 14 ] || { echo "CNPJ precisa ter 14 dígitos." >&2; exit 1; }
 [ -f "$PFX" ] || { echo "Não achei $PFX" >&2; exit 1; }
 
 # Quem já lê todos os segredos do projeto (papel no projeto inteiro): avisar e parar se for a conta compute
