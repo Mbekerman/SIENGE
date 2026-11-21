@@ -7354,10 +7354,13 @@ select erp.sienge_registrar_aviso('a1000000-0000-0000-0000-000000000012', 'PAYME
 select erp.sienge_registrar_aviso('a1000000-0000-0000-0000-000000000013', 'PAYMENT_INSTALLMENT_REMOVED', 'h', '{"billId": 7201, "installmentId": 1}');
 select pg_temp.ok((select count(*) = 3 from erp.sienge_avisos where processado_em is null), 'aviso: as remoções de linha nossa ficam pendentes');
 -- pegar e processar
-select evento_id as av1, bill_id as b1, previsao_id as p1, tipo as t1 from erp.sienge_pegar_aviso() \gset
+-- relógio fixo no começo de uma hora cheia: o excesso é contado por hora do relógio (date_trunc), e com now() o teste
+-- falhava quando +70 e +71 minutos caíam em horas diferentes (minutos 49 e 50 de cada hora)
+select date_trunc('hour', now()) + interval '1 hour' as t0 \gset
+select evento_id as av1, bill_id as b1, previsao_id as p1, tipo as t1 from erp.sienge_pegar_aviso(:'t0'::timestamptz) \gset
 select pg_temp.ok(:'av1' = 'a1000000-0000-0000-0000-000000000011' and :b1 = 7202 and :'p1' = '6c000000-0000-0000-0000-0000000000d2' and :'t1' = 'apagar',
   'aviso: o mais antigo vem com a previsão e o tipo (linha a apagar)');
-select evento_id as av2 from erp.sienge_pegar_aviso(now() + interval '1 minute') \gset
+select evento_id as av2 from erp.sienge_pegar_aviso(:'t0'::timestamptz + interval '1 minute') \gset
 select pg_temp.ok(:'av2' = 'a1000000-0000-0000-0000-000000000013'
                   and (select processado_em is not null and resultado = 'título conferido há menos de 30 minutos por outro aviso: sem chamada'
                          from erp.sienge_avisos where evento_id = 'a1000000-0000-0000-0000-000000000012'),
@@ -7369,20 +7372,20 @@ select erp.sienge_terminar_aviso('a1000000-0000-0000-0000-000000000011', 'apagad
 select pg_temp.erro_igual($$select erp.sienge_terminar_aviso('a1000000-0000-0000-0000-000000000011', 'x')$$,
   'Aviso do Sienge inexistente ou já processado', 'aviso: o processado não fecha de novo');
 select erp.sienge_terminar_aviso('a1000000-0000-0000-0000-000000000013', 'Sienge respondeu 500', false);
-select count(*) as n3 from erp.sienge_pegar_aviso(now() + interval '3 minutes') \gset
+select count(*) as n3 from erp.sienge_pegar_aviso(:'t0'::timestamptz + interval '3 minutes') \gset
 select pg_temp.ok(:n3 = 0 and (select resultado = 'a linha já não está pendente no ERP' and processado_em is not null
                                  from erp.sienge_avisos where evento_id = 'a1000000-0000-0000-0000-000000000014'),
   'aviso: o da outra parcela do título já apagado fecha sozinho');
 -- sem resposta: tenta de novo depois de 5 minutos, até 5 vezes
-select pg_temp.ok(exists (select 1 from erp.sienge_pegar_aviso(now() + interval '7 minutes') where tipo = 'esperada'
+select pg_temp.ok(exists (select 1 from erp.sienge_pegar_aviso(:'t0'::timestamptz + interval '7 minutes') where tipo = 'esperada'
                             and previsao_id = '6c000000-0000-0000-0000-0000000000d1'),
   'aviso: vem a linha esperada');
-select pg_temp.ok(not exists (select 1 from erp.sienge_pegar_aviso(now() + interval '9 minutes'))
-                  and exists (select 1 from erp.sienge_pegar_aviso(now() + interval '13 minutes')),
+select pg_temp.ok(not exists (select 1 from erp.sienge_pegar_aviso(:'t0'::timestamptz + interval '9 minutes'))
+                  and exists (select 1 from erp.sienge_pegar_aviso(:'t0'::timestamptz + interval '13 minutes')),
   'aviso: sem resposta, volta depois de 5 minutos');
-select erp.sienge_pegar_aviso(now() + interval '19 minutes');
-select erp.sienge_pegar_aviso(now() + interval '25 minutes');
-select not exists (select 1 from erp.sienge_pegar_aviso(now() + interval '31 minutes')) as nada5 \gset
+select erp.sienge_pegar_aviso(:'t0'::timestamptz + interval '19 minutes');
+select erp.sienge_pegar_aviso(:'t0'::timestamptz + interval '25 minutes');
+select not exists (select 1 from erp.sienge_pegar_aviso(:'t0'::timestamptz + interval '31 minutes')) as nada5 \gset
 select pg_temp.ok(:'nada5'::boolean
                   and (select processado_em is not null and resultado like 'erro: 5 tentativas%' and tentativas = 5
                          from erp.sienge_avisos where evento_id = 'a1000000-0000-0000-0000-000000000013'),
@@ -7390,14 +7393,14 @@ select pg_temp.ok(:'nada5'::boolean
 -- teto por hora (S-136): o 13 foi pego aos 25 minutos
 savepoint sp_av2;
 select erp.sienge_registrar_aviso('a1000000-0000-0000-0000-000000000015', 'PAYMENT_INSTALLMENT_REMOVED', 'h', '{"billId": 7201, "installmentId": 2}');
-select count(*) as n4 from erp.sienge_pegar_aviso(now() + interval '70 minutes', 1) \gset
-select count(*) as n5 from erp.sienge_pegar_aviso(now() + interval '71 minutes', 1) \gset
+select count(*) as n4 from erp.sienge_pegar_aviso(:'t0'::timestamptz + interval '70 minutes', 1) \gset
+select count(*) as n5 from erp.sienge_pegar_aviso(:'t0'::timestamptz + interval '71 minutes', 1) \gset
 select pg_temp.ok(:n4 = 0 and :n5 = 0
                   and (select processado_em is null and pegado_em is null from erp.sienge_avisos where evento_id = 'a1000000-0000-0000-0000-000000000015')
                   and (select count(*) = 1 and min(pegos) = 1 from erp.sienge_avisos_excesso)
                   and (select count(*) = 1 from erp.eventos where tipo = 'sienge_avisos_excesso'),
   'aviso: acima do teto por hora não pega (o aviso espera) e avisa a AF uma vez por hora');
-select pg_temp.ok((select evento_id = 'a1000000-0000-0000-0000-000000000015' from erp.sienge_pegar_aviso(now() + interval '72 minutes', 2)),
+select pg_temp.ok((select evento_id = 'a1000000-0000-0000-0000-000000000015' from erp.sienge_pegar_aviso(:'t0'::timestamptz + interval '72 minutes', 2)),
   'aviso: abaixo do teto pega');
 select pg_temp.erro_igual($$select * from erp.sienge_pegar_aviso(now(), 0)$$, 'Limite de avisos por hora inválido', 'aviso: teto inválido é recusado');
 rollback to savepoint sp_av2;
