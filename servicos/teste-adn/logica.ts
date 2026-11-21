@@ -1,7 +1,7 @@
-// Teste de cobertura do Ambiente de Dados Nacional da NFS-e (ADN), pedido do Moises em 20/11/2026.
+// Teste de cobertura do Ambiente de Dados Nacional da NFS-e (ADN), pedido do Moises em 20/11/2026 (job do bkm-erp).
 // Pergunta que o teste responde: as notas de serviço que a BKM recebe aparecem no ADN?
 // Aqui só a parte pura (sem rede): ler a resposta do ADN, tirar do XML o que interessa e resumir por mês.
-// Nada é gravado: o resultado sai na resposta da função e é comparado à mão com os títulos NFSE do Sienge.
+// Nada é gravado: o resumo sai no log do job e é comparado à mão com os títulos NFSE do Sienge.
 
 export type DocAdn = { nsu: number; chave: string | null; tipo: string | null; xmlGzipB64: string | null };
 export type Lote = { status: string; docs: DocAdn[]; maiorNsu: number | null };
