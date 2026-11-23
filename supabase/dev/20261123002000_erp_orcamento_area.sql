@@ -1,4 +1,5 @@
--- bkm_dev, 23/nov/2026: orçamento de área (PR do orçamento, migration 20261123002000). Colar inteiro no SQL Editor.
+-- bkm_dev, 23/nov/2026: orçamento de área (PR #122, migration 20261123002000). Colar inteiro no SQL Editor.
+-- v2 (23/nov, 21h): a troca de trechos não depende mais de espaços e quebras de linha (a v1 falhou no editor).
 -- Se algo falhar, dá erro e nada fica. O corpo é o mesmo da migration; o script só se dá os papéis donos das funções
 -- (sem herdar, só set) durante a transação e os tira antes do commit.
 begin;
@@ -50,12 +51,14 @@ end $$;
 -- ---------------------------------------------------------------------------------------------
 -- Troca cada trecho (que tem de aparecer uma vez só) na definição atual da função e a regrava como o dono dela.
 create function pg_temp.trocar(p_fn regprocedure, variadic p_pares text[]) returns void language plpgsql as $$
-declare v text := pg_get_functiondef(p_fn); i int; v_n int; v_dono text; v_esq text; v_dar boolean;
+declare v text := pg_get_functiondef(p_fn); i int; v_n int; v_dono text; v_esq text; v_dar boolean; v_pat text;
 begin
   for i in 1 .. coalesce(array_length(p_pares, 1), 0) by 2 loop
-    v_n := (length(v) - length(replace(v, p_pares[i], ''))) / length(p_pares[i]);
+    -- no bkm_dev o trecho é procurado sem contar os espaços e as quebras de linha (o editor do Supabase mexe neles)
+    v_pat := regexp_replace(regexp_replace(btrim(p_pares[i], E' \t\r\n'), '([.^$*+?()\[\]{}|\\])', '\\\1', 'g'), '\s+', '\\s+', 'g');
+    select count(*) into v_n from regexp_matches(v, v_pat, 'g');
     if v_n <> 1 then raise exception '%: trecho achado % vezes (esperado 1): %', p_fn, v_n, left(p_pares[i], 120); end if;
-    v := replace(v, p_pares[i], p_pares[i + 1]);
+    v := regexp_replace(v, v_pat, replace(btrim(p_pares[i + 1], E' \t\r\n'), '\', '\\'));
   end loop;
   select pg_get_userbyid(p.proowner), n.nspname into v_dono, v_esq
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace where p.oid = p_fn;
