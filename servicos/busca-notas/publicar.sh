@@ -10,7 +10,7 @@
 #                                                      serviço confere o servidor do banco com ele; gera a senha do login,
 #                                                      guarda a URL e mostra o SQL da senha para colar no SQL Editor)
 #   2b. no SQL Editor, supabase/dev/busca_notas_janela_agenda.sql: o login só fica ligado dos minutos 5 a 15 de cada
-#                                                      hora, e não liga com a rede do banco (pg_net) aberta (S-143)
+#                                                      hora (a rede do banco, pg_net, aberta é risco aceito: S-143)
 #   3. bash publicar.sh --publicar                     (publica o job com o código da develop e roda uma vez, na janela)
 #   4. bash publicar.sh --agendar                      (de hora em hora, pelo Cloud Scheduler)
 #   bash publicar.sh --rodar     roda de novo (espera a janela) e mostra o log
@@ -69,7 +69,7 @@ print(f"SCRAM-SHA-256${it}:{b(salt)}${b(hashlib.sha256(ck).digest())}:{b(sk)}")
 PY
 )
   rm -f "$3/senha"
-  # só a senha: o login liga e desliga pela janela (migration 20261123005000), que não abre com o pg_net aberto (S-143)
+  # só a senha: o login liga e desliga pela janela (migrations 20261123005000 e 006000)
   echo; echo "Cole no SQL Editor do Supabase (projeto $1):"; echo
   echo "alter role erp_busca_notas password '$VERIF';"; echo
 }

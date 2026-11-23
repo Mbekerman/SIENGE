@@ -33,6 +33,11 @@ Deno.serve(async (req) => {
     const [k] = await sql`select decrypted_secret as v from vault.decrypted_secrets where name = 'sienge_escrita_chave'`;
     if (!k?.v || !iguais(req.headers.get('x-escrita-chave') ?? '', k.v)) return new Response('não autorizado', { status: 401 });
     const pedido = await req.json().catch(() => ({}));
+    // ritmo (residual do S-143): a rotina de minuto roda no máximo a cada 50 s e o atalho dos avisos a cada 5 s; o que
+    // for recusado aqui a rotina de minuto pega depois
+    const rotina = pedido?.tarefa === 'avisos' ? 'escrita-avisos' : 'escrita';
+    const [rt] = await sql`select sienge.ritmo(${rotina}, ${rotina === 'escrita' ? 50 : 5}) as v`;
+    if (!rt?.v) return Response.json({ ok: false }, { status: 429 });
     if (pedido?.tarefa === 'avisos') {
       console.log(JSON.stringify({ avisos: await processarAvisos(bancoPostgres(sql), httpSienge(BASE, credencial())) }));
       return Response.json({ ok: true });

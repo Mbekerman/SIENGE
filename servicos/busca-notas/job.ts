@@ -52,10 +52,8 @@ async function main() {
   const empresas = readdirSync(dir).filter((d) => UUID.test(d) && existsSync(join(dir, d, 'pem')));
   if (!empresas.length) throw new Error('nenhum certificado em ' + dir);
   const banco = bancoPg(url, readFileSync(dbCa, 'utf8'));
-  if (await banco.netAberto()) {
-    await banco.fechar();
-    throw new Error('S-143: este login alcança o pg_net; a rodada não roda até fechar');
-  }
+  // S-143: risco aceito pelo Moises (23/11/2026); fica só o aviso no log, para saber se um dia o Supabase fechar o net
+  if (await banco.netAberto()) console.warn(JSON.stringify({ aviso: 'S-143: este login alcança o pg_net (risco aceito)' }));
   const ritmo = { lotesAdn: 40, lotesSefaz: 20, lotesCiencia: 5, pausa: (ms: number) => new Promise<void>((ok) => setTimeout(ok, ms)), agora: () => new Date() };
   const sha1b64 = (s: string) => createHash('sha1').update(s, 'utf8').digest('base64');
   let falhou = false;

@@ -9673,7 +9673,7 @@ select pg_temp.sis();
 select pg_temp.ok((select ciencia_em is not null from erp.notas_recebidas where id = :'nb')
                   and exists (select 1 from erp.auditoria where tabela = 'notas_recebidas' and registro = :'nb' and por is null),
   'busca: o que o serviço grava fica na auditoria como sistema');
--- a janela do login (migration 20261123005000): abre, fecha e derruba; com o net aberto, não abre
+-- a janela do login (migrations 20261123005000 e 006000): abre, fecha e derruba; com o net aberto, abre e avisa (risco aceito)
 -- (a resposta num comando e o catálogo no seguinte: o mesmo comando ainda vê o catálogo de antes)
 select erp.busca_notas_janela('abrir') as j \gset
 select pg_temp.ok(:'j' = 'aberta' and (select rolcanlogin from pg_roles where rolname = 'erp_busca_notas'), 'janela da busca: abre o login');
@@ -9684,7 +9684,8 @@ select erp.busca_notas_janela('encerrar') as j \gset
 select pg_temp.ok(:'j' like 'fechada; 0 %' and not (select rolcanlogin from pg_roles where rolname = 'erp_busca_notas'), 'janela da busca: encerrar fecha e derruba as sessões');
 grant usage on schema net to public;
 select erp.busca_notas_janela('abrir') as j \gset
-select pg_temp.ok(:'j' like 'net aberto%' and not (select rolcanlogin from pg_roles where rolname = 'erp_busca_notas'), 'janela da busca: com o net aberto ao login, não abre (S-143)');
+select pg_temp.ok(:'j' = 'aberta (net aberto)' and (select rolcanlogin from pg_roles where rolname = 'erp_busca_notas'), 'janela da busca: com o net aberto ao login, abre e avisa (S-143, risco aceito)');
+select erp.busca_notas_janela('fechar');
 revoke usage on schema net from public;
 select pg_temp.erro_igual($$select erp.busca_notas_janela('ligar')$$, 'Ação da janela: abrir, fechar ou encerrar', 'janela da busca: só as três ações');
 select pg_temp.ok(not has_function_privilege('erp_busca_notas', 'erp.busca_notas_janela(text)', 'EXECUTE')
