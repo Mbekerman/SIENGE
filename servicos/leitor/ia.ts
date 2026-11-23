@@ -140,8 +140,10 @@ export function converter(j: Record<string, any>, modelo: string, hoje = new Dat
   const tipos: TipoDocumento[] = ['nfe', 'nfse', 'fatura', 'boleto', 'iptu', 'itbi', 'darf', 'darm', 'dare', 'recibo', 'outro'];
   const avisos: string[] = (Array.isArray(j.observacoes) ? j.observacoes : []).filter((s: unknown) => typeof s === 'string' && s.trim());
   const p = (x: any, quem: string) => {
-    // um CNPJ alfanumérico válido com X não é máscara
-    const m = typeof x?.documento === 'string' && cnpjValido(normalDocumento(x.documento)) ? undefined : mascara(x?.documento);
+    // com X, vale a máscara mesmo que feche como CNPJ alfanumérico: o X vale 40 na conta e uma máscara de verdade fecha
+    // o DV por acaso (cerca de 1 em 100); perder um alfanumérico com X custa menos que inventar um documento
+    const m = mascara(x?.documento);
+    if (m && cnpjValido(normalDocumento(x.documento))) avisos.push(`Documento ${quem} com X: pode ser máscara ou CNPJ alfanumérico; confira no documento`);
     return { documento: m ? undefined : documentoConferido(x?.documento, quem, avisos), documento_mascara: m, nome: str(x?.nome) };
   };
   const emissao = data(j.emissao);

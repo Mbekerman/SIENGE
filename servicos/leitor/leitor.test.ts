@@ -482,10 +482,11 @@ test('CPF e CNPJ lidos com dígito verificador errado saem vazios, com aviso', (
   assert.ok(cnpjValido('12ABC34501DE35'));
   assert.equal(converter({ tipo: 'nfse', emitente: { documento: '12.ABC.345/01DE-35' } }, 'm').emitente?.documento, '12ABC34501DE35');
   assert.equal(converter({ tipo: 'nfse', emitente: { documento: '12.ABC.345/01DE-53' } }, 'm').emitente?.documento, undefined);
-  // com X, que também marca máscara: o CNPJ válido não vira máscara
-  const x = converter({ tipo: 'nfse', emitente: { documento: '12.ABX.345/0001-63' } }, 'm').emitente;
-  assert.equal(x?.documento, '12ABX345000163');
-  assert.equal(x?.documento_mascara, undefined);
+  // com X, ambíguo (fecha como alfanumérico): vale a máscara, com o aviso; nunca vira documento conferido
+  const ambiguo = converter({ tipo: 'nfse', emitente: { documento: '12.ABX.345/0001-63' } }, 'm');
+  assert.equal(ambiguo.emitente?.documento, undefined);
+  assert.ok(ambiguo.emitente?.documento_mascara);
+  assert.ok(ambiguo.avisos?.some(a => a.includes('pode ser máscara ou CNPJ alfanumérico')));
   assert.equal(converter({ tipo: 'nfse', tomador: { documento: '11.222.XXX/0001-81' } }, 'm').tomador?.documento_mascara, '11222***000181');
   // documento mascarado segue pelo caminho da máscara
   assert.equal(converter({ tipo: 'nfse', tomador: { documento: '***.982.247-**' } }, 'm').tomador?.documento_mascara !== undefined, true);
