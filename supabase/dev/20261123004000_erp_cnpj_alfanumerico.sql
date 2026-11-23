@@ -1,4 +1,4 @@
--- bkm_dev, 23/nov/2026: CNPJ alfanumérico (migration 20261123003000). Colar inteiro no SQL Editor.
+-- bkm_dev, 23/nov/2026: CNPJ alfanumérico (migration 20261123004000). Colar inteiro no SQL Editor.
 -- Se já foi aplicado, para logo no começo com o aviso e nada muda. Se alguma conferência do fim falhar, dá erro e nada fica.
 begin;
 do $$ begin

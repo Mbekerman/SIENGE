@@ -81,6 +81,8 @@ test('o recebedor do Asaas: documento só com dígitos e *, nome fantasia na fal
   // CNPJ alfanumérico: as letras ficam (em maiúsculas)
   assert.equal(recebedorAsaas({ receiver: { cpfCnpj: '12.abc.345/01de-35' } }).cpf_cnpj, '12ABC34501DE35');
   assert.equal(beneficiarioAsaas({ bankSlipInfo: { beneficiaryCpfCnpj: '12.ABC.345/01DE-35' } }).cpf_cnpj, '12ABC34501DE35');
+  // letras soltas viram texto que só se compara com o credor e nunca casa com um CPF (o banco confere por igualdade)
+  assert.notEqual(recebedorAsaas({ receiver: { cpfCnpj: 'CPF12345678901' } }).cpf_cnpj, '12345678901');
   assert.equal(recebedorAsaas({ receiver: { cpfCnpj: 'lixo' } }).cpf_cnpj, null);
 });
 test('sem ORIGENS, só os endereços do front no Cloud Run', async () => {

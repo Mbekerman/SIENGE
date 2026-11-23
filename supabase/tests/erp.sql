@@ -9732,6 +9732,19 @@ select pg_temp.ok((select bool_and(pg_get_constraintdef(oid) like '%A-Z%') from 
 select pg_temp.ok(exists (select 1 from api.fornecedores('12.ABC.345/01DE') where id = '5a000000-0000-0000-0000-000000000001')
                   and exists (select 1 from api.fornecedores('12abc') where id = '5a000000-0000-0000-0000-000000000001'),
   'cnpj: a busca do fornecedor pelo documento não joga fora as letras');
+-- revisão do patch: as mutações que sobreviviam
+select pg_temp.ok(not erp.cnpj_valido('12ABC34501DE36') and not erp.cnpj_aceito('12ABC34501DE36'), 'cnpj: o 2º DV também é conferido');
+select pg_temp.falha($q$insert into erp.pessoas (tipo, nome, documento) values ('juridica', 'Erro', '12abc34501de35')$q$, 'cnpj: credor com letras minúsculas é recusado (evita credor duplicado)');
+insert into erp.compromisso_pagamentos (compromisso_id, modo, banco, agencia, conta, conta_digito, conta_tipo, titular_documento, excecao)
+  select c.id, 'ted', '341', '1234', '56789', '0', 'corrente', '12ABC34501DE35', 'teste do titular alfanumérico'
+    from erp.compromissos c where not exists (select 1 from erp.compromisso_pagamentos g where g.compromisso_id = c.id) limit 1;
+select pg_temp.ok(exists (select 1 from erp.compromisso_pagamentos where titular_documento = '12ABC34501DE35'), 'cnpj: titular da TED com CNPJ alfanumérico válido entra');
+select pg_temp.falha($q$update erp.compromisso_pagamentos set titular_documento = '12ABC34501DE53' where modo = 'ted'$q$, 'cnpj: titular da TED com DV errado é recusado');
+select pg_temp.ok((select bool_and(erp._credor_confere(jsonb_build_object('cpf_cnpj', p.documento, 'nome', p.nome), t.id)
+                                   and not erp._credor_confere(jsonb_build_object('cpf_cnpj', 'CPF' || left(p.documento, 11), 'nome', p.nome), t.id))
+                     from (select * from erp.titulos limit 5) t join erp.pessoas p on p.id = t.pessoa_id where p.documento is not null)
+                  and not erp._credor_confere('{"cpf_cnpj": "CPF12345678901"}'::jsonb, null),
+  'cnpj: documento da conferência com letras soltas (CPF12345678901) não casa com o credor');
 select pg_temp.como(:'diretor');
 select pg_temp.ok((api.identificar_nota('{"emitente": "12.ABC.345/01DE-35"}'::jsonb)->'fornecedor'->>'id') = '5a000000-0000-0000-0000-000000000001',
   'cnpj: a nota de emitente com CNPJ alfanumérico acha o fornecedor');
