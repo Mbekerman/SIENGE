@@ -74,5 +74,6 @@ gcloud run jobs deploy "$NOME" --source "$DIR/SIENGE/servicos/teste-adn" --regio
   --set-env-vars "ADN_CNPJ=$CNPJ,ADN_LOTES=${ADN_LOTES:-200},ADN_NSU=${ADN_NSU:-0}"
 gcloud run jobs execute "$NOME" --region "$R" --wait || true
 echo "Resumo:"
-gcloud logging read "resource.type=cloud_run_job AND resource.labels.job_name=$NOME" --freshness 30m --limit 20 --order asc --format='value(textPayload,jsonPayload)'
+EXE=$(gcloud run jobs describe "$NOME" --region "$R" --format='value(status.latestCreatedExecution.name)')
+gcloud logging read "resource.type=cloud_run_job AND labels.\"run.googleapis.com/execution_name\"=\"$EXE\"" --limit 20 --order asc --format='value(textPayload,jsonPayload)'
 echo "Mande o resumo acima na conversa. Para apagar tudo: bash $0 --apagar"
