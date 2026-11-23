@@ -6,7 +6,8 @@ import { data, hojeISO, reais, reais0 } from '../lib/format';
 import { acha, usePagina } from '../lib/navegar';
 import { mensagemErro, rpc } from '../lib/supabase';
 import { useSessao } from '../lib/sessao';
-import type { Contrato } from '../lib/tipos';
+import type { ContaCadastro, Contrato } from '../lib/tipos';
+import { pagDoBanco, pagaOutro, textoPag } from './ComoPaga';
 import { ContaRecorrente } from './NovaConta';
 
 type F = 'ativos' | 'aprovacao' | 'vence' | 'encerrados';
@@ -54,6 +55,8 @@ export function Contratos() {
   const soma = (l: Contrato[]) => l.filter(c => c.periodicidade === 'mensal').reduce((a, c) => a + Number(c.valor_periodo ?? 0), 0);
   const somaF = (l: Contrato[]) => l.reduce((a, c) => a + Number(c.faixa_mensal ?? 0), 0);
   const ctr = vis.filter(c => c.tipo === 'contrato'), ass = vis.filter(c => c.tipo === 'assinatura'), cons = vis.filter(c => c.tipo === 'consumo');
+  const cq = useQuery({ queryKey: ['conta', pg.id], queryFn: () => rpc<ContaCadastro | null>('conta', { p_id: pg.id }), enabled: Boolean(pg.id) });
+  const cad = cq.data, pag = pagDoBanco(cad?.pagamento);
   const sel = pg.id ? (q.data ?? []).find(c => c.id === pg.id) : undefined;
   return (
     <>
@@ -83,6 +86,7 @@ export function Contratos() {
             {sel.posso_alterar && <div className="lt-lin"><button className="btn sm" onClick={() => abrir('alterar')}><Ic n="edit" s={18} />Alterar</button></div>}
             <div className="big num">{valor(sel)}{sel.periodicidade && <span className="sec" style={{ fontSize: 16, marginLeft: 8 }}>{PER[sel.periodicidade]}</span>}</div>
             {ativo(sel) && sel.aprovado === false && <Alerta c="at" t="Cadastro em aprovação" />}
+            {pagaOutro(pag, cad?.fornecedor?.documento) && <Alerta c="cr" t={`Paga a outra pessoa, não ao fornecedor: ${pag?.excecao}`} />}
             <Kv l={[
               ['Tipo', TIPO[sel.tipo]],
               ['Descrição', sel.descricao],
@@ -92,6 +96,8 @@ export function Contratos() {
               ['Teto no ano', sel.teto_anual != null ? reais(sel.teto_anual) : null],
               ['Vigência', `${data(sel.inicio)}${sel.fim ? ` a ${data(sel.fim)}` : ', sem prazo'}`],
               ['Vencimento', sel.dia_vencimento ? `dia ${sel.dia_vencimento}` : null],
+              ['Como paga', cad ? (textoPag(pag) ?? 'Não informado') : null],
+              ['Previsão', cad?.meses.length ? 'Mês a mês' : null],
               ['Valor total', sel.valor_total != null ? reais(sel.valor_total) : null],
               ['Onde entra', sel.areas],
               ['Natureza', sel.naturezas],
