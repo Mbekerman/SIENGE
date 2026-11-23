@@ -5,7 +5,8 @@
 #   1. Suba o .pfx da BKM 03 para o Cloud Shell (menu ⋮ › Fazer upload).
 #   2. bash ~/SIENGE/servicos/teste-adn/rodar-dev.sh ~/arquivo.pfx      (pede o CNPJ e a senha; apaga o .pfx no fim)
 #   3. O resumo sai no fim (contagens por mês e por município, sem XML e sem CNPJ de terceiros).
-#   4. bash ~/SIENGE/servicos/teste-adn/rodar-dev.sh --apagar            (apaga job, segredos e conta)
+#   4. bash ~/SIENGE/servicos/teste-adn/rodar-dev.sh --rodar             (roda de novo com os segredos já criados)
+#   5. bash ~/SIENGE/servicos/teste-adn/rodar-dev.sh --apagar            (apaga job, segredos e conta)
 # Regras (revisão do #117): a conta erp-teste-adn não tem papel nenhum no projeto, só secretAccessor nos dois segredos;
 # nunca dar a ela papel de deploy; a conta compute do build não pode ler esses segredos (o script confere e para).
 # Durante o teste, só o Moises tem run.admin e serviceAccountUser nessa conta (quem tem os dois publica outro código
@@ -27,11 +28,12 @@ if [ "${1:-}" = "--apagar" ]; then
   echo "Apagados: job, os dois segredos e a conta $SA."; exit 0
 fi
 
-PFX=${1:?"informe o caminho do .pfx: bash rodar-dev.sh ~/arquivo.pfx"}
+RODAR_SO=0; [ "${1:-}" = "--rodar" ] && RODAR_SO=1   # segredos já criados: só publica e roda o job
+PFX=${1:?"informe o caminho do .pfx: bash rodar-dev.sh ~/arquivo.pfx (ou --rodar)"}
 CNPJ=${ADN_CNPJ:-}
 [ -n "$CNPJ" ] || read -r -p "CNPJ da empresa do certificado (só números): " CNPJ
 CNPJ=${CNPJ//[^0-9]/}; [ ${#CNPJ} -eq 14 ] || { echo "CNPJ precisa ter 14 dígitos." >&2; exit 1; }
-[ -f "$PFX" ] || { echo "Não achei $PFX" >&2; exit 1; }
+[ "$RODAR_SO" = 1 ] || [ -f "$PFX" ] || { echo "Não achei $PFX" >&2; exit 1; }
 
 # Quem já lê todos os segredos do projeto (papel no projeto inteiro): avisar e parar se for a conta compute
 NUM=$(gcloud projects describe "$P" --format='value(projectNumber)')
@@ -45,6 +47,7 @@ if echo "$AMPLOS" | grep -q "$COMPUTE"; then
   echo "A conta compute ($COMPUTE) tem papel que lê todos os segredos. Tire antes (o build roda com ela)." >&2; exit 1
 fi
 
+if [ "$RODAR_SO" = 0 ]; then
 gcloud iam service-accounts describe "$SA" >/dev/null 2>&1 || \
   gcloud iam service-accounts create "$NOME" --display-name "Teste único do ADN (apagar no fim)"
 
@@ -60,6 +63,10 @@ for par in "$S_PFX:$T/pfx" "$S_SENHA:$T/senha"; do
 done
 rm -rf "$T"; rm -f "$PFX"; echo "Segredos criados e o .pfx apagado do Cloud Shell."
 
+fi
+# O umask 077 acima vale só para os arquivos do segredo: o código clonado precisa ser legível dentro da imagem
+# (com 077, o COPY leva os arquivos sem leitura para o usuário node e o job falha ao abrir job.ts; 23/nov/2026).
+umask 022
 DIR=$(mktemp -d); git clone --depth 1 --branch "${ADN_BRANCH:-develop}" https://github.com/Mbekerman/SIENGE.git "$DIR/SIENGE"
 gcloud run jobs deploy "$NOME" --source "$DIR/SIENGE/servicos/teste-adn" --region "$R" \
   --service-account "$SA" --tasks 1 --max-retries 0 --task-timeout 2h --memory 512Mi --cpu 1 \
