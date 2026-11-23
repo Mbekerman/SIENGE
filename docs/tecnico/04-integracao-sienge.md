@@ -236,3 +236,13 @@ Pedido do Moises (17/nov/2026, depois do teste do webhook): marcar a PRV apagada
 **Instalado no `bkm_dev` (18/nov/2026), sem cadastro no Sienge:** o recebedor responde 401 sem token ou com token errado e 400 com cabeçalho inválido. O primeiro aviso de verdade, mandado pelo próprio banco, voltou 500: o corpo ia como `JSON.stringify(...)::jsonb`, e o postgres.js o manda como texto JSON, que vira jsonb do tipo string, então `erp.sienge_registrar_aviso` recusava todo aviso. O mesmo erro estava em `terminarCruzamento` (a lista das estranhas chegaria como string e todo cruzamento iria para erro). Os dois passam o JSON por `tx.json`, com teste que derruba a volta do `JSON.stringify` (PR #78).
 
 **Cadastrado no Sienge (18/nov/2026, 02h22 UTC, ok do Moises no mesmo dia):** `POST /hooks` respondeu 201, só `PAYMENT_INSTALLMENT_REMOVED`, para a URL do `sienge-aviso` do `bkm_dev` (a URL e o id do hook ficam no registro do `bkm_dev`, fora do repositório), token = `sienge_aviso_token` do Vault. Os outros 6 hooks do subdomínio são do CV CRM. Visto no mesmo dia: `GET /hooks` e `GET /hooks/{id}` não devolvem o token, nem o nosso nem o dos hooks do CRM; o exemplo da especificação mostra o campo, a resposta real não. Para desligar: `DELETE /hooks/{id}` com o id do registro; a conferência de 30 minutos e o cruzamento continuam.
+
+## 4.8 Outras integrações: ADN da NFS-e [Testado, 23/nov/2026, job único `teste-adn`]
+
+Não é o Sienge, mas fica aqui com os outros limites externos.
+
+- `GET /contribuintes/DFe/{NSU}?cnpjConsulta=...&lote=true` com mTLS e o certificado A1 da empresa: devolve lotes de até 50 documentos em `LoteDFe`, cada um com `ArquivoXml`. No fim vem 404 com `NENHUM_DOCUMENTO_LOCALIZADO`, que não é erro.
+- Teste: 949 documentos em 20 lotes, com 1 s de pausa entre eles, sem bloqueio.
+- O A1 pode vir em PKCS#12 com cifra antiga (RC2/3DES), que o OpenSSL 3 do Node 22 recusa. No teste, `--openssl-legacy-provider`. No serviço definitivo, converter o PFX para AES uma vez antes de guardar e não usar o provedor legado (ver [08](08-seguranca.md)).
+- O Cloud Run grava a linha JSON do job em `jsonPayload`.
+- Resultado (BKM 03, notas recebidas por competência): jan a out/2026, 684 no ADN × 652 títulos NFSE no Sienge; antes de 2026, poucas (antes da obrigação nacional). Decisão do Moises (23/11/2026): construir a busca (ver [05](05-contas-a-pagar.md), 5.3.1).
