@@ -8601,7 +8601,11 @@ select pg_temp.ok(api.salvar_apelido_empresa(:'incorp', 'Incorporadora') = 'Inco
 select pg_temp.como(:'diretor2');
 select pg_temp.ok(api.salvar_apelido_empresa(:'incorp', 'BKM Incorp') = 'BKM Incorp', 'apelido: AD muda o apelido');
 select pg_temp.como(:'ti');
+select pg_temp.ok(not erp.sou_master() and erp.sou_admin(), 'apelido: (preparo) o TI é administrador e não é master');
 select pg_temp.ok(api.salvar_apelido_empresa(:'spe', 'SPE 03') = 'SPE 03', 'apelido: o administrador muda o apelido (Moises, 23/11/2026)');
+update erp.empresas set apelido = 'SPE 03 - Parque Itajubá' where id = :'spe';
+select pg_temp.ok((select apelido = 'SPE 03 - Parque Itajubá' from erp.empresas where id = :'spe'), 'apelido: o administrador muda também por update direto');
+select pg_temp.ok((select bool_and(posso_apelido) from api.empresas()), 'apelido: a tela deixa o administrador mudar');
 select pg_temp.como(:'diretor');
 select api.salvar_apelido_empresa(:'spe', 'BKM 03');
 select pg_temp.como(:'analista2');
@@ -8618,6 +8622,14 @@ select pg_temp.erro_igual(format($$update erp.empresas set ativa = false where i
   'Tipo e situação da empresa só o administrador muda', 'apelido: AF não muda a situação da empresa');
 select pg_temp.erro_igual(format($$update erp.empresas set tipo = 'outra', apelido = 'X1' where id = %L$$, :'spe'),
   'Tipo e situação da empresa só o administrador muda', 'apelido: AF não muda o tipo junto com o apelido');
+select pg_temp.erro_igual(format($$update erp.empresas set pessoa_id = '10000000-0000-0000-0000-000000000005' where id = %L$$, :'spe'),
+  'Tipo e situação da empresa só o administrador muda', 'apelido: AF não troca a pessoa (o CNPJ) da empresa');
+select pg_temp.ok(pg_temp.erro_como_dono(format($$update erp.empresas set pessoa_id = '10000000-0000-0000-0000-000000000005' where id = %L$$, :'spe'))
+                  = 'Tipo e situação da empresa só o administrador muda', 'apelido: nem por baixo da API AF troca a pessoa da empresa');
+-- nem o nome de outra empresa do grupo
+select pg_temp.erro_igual(format($$select api.salvar_apelido_empresa(%L, %L)$$, :'spe', upper((select nome from erp.pessoas where id = '10000000-0000-0000-0000-000000000002'))),
+  format('O apelido %s é o nome de outra empresa do grupo', upper((select nome from erp.pessoas where id = '10000000-0000-0000-0000-000000000002'))),
+  'apelido: não é a razão social de outra empresa do grupo');
 -- não se repete (sem diferença de maiúscula), tamanho de 2 a 40, vazio tira
 select pg_temp.erro_igual(format($$select api.salvar_apelido_empresa(%L, 'bkm incorp')$$, :'holding'),
   'Já existe uma empresa com o apelido bkm incorp', 'apelido: não se repete entre as empresas');

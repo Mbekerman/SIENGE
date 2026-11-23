@@ -144,7 +144,7 @@ export interface ResultadoLeitor {
   identificacao: Identificacao | null;
 }
 
-// Cadastros › Empresas (migration 20261123000100_erp_empresa_apelido.sql): o apelido é o nome no sistema; sem ele, a razão social
+// Cadastros › Empresas (migration 20261123000200_erp_empresa_apelido.sql): o apelido é o nome no sistema; sem ele, a razão social
 export interface Empresa {
   id: string; apelido: string | null; razao_social: string; documento: string | null;
   tipo: 'holding' | 'incorporadora' | 'construtora' | 'spe' | 'outra'; ativa: boolean; posso_apelido: boolean;

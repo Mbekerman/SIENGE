@@ -2,8 +2,8 @@
 -- cada empresa pelo qual ela seria chamada no sistema, e não somente a razão social. Uma espécie de nome fantasia para
 -- o sistema").
 --
--- 1. erp.empresas.apelido: opcional, de 2 a 40 letras, sem espaço sobrando, e não se repete entre as empresas (sem
---    diferença de maiúscula). Não é o nome fantasia da pessoa (erp.pessoas.nome_fantasia, o do CNPJ): é o nome pelo
+-- 1. erp.empresas.apelido: opcional, de 2 a 40 letras, sem espaço sobrando, não se repete entre as empresas e não é a
+--    razão social nem o nome fantasia de outra empresa do grupo (sem diferença de maiúscula). Não é o nome fantasia da pessoa (erp.pessoas.nome_fantasia, o do CNPJ): é o nome pelo
 --    qual a BKM chama a empresa dentro do sistema.
 -- 2. Quem dá e muda o apelido: o master, AF, AD e o administrador (Moises, 23/11/2026: "Admin também pode editar o
 --    apelido"), na hora e com auditoria, como o resto do cadastro da empresa que o administrador já muda. Tipo e
@@ -32,9 +32,15 @@ begin
     if new.apelido is not null and exists (select 1 from erp.empresas e where lower(e.apelido) = lower(new.apelido) and e.id <> new.id) then
       raise exception 'Já existe uma empresa com o apelido %', new.apelido;
     end if;
+    -- nem o nome de outra empresa do grupo: chamar a SPE 03 pela razão social da SPE 02 faria lançar na errada
+    if new.apelido is not null and exists (select 1 from erp.empresas e join erp.pessoas p on p.id = e.pessoa_id
+                                             where e.id <> new.id and lower(new.apelido) in (lower(p.nome), lower(coalesce(p.nome_fantasia, '')))) then
+      raise exception 'O apelido % é o nome de outra empresa do grupo', new.apelido;
+    end if;
   end if;
   -- AF e AD passam pela regra de acesso só para o apelido: o resto da empresa segue com o administrador
-  if tg_op = 'UPDATE' and (new.id, new.pessoa_id, new.tipo, new.ativa) is distinct from (old.id, old.pessoa_id, old.tipo, old.ativa)
+  -- a linha inteira menos o apelido: coluna nova em erp.empresas já nasce travada (revisão de segurança do #120)
+  if tg_op = 'UPDATE' and (to_jsonb(new) - 'apelido') is distinct from (to_jsonb(old) - 'apelido')
      and not (erp.sistema() or erp.sou_admin()) then
     raise exception 'Tipo e situação da empresa só o administrador muda';
   end if;
