@@ -6,6 +6,12 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
+| 23/nov/2026 | Orçamento de área: um por núcleo econômico, centro e ano, por natureza, nível e mês; informativo, sem pré-aprovação e fora do acumulado da alçada | [Orçamento](financeiro/orcamento-e-fluxo-de-caixa.md#orçamento-de-área) |
+| 23/nov/2026 | O orçamento de área cria o gestor do centro e aprovam a AF com um AO do centro, ou o AD sozinho | [Orçamento](financeiro/orcamento-e-fluxo-de-caixa.md#orçamento-de-área) |
+| 23/nov/2026 | Todos os meses do orçamento vão ao Sienge como PRV; na revisão, só a linha que mudou troca de PRV | [Orçamento](financeiro/orcamento-e-fluxo-de-caixa.md#orçamento-de-área) |
+| 23/nov/2026 | A nota abate o orçado sozinha; a cada nota (ou cancelamento) o PRV da linha é refeito na hora com o saldo | [Orçamento](financeiro/orcamento-e-fluxo-de-caixa.md#orçamento-de-área) |
+| 23/nov/2026 | Sobra do mês sai 10 dias depois do fim do mês (configurável); meses passados não mudam | [Orçamento](financeiro/orcamento-e-fluxo-de-caixa.md#orçamento-de-área) |
+| 23/nov/2026 | Vaga opcional "AO do centro" na alçada de pagamento; a vaga AO continua de qualquer AO | [Orçamento](financeiro/orcamento-e-fluxo-de-caixa.md#ao-do-centro-na-alçada-de-pagamento) |
 | 18/nov/2026 | A página das PRV a apagar se atualiza sozinha: o título apagado no Sienge some em segundos, sem F5 | [Contas a pagar](financeiro/contas-a-pagar.md#previsões-de-despesa-na-transição) |
 | 18/nov/2026 | PJ (natureza restrita) só com o master e quem ele designar, sem acesso por cargo ou papel: AF, AO e AD não veem; título e previsão PJ têm só a aprovação do master ou do designado; o PJ não conta no acumulado do mês do centro; previsão PJ não vai ao Sienge; os dois "ok" do mês continuam (RH confere tudo menos a remuneração, o master confere a remuneração) | [Aprovações](transversais/aprovacoes.md#alçada-de-pagamento-do-piloto-marketing) |
 | 19/nov/2026 | O cadastro das pessoas PJ (nome, CPF, e-mail, telefone) só o master e os designados veem; só eles lançam algo para essas pessoas | [Aprovações](transversais/aprovacoes.md#pagamento-de-funcionários-pj) |
