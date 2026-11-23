@@ -6,7 +6,7 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
-| 23/nov/2026 | Orçamento de área: um por empresa, centro e ano, por natureza, nível e mês; informativo, sem pré-aprovação e fora do acumulado da alçada | [Orçamento](financeiro/orcamento-e-fluxo-de-caixa.md#orçamento-de-área) |
+| 23/nov/2026 | Orçamento de área: um por núcleo econômico, centro e ano, por natureza, nível e mês; informativo, sem pré-aprovação e fora do acumulado da alçada | [Orçamento](financeiro/orcamento-e-fluxo-de-caixa.md#orçamento-de-área) |
 | 23/nov/2026 | O orçamento de área cria o gestor do centro e aprovam a AF com um AO do centro, ou o AD sozinho | [Orçamento](financeiro/orcamento-e-fluxo-de-caixa.md#orçamento-de-área) |
 | 23/nov/2026 | Todos os meses do orçamento vão ao Sienge como PRV; na revisão, só a linha que mudou troca de PRV | [Orçamento](financeiro/orcamento-e-fluxo-de-caixa.md#orçamento-de-área) |
 | 23/nov/2026 | A nota abate o orçado sozinha; a cada nota (ou cancelamento) o PRV da linha é refeito na hora com o saldo | [Orçamento](financeiro/orcamento-e-fluxo-de-caixa.md#orçamento-de-área) |
