@@ -89,12 +89,11 @@ begin
 
   -- Lançar título e Nova conta: a lista de empresas com o apelido (e a razão social ao lado), em ordem pelo apelido
   v_def := pg_get_functiondef('api.lancamento_opcoes()'::regprocedure);
-  v_novo := replace(replace(v_def,
+  -- sem trecho de várias linhas: o editor do Supabase mexe no recuo do que se cola (falhou assim no bkm_dev, 23/11/2026)
+  v_novo := regexp_replace(replace(v_def,
     $r$jsonb_build_object('id', e.id, 'nome', p.nome, 'documento', p.documento,$r$,
     $r$jsonb_build_object('id', e.id, 'nome', coalesce(e.apelido, p.nome), 'razao_social', p.nome, 'documento', p.documento,$r$),
-    $r$order by p.nome)
-                 from erp.empresas e$r$, $r$order by coalesce(e.apelido, p.nome))
-                 from erp.empresas e$r$);
+    'order by p\.nome\)(\s+from erp\.empresas e )', 'order by coalesce(e.apelido, p.nome))\1');
   if v_novo not like '%razao_social%' or v_novo not like '%order by coalesce(e.apelido, p.nome))%' then
     raise exception 'api.lancamento_opcoes: ponto de troca não achado';
   end if;
