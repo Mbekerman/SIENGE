@@ -8,11 +8,13 @@
 #                                                      certificado; guarda chave + certificado em PEM; apaga o .pfx)
 #   2. bash publicar.sh --banco ~/prod-ca-2021.crt     (o certificado raiz do Supabase, de Database > Settings > SSL: o
 #                                                      serviço confere o servidor do banco com ele; gera a senha do login,
-#                                                      guarda a URL e mostra o SQL para colar no SQL Editor do Supabase,
-#                                                      que só liga o login com a rede do banco, o pg_net, fechada; S-143)
-#   3. bash publicar.sh --publicar                     (publica o job com o código da develop e roda uma vez)
+#                                                      guarda a URL e mostra o SQL da senha para colar no SQL Editor)
+#   2b. no SQL Editor, supabase/dev/busca_notas_janela_agenda.sql: o login só fica ligado dos minutos 5 a 15 de cada
+#                                                      hora, e não liga com a rede do banco (pg_net) aberta (S-143)
+#   3. bash publicar.sh --publicar                     (publica o job com o código da develop e roda uma vez, na janela)
 #   4. bash publicar.sh --agendar                      (de hora em hora, pelo Cloud Scheduler)
-#   bash publicar.sh --rodar     roda de novo e mostra o log
+#   bash publicar.sh --rodar     roda de novo (espera a janela) e mostra o log
+#   bash publicar.sh --trocar-senha   senha nova (mostra o SQL, espera você colar e só então troca no Secret Manager)
 #   bash publicar.sh --parar     tira o agendamento (o job e os segredos ficam)
 # Nunca dar à conta erp-busca-notas papel de deploy; a conta compute do build não pode ler os segredos (o script confere).
 set -euo pipefail
@@ -52,6 +54,34 @@ certs_montados() {   # /certs/<empresa>/pem=notas-cert-<8 primeiros>:latest, par
     while read -r s e; do [ -n "$e" ] && printf '/certs/%s/pem=%s:latest,' "$(echo "$e" | tr '_' '-')" "$s"; done
 }
 
+senha_nova() {   # ref host pasta: gera a senha, escreve a URL em pasta/url e mostra o SQL (o banco recebe só o verificador)
+  [[ "$1" =~ ^[a-z0-9]{20}$ && "$2" =~ ^[a-z0-9.-]+\.supabase\.com$ ]] || { echo "Ref ou host inválidos." >&2; exit 1; }
+  openssl rand -hex 24 > "$3/senha"
+  printf 'postgresql://erp_busca_notas.%s:%s@%s:5432/postgres?sslmode=verify-full' "$1" "$(cat "$3/senha")" "$2" > "$3/url"
+  local VERIF
+  VERIF=$(python3 - "$3/senha" <<'PY'
+import base64, hashlib, hmac, os, sys
+pw = open(sys.argv[1]).read().strip().encode(); salt = os.urandom(16); it = 4096
+s = hashlib.pbkdf2_hmac('sha256', pw, salt, it)
+ck = hmac.new(s, b'Client Key', 'sha256').digest(); sk = hmac.new(s, b'Server Key', 'sha256').digest()
+b = lambda x: base64.b64encode(x).decode()
+print(f"SCRAM-SHA-256${it}:{b(salt)}${b(hashlib.sha256(ck).digest())}:{b(sk)}")
+PY
+)
+  rm -f "$3/senha"
+  # só a senha: o login liga e desliga pela janela (migration 20261123005000), que não abre com o pg_net aberto (S-143)
+  echo; echo "Cole no SQL Editor do Supabase (projeto $1):"; echo
+  echo "alter role erp_busca_notas password '$VERIF';"; echo
+}
+esperar_janela() {   # o login só fica ligado dos minutos 5 a 15 de cada hora; a rodada à mão espera o minuto 6
+  local m s espera
+  m=$((10#$(date -u +%M))); s=$((10#$(date -u +%S)))
+  if [ "$m" -ge 6 ] && [ "$m" -le 10 ]; then return; fi
+  if [ "$m" -lt 6 ]; then espera=$(( (6 - m) * 60 - s )); else espera=$(( (66 - m) * 60 - s )); fi
+  echo "O login do banco só abre entre os minutos 5 e 15 de cada hora. Esperando $((espera / 60 + 1)) minuto(s)..."
+  sleep "$espera"
+}
+
 case "${1:-}" in
 --certificado)
   PFX=${2:?"informe o .pfx: bash publicar.sh --certificado ~/arquivo.pfx"}
@@ -80,35 +110,20 @@ case "${1:-}" in
   segredo "$S_DBCA" "$DBCA"
   read -r -p "Ref do projeto Supabase (Settings > General): " REF
   read -r -p "Host do pooler de sessão (Connect > Session pooler, ex.: aws-0-sa-east-1.pooler.supabase.com): " HOST
-  [[ "$REF" =~ ^[a-z0-9]{20}$ && "$HOST" =~ ^[a-z0-9.-]+\.supabase\.com$ ]] || { echo "Ref ou host inválidos." >&2; exit 1; }
   umask 077; T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
-  openssl rand -hex 24 > "$T/senha"
-  printf 'postgresql://erp_busca_notas.%s:%s@%s:5432/postgres?sslmode=verify-full' "$REF" "$(cat "$T/senha")" > "$T/url"
-  segredo "$S_DB" "$T/url"
-  # o banco guarda só o verificador SCRAM: a senha não passa pelo SQL Editor
-  VERIF=$(python3 - "$T/senha" <<'PY'
-import base64, hashlib, hmac, os, sys
-pw = open(sys.argv[1]).read().strip().encode(); salt = os.urandom(16); it = 4096
-s = hashlib.pbkdf2_hmac('sha256', pw, salt, it)
-ck = hmac.new(s, b'Client Key', 'sha256').digest(); sk = hmac.new(s, b'Server Key', 'sha256').digest()
-b = lambda x: base64.b64encode(x).decode()
-print(f"SCRAM-SHA-256${it}:{b(salt)}${b(hashlib.sha256(ck).digest())}:{b(sk)}")
-PY
-)
-  rm -rf "$T"
-  echo; echo "Cole no SQL Editor do Supabase (projeto $REF). Só liga o login se o pg_net estiver fechado (S-143):"; echo
-  cat <<SQL
-do \$\$ begin
-  if exists (select 1 from pg_namespace where nspname = 'net')
-     and (has_schema_privilege('erp_busca_notas', 'net', 'usage')
-          or exists (select 1 from pg_class c where c.relnamespace = 'net'::regnamespace
-                      and has_table_privilege('erp_busca_notas', c.oid, 'select'))) then
-    raise exception 'S-143: o pg_net continua aberto a todos os logins; o login do serviço não foi ligado';
-  end if;
-  alter role erp_busca_notas login password '$VERIF';
-end \$\$;
-SQL
-  echo; echo "Depois: bash publicar.sh --publicar" ;;
+  senha_nova "$REF" "$HOST" "$T"
+  segredo "$S_DB" "$T/url"; rm -rf "$T"
+  echo "Depois, no SQL Editor, a agenda da janela (supabase/dev/busca_notas_janela_agenda.sql); e: bash publicar.sh --publicar" ;;
+--trocar-senha)
+  gcloud secrets describe "$S_DB" >/dev/null 2>&1 || { echo "Ainda não há senha: bash publicar.sh --banco" >&2; exit 1; }
+  umask 077; T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
+  gcloud secrets versions access latest --secret "$S_DB" > "$T/atual"
+  REF=$(sed -E 's#^postgresql://erp_busca_notas\.([a-z0-9]+):.*#\1#' "$T/atual"); HOST=$(sed -E 's#^.*@([^:/]+):5432/.*#\1#' "$T/atual")
+  rm -f "$T/atual"
+  senha_nova "$REF" "$HOST" "$T"
+  read -r -p "Cole o SQL acima e, quando o Supabase responder sem erro, aperte Enter (Ctrl+C desiste e nada muda): " _
+  segredo "$S_DB" "$T/url"; rm -rf "$T"
+  echo "Senha trocada. A rodada seguinte já usa a nova." ;;
 --publicar|--rodar)
   conta; conferir_compute
   CERTS=$(certs_montados)
@@ -138,10 +153,11 @@ SQL
     DIR=$(mktemp -d); git clone --depth 1 --branch "${NOTAS_BRANCH:-develop}" https://github.com/Mbekerman/SIENGE.git "$DIR/SIENGE"
     CA=""; gcloud secrets describe "$S_CA" >/dev/null 2>&1 && CA="/ca/pem=$S_CA:latest,"
     gcloud run jobs deploy "$NOME" --source "$DIR/SIENGE/servicos/busca-notas" --region "$R" \
-      --service-account "$SA" --tasks 1 --max-retries 0 --task-timeout 50m --memory 512Mi --cpu 1 \
+      --service-account "$SA" --tasks 1 --max-retries 0 --task-timeout 25m --memory 512Mi --cpu 1 \
       --set-secrets "${CERTS}${CA}/dbca/pem=$S_DBCA:latest,NOTAS_DB_URL=$S_DB:latest" \
       --set-env-vars "NOTAS_UF=${NOTAS_UF:-35},NOTAS_DB_CA=/dbca/pem$([ -n "$CA" ] && echo ',NOTAS_CA=/ca/pem')"
   fi
+  esperar_janela
   gcloud run jobs execute "$NOME" --region "$R" --wait || true
   EXE=$(gcloud run jobs describe "$NOME" --region "$R" --format='value(status.latestCreatedExecution.name)')
   echo "Log da rodada (só contagens):"
@@ -163,5 +179,5 @@ SQL
 --parar)
   gcloud scheduler jobs delete "$NOME" --location "$R" --quiet && echo "Agendamento tirado." ;;
 *)
-  sed -n '2,17p' "$0"; exit 1 ;;
+  sed -n '2,19p' "$0"; exit 1 ;;
 esac
