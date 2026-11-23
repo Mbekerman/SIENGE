@@ -32,7 +32,7 @@ alter table erp.compromissos
 create table erp.compromisso_aprovacoes (
   compromisso_id  uuid not null references erp.compromissos,
   versao          int not null,
-  vaga            text not null check (vaga in ('AREA','FIN')),  -- AREA: gestor do centro; FIN: AF ou AO
+  vaga            text not null check (vaga in ('AREA','FIN')),  -- AREA: gestor do centro; FIN: AF ou AD (desde 20261123000100)
   centro_custo_id uuid references erp.centros_custo,             -- o centro da vaga AREA
   aprovado        boolean not null,
   justificativa   text,
@@ -152,7 +152,7 @@ begin
      limit case when p_aprovar then null else 1 end;
     return case when p_aprovar then 'aprovado' else 'recusado' end;
   end if;
-  -- a primeira vaga pendente que a pessoa ocupa (o gestor do centro, ou a AF ou AO no financeiro)
+  -- a primeira vaga pendente que a pessoa ocupa (o gestor do centro, ou a AF ou AD no financeiro)
   select x.* into v from erp.compromisso_vagas(c.id) x
    where not exists (select 1 from erp.compromisso_aprovacoes a where a.compromisso_id = c.id and a.versao = c.aprovacao_versao
                        and a.vaga = x.vaga and a.centro_custo_id is not distinct from x.centro_custo_id)

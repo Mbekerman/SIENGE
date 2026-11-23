@@ -6647,7 +6647,7 @@ insert into erp.centro_aprovadores values (:'cc_mkt', :'gestor') on conflict do 
 insert into erp.listas_financeiro (lista, user_id) values ('AF', :'contador') on conflict do nothing;
 select pg_temp.volta();
 
--- contrato recorrente: gestor do centro + AF ou AO; quem lançou não aprova
+-- contrato recorrente: gestor do centro + AF ou AD (Moises, 23/11/2026; antes AF ou AO); quem lançou não aprova
 select pg_temp.como(:'analista');
 insert into erp.compromissos (id, empresa_id, tipo, pessoa_id, descricao, inicio, periodicidade, valor_periodo, dia_vencimento)
 values ('61000000-0000-0000-0000-0000000000a1', :'spe', 'assinatura', '10000000-0000-0000-0000-000000000007', 'Assinatura de teste',
@@ -6673,7 +6673,12 @@ select pg_temp.erro_igual($$select erp.decidir_compromisso('61000000-0000-0000-0
   'Seu papel só permite consulta', 'contrato: leitura não aprova');
 select pg_temp.como(:'analista2');
 select pg_temp.erro_igual($$select erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', true)$$,
-  'A aprovação deste contrato é do gestor de cada centro e da AF ou da AO', 'contrato: quem não é gestor do centro nem AF/AO não aprova');
+  'A aprovação deste contrato é do gestor de cada centro e da AF ou da AD', 'contrato: quem não é gestor do centro nem AF/AD não aprova');
+select pg_temp.sis(); insert into erp.listas_financeiro (lista, user_id) values ('AO', :'analista2'); select pg_temp.volta();
+select pg_temp.como(:'analista2');
+select pg_temp.erro_igual($$select erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', true)$$,
+  'A aprovação deste contrato é do gestor de cada centro e da AF ou da AD', 'contrato: a AO não aprova o cadastro (Moises, 23/11/2026)');
+select pg_temp.sis(); delete from erp.listas_financeiro where lista = 'AO' and user_id = :'analista2'; select pg_temp.volta();
 select pg_temp.como(:'gestor');
 select pg_temp.ok(erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', true) = 'pendente', 'contrato: o gestor do centro aprova a vaga dele');
 select pg_temp.erro_igual($$select erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', true)$$,
@@ -6730,6 +6735,15 @@ update erp.compromisso_rateios set percentual = 50 where compromisso_id = '61000
 select pg_temp.sis();
 select pg_temp.ok((select aprovacao_versao = :v1 + 3 and alterado_por = :'analista' from erp.compromissos where id = '61000000-0000-0000-0000-0000000000a1'),
   'contrato: incluir ou mudar linha do rateio abre versão nova');
+select pg_temp.volta();
+select pg_temp.sis(); insert into erp.listas_financeiro (lista, user_id) values ('AD', :'diretor2') on conflict do nothing; select pg_temp.volta();
+select pg_temp.como(:'diretor2');
+select erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', true) as r_ad \gset
+select pg_temp.sis();
+select pg_temp.ok(:'r_ad' = 'pendente'
+                  and exists (select 1 from erp.compromisso_aprovacoes where compromisso_id = '61000000-0000-0000-0000-0000000000a1'
+                                and versao = :v1 + 3 and vaga = 'FIN' and por = :'diretor2'),
+  'contrato: a AD aprova a vaga do financeiro do cadastro (Moises, 23/11/2026)');
 select pg_temp.volta();
 select pg_temp.como(:'diretor');
 select pg_temp.ok(erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', true) = 'aprovado', 'contrato: o master aprova todas as vagas de uma vez');
@@ -8199,8 +8213,8 @@ select api.decidir('titulo', :'tap', 'aprovar') as dec_af \gset
 select pg_temp.ok(:'dec_af' = 'aprovado' and erp.etapa_titulo(:'tap') = 'aprovado'
                   and not exists (select 1 from api.aprovacoes() a where a.id = :'tap'),
   'aprovar: a AF aprova, o título sai da lista e segue para o Sienge');
--- contrato recorrente: gestor do centro e AF ou AO, em qualquer ordem
-select pg_temp.ok((select a.vez and a.esperando like '%gestor de Marketing%' and a.esperando like '%AF ou AO%'
+-- contrato recorrente: gestor do centro e AF ou AD, em qualquer ordem
+select pg_temp.ok((select a.vez and a.esperando like '%gestor de Marketing%' and a.esperando like '%AF ou AD%'
                      from api.aprovacoes() a where a.tipo = 'contrato' and a.id = '8e000000-0000-0000-0000-000000000001'),
   'aprovar: o contrato recorrente aparece com as vagas que faltam');
 select pg_temp.ok(api.decidir('contrato', '8e000000-0000-0000-0000-000000000001', 'aprovar') = 'pendente', 'aprovar: a AF aprova o contrato e falta o gestor');
@@ -8379,6 +8393,263 @@ select pg_temp.ok((select valor_total = :ct1_lanc from erp.compromissos where id
 select pg_temp.ok((select bool_and(pg_get_functiondef(f) like '%pg_advisory_xact_lock(hashtext(''erp.compromisso:''%')
                      from unnest(array['erp.tg_compromisso_vinculado()'::regprocedure, 'erp.tg_contrato_confere()'::regprocedure]) f),
   'conta: o contrato e a nota que entra nele tomam a mesma trava');
+
+-- previsão mês a mês (Moises, 23/11/2026). A conferência do calendário roda no fim da transação; aqui, que tudo é
+-- uma transação só, "set constraints ... immediate" a roda na hora.
+select pg_temp.como(:'analista');
+select jsonb_build_object('empresa', :'spe', 'tipo', 'contrato', 'fornecedor', '10000000-0000-0000-0000-000000000007',
+         'descricao', 'Agência trimestre', 'inicio', '2027-01-01', 'fim', '2027-03-31', 'valor_total', 3000,
+         'rateio', :'cbase'::jsonb->'rateio') as kbase \gset
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('meses', jsonb_build_array(
+  jsonb_build_object('mes', '2027-01-01', 'valor', 1000), jsonb_build_object('mes', '2027-02-01', 'valor', 500),
+  jsonb_build_object('mes', '2027-03-01', 'valor', 1500)))) as kctr \gset
+set constraints erp.t_meses_conferem immediate;
+set constraints erp.t_meses_conferem deferred;
+select pg_temp.ok((select jsonb_array_length(x->'meses') = 3 and (x->'meses'->1->>'valor')::numeric = 500 and x->'trava_antes' = 'null'::jsonb
+                     from api.conta(:'kctr') x), 'mês a mês: o contrato grava um valor por mês e devolve o calendário');
+select aprovacao_versao as kver from erp.compromissos where id = :'kctr' \gset
+-- cada caso errado: grava, roda a conferência e volta
+savepoint sp_mes;
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'meses', jsonb_build_array(
+  jsonb_build_object('mes', '2027-01-01', 'valor', 1000), jsonb_build_object('mes', '2027-02-01', 'valor', 500),
+  jsonb_build_object('mes', '2027-03-01', 'valor', 1000))));
+select pg_temp.erro_igual('set constraints erp.t_meses_conferem immediate',
+  'A soma dos meses (R$ 2.500,00) não bate com o valor do contrato (R$ 3.000,00)', 'mês a mês: a soma tem de bater com o valor do contrato');
+rollback to savepoint sp_mes;
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'valor_total', 3500));
+select pg_temp.erro_igual('set constraints erp.t_meses_conferem immediate',
+  'A soma dos meses (R$ 3.000,00) não bate com o valor do contrato (R$ 3.500,00)', 'mês a mês: mudar só o valor do contrato também confere a soma');
+rollback to savepoint sp_mes;
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'meses', jsonb_build_array(
+  jsonb_build_object('mes', '2027-01-01', 'valor', 1000), jsonb_build_object('mes', '2027-02-01', 'valor', 2000))));
+select pg_temp.erro_igual('set constraints erp.t_meses_conferem immediate',
+  'O calendário do contrato precisa ter todos os meses da vigência', 'mês a mês: o contrato tem todos os meses da vigência');
+rollback to savepoint sp_mes;
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'meses', jsonb_build_array(
+  jsonb_build_object('mes', '2027-01-01', 'valor', 1000), jsonb_build_object('mes', '2027-02-01', 'valor', 500),
+  jsonb_build_object('mes', '2027-03-01', 'valor', 1000), jsonb_build_object('mes', '2027-04-01', 'valor', 500))));
+select pg_temp.erro_igual('set constraints erp.t_meses_conferem immediate',
+  'Há mês do calendário fora da vigência', 'mês a mês: mês fora da vigência é recusado');
+rollback to savepoint sp_mes;
+select api.salvar_conta((:'kbase'::jsonb - 'fim') || jsonb_build_object('id', :'kctr'));
+select pg_temp.erro_igual('set constraints erp.t_meses_conferem immediate',
+  'Contrato com previsão mês a mês precisa da data de fim', 'mês a mês: contrato com calendário tem data de fim');
+rollback to savepoint sp_mes;
+select pg_temp.erro_igual(format('select api.salvar_conta(%L::jsonb)', (:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'meses',
+  jsonb_build_array(jsonb_build_object('mes', '2027-01-01', 'valor', -1))))::text),
+  'Cada mês precisa da data e de um valor (zero ou mais)', 'mês a mês: valor negativo é recusado');
+rollback to savepoint sp_mes;
+set constraints erp.t_meses_conferem deferred;
+-- mudar um mês: versão nova (volta para a aprovação); salvar sem mandar os meses não mexe neles
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr'));
+select pg_temp.ok((select aprovacao_versao = :kver from erp.compromissos where id = :'kctr')
+                  and (select count(*) = 3 from erp.compromisso_meses where compromisso_id = :'kctr'),
+  'mês a mês: salvar sem os meses não mexe no calendário nem na versão');
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'meses', jsonb_build_array(
+  jsonb_build_object('mes', '2027-01-01', 'valor', 1200), jsonb_build_object('mes', '2027-02-01', 'valor', 500),
+  jsonb_build_object('mes', '2027-03-01', 'valor', 1300))));
+set constraints erp.t_meses_conferem immediate;
+set constraints erp.t_meses_conferem deferred;
+select pg_temp.ok((select aprovacao_versao > :kver and alterado_por = :'analista' from erp.compromissos where id = :'kctr'),
+  'mês a mês: mudar um mês pede aprovação de novo');
+-- assinatura bimestral não tem calendário; consumo: os meses do ano até o teto
+savepoint sp_mes;
+select api.salvar_conta(jsonb_build_object('empresa', :'spe', 'tipo', 'assinatura', 'fornecedor', '10000000-0000-0000-0000-000000000007',
+  'descricao', 'Software bimestral', 'inicio', '2027-01-01', 'valor_periodo', 200, 'periodicidade', 'bimestral', 'rateio', :'cbase'::jsonb->'rateio',
+  'meses', jsonb_build_array(jsonb_build_object('mes', '2027-01-01', 'valor', 200))));
+select pg_temp.erro_igual('set constraints erp.t_meses_conferem immediate',
+  'A previsão mês a mês só vale para conta mensal', 'mês a mês: assinatura bimestral não tem calendário');
+rollback to savepoint sp_mes;
+select api.salvar_conta(:'cbase'::jsonb || jsonb_build_object('instalacao', 'C-2', 'faixa_mensal', 1000, 'teto_anual', 5000, 'inicio', '2027-01-01',
+  'meses', (select jsonb_agg(jsonb_build_object('mes', m, 'valor', 1000)) from generate_series('2027-01-01'::date, '2027-06-01', '1 month') m)));
+select pg_temp.erro_igual('set constraints erp.t_meses_conferem immediate',
+  'Os meses de 2027 somam R$ 6.000,00, acima do teto no ano (R$ 5.000,00)', 'mês a mês: no consumo, os meses do ano não passam do teto');
+rollback to savepoint sp_mes;
+set constraints erp.t_meses_conferem deferred;
+-- o valor de cada mês nas previsões; sem fim, depois do último mês vale o último; mês com zero não gera previsão
+select api.salvar_conta(jsonb_build_object('empresa', :'spe', 'tipo', 'assinatura', 'fornecedor', '10000000-0000-0000-0000-000000000007',
+  'descricao', 'Software mensal', 'inicio', '2027-01-01', 'valor_periodo', 100, 'periodicidade', 'mensal', 'dia_vencimento', 10,
+  'rateio', :'cbase'::jsonb->'rateio', 'meses', jsonb_build_array(jsonb_build_object('mes', '2027-01-01', 'valor', 100),
+  jsonb_build_object('mes', '2027-02-01', 'valor', 0), jsonb_build_object('mes', '2027-03-01', 'valor', 250)))) as kass \gset
+set constraints erp.t_meses_conferem immediate;
+set constraints erp.t_meses_conferem deferred;
+select pg_temp.ok(erp.valor_do_mes(:'kass', '2027-01-15') = 100 and erp.valor_do_mes(:'kass', '2027-02-01') = 0
+                  and erp.valor_do_mes(:'kass', '2027-07-01') = 250 and erp.valor_do_mes(:'kctr', '2027-03-01') = 1300,
+  'mês a mês: o valor do mês é o do calendário e, sem fim, depois do último vale o último');
+select pg_temp.sis();
+select erp.gerar_previsoes_assinatura(:'kass', '2027-04-30');
+select pg_temp.ok((select count(distinct competencia) = 3 and sum(valor) = 600
+                          and bool_and(competencia in ('2027-01-01', '2027-03-01', '2027-04-01'))
+                     from erp.previsoes where compromisso_id = :'kass'),
+  'mês a mês: as previsões da assinatura saem com o valor de cada mês, e o mês com zero não gera previsão');
+-- depois da primeira aprovação, mês que já passou não muda
+select jsonb_build_object('empresa', :'spe', 'tipo', 'contrato', 'fornecedor', '10000000-0000-0000-0000-000000000007',
+         'descricao', 'Contrato em curso', 'inicio', erp.mes(current_date) - interval '2 months',
+         'fim', erp.mes(current_date) + interval '2 months' - interval '1 day', 'valor_total', 400, 'rateio', :'cbase'::jsonb->'rateio') as pbase,
+       jsonb_build_object('mes', erp.mes(current_date) - interval '2 months', 'valor', 100) as pm2,
+       jsonb_build_object('mes', erp.mes(current_date) - interval '1 month', 'valor', 100) as pm1,
+       erp.mes(current_date) as p0, erp.mes((current_date + interval '1 month')::date) as p1 \gset
+select pg_temp.volta();
+select api.salvar_conta(:'pbase'::jsonb || jsonb_build_object('meses', jsonb_build_array(:'pm2'::jsonb, :'pm1'::jsonb,
+  jsonb_build_object('mes', :'p0', 'valor', 100), jsonb_build_object('mes', :'p1', 'valor', 100)))) as kcur \gset
+set constraints erp.t_meses_conferem immediate;
+set constraints erp.t_meses_conferem deferred;
+select pg_temp.sis();
+set local role erp_situacao;
+insert into erp.compromisso_aprovacoes (compromisso_id, versao, vaga, aprovado, por)
+select id, aprovacao_versao, 'FIN', true, :'contador' from erp.compromissos where id = :'kcur';
+reset role;
+select pg_temp.volta();
+select pg_temp.ok((select (x->>'trava_antes')::date = :'p0'::date from api.conta(:'kcur') x), 'mês a mês: a conta aprovada diz desde que mês o calendário muda');
+select pg_temp.erro_igual(format('select api.salvar_conta(%L::jsonb)', (:'pbase'::jsonb || jsonb_build_object('id', :'kcur', 'meses', jsonb_build_array(
+  jsonb_set(:'pm2'::jsonb, '{valor}', '50'), :'pm1'::jsonb, jsonb_build_object('mes', :'p0', 'valor', 100), jsonb_build_object('mes', :'p1', 'valor', 150))))::text),
+  'Mês que já passou não muda no calendário', 'mês a mês: depois de aprovada, mês que já passou não muda');
+select api.salvar_conta(:'pbase'::jsonb || jsonb_build_object('id', :'kcur', 'meses', jsonb_build_array(:'pm2'::jsonb, :'pm1'::jsonb,
+  jsonb_build_object('mes', :'p0', 'valor', 50), jsonb_build_object('mes', :'p1', 'valor', 150))));
+set constraints erp.t_meses_conferem immediate;
+set constraints erp.t_meses_conferem deferred;
+select pg_temp.ok((select valor = 150 from erp.compromisso_meses where compromisso_id = :'kcur' and competencia = :'p1'),
+  'mês a mês: o mês atual e os de depois mudam');
+-- quem só consulta não grava meses
+select pg_temp.como(:'leitor');
+select pg_temp.falha(format($$insert into erp.compromisso_meses values (%L, '2027-01-01', 1)$$, :'kass'), 'mês a mês: quem só consulta não grava o calendário');
+select pg_temp.como(:'analista');
+
+-- como paga (Moises, 23/11/2026): PIX fixo, TED ou vem com cada cobrança; parte do cadastro aprovado. A conferência
+-- (chave CPF/CNPJ e conta da TED do fornecedor) roda no fim da transação, como a do calendário.
+select aprovacao_versao as kver from erp.compromissos where id = :'kctr' \gset
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento',
+  jsonb_build_object('modo', 'pix', 'pix_tipo', 'cpf_cnpj', 'pix_chave', '77777777000177')));
+set constraints erp.t_pagamento_confere immediate;
+set constraints erp.t_pagamento_confere deferred;
+select pg_temp.ok((select x->'pagamento'->>'modo' = 'pix' and x->'pagamento'->>'pix_chave' = '77777777000177' from api.conta(:'kctr') x)
+                  and (select aprovacao_versao > :kver from erp.compromissos where id = :'kctr'),
+  'como paga: o PIX fixo entra no cadastro e pede aprovação de novo');
+select aprovacao_versao as kver from erp.compromissos where id = :'kctr' \gset
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento',
+  jsonb_build_object('modo', 'pix', 'pix_tipo', 'cpf_cnpj', 'pix_chave', '77777777000177')));
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr'));
+select pg_temp.ok((select aprovacao_versao = :kver from erp.compromissos where id = :'kctr')
+                  and exists (select 1 from erp.compromisso_pagamentos where compromisso_id = :'kctr'),
+  'como paga: salvar a mesma forma, ou sem mandar a forma, não pede aprovação de novo');
+savepoint sp_pag;
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento',
+  jsonb_build_object('modo', 'pix', 'pix_tipo', 'cpf_cnpj', 'pix_chave', '12345678000199')));
+select pg_temp.erro_igual('set constraints erp.t_pagamento_confere immediate',
+  'A chave PIX por CPF/CNPJ não é o documento do fornecedor (só com a justificativa da exceção)', 'como paga: chave CPF/CNPJ de outra pessoa sem justificativa é recusada');
+rollback to savepoint sp_pag;
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento',
+  jsonb_build_object('modo', 'ted', 'banco', '341', 'agencia', '1234', 'conta', '56789', 'conta_digito', '0',
+                     'conta_tipo', 'corrente', 'titular_documento', '12345678000199')));
+select pg_temp.erro_igual('set constraints erp.t_pagamento_confere immediate',
+  'A conta da TED não é do fornecedor (só com a justificativa da exceção)', 'como paga: TED para conta de outra pessoa sem justificativa é recusada');
+rollback to savepoint sp_pag;
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento',
+  jsonb_build_object('modo', 'ted', 'banco', '341', 'agencia', '1234', 'conta', '56789', 'conta_digito', '0',
+                     'conta_tipo', 'corrente', 'titular_documento', '12345678000199', 'excecao', 'Conta da administradora')));
+set constraints erp.t_pagamento_confere immediate;
+set constraints erp.t_pagamento_confere deferred;
+select pg_temp.ok((select excecao = 'Conta da administradora' from erp.compromisso_pagamentos where compromisso_id = :'kctr'),
+  'como paga: TED para outra pessoa entra com a justificativa, que fica para quem aprova');
+rollback to savepoint sp_pag;
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento',
+  jsonb_build_object('modo', 'ted', 'banco', '341', 'agencia', '1234', 'agencia_digito', 'x', 'conta', '56789', 'conta_digito', '0',
+                     'conta_tipo', 'poupanca', 'titular_documento', '77777777000177', 'excecao', 'sobrou')));
+set constraints erp.t_pagamento_confere immediate;
+set constraints erp.t_pagamento_confere deferred;
+select pg_temp.ok((select excecao is null and agencia_digito = 'X' from erp.compromisso_pagamentos where compromisso_id = :'kctr'),
+  'como paga: TED para a conta do fornecedor entra, e a justificativa que sobra some');
+-- trocar o fornecedor confere de novo
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'fornecedor', '10000000-0000-0000-0000-000000000008'));
+select pg_temp.erro_igual('set constraints erp.t_pagamento_confere immediate',
+  'A conta da TED não é do fornecedor (só com a justificativa da exceção)', 'como paga: trocar o fornecedor confere a conta de novo');
+rollback to savepoint sp_pag;
+select pg_temp.falha(format('select api.salvar_conta(%L::jsonb)', (:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento',
+  jsonb_build_object('modo', 'pix', 'pix_tipo', 'email', 'pix_chave', 'nao é email')))::text), 'como paga: chave PIX inválida é recusada');
+rollback to savepoint sp_pag;
+select pg_temp.falha(format('select api.salvar_conta(%L::jsonb)', (:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento',
+  jsonb_build_object('modo', 'ted', 'banco', '341')))::text), 'como paga: TED sem a conta inteira é recusada');
+rollback to savepoint sp_pag;
+select aprovacao_versao as kver from erp.compromissos where id = :'kctr' \gset
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento', jsonb_build_object('modo', 'cobranca')));
+select pg_temp.ok((select x->'pagamento'->>'modo' = 'cobranca' from api.conta(:'kctr') x)
+                  and (select aprovacao_versao > :kver from erp.compromissos where id = :'kctr'),
+  'como paga: "vem com cada cobrança" também é forma cadastrada e pede aprovação');
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento', null));
+select pg_temp.ok((select x->'pagamento' = 'null'::jsonb from api.conta(:'kctr') x), 'como paga: mandar a forma nula tira a forma');
+select pg_temp.como(:'leitor');
+select pg_temp.falha(format($$insert into erp.compromisso_pagamentos (compromisso_id, modo) values (%L, 'cobranca')$$, :'kctr'),
+  'como paga: quem só consulta não grava a forma');
+select pg_temp.como(:'analista');
+
+-- revisão de segurança do #119: o que muda só o calendário ou só a forma também conta como quem alterou, e a volta
+-- da aprovação vale para tirar; as conferências do cadastro rodam mesmo sem passar por api.salvar_conta
+select pg_temp.sis();
+set local role erp_situacao;
+update erp.compromissos set alterado_por = :'contador' where id = :'kctr';
+reset role;
+select pg_temp.volta();
+update erp.compromisso_meses set valor = valor + 100 where compromisso_id = :'kctr' and competencia = '2027-01-01';
+update erp.compromisso_meses set valor = valor - 100 where compromisso_id = :'kctr' and competencia = '2027-02-01';
+set constraints erp.t_meses_conferem immediate;
+set constraints erp.t_meses_conferem deferred;
+select pg_temp.ok((select alterado_por = :'analista' from erp.compromissos where id = :'kctr'),
+  'mês a mês: quem muda só o calendário passa a ser quem alterou (e não aprova a versão nova)');
+select pg_temp.sis();
+set local role erp_situacao;
+update erp.compromissos set alterado_por = :'contador' where id = :'kctr';
+reset role;
+select pg_temp.volta();
+insert into erp.compromisso_pagamentos (compromisso_id, modo) values (:'kctr', 'cobranca');
+select pg_temp.ok((select alterado_por = :'analista' from erp.compromissos where id = :'kctr'),
+  'como paga: quem muda só a forma passa a ser quem alterou (e não aprova a versão nova)');
+select aprovacao_versao as kver from erp.compromissos where id = :'kctr' \gset
+update erp.compromisso_pagamentos set modo = modo where compromisso_id = :'kctr';
+select pg_temp.ok((select aprovacao_versao = :kver from erp.compromissos where id = :'kctr'),
+  'como paga: regravar a forma igual não pede aprovação de novo');
+delete from erp.compromisso_pagamentos where compromisso_id = :'kctr';
+select pg_temp.ok((select aprovacao_versao > :kver from erp.compromissos where id = :'kctr'),
+  'como paga: tirar a forma também volta o cadastro para a aprovação');
+savepoint sp_rev;
+-- mudar o valor ou o fim do contrato sem acertar os meses é recusado (sem api.salvar_conta)
+select pg_temp.sis();
+update erp.compromissos set valor_total = 3500 where id = :'kctr';
+select pg_temp.erro_igual('set constraints erp.t_meses_conferem immediate',
+  'A soma dos meses (R$ 3.000,00) não bate com o valor do contrato (R$ 3.500,00)', 'mês a mês: mudar o valor do contrato direto também confere a soma');
+rollback to savepoint sp_rev;
+select pg_temp.sis();
+update erp.compromissos set fim = '2027-04-30' where id = :'kctr';
+select pg_temp.erro_igual('set constraints erp.t_meses_conferem immediate',
+  'O calendário do contrato precisa ter todos os meses da vigência', 'mês a mês: mudar o fim do contrato direto também confere os meses');
+rollback to savepoint sp_rev;
+-- incluir um mês que já passou, depois da aprovação, é recusado
+select pg_temp.sis();
+delete from erp.compromisso_meses where compromisso_id = :'kcur' and competencia = (:'pm2'::jsonb->>'mes')::date;
+select pg_temp.volta();
+select pg_temp.erro_igual(format('insert into erp.compromisso_meses values (%L, %L, 100)', :'kcur', :'pm2'::jsonb->>'mes'),
+  'Mês que já passou não muda no calendário', 'mês a mês: depois de aprovada, não se inclui mês que já passou');
+rollback to savepoint sp_rev;
+-- trocar o fornecedor e manter a chave CPF/CNPJ do anterior exige a exceção (sem api.salvar_conta)
+select pg_temp.volta();
+insert into erp.compromisso_pagamentos (compromisso_id, modo, pix_tipo, pix_chave) values (:'kctr', 'pix', 'cpf_cnpj', '77777777000177');
+set constraints erp.t_pagamento_confere immediate;
+set constraints erp.t_pagamento_confere deferred;
+select pg_temp.sis();
+update erp.compromissos set pessoa_id = '10000000-0000-0000-0000-000000000008' where id = :'kctr';
+select pg_temp.erro_igual('set constraints erp.t_pagamento_confere immediate',
+  'A chave PIX por CPF/CNPJ não é o documento do fornecedor (só com a justificativa da exceção)', 'como paga: trocar o fornecedor e manter a chave do anterior exige a exceção');
+rollback to savepoint sp_rev;
+-- fornecedor sem CPF/CNPJ: a conta da TED não tem com o que bater, então exige a exceção
+select pg_temp.sis();
+insert into erp.pessoas (id, tipo, nome) values ('10000000-0000-0000-0000-0000000000f1', 'juridica', 'Sem Documento');
+select pg_temp.volta();
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'fornecedor', '10000000-0000-0000-0000-0000000000f1', 'pagamento',
+  jsonb_build_object('modo', 'ted', 'banco', '341', 'agencia', '1234', 'conta', '56789', 'conta_digito', '0',
+                     'conta_tipo', 'corrente', 'titular_documento', '77777777000177')));
+select pg_temp.erro_igual('set constraints erp.t_pagamento_confere immediate',
+  'A conta da TED não é do fornecedor (só com a justificativa da exceção)', 'como paga: fornecedor sem documento exige a exceção');
+rollback to savepoint sp_rev;
+select pg_temp.como(:'analista');
 rollback;
 select pg_temp.como(null);
 
