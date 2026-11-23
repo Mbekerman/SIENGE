@@ -117,13 +117,14 @@ export async function lerComIa(cliente: Anthropic, e: Entrada, hoje = new Date()
 }
 
 // A mesma leitura, com o uso de tokens da chamada (o teste em escala, lote.ts, mede o custo por arquivo).
-export async function lerComIaDetalhe(cliente: Anthropic, e: Entrada, hoje = new Date()):
+// O modelo só muda no teste em escala (LOTE_MODELO, para comparar com outro modelo); o leitor usa sempre o MODELO. A
+// troca de modelo do servidor quando o principal está sobrecarregado (fallbacks) fica só no MODELO.
+export async function lerComIaDetalhe(cliente: Anthropic, e: Entrada, hoje = new Date(), modelo = MODELO):
   Promise<{ leitura: Leitura; modelo: string; uso: Anthropic.Beta.Messages.BetaUsage }> {
   const r = await cliente.beta.messages.create({
-    model: MODELO,
+    model: modelo,
     max_tokens: 16000,
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
+    ...(modelo === MODELO ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const } : {}),
     system: SISTEMA,
     output_config: { effort: 'medium', format: { type: 'json_schema', schema: ESQUEMA } },
     messages: [{ role: 'user', content: [bloco(e), { type: 'text', text: 'Leia este documento.' }] }],
