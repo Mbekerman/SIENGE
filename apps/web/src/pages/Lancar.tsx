@@ -92,7 +92,18 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
     for (const f of fs) { const r = await subirArquivo(f); setArquivos(a => [...a.filter(x => x.anexo.id !== r.anexo.id), r]); }
   }, onSuccess: () => setSemRet(false) });
   const senha = useMutation({ mutationFn: (x: { id: string; s: string }) => abrirComSenha(x.id, x.s), onSuccess: r => setArquivos(a => a.map(x => (x.anexo.id === r.anexo.id ? r : x))) });
-  useEffect(() => { if (arq) preencher(arq); }, [arq]); // eslint-disable-line react-hooks/exhaustive-deps
+  // com a mesma base (só entrou boleto ou anexo), só as parcelas se refazem: o que foi corrigido à mão no resto fica;
+  // com base nova (a nota chegou depois do boleto), a tela inteira se preenche pela nota
+  const base = useRef<string | null>(null);
+  const [refeitas, setRefeitas] = useState(false);
+  useEffect(() => {
+    if (!arq) { base.current = null; return; }
+    if (base.current === arq.anexo.id && arq.leitura) {
+      setParcelas(parcelasLidas(arq.leitura, arq.identificacao?.pagamento ?? null, forn?.documento ?? null));
+      setRefeitas(true);
+    } else { preencher(arq); setRefeitas(false); }
+    base.current = arq.anexo.id;
+  }, [arq]); // eslint-disable-line react-hooks/exhaustive-deps
   const valores = arq?.leitura ? conferirValores(arq.leitura) : null;
   const comRet = Boolean(arq?.leitura && (temRetencao(arq.leitura) || valores?.retencaoSuspeita));
   // CNPJ do tomador mascarado no documento: sugere as empresas que fecham com o que aparece; quem lança confirma
@@ -174,6 +185,7 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
           escolher={fs => { senha.reset(); subir.mutate(fs); }} valor={valor} cand={cand} usar={usarCandidato}
           abrir={(id, x) => senha.mutate({ id, s: x })} abrindo={senha.isPending} erroSenha={senha.error ? mensagemErro(senha.error) : null}
           sugeridas={sugeridas} mascara={mascaraTom} usarEmpresa={id => { setEmpresa(id); setLinhas([novaLinha()]); }} />}
+        {refeitas && <span className="nt inf">As parcelas foram preenchidas de novo com os arquivos novos; o resto da tela ficou como estava.</span>}
         {comRet && arq?.leitura && (
           <div className="lt-sec">
             <span className="nt cr">{temRetencao(arq.leitura) ? `A leitura achou retenção de imposto (${descRetencao(arq.leitura)}).` : 'As parcelas somam menos que o valor da nota, o que costuma ser retenção.'} Nota com retenção ainda não se lança: o título sairia pelo valor bruto e a BKM pagaria ao fornecedor o imposto que ela mesma tem de recolher. Espere a tela de retenções.</span>
