@@ -6647,7 +6647,7 @@ insert into erp.centro_aprovadores values (:'cc_mkt', :'gestor') on conflict do 
 insert into erp.listas_financeiro (lista, user_id) values ('AF', :'contador') on conflict do nothing;
 select pg_temp.volta();
 
--- contrato recorrente: gestor do centro + AF ou AO; quem lançou não aprova
+-- contrato recorrente: gestor do centro + AF ou AD (Moises, 23/11/2026; antes AF ou AO); quem lançou não aprova
 select pg_temp.como(:'analista');
 insert into erp.compromissos (id, empresa_id, tipo, pessoa_id, descricao, inicio, periodicidade, valor_periodo, dia_vencimento)
 values ('61000000-0000-0000-0000-0000000000a1', :'spe', 'assinatura', '10000000-0000-0000-0000-000000000007', 'Assinatura de teste',
@@ -6673,7 +6673,12 @@ select pg_temp.erro_igual($$select erp.decidir_compromisso('61000000-0000-0000-0
   'Seu papel só permite consulta', 'contrato: leitura não aprova');
 select pg_temp.como(:'analista2');
 select pg_temp.erro_igual($$select erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', true)$$,
-  'A aprovação deste contrato é do gestor de cada centro e da AF ou da AO', 'contrato: quem não é gestor do centro nem AF/AO não aprova');
+  'A aprovação deste contrato é do gestor de cada centro e da AF ou da AD', 'contrato: quem não é gestor do centro nem AF/AD não aprova');
+select pg_temp.sis(); insert into erp.listas_financeiro (lista, user_id) values ('AO', :'analista2'); select pg_temp.volta();
+select pg_temp.como(:'analista2');
+select pg_temp.erro_igual($$select erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', true)$$,
+  'A aprovação deste contrato é do gestor de cada centro e da AF ou da AD', 'contrato: a AO não aprova o cadastro (Moises, 23/11/2026)');
+select pg_temp.sis(); delete from erp.listas_financeiro where lista = 'AO' and user_id = :'analista2'; select pg_temp.volta();
 select pg_temp.como(:'gestor');
 select pg_temp.ok(erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', true) = 'pendente', 'contrato: o gestor do centro aprova a vaga dele');
 select pg_temp.erro_igual($$select erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', true)$$,
@@ -6730,6 +6735,15 @@ update erp.compromisso_rateios set percentual = 50 where compromisso_id = '61000
 select pg_temp.sis();
 select pg_temp.ok((select aprovacao_versao = :v1 + 3 and alterado_por = :'analista' from erp.compromissos where id = '61000000-0000-0000-0000-0000000000a1'),
   'contrato: incluir ou mudar linha do rateio abre versão nova');
+select pg_temp.volta();
+select pg_temp.sis(); insert into erp.listas_financeiro (lista, user_id) values ('AD', :'diretor2') on conflict do nothing; select pg_temp.volta();
+select pg_temp.como(:'diretor2');
+select erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', true) as r_ad \gset
+select pg_temp.sis();
+select pg_temp.ok(:'r_ad' = 'pendente'
+                  and exists (select 1 from erp.compromisso_aprovacoes where compromisso_id = '61000000-0000-0000-0000-0000000000a1'
+                                and versao = :v1 + 3 and vaga = 'FIN' and por = :'diretor2'),
+  'contrato: a AD aprova a vaga do financeiro do cadastro (Moises, 23/11/2026)');
 select pg_temp.volta();
 select pg_temp.como(:'diretor');
 select pg_temp.ok(erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', true) = 'aprovado', 'contrato: o master aprova todas as vagas de uma vez');
@@ -8199,8 +8213,8 @@ select api.decidir('titulo', :'tap', 'aprovar') as dec_af \gset
 select pg_temp.ok(:'dec_af' = 'aprovado' and erp.etapa_titulo(:'tap') = 'aprovado'
                   and not exists (select 1 from api.aprovacoes() a where a.id = :'tap'),
   'aprovar: a AF aprova, o título sai da lista e segue para o Sienge');
--- contrato recorrente: gestor do centro e AF ou AO, em qualquer ordem
-select pg_temp.ok((select a.vez and a.esperando like '%gestor de Marketing%' and a.esperando like '%AF ou AO%'
+-- contrato recorrente: gestor do centro e AF ou AD, em qualquer ordem
+select pg_temp.ok((select a.vez and a.esperando like '%gestor de Marketing%' and a.esperando like '%AF ou AD%'
                      from api.aprovacoes() a where a.tipo = 'contrato' and a.id = '8e000000-0000-0000-0000-000000000001'),
   'aprovar: o contrato recorrente aparece com as vagas que faltam');
 select pg_temp.ok(api.decidir('contrato', '8e000000-0000-0000-0000-000000000001', 'aprovar') = 'pendente', 'aprovar: a AF aprova o contrato e falta o gestor');

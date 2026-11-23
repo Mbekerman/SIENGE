@@ -97,7 +97,7 @@ export function ContaRecorrente({ id, fechar, salvo }: { id?: string; fechar: ()
     <Popup titulo={id ? 'Alterar conta recorrente' : 'Nova conta recorrente'} fechar={fechar} pe={<>
       {enviar.error ? <span className="lt-erro"><Ic n="warn" s={18} />{mensagemErro(enviar.error)}</span>
         : tentou && falta.length ? <span className="lt-erro"><Ic n="warn" s={18} />Falta {juntar(falta)}.</span>
-        : <span className="sec peq esp">Aprovam: o gestor de cada área e AF ou AO.</span>}
+        : <span className="sec peq esp">Aprovam: o gestor de cada área e AF ou AD.</span>}
       <button className="btn t" onClick={fechar}>Cancelar</button>
       <button className="btn p" onClick={salvar} disabled={enviar.isPending || !o || (Boolean(id) && !c)}>
         {enviar.isPending ? 'Enviando…' : id ? 'Salvar' : 'Enviar para aprovação'}</button>

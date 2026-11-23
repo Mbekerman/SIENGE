@@ -142,7 +142,7 @@ Conta recorrente é a que se repete todo mês. Ela fica cadastrada uma vez e gan
 | **Contrato de serviço** | software, contabilidade, vigilância, limpeza, mídia | fornecedor, empresa pagadora, valor mensal, vigência, reajuste, dia de vencimento, dados de pagamento (PIX, conta ou boleto), núcleo econômico, centro de custo, natureza, gestor e o PDF do contrato |
 | **Conta de consumo** | energia, água, telefone | faixa máxima por mês, teto no ano e o número da instalação ou do cliente (é ele que identifica a fatura quando a concessionária usa um CNPJ só para todas as contas) |
 
-**Aprovação do cadastro:** cada conta recorrente é aprovada pelo gestor e por alguém da AF ou da AO antes de valer. **Trocar PIX, conta, valor ou faixa exige nova aprovação.**
+**Aprovação do cadastro:** cada conta recorrente é aprovada pelo gestor de cada centro e por alguém da AF ou da AD antes de valer (Moises, 23/nov/2026; antes AF ou AO). **Trocar PIX, conta, valor ou faixa exige nova aprovação.**
 
 ### Tarefa: cadastrar uma conta recorrente
 
