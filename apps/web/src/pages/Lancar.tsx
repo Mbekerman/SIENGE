@@ -12,7 +12,7 @@ import { abrirComSenha, leitorLigado, subirArquivo, TIPOS_ACEITOS } from '../lib
 import type { FornecedorBusca, Identificacao, Leitura, NaturezaLancavel, OpcoesLancamento, PrevisaoParaNota, ResultadoLeitor } from '../lib/tipos';
 
 type Forma = 'pix' | 'boleto';
-type PixTipo = 'cpf_cnpj' | 'email' | 'telefone' | 'aleatoria';
+export type PixTipo = 'cpf_cnpj' | 'email' | 'telefone' | 'aleatoria';
 export interface Linha { k: number; nucleo: string; centro: string; divisao: string; natureza: string; pct: string }
 interface Parcela { k: number; vencimento: string; valor: string; forma: Forma; pix_tipo: PixTipo; pix_chave: string; boleto: string; excecao: string; pix_cc: string; cc_exc: string; bol_exc: string }
 
@@ -26,7 +26,7 @@ const novaParcela = (base?: Parcela, doc?: string | null): Parcela => ({
 });
 
 /** A chave como o banco aceita: CPF/CNPJ só dígitos, e-mail minúsculo, telefone com +55. */
-function chave(t: PixTipo, v: string): string {
+export function chave(t: PixTipo, v: string): string {
   const s = v.trim();
   if (t === 'cpf_cnpj') return s.replace(/\D/g, '');
   if (t === 'telefone') { const d = s.replace(/\D/g, ''); return d.startsWith('55') && d.length >= 12 ? `+${d}` : `+55${d}`; }
