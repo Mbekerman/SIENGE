@@ -10,8 +10,9 @@ grant erp_conferencia to current_user with inherit false, set true;
 -- 1. erp.empresas.apelido: opcional, de 2 a 40 letras, sem espaço sobrando, e não se repete entre as empresas (sem
 --    diferença de maiúscula). Não é o nome fantasia da pessoa (erp.pessoas.nome_fantasia, o do CNPJ): é o nome pelo
 --    qual a BKM chama a empresa dentro do sistema.
--- 2. Quem dá e muda o apelido: o master, AF e AD (como as etiquetas). O administrador (o TI) não muda: um apelido
---    trocado faz lançar na empresa errada. Tipo e situação da empresa continuam só com o administrador e o master.
+-- 2. Quem dá e muda o apelido: o master, AF, AD e o administrador (Moises, 23/11/2026: "Admin também pode editar o
+--    apelido"), na hora e com auditoria, como o resto do cadastro da empresa que o administrador já muda. Tipo e
+--    situação da empresa continuam só com o administrador e o master.
 -- 3. As telas mostram o apelido no lugar da razão social, e a razão social quando a empresa não tem apelido. A razão
 --    social continua em tudo o que confere ou sai do sistema: conferência do recebedor, envio ao Sienge, documentos,
 --    camada de BI (que ganha a coluna apelido ao lado).
@@ -27,8 +28,8 @@ create function erp.tg_empresa_apelido() returns trigger language plpgsql as $$
 begin
   new.apelido := nullif(btrim(regexp_replace(coalesce(new.apelido, ''), '\s+', ' ', 'g')), '');
   if new.apelido is distinct from (case when tg_op = 'UPDATE' then old.apelido end) then
-    if not (erp.sistema() or erp.sou_master() or erp.estou_nas_listas(array['AF', 'AD'])) then
-      raise exception 'Só AF, AD e o master dão e mudam o apelido da empresa';
+    if not (erp.sistema() or erp.sou_admin() or erp.estou_nas_listas(array['AF', 'AD'])) then
+      raise exception 'Só AF, AD, o administrador e o master dão e mudam o apelido da empresa';
     end if;
     if new.apelido is not null and char_length(new.apelido) not between 2 and 40 then
       raise exception 'O apelido tem de 2 a 40 letras';
@@ -115,7 +116,7 @@ create function api.empresas()
 returns table (id uuid, apelido text, razao_social text, documento text, tipo text, ativa boolean, posso_apelido boolean)
 language sql stable security invoker set search_path = pg_catalog, pg_temp as $$
   select e.id, e.apelido, p.nome, p.documento, e.tipo, e.ativa,
-         erp.sou_master() or erp.estou_nas_listas(array['AF', 'AD'])
+         erp.sou_admin() or erp.estou_nas_listas(array['AF', 'AD'])
     from erp.empresas e join erp.pessoas p on p.id = e.pessoa_id
    order by not e.ativa, coalesce(e.apelido, p.nome) $$;
 
@@ -124,8 +125,8 @@ create function api.salvar_apelido_empresa(p_empresa uuid, p_apelido text) retur
 language plpgsql volatile security invoker set search_path = pg_catalog, pg_temp as $$
 declare v text;
 begin
-  if not (erp.sou_master() or erp.estou_nas_listas(array['AF', 'AD'])) then
-    raise exception 'Só AF, AD e o master dão e mudam o apelido da empresa';
+  if not (erp.sou_admin() or erp.estou_nas_listas(array['AF', 'AD'])) then
+    raise exception 'Só AF, AD, o administrador e o master dão e mudam o apelido da empresa';
   end if;
   update erp.empresas set apelido = p_apelido where id = p_empresa returning apelido into v;
   if not found then raise exception 'Empresa não encontrada'; end if;

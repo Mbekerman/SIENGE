@@ -8593,7 +8593,7 @@ select pg_temp.como(:'gestor');
 select pg_temp.ok(erp.estou_nas_listas(array['AF']), 'apelido: (preparo) a gestora está na AF');
 select pg_temp.como(:'diretor2');
 select pg_temp.ok(erp.estou_nas_listas(array['AD']), 'apelido: (preparo) a sócia está na AD');
--- quem pode: o master, AF e AD; não o administrador, nem quem lança sem lista, nem a leitura
+-- quem pode: o master, AF, AD e o administrador; não quem lança sem lista, nem a leitura
 select pg_temp.como(:'diretor');
 select pg_temp.ok(api.salvar_apelido_empresa(:'spe', '  BKM   03 ') = 'BKM 03', 'apelido: o master dá o apelido, sem espaço sobrando');
 select pg_temp.como(:'gestor');
@@ -8601,15 +8601,15 @@ select pg_temp.ok(api.salvar_apelido_empresa(:'incorp', 'Incorporadora') = 'Inco
 select pg_temp.como(:'diretor2');
 select pg_temp.ok(api.salvar_apelido_empresa(:'incorp', 'BKM Incorp') = 'BKM Incorp', 'apelido: AD muda o apelido');
 select pg_temp.como(:'ti');
-select pg_temp.erro_igual(format($$select api.salvar_apelido_empresa(%L, 'Outra')$$, :'spe'),
-  'Só AF, AD e o master dão e mudam o apelido da empresa', 'apelido: o administrador não muda o apelido');
-select pg_temp.falha(format($$update erp.empresas set apelido = 'Outra' where id = %L$$, :'spe'), 'apelido: nem por update direto o administrador muda');
+select pg_temp.ok(api.salvar_apelido_empresa(:'spe', 'SPE 03') = 'SPE 03', 'apelido: o administrador muda o apelido (Moises, 23/11/2026)');
+select pg_temp.como(:'diretor');
+select api.salvar_apelido_empresa(:'spe', 'BKM 03');
 select pg_temp.como(:'analista2');
 select pg_temp.erro_igual(format($$select api.salvar_apelido_empresa(%L, 'Outra')$$, :'spe'),
-  'Só AF, AD e o master dão e mudam o apelido da empresa', 'apelido: quem lança sem lista não muda');
+  'Só AF, AD, o administrador e o master dão e mudam o apelido da empresa', 'apelido: quem lança sem lista não muda');
 select pg_temp.falha(format($$update erp.empresas set apelido = 'Outra' where id = %L$$, :'spe'), 'apelido: nem por update direto quem lança muda');
 select pg_temp.ok(pg_temp.erro_como_dono(format($$update erp.empresas set apelido = 'Outra' where id = %L$$, :'spe'))
-                  = 'Só AF, AD e o master dão e mudam o apelido da empresa', 'apelido: o gatilho barra por baixo da API');
+                  = 'Só AF, AD, o administrador e o master dão e mudam o apelido da empresa', 'apelido: o gatilho barra por baixo da API');
 select pg_temp.como(:'leitor');
 select pg_temp.falha(format($$select api.salvar_apelido_empresa(%L, 'Outra')$$, :'spe'), 'apelido: a leitura não muda');
 -- AF muda só o apelido: tipo e situação da empresa seguem com o administrador
