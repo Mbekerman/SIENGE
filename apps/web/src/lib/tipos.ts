@@ -91,7 +91,7 @@ export interface Rastro {
 
 // Lançar título (migration 20261119000200_api_lancar_titulo.sql)
 export interface OpcoesLancamento {
-  empresas: { id: string; nome: string; documento: string | null; nucleos: { id: string; nome: string; centros: string[] }[] }[];
+  empresas: { id: string; nome: string; razao_social: string; documento: string | null; nucleos: { id: string; nome: string; centros: string[] }[] }[];
   centros: { id: string; nome: string; divisoes: { id: string; caminho: string }[] }[];
   etiquetas: { id: string; nome: string }[];
 }
@@ -131,7 +131,7 @@ export interface Leitura {
 }
 /** api.identificar_nota (migration 20261119000400_erp_anexos.sql) */
 export interface Identificacao {
-  empresa: { id: string; nome: string; documento: string } | null;
+  empresa: { id: string; nome: string; razao_social: string; documento: string } | null;
   fornecedor: { id: string; nome: string; documento: string | null; fornecedor: boolean } | null;
   nota_repetida: { documento_id: string; titulo_id: string | null; tipo: string; numero: string; serie: string | null; emissao: string; valor: number; situacao: string }[];
   candidatos: { tipo: 'previsao' | 'contrato'; id: string; compromisso_id: string | null; compromisso_tipo: string | null; numero: string | null;
@@ -146,4 +146,10 @@ export interface ResultadoLeitor {
   erro_leitura?: string;
   pede_senha?: boolean;   // PDF com senha que os CNPJs das empresas não abriram
   identificacao: Identificacao | null;
+}
+
+// Cadastros › Empresas (migration 20261123001000_erp_empresa_apelido.sql): o apelido é o nome no sistema; sem ele, a razão social
+export interface Empresa {
+  id: string; apelido: string | null; razao_social: string; documento: string | null;
+  tipo: 'holding' | 'incorporadora' | 'construtora' | 'spe' | 'outra'; ativa: boolean; posso_apelido: boolean;
 }
