@@ -5,9 +5,11 @@ import { CHAVE_RECUSADA } from './lib/config';
 import { Entrar, SemCadastro } from './pages/Entrar';
 import { Moldura } from './components/Moldura';
 import { Titulos } from './pages/Titulos';
+import { Aprovar } from './pages/Aprovar';
 import { Previsoes } from './pages/Previsoes';
 import { Contratos } from './pages/Contratos';
 import { ContasPagar } from './pages/ContasPagar';
+import { Empresas } from './pages/Empresas';
 
 export function App() {
   const { sessao, carregando, eu, euCarregando, euErro } = useSessao();
@@ -23,9 +25,11 @@ export function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/contas-a-pagar" replace />} />
         <Route path="/contas-a-pagar" element={<ContasPagar />} />
+        <Route path="/aprovar/:id?" element={<Aprovar />} />
         <Route path="/titulos/:id?" element={<Titulos />} />
         <Route path="/previsoes/:id?" element={<Previsoes />} />
         <Route path="/contratos/:id?" element={<Contratos />} />
+        <Route path="/empresas/:id?" element={<Empresas />} />
         <Route path="*" element={<Navigate to="/contas-a-pagar" replace />} />
       </Routes>
     </Moldura>

@@ -1,5 +1,6 @@
 // Títulos: lista agrupada pela etapa, com os contadores que filtram e a gaveta do título (tpl.js › fLancar, fGrupo, fGaveta).
 import { useQuery } from '@tanstack/react-query';
+import { AlertaCredorNovo, AlertaRecebedor, SeloCredorNovo, SeloRecebedor, useCredoresNovos, useDivergentes } from '../lib/recebedor';
 import { Alerta, COR, Cab, Carregando, Chip, Colunas, Gaveta, Grupo, Ic, Kv, Li, Secao, Tiles, Vazio, type Cor, type CorChip, type Linha } from '../components/Comum';
 import { data, dataCurta, dataHora, documento, hojeISO, mes, reais } from '../lib/format';
 import { acha, usePagina } from '../lib/navegar';
@@ -35,6 +36,8 @@ const atrasado = (t: Titulo) => !!t.vencimento && t.vencimento < hojeISO() && ![
 export function Titulos() {
   const pg = usePagina<F>('/titulos');
   const q = useQuery({ queryKey: ['titulos'], queryFn: () => rpc<Titulo[]>('titulos') });
+  const div = useDivergentes();
+  const novos = useCredoresNovos();
   const { eu } = useSessao();
   const [sp, setSp] = useSearchParams();
   const novo = sp.get('novo') === '1';
@@ -45,7 +48,7 @@ export function Titulos() {
   const grupos = G.filter(g => !pg.filtro || pg.filtro === g[0]);
   const linha = (t: Titulo): Linha => ({
     id: t.id,
-    titulo: t.fornecedor,
+    titulo: div.has(t.id) || novos.has(t.id) ? <span className="selo-l">{t.fornecedor}<SeloRecebedor motivos={div.get(t.id)} /><SeloCredorNovo desde={novos.get(t.id)} /></span> : t.fornecedor,
     cels: [
       { c: chip(t) },
       { c: t.areas, x: true },
@@ -94,6 +97,8 @@ function GavetaTitulo({ id, fechar }: { id: string; fechar: () => void }) {
       <div><div className="big num">{reais(t.valor)}</div>{t.vencimento && <div className="sec">vence {data(t.vencimento)}</div>}</div>
       <RastroBotoes id={t.id} />
       {t.etiquetas.length > 0 && <div className="etq-w">{t.etiquetas.map(x => <span key={x} className="etq">{x}</span>)}</div>}
+      <AlertaRecebedor motivos={t.recebedor_divergente} />
+      <AlertaCredorNovo desde={t.credor_novo} />
       {recusa && <Alerta c="cr" t={`Recusado por ${recusa.por ?? '—'}${recusa.justificativa ? `: ${recusa.justificativa}` : ''}`} />}
       {t.etapa === 'erro_sienge' && <Alerta c="cr" t={`Não chegou ao Sienge${t.sienge_erro ? `: ${t.sienge_erro}` : ''}`} />}
       {t.etapa === 'aprovacao' && t.aprovacao_pendente && <Alerta c="at" t={`Esperando ${t.aprovacao_pendente}`} />}
@@ -110,8 +115,16 @@ function GavetaTitulo({ id, fechar }: { id: string; fechar: () => void }) {
       <Secao t={t.parcelas.length > 1 ? `${t.parcelas.length} parcelas` : 'Pagamento'}>
         {t.parcelas.map(p => (
           <Li key={p.numero} a={`${t.parcelas.length > 1 ? `${p.numero}ª · ` : ''}vence ${data(p.vencimento)}`} b={reais(p.valor)}
-            c={p.forma === 'pix' ? `PIX ${p.pix_tipo ?? ''} ${p.pix_chave ?? ''}${p.pix_excecao ? ` · exceção: ${p.pix_excecao}` : ''}`
-              : p.forma === 'boleto' ? <span className="mono">Boleto {p.boleto_linha}</span> : 'Forma de pagamento não informada'} />
+            c={<>{p.forma === 'pix' ? `PIX ${p.pix_tipo ?? ''} ${p.pix_chave ?? ''}${p.pix_excecao ? ` · exceção: ${p.pix_excecao}` : ''}`
+              : p.forma === 'boleto' ? <span className="mono">Boleto {p.boleto_linha}</span> : 'Forma de pagamento não informada'}{p.pix_copia_cola && <>
+                <span className="mono lt-cc">PIX copia e cola {p.pix_copia_cola}</span>
+                <span className="lt-cc">Recebe pelo código: {p.pix_copia_cola_recebedor?.nome ?? 'sem nome'} · {p.pix_copia_cola_recebedor?.chave ? `chave ${p.pix_copia_cola_recebedor.chave}` : 'QR dinâmico'} · credor: {t.fornecedor}</span>
+                {p.pix_copia_cola_conferido && <span className="lt-cc">Conferido: recebe {p.pix_copia_cola_conferido.nome ?? 'sem nome'}{p.pix_copia_cola_conferido.cpf_cnpj ? ` (${p.pix_copia_cola_conferido.cpf_cnpj})` : ''}</span>}
+                {p.pix_copia_cola_excecao && <span className="nt at lt-cc">Recebedor do código não conferido: {p.pix_copia_cola_excecao}</span>}
+              </>}{p.forma === 'boleto' && <>
+                {p.boleto_conferido && <span className="lt-cc">Conferido: beneficiário {p.boleto_conferido.nome ?? 'sem nome'}{p.boleto_conferido.cpf_cnpj ? ` (${documento(p.boleto_conferido.cpf_cnpj)})` : ''}</span>}
+                {p.boleto_excecao && <span className="nt at lt-cc">Beneficiário do boleto não conferido: {p.boleto_excecao}</span>}
+              </>}</>} />
         ))}
       </Secao>
       {t.rateio.length > 0 && (

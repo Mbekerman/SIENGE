@@ -6,9 +6,10 @@
 //   1. Achar ou criar: se a fila ainda não tem o id do Sienge, procura um título com o marcador
 //      "ERP <id>" nas observações (o programa pode ter caído entre o POST e o registro); só sem
 //      achar faz o POST /bills. O id volta pelo cabeçalho Location e é registrado na hora.
-//   2. Parcelas: lê as parcelas que o Sienge criou e confere com as nossas. Valor ou quantidade
-//      diferente é divergência (título lançado pela API não aceita mudar valor de parcela; teste de
-//      6/11/2026): para em "manual". Vencimento diferente é corrigido (PATCH da parcela).
+//   2. Parcelas: lê as parcelas que o Sienge criou e confere com as nossas. Quantidade ou total
+//      diferente é divergência: para em "manual". Vencimento diferente é corrigido (PATCH da parcela);
+//      valor diferente com o mesmo total (parcelas com o valor do documento) é corrigido num PATCH em
+//      massa e conferido de novo (teste de 20/11/2026, título 8677).
 //   3. Pagamento: PIX ou boleto de cada parcela (PATCH, que sobrescreve; pode repetir). A previsão
 //      (título PRV) não tem forma de pagamento e para no passo 2.
 // Toda gravação passa por gravarComTrava() (trava.ts): a função gravar() que o programa recebe já é
@@ -158,21 +159,39 @@ function lista(r: unknown): Record<string, unknown>[] {
   return Array.isArray(x) ? (x as Record<string, unknown>[]) : [];
 }
 
-// Compara as parcelas do Sienge com as nossas: devolve os vencimentos a corrigir, ou Divergencia.
-export function conferirParcelas(nossas: Parcela[], doSienge: ParcelaSienge[]): { numero: number; dueDate: string }[] {
+// Compara as parcelas do Sienge com as nossas: devolve o que corrigir em cada parcela (vencimento e,
+// com parcelas de valores diferentes, o valor), ou Divergencia. O POST /bills divide o total igual; o
+// valor de cada parcela se corrige depois, só sem mudar o total (teste de 20/11/2026, título 8677:
+// PATCH em massa de 1,50 + 1,50 para 1,00 + 2,00 deu 204 e o total ficou 3,00; mudar o total é recusado
+// com 400). Quantidade ou total diferente é divergência.
+export type Correcao = { numero: number; dueDate?: string; amount?: number };
+export function conferirParcelas(nossas: Parcela[], doSienge: ParcelaSienge[]): Correcao[] {
   if (nossas.length !== doSienge.length) {
     throw new Divergencia(`o Sienge criou ${doSienge.length} parcelas; o ERP tem ${nossas.length}`);
   }
-  const corrigir: { numero: number; dueDate: string }[] = [];
+  const cent = (v: number) => Math.round(v * 100);
+  const soma = (xs: number[]) => xs.reduce((a, b) => a + cent(b), 0);
+  const totalSienge = soma(doSienge.map((x) => x.amount));
+  const totalErp = soma(nossas.map((x) => x.valor));
+  if (totalSienge !== totalErp) {
+    throw new Divergencia(`total das parcelas: Sienge ${(totalSienge / 100).toFixed(2)}, ERP ${(totalErp / 100).toFixed(2)}`);
+  }
+  const corrigir: Correcao[] = [];
   for (const p of nossas) {
     const s = doSienge.find((x) => x.installmentNumber === p.numero);
     if (!s) throw new Divergencia(`parcela ${p.numero} não existe no Sienge`);
-    if (Math.round(s.amount * 100) !== Math.round(p.valor * 100)) {
-      throw new Divergencia(`parcela ${p.numero}: Sienge ${s.amount.toFixed(2)}, ERP ${p.valor.toFixed(2)}`);
-    }
-    if (s.dueDate !== p.vencimento) corrigir.push({ numero: p.numero, dueDate: p.vencimento });
+    const c: Correcao = { numero: p.numero };
+    if (cent(s.amount) !== cent(p.valor)) c.amount = cent(p.valor) / 100;
+    if (s.dueDate !== p.vencimento) c.dueDate = p.vencimento;
+    if (c.amount !== undefined || c.dueDate !== undefined) corrigir.push(c);
   }
   return corrigir;
+}
+
+async function parcelasDoSienge(api: Api, id: number): Promise<ParcelaSienge[]> {
+  return lista(await api.ler(`/bills/${id}/installments`)).map((x) => ({
+    installmentNumber: Number(x.installmentNumber), dueDate: String(x.dueDate), amount: Number(x.amount),
+  }));
 }
 
 // Procura no Sienge o título com o nosso marcador (mesma empresa, credor e número do documento, emitido
@@ -215,11 +234,18 @@ export async function enviarTitulo(api: Api, ped: PedidoTitulo, siengeId: number
     }
     await api.registrarCriado(id);
   }
-  const doSienge = lista(await api.ler(`/bills/${id}/installments`)).map((x) => ({
-    installmentNumber: Number(x.installmentNumber), dueDate: String(x.dueDate), amount: Number(x.amount),
-  }));
-  for (const c of conferirParcelas(ped.parcelas, doSienge)) {
-    await api.gravar('PATCH', `/bills/${id}/installments/${c.numero}`, { dueDate: c.dueDate });
+  const corrigir = conferirParcelas(ped.parcelas, await parcelasDoSienge(api, id));
+  if (corrigir.some((c) => c.amount !== undefined)) {
+    // valores diferentes: um PATCH em massa só, que o Sienge aplica inteiro ou nada (o total não muda)
+    await api.gravar('PATCH', `/bills/${id}/installments`, corrigir.map((c) => ({
+      installmentId: c.numero,
+      ...(c.amount !== undefined ? { amount: c.amount } : {}),
+      ...(c.dueDate !== undefined ? { dueDate: c.dueDate } : {}),
+    })));
+    const resta = conferirParcelas(ped.parcelas, await parcelasDoSienge(api, id));
+    if (resta.length) throw new Divergencia(`o Sienge não aceitou corrigir as parcelas ${resta.map((c) => c.numero).join(', ')}`);
+  } else {
+    for (const c of corrigir) await api.gravar('PATCH', `/bills/${id}/installments/${c.numero}`, { dueDate: c.dueDate });
   }
   for (const p of ped.parcelas) {
     if (!p.forma) continue; // a previsão (PRV) vai sem forma de pagamento

@@ -325,6 +325,8 @@ select.lt-in{padding-right:8px}
 .lt-pn{flex:0 0 44px;font-weight:500}
 .lt-parc .lt-lin>input[type=date]{flex:0 0 170px}
 .lt-pv{flex:1;text-align:right;color:#444746}
+input.lt-pv{color:#1f1f1f}
+@media (max-width:760px){ .lt-parc .lt-lin>input[type=date]{flex:1 1 140px} .lt-parc .lt-lin>input.lt-pv{flex:1 1 130px} }
 .lt-exc{display:flex;flex-direction:column;gap:6px}
 .lt-busca{position:relative}
 .lt-op{position:absolute;left:0;right:0;top:44px;z-index:5;background:#fff;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.18);max-height:280px;overflow:auto;padding:4px 0}
@@ -340,3 +342,62 @@ button.lt-o:hover{background:#f1f4f9}
 }
 .lt-kv{grid-template-columns:168px 1fr}
 .lt-in.err:disabled{border-color:#e3e7ec;box-shadow:none}
+
+/* Para aprovar (página fora das abas de Contas a pagar: título visível) */
+.f-head .f-tit{font-size:22px;line-height:28px;font-weight:400;margin:0}
+.apr-just{display:flex;flex-direction:column;gap:8px;font-size:14px}
+.apr-just textarea.lt-in{height:auto;padding:10px 12px;resize:vertical;line-height:20px}
+.apr-just textarea.lt-in.err{border-color:var(--cr)}
+@media (max-width:760px){
+  .f-gav .gav-f:has(.apr-ok){flex-wrap:wrap;padding-top:12px;padding-bottom:12px}
+  .f-gav .gav-f .apr-ok{order:-1;flex-basis:100%}
+  .f-gav .gav-f:has(.apr-ok) .esp{display:none}
+}
+/* seleção em lote do Para aprovar */
+.apr-ck{display:inline-flex;align-items:center;gap:12px;min-width:0}
+.apr-ck input{width:18px;height:18px;margin:0;flex:none;accent-color:#0b57d0;cursor:pointer}
+.apr-ck-v{width:18px;flex:none}
+.selo-l{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.selo-l .e-chip,.apr-ck .e-chip{white-space:nowrap}
+.apr-lote{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:8px;min-height:56px;padding:0 16px 0 34px;margin-bottom:8px;border-radius:16px;background:var(--m-surface,#f8fafd)}
+.apr-lote.on{background:#d3e3fd}
+.apr-lote label{font-size:14px;font-weight:500;cursor:pointer}
+@media (max-width:760px){ .apr-lote{padding:0 16px;margin:0 0 8px;border-radius:0} .apr-lote.on .btn.p{flex:none} }
+.apr-lote .esp{flex:1}
+
+/* Nova conta recorrente: os três tipos lado a lado (empilham no celular) */
+.nc-tipos{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 0 16px}
+.nc-tipo{display:flex;flex-direction:column;gap:2px;text-align:left;padding:12px 14px;border:1px solid var(--m-outline,#c4c7c5);border-radius:12px;background:transparent;cursor:pointer;font:inherit;color:inherit}
+.nc-tipo:hover{background:rgba(11,87,208,.04)}
+.nc-tipo.on{border-color:#0b57d0;background:#c2e7ff}
+.nc-tipo b{font-weight:500}
+.lt-in.nc-dia{flex:0 0 72px;width:72px}
+@media (max-width:760px){ .nc-tipos{grid-template-columns:1fr} }
+/* Lançar título › Arquivo da nota */
+.lt-arq{display:flex;align-items:center;gap:12px;padding:12px 16px;border:1px solid #c4c7c5;border-radius:12px;background:#fff;font:inherit;color:inherit;text-align:left;min-width:0}
+.lt-arq.ok{border-color:#dde3ea;background:#f6f8fc}
+.lt-solta{border-style:dashed;cursor:pointer;width:100%}
+.lt-solta:hover,.lt-solta.on{background:#e8f0fe;border-color:#0b57d0}
+.lt-solta>svg{color:#0b57d0;flex:none}
+.lt-arqn{display:block;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lt-sec .nt{display:block;padding:8px 12px;border-radius:8px;font-size:13px;line-height:18px}
+.lt-senha,.lt-sug{display:flex;flex-direction:column;gap:8px}
+.lt-cc{display:block;overflow-wrap:anywhere;margin-top:2px}
+
+/* Cadastros › Empresas: o apelido editado no lugar, na gaveta */
+.em-ap{display:flex;flex-direction:column;gap:6px}
+.em-rot{font-size:14px;line-height:20px;font-weight:500}
+/* Previsão mês a mês (pages/Calendario.tsx) */
+.cal-grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:8px 12px}
+.cal-mes{display:flex;flex-direction:column;gap:4px}
+.cal-mes .lt-in{text-align:right}
+.cal-total{display:grid;grid-template-columns:1fr auto;gap:4px 16px;padding:12px 0 0;border-top:1px solid #e3e7ec}
+.cal-total b{font-weight:500;text-align:right}
+.cal-pergunta{display:flex;flex-direction:column;gap:8px}
+.cal-pergunta .lt-lin{flex-wrap:wrap}
+.cal-pergunta .btn{white-space:normal;height:auto;min-height:40px;text-align:left}
+/* "Pronto para gerar títulos" da conta recorrente */
+.nc-pronto ul{list-style:none;margin:0 0 8px;padding:0;display:grid;gap:6px}
+.nc-pronto li{display:flex;gap:8px;align-items:flex-start;font-size:14px;line-height:20px}
+.nc-pronto li.ok .ic{color:#146c2e}
+.nc-pronto li.falta .ic{color:#7a5900}

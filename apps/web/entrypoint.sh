@@ -26,4 +26,13 @@ case "$AMBIENTE" in
   *) falha "AMBIENTE só pode ser vazio (produção) ou dev." ;;
 esac
 
+# O leitor de notas (serviço erp-leitor): vai na meta e na CSP da página, então só https://<host>, minúsculo, sem
+# caminho, aspas nem espaço. Vazio, a tela lança só à mão.
+case "$LEITOR_URL" in
+  "") ;;
+  https://*[!a-z0-9.-]*) falha "LEITOR_URL fora do formato https://<host>." ;;
+  https://?*) ;;
+  *) falha "LEITOR_URL fora do formato https://<host>." ;;
+esac
+
 exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile

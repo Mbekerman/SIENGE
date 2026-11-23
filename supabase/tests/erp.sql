@@ -966,10 +966,10 @@ select pg_temp.ok(not exists (select 1 from pg_class c join pg_namespace n on n.
                                                   and p.policyname = 'perfil_inclui' and 'authenticated' = any(p.roles))),
   'catálogo: authenticated só grava em tabela com política de gravação por perfil');
 select pg_temp.ok(not exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
-                               where n.nspname = 'erp' and c.relkind in ('r','p') and c.relname not in ('avisos_sucessao','eventos','envios_notificacao')
+                               where n.nspname = 'erp' and c.relkind in ('r','p') and c.relname not in ('avisos_sucessao','eventos','envios_notificacao','pix_conferencias','conferencia_tentativas','boleto_conferencias','recebedores_arrecadacao')
                                  and not exists (select 1 from pg_policies p where p.schemaname = 'erp' and p.tablename = c.relname
                                                   and p.policyname = 'perfil_le' and 'authenticated' = any(p.roles))),
-  'catálogo: toda tabela tem a política de leitura por perfil (só os avisos da sucessão, os eventos e a fila de envio ficam fora da API)');
+  'catálogo: toda tabela tem a política de leitura por perfil (só os avisos da sucessão, os eventos, a fila de envio e a conferência do PIX, lida pelo erp.pix_conferido, e os órgãos das guias, lidos pelo erp.completar_recebedor, ficam fora da API)');
 select pg_temp.ok(not has_table_privilege('authenticated', 'erp.lancamentos', 'INSERT,UPDATE,DELETE')
                   and not has_table_privilege('authenticated', 'erp.auditoria', 'INSERT,UPDATE,DELETE')
                   and not has_table_privilege('authenticated', 'erp.caucao_movimentos', 'INSERT,UPDATE,DELETE')
@@ -982,6 +982,10 @@ select pg_temp.ok(not has_table_privilege('authenticated', 'erp.lancamentos', 'I
   'catálogo: livro, auditoria, caução e acesso não têm gravação direta pela API');
 select pg_temp.ok(not exists (select 1 from pg_roles where rolname like 'erp\_%' and has_schema_privilege(rolname, 'erp', 'CREATE')),
   'catálogo: nenhum papel erp_* fica com CREATE no esquema erp (dado só durante a troca de dono)');
+select pg_temp.ok(not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                               where n.nspname = 'erp' and p.prosecdef
+                                 and (p.proacl is null or exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0 and a.privilege_type = 'EXECUTE'))),
+  'catálogo: nenhuma definer do erp executável por PUBLIC (nem pelo grant que o dono dá ao criar)');
 -- EXECUTE: as invoker (rodam com o RLS de quem chama) e, das definer, só a lista abaixo
 select pg_temp.ok(not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -1003,7 +1007,7 @@ select pg_temp.ok(not exists (
        'cancelar_reclassificacao','pedir_mudanca_acesso','decidir_mudanca_acesso','cancelar_mudanca_acesso','passar_master',
        'pedir_sucessao_master','decidir_sucessao_master','vetar_sucessao_master','efetivar_sucessao_master',
        'pedir_mudanca_config','decidir_mudanca_config','cancelar_mudanca_config','marcar_notificacoes_lidas',
-       'designar_pj','retirar_pj','vejo_pj','vejo_auditoria','previsao_aprovada_vista','contrato_aprovado_visto','contrato_confere')),
+       'designar_pj','retirar_pj','vejo_pj','vejo_auditoria','previsao_aprovada_vista','contrato_aprovado_visto','contrato_confere','compromisso_vinculos','pix_conferido','boleto_conferido','completar_recebedor','credor_novo')),
   'catálogo: das funções security definer, authenticated só executa as da lista (RPCs e conferências de quem está logado)');
 select pg_temp.ok(not has_function_privilege('authenticated', 'erp._aplicar_mudanca_acesso(uuid)', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp.gerar_avisos_sucessao()', 'EXECUTE')
@@ -6015,6 +6019,13 @@ select pg_temp.volta();
 select pg_temp.ok(not has_function_privilege('authenticated', 'erp.titulo_aprovado(uuid)', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp._conferir_forma_pagamento(uuid, int, text, text, text, text, text)', 'EXECUTE'),
   'S-126: titulo_aprovado e a conferência da forma de pagamento não são executáveis pela API');
+-- o beneficiário dos boletos dos testes, conferido pelo sistema (20/11/2026: sem conferência, o boleto só entra com a
+-- justificativa; os testes do beneficiário ficam no bloco do PIX copia e cola)
+select pg_temp.sis();
+select erp.registrar_boleto_conferencia(l, d, n, v, null, (select login_id from erp.usuarios where id = :'diretor'))
+  from (values ('34191090080000000212134567890008199990000000000', '77777777000177', 'AGENCIA BETA LTDA', null::numeric),
+               ('34191090080000000212134567890008899990000015000', '29.732.041/0001-54', 'FORNECEDOR EXEMPLO LTDA', 150)) x(l, d, n, v);
+select pg_temp.volta();
 insert into erp.parcela_pagamentos (titulo_id, numero, forma, pix_tipo, pix_chave) values (:'tse', 1, 'pix', 'email', 'teste@example.com');
 select pg_temp.falha(format($$insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (%L, 2, 'boleto', '34191090080000000212134567890008999990000015000')$$, :'tse'),
   'sienge: boleto com linha digitável errada não entra');
@@ -6053,7 +6064,336 @@ insert into erp.parcela_pagamentos (titulo_id, numero, forma, pix_tipo, pix_chav
 select pg_temp.ok((select pix_chave = '77777777000177' from erp.parcela_pagamentos where titulo_id = :'tse' and numero = 2),
   'S-125: boleto sem valor impresso entra, e a chave CPF/CNPJ do próprio credor também');
 rollback to savepoint sp_forma;
+-- PIX copia e cola da parcela (20/11/2026): formato e CRC conferidos, e o valor do código é o da parcela
+savepoint sp_pixcc;
+select pg_temp.ok(erp.pix_copia_cola_valido('00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***630485E6') and erp.pix_copia_cola_valido('00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***63045E2F')
+                  and not erp.pix_copia_cola_valido('00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***630485E7') and not erp.pix_copia_cola_valido('26390014br.gov.bcb.pix0117teste@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***630485E6')
+                  and not erp.pix_copia_cola_valido('00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***630485E60') and erp.pix_copia_cola_valor('00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***630485E6') = 150
+                  and erp.pix_copia_cola_valor('00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***63045E2F') is null,
+  'pix copia e cola: CRC, começo e campos conferidos; o valor vem do campo 54');
+select pg_temp.ok(not erp.pix_copia_cola_valido('00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406150.005406100.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO6304A6FD')
+                  and not erp.pix_copia_cola_valido('00020126610014br.gov.bcb.pix0117teste@example.com0118fraude@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO6304C06D')
+                  and not erp.pix_copia_cola_valido('00020126390014br.gov.bcb.pix0117teste@example.com26390014br.gov.bcb.pix0117fraud@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO63049946'),
+  'pix copia e cola: campo repetido é recusado (dois 54, duas chaves na conta PIX, dois 26), mesmo com o CRC certo');
+update erp.parcela_pagamentos set pix_copia_cola = '00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***630485E6' where titulo_id = :'tse' and numero = 1;
+select pg_temp.ok((select pix_copia_cola is not null from erp.parcela_pagamentos where titulo_id = :'tse' and numero = 1),
+  'pix copia e cola: entra na parcela com o valor dela (150 de 300 em duas)');
+select pg_temp.erro_igual(format($$update erp.parcela_pagamentos set pix_copia_cola = '00020126410014br.gov.bcb.pix0119agencia@example.com5204000053039865406100.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***63046CD8' where titulo_id = %L and numero = 1$$, :'tse'),
+  'O valor do PIX copia e cola (100.00) não é o da parcela 1 (150.00)', 'pix copia e cola: valor diferente do da parcela é recusado');
+select pg_temp.falha(format($$update erp.parcela_pagamentos set pix_copia_cola = '00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***630485E7' where titulo_id = %L and numero = 1$$, :'tse'),
+  'pix copia e cola: CRC errado é recusado');
+-- o recebedor (revisão de segurança, 20/11/2026): o código leva quem recebe, e ele tem de ser o da parcela ou do credor
+select pg_temp.ok(erp.pix_copia_cola_recebedor('00020126390014br.gov.bcb.pix0117outra@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304168B') = '{"chave": "outra@example.com", "url": null, "nome": "FORNECEDOR EXEMPLO", "contas": 1}'::jsonb
+                  and erp.pix_copia_cola_recebedor('00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF')->>'url' = 'pix.example.com/qr/v2/cobv/0123456789abcdef'
+                  and erp.pix_copia_cola_recebedor('00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF')->>'chave' is null,
+  'pix copia e cola: o recebedor sai do campo 26 (chave no estático, URL no dinâmico) e o nome do 59');
+select pg_temp.erro_igual(format($$update erp.parcela_pagamentos set pix_copia_cola = '00020126390014br.gov.bcb.pix0117outra@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304168B' where titulo_id = %L and numero = 1$$, :'tse'),
+  'A chave do PIX copia e cola da parcela 1 não é a chave PIX da parcela (só com a justificativa da exceção)',
+  'pix copia e cola: chave de outro no código da parcela PIX é recusada sem justificativa');
+update erp.parcela_pagamentos set pix_copia_cola = '00020126390014br.gov.bcb.pix0117outra@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304168B', pix_copia_cola_excecao = 'Pedido do fornecedor por escrito' where titulo_id = :'tse' and numero = 1;
+select pg_temp.ok((select pix_copia_cola_excecao = 'Pedido do fornecedor por escrito' from erp.parcela_pagamentos where titulo_id = :'tse' and numero = 1)
+                  and (select j->'parcelas'->0->'pix_copia_cola_recebedor'->>'chave' = 'outra@example.com'
+                          and j->'parcelas'->0->>'pix_copia_cola_excecao' = 'Pedido do fornecedor por escrito' from api.titulo(:'tse') j),
+  'pix copia e cola: com a justificativa entra, e o título mostra a quem aprova o recebedor e a justificativa');
+update erp.parcela_pagamentos set pix_copia_cola = '00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***630485E6' where titulo_id = :'tse' and numero = 1;
+select pg_temp.ok((select pix_copia_cola_excecao is null from erp.parcela_pagamentos where titulo_id = :'tse' and numero = 1),
+  'pix copia e cola: voltando à chave da parcela, a exceção some');
+select pg_temp.erro_igual(format($$insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha, pix_copia_cola) values (%L, 2, 'boleto', '34191090080000000212134567890008199990000000000', '00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***63045E2F')$$, :'tse'),
+  'A chave do PIX copia e cola da parcela 2 não é a do CPF/CNPJ do credor (só com a justificativa da exceção)',
+  'pix copia e cola: no boleto, chave que não é o CPF/CNPJ do credor é recusada sem justificativa');
+select pg_temp.erro_igual(format($$insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha, pix_copia_cola) values (%L, 2, 'boleto', '34191090080000000212134567890008199990000000000', '00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF')$$, :'tse'),
+  'O PIX copia e cola da parcela 2 é dinâmico e quem recebe não foi conferido (só com a justificativa da exceção)',
+  'pix copia e cola: código dinâmico sem justificativa é recusado');
+select pg_temp.falha(format($$insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha, pix_copia_cola, pix_copia_cola_excecao) values (%L, 2, 'boleto', '34191090080000000212134567890008199990000000000', '00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', '   ')$$, :'tse'),
+  'pix copia e cola: justificativa em branco não vale');
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha, pix_copia_cola) values (:'tse', 2, 'boleto', '34191090080000000212134567890008199990000000000', '00020126360014br.gov.bcb.pix0114777777770001775204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***63049C9D');
+select pg_temp.ok((select pix_copia_cola is not null and pix_copia_cola_excecao is null from erp.parcela_pagamentos where titulo_id = :'tse' and numero = 2),
+  'pix copia e cola: entra também no boleto (o QR do boleto híbrido) com o CNPJ do credor, e sem valor no código passa');
+-- segunda revisão: chave do credor com URL é dinâmico (o banco paga a quem a URL indicar), e duas contas PIX não entram
+select pg_temp.erro_igual(format($$update erp.parcela_pagamentos set pix_copia_cola = '00020126730014br.gov.bcb.pix0114777777770001772533pix.example.com/qr/v2/cobv/fraude5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304AA19' where titulo_id = %L and numero = 2$$, :'tse'),
+  'O PIX copia e cola da parcela 2 é dinâmico e quem recebe não foi conferido (só com a justificativa da exceção)',
+  'pix copia e cola: a chave do credor com uma URL junto é tratada como dinâmico e pede a justificativa');
+select pg_temp.erro_igual(format($$update erp.parcela_pagamentos set pix_copia_cola = '00020126360014br.gov.bcb.pix01147777777700017727400014br.gov.bcb.pix0118fraude@example.com5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304D94E', pix_copia_cola_excecao = 'x' where titulo_id = %L and numero = 2$$, :'tse'),
+  'O PIX copia e cola da parcela 2 traz mais de uma conta PIX', 'pix copia e cola: código com duas contas PIX é recusado, mesmo com justificativa');
+-- a conferência pelo Asaas: só o sistema grava, e com o documento do credor dispensa a justificativa (também no dinâmico)
+select pg_temp.falha(format($$select erp.registrar_pix_conferencia(%L, '77777777000177', 'X', 'Banco', null, 150, 'x')$$, '00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF'),
+  'pix conferência: pela API, ninguém grava a conferência pela função');
+select pg_temp.falha(format($$insert into erp.pix_conferencias (codigo, cpf_cnpj) values (%L, '77777777000177')$$, '00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF'),
+  'pix conferência: pela API, ninguém grava a conferência direto na tabela');
+select pg_temp.sis();
+select erp.registrar_pix_conferencia('00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', '77.777.777/0001-77', 'AGENCIA BETA LTDA', 'Banco Exemplo', null, 100,
+  (select login_id from erp.usuarios where id = :'diretor'));
+select pg_temp.ok(erp.conferencia_tentativa((select login_id from erp.usuarios where id = :'diretor')) = 1
+                  and erp.conferencia_tentativa((select login_id from erp.usuarios where id = :'diretor')) = 2
+                  and erp.conferencia_tentativa('login-que-nao-existe') is null,
+  'pix conferência: o sistema conta cada pedido da pessoa (o limite da função), e quem não é usuário ativo não segue');
+select pg_temp.volta();
+select pg_temp.falha($$select erp.conferencia_tentativa('x')$$, 'pix conferência: pela API, ninguém registra pedido');
+select pg_temp.erro_igual(format($$update erp.parcela_pagamentos set pix_copia_cola = %L, pix_copia_cola_excecao = null where titulo_id = %L and numero = 2$$, '00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', :'tse'),
+  'O PIX copia e cola da parcela 2 é dinâmico e quem recebe não foi conferido (só com a justificativa da exceção)',
+  'pix conferência: a conferência com o valor cobrado diferente do da parcela não dispensa a justificativa');
+select pg_temp.sis();
+select erp.registrar_pix_conferencia('00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', '77.777.777/0001-77', 'AGENCIA BETA LTDA', 'Banco Exemplo', null, 150,
+  (select login_id from erp.usuarios where id = :'diretor'));
+update erp.pix_conferencias set conferido_em = clock_timestamp() - interval '25 hours' where codigo = '00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF';
+select pg_temp.volta();
+select pg_temp.erro_igual(format($$update erp.parcela_pagamentos set pix_copia_cola = %L, pix_copia_cola_excecao = null where titulo_id = %L and numero = 2$$, '00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', :'tse'),
+  'O PIX copia e cola da parcela 2 é dinâmico e quem recebe não foi conferido (só com a justificativa da exceção)',
+  'pix conferência: conferência de mais de 1 dia não dispensa a justificativa');
+select pg_temp.sis();
+update erp.pix_conferencias set conferido_em = clock_timestamp() where codigo = '00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF';
+select pg_temp.volta();
+update erp.parcela_pagamentos set pix_copia_cola = '00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', pix_copia_cola_excecao = null where titulo_id = :'tse' and numero = 2;
+select pg_temp.ok((select pix_copia_cola_excecao is null from erp.parcela_pagamentos where titulo_id = :'tse' and numero = 2)
+                  and (select j->'parcelas'->1->'pix_copia_cola_conferido'->>'cpf_cnpj' = '77777777000177' from api.titulo(:'tse') j),
+  'pix conferência: o dinâmico conferido no Asaas com o documento do credor entra sem justificativa, e o título mostra a conferência');
+select pg_temp.sis();
+select erp.registrar_pix_conferencia('00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', '29732041000154', 'OUTRA PESSOA', 'Banco Exemplo', null, 150,
+  (select login_id from erp.usuarios where id = :'diretor'));
+select pg_temp.volta();
+select pg_temp.erro_igual(format($$update erp.parcela_pagamentos set pix_copia_cola_excecao = null, boleto_linha = boleto_linha where titulo_id = %L and numero = 2$$, :'tse'),
+  'Quem recebe pelo PIX copia e cola da parcela 2 (OUTRA PESSOA, conferido) não é o credor (só com a justificativa da exceção)',
+  'pix conferência: quem recebe conferido no Asaas sendo outra pessoa pede a justificativa');
+-- S-140: o mesmo CPF/CNPJ do credor, mas outro nome (o credor cadastrado com o documento de quem frauda)
+select pg_temp.sis();
+select erp.registrar_pix_conferencia('00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', '77777777000177', 'JOAO DA SILVA', 'Banco Exemplo', null, 150,
+  (select login_id from erp.usuarios where id = :'diretor'));
+select pg_temp.volta();
+select pg_temp.erro_igual(format($$update erp.parcela_pagamentos set pix_copia_cola_excecao = null, boleto_linha = boleto_linha where titulo_id = %L and numero = 2$$, :'tse'),
+  'Quem recebe pelo PIX copia e cola da parcela 2 (JOAO DA SILVA, conferido) não é o credor (só com a justificativa da exceção)',
+  'S-140: PIX copia e cola conferido com o documento do credor e outro nome pede a justificativa');
+select pg_temp.sis();
+select erp.registrar_pix_conferencia('00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', '77777777000177', 'AGENCIA BETA COMUNICACAO E PUBLICIDADE LTDA', 'Banco Exemplo', null, 150,
+  (select login_id from erp.usuarios where id = :'diretor'));
+select pg_temp.volta();
+update erp.parcela_pagamentos set pix_copia_cola_excecao = null, boleto_linha = boleto_linha where titulo_id = :'tse' and numero = 2;
+select pg_temp.ok((select pix_copia_cola_excecao is null from erp.parcela_pagamentos where titulo_id = :'tse' and numero = 2),
+  'S-140: o nome completo do banco confere com o nome curto do cadastro (a primeira palavra)');
+select pg_temp.sis();
+select erp.registrar_pix_conferencia('00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', '29732041000154', 'OUTRA PESSOA', 'Banco Exemplo', null, 150,
+  (select login_id from erp.usuarios where id = :'diretor'));
+select pg_temp.volta();
+update erp.parcela_pagamentos set pix_copia_cola = '00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', pix_copia_cola_excecao = 'QR dinâmico do banco do boleto' where titulo_id = :'tse' and numero = 2;
+select pg_temp.ok((select pix_copia_cola_excecao is not null from erp.parcela_pagamentos where titulo_id = :'tse' and numero = 2),
+  'pix copia e cola: o dinâmico entra com a justificativa');
+select pg_temp.ok(not has_function_privilege('anon', 'erp.pix_copia_cola_valido(text)', 'EXECUTE'),
+  'pix copia e cola: a conferência não é de public');
+rollback to savepoint sp_pixcc;
+-- beneficiário do boleto conferido (Moises, 20/11/2026: o mesmo esquema do PIX), e o selo até o pagamento
+savepoint sp_bol;
+select pg_temp.erro_igual(format($$insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (%L, 2, 'boleto', %L)$$, :'tse', '34191090080000000212134567890008899990000015000'),
+  'O beneficiário do boleto da parcela 2 (FORNECEDOR EXEMPLO LTDA, conferido) não é o credor (só com a justificativa da exceção)',
+  'boleto: beneficiário conferido que não é o credor pede a justificativa');
+select pg_temp.falha(format($$insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha, boleto_excecao) values (%L, 2, 'boleto', %L, '  ')$$, :'tse', '34191090080000000212134567890008899990000015000'),
+  'boleto: justificativa em branco não vale');
+select pg_temp.falha(format($$select erp.registrar_boleto_conferencia(%L, '77777777000177', 'X', 150, null, 'x')$$, '34191090080000000212134567890008899990000015000'),
+  'boleto: pela API, ninguém grava a conferência pela função');
+select pg_temp.falha(format($$insert into erp.boleto_conferencias (linha, cpf_cnpj) values (%L, '77777777000177')$$, '34191090080000000212134567890008899990000015000'),
+  'boleto: pela API, ninguém grava a conferência direto na tabela');
+select pg_temp.sis();
+select erp.registrar_boleto_conferencia('34191090080000000212134567890008899990000015000', '77777777000177', 'AGENCIA BETA LTDA', 100, null, (select login_id from erp.usuarios where id = :'diretor'));
+select pg_temp.volta();
+select pg_temp.erro_igual(format($$insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (%L, 2, 'boleto', %L)$$, :'tse', '34191090080000000212134567890008899990000015000'),
+  'O beneficiário do boleto da parcela 2 não foi conferido (só com a justificativa da exceção)',
+  'boleto: conferência com o valor registrado diferente do da parcela não vale');
+select pg_temp.sis();
+select erp.registrar_boleto_conferencia('34191090080000000212134567890008899990000015000', '77777777000177', 'AGENCIA BETA LTDA', 150, null, (select login_id from erp.usuarios where id = :'diretor'));
+update erp.boleto_conferencias set conferido_em = clock_timestamp() - interval '25 hours' where linha = '34191090080000000212134567890008899990000015000';
+select pg_temp.volta();
+select pg_temp.erro_igual(format($$insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (%L, 2, 'boleto', %L)$$, :'tse', '34191090080000000212134567890008899990000015000'),
+  'O beneficiário do boleto da parcela 2 não foi conferido (só com a justificativa da exceção)',
+  'boleto: conferência de mais de 1 dia não vale');
+select pg_temp.sis();
+update erp.boleto_conferencias set conferido_em = clock_timestamp() where linha = '34191090080000000212134567890008899990000015000';
+select pg_temp.volta();
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha, boleto_excecao) values (:'tse', 2, 'boleto', '34191090080000000212134567890008899990000015000', 'x');
+select pg_temp.ok((select boleto_excecao is null from erp.parcela_pagamentos where titulo_id = :'tse' and numero = 2)
+                  and (select j->'parcelas'->1->'boleto_conferido'->>'cpf_cnpj' = '77777777000177' and j->'recebedor_divergente' = '[]'::jsonb from api.titulo(:'tse') j)
+                  and not exists (select 1 from api.recebedores_divergentes() where id = :'tse'),
+  'boleto: com o credor conferido, entra sem justificativa (a que veio some), o título mostra a conferência e não ganha o selo');
+rollback to savepoint sp_bol;
+savepoint sp_bol;
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, pix_tipo, pix_chave, pix_excecao) values (:'tse', 2, 'pix', 'cpf_cnpj', '29732041000154', 'Pagamento ao sócio');
+select pg_temp.ok((select j->'recebedor_divergente' = '["Parcela 2: chave PIX de outra pessoa (Pagamento ao sócio)"]'::jsonb from api.titulo(:'tse') j)
+                  and exists (select 1 from api.recebedores_divergentes() where id = :'tse'),
+  'selo: a chave CPF/CNPJ de outra pessoa (S-125) também mostra que o recebedor não bate');
+rollback to savepoint sp_bol;
+savepoint sp_bol;
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha, boleto_excecao) values (:'tse', 2, 'boleto', '34191090080000000212134567890008899990000015000', 'Cobrança pela financeira');
+select pg_temp.sis(); set local role erp_situacao; update erp.titulos set situacao = 'quitado' where id = :'tse'; select pg_temp.volta();
+select pg_temp.ok((select j->'recebedor_divergente' = '[]'::jsonb from api.titulo(:'tse') j) and not exists (select 1 from api.recebedores_divergentes() where id = :'tse'),
+  'selo: pago, o título deixa de mostrar o selo');
+rollback to savepoint sp_bol;
+-- S-140: o boleto conferido com o documento do credor e outro nome
+savepoint sp_bol;
+select pg_temp.sis();
+select erp.registrar_boleto_conferencia('34191090080000000212134567890008899990000015000', '77777777000177', 'JOAO DA SILVA ME', 150, null, (select login_id from erp.usuarios where id = :'diretor'));
+select pg_temp.volta();
+select pg_temp.erro_igual(format($$insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (%L, 2, 'boleto', '34191090080000000212134567890008899990000015000')$$, :'tse'),
+  'O beneficiário do boleto da parcela 2 (JOAO DA SILVA ME, conferido) não é o credor (só com a justificativa da exceção)',
+  'S-140: boleto conferido com o documento do credor e outro nome pede a justificativa');
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha, boleto_excecao) values (:'tse', 2, 'boleto', '34191090080000000212134567890008899990000015000', 'Conta no nome do sócio');
+select pg_temp.ok(exists (select 1 from api.recebedores_divergentes() where id = :'tse'),
+  'S-140: com a justificativa entra, e o selo do recebedor fica até o pagamento');
+select pg_temp.sis();
+update erp.boleto_conferencias set nome = 'Agência Beta' where linha = '34191090080000000212134567890008899990000015000';
+select pg_temp.volta();
+update erp.parcela_pagamentos set boleto_excecao = null where titulo_id = :'tse' and numero = 2;
+select pg_temp.sis();
+update erp.boleto_conferencias set nome = 'JOAO DA SILVA ME' where linha = '34191090080000000212134567890008899990000015000';
+select pg_temp.erro_igual(format($$select erp._conferir_recebedores(%L)$$, :'tse'),
+  'O beneficiário do boleto da parcela 2 não confere com o credor do título (confira o boleto de novo ou justifique a exceção)',
+  'S-140: a conferência de novo (troca do credor e pedido do Sienge) também compara o nome');
+select pg_temp.volta();
+-- revisão do #115: o nome fantasia (que quem cadastra escolhe) não vale para a conferência
+select pg_temp.sis();
+update erp.pessoas set nome_fantasia = 'JOAO DA SILVA' where id = '10000000-0000-0000-0000-000000000007';
+select pg_temp.volta();
+delete from erp.parcela_pagamentos where titulo_id = :'tse' and numero = 2;
+select pg_temp.erro_igual(format($$insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (%L, 2, 'boleto', '34191090080000000212134567890008899990000015000')$$, :'tse'),
+  'O beneficiário do boleto da parcela 2 (JOAO DA SILVA ME, conferido) não é o credor (só com a justificativa da exceção)',
+  'S-140: credor com o nome fantasia igual ao nome conferido e outra razão social é recusado sem justificativa');
+rollback to savepoint sp_bol;
+select pg_temp.ok(erp.nome_confere('ACME ENG LTDA', 'Acme Engenharia Ltda.')
+                  and erp.nome_confere('CONSTRUTORA ACME', 'Acme Construções e Serviços Ltda')
+                  and erp.nome_confere(null, 'Acme')
+                  and not erp.nome_confere('JOAO DA SILVA', 'Acme Engenharia Ltda')
+                  and not erp.nome_confere('CONSTRUTORA SILVA', 'Construtora Acme')
+                  and not erp.nome_confere('LTDA', 'Acme')
+                  and erp.nome_confere('SERVICOS GERAIS', 'Servicos Gerais ME'),
+  'S-140: o nome confere pela primeira palavra que identifica (forma jurídica, ligações e palavras genéricas não contam)');
+-- S-140: o selo "credor novo" (nunca teve outro título que foi ao Sienge ou foi pago)
+savepoint sp_novo;
+select pg_temp.sis();
+insert into erp.pessoas (id, tipo, nome, documento) values ('10000000-0000-0000-0000-0000000000c1', 'juridica', 'Credor Recém Cadastrado', '12345678000195');
+select erp._criar_titulo(:'spe', 'pagar', 'avulso', '10000000-0000-0000-0000-0000000000c1', null, null, '2026-06-02', '2026-06-01',
+  150, array['2026-07-01']::date[], null, null, 'primeiro do credor novo') as tnovo1 \gset
+select erp._criar_titulo(:'spe', 'pagar', 'avulso', '10000000-0000-0000-0000-0000000000c1', null, null, '2026-06-03', '2026-06-01',
+  90, array['2026-07-02']::date[], null, null, 'segundo do credor novo') as tnovo2 \gset
+select pg_temp.volta();
+select pg_temp.como(:'diretor');
+select pg_temp.ok(erp.credor_novo(:'tnovo1') = current_date and exists (select 1 from api.credores_novos() where id = :'tnovo1' and desde = current_date)
+                  and (select (j->>'credor_novo')::date = current_date from api.titulo(:'tnovo1') j),
+  'S-140: credor sem título que já foi ao Sienge ou foi pago aparece como novo, nas listas e na gaveta');
+select pg_temp.como(:'analista2');
+select pg_temp.ok(not erp.vejo_titulo(:'tnovo1') and erp.credor_novo(:'tnovo1') is null and not exists (select 1 from api.credores_novos() where id = :'tnovo1'),
+  'S-140: sobre título que a pessoa não vê, a função não responde');
+savepoint sp_quit;
+select pg_temp.sis(); set local role erp_situacao; update erp.titulos set situacao = 'quitado' where id = :'tnovo2'; select pg_temp.volta();
+select pg_temp.como(:'diretor');
+select pg_temp.ok(erp.credor_novo(:'tnovo1') is null, 'S-140: credor com título já pago (mesmo fora do Sienge) não é novo');
+rollback to savepoint sp_quit;
+select pg_temp.sis(); insert into erp.sienge_envios (titulo_id, situacao, sienge_id) values (:'tnovo2', 'enviado', 999001); select pg_temp.volta();
+select pg_temp.como(:'diretor');
+select pg_temp.ok(erp.credor_novo(:'tnovo1') is null and (select j->'credor_novo' = 'null'::jsonb from api.titulo(:'tnovo1') j),
+  'S-140: depois que outro título do credor foi ao Sienge, ele deixa de ser novo');
+select pg_temp.ok(erp.credor_novo(:'tnovo2') = current_date,
+  'S-140: o próprio título que foi ao Sienge não conta para ele mesmo');
+rollback to savepoint sp_novo;
+-- revisão do #108: o credor trocado depois da conferência (o fraudador conferido, o fornecedor de verdade no título)
+savepoint sp_bol;
+set constraints erp.t_titulo_recebedor immediate;
+select pg_temp.sis();
+select erp.registrar_boleto_conferencia('34191090080000000212134567890008899990000015000', '77777777000177', 'AGÊNCIA BETA', 150, null, (select login_id from erp.usuarios where id = :'diretor'));
+select erp._criar_titulo(:'spe', 'pagar', 'avulso', '10000000-0000-0000-0000-000000000007', null, null, '2026-06-02', '2026-06-01',
+  150, array['2026-07-01']::date[], null, null, 'rascunho do credor trocado') as trasc \gset
+select pg_temp.volta();
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (:'trasc', 1, 'boleto', '34191090080000000212134567890008899990000015000');
+select pg_temp.erro_igual(format($$update erp.titulos set pessoa_id = '10000000-0000-0000-0000-000000000008' where id = %L$$, :'trasc'),
+  'O beneficiário do boleto da parcela 1 não confere com o credor do título (confira o boleto de novo ou justifique a exceção)',
+  'boleto: no rascunho, trocar o credor depois do boleto conferido é recusado');
+delete from erp.parcela_pagamentos where titulo_id = :'trasc';
+update erp.titulos set pessoa_id = '10000000-0000-0000-0000-000000000008' where id = :'trasc';
+select pg_temp.ok((select pessoa_id = '10000000-0000-0000-0000-000000000008' from erp.titulos where id = :'trasc'),
+  'boleto: sem a forma conferida, o credor muda (a forma nova se confere com ele)');
 insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (:'tse', 2, 'boleto', '34191090080000000212134567890008899990000015000');
+select pg_temp.sis();
+update erp.boleto_conferencias set cpf_cnpj = '88888888000188' where linha = '34191090080000000212134567890008899990000015000';
+select pg_temp.volta();
+select pg_temp.erro_igual(format($$select erp._conferir_recebedores(%L)$$, :'tse'),
+  'permission denied for function _conferir_recebedores', 'recebedor: a nova conferência não é da API');
+select pg_temp.sis();
+select pg_temp.erro_igual(format($$select erp._conferir_recebedores(%L)$$, :'tse'),
+  'O beneficiário do boleto da parcela 2 não confere com o credor do título (confira o boleto de novo ou justifique a exceção)',
+  'boleto: a conferência de novo pega o beneficiário que deixou de ser o credor');
+select pg_temp.ok(pg_get_functiondef('erp.sienge_pedido(uuid)'::regprocedure) like '%perform erp._conferir_recebedores(t.id);%',
+  'boleto: o pedido do Sienge confere de novo quem recebe contra o credor de agora');
+select pg_temp.volta();
+rollback to savepoint sp_bol;
+savepoint sp_bol;
+set constraints erp.t_titulo_recebedor immediate;
+select pg_temp.sis();
+select erp.registrar_pix_conferencia('00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', '77777777000177', 'AGÊNCIA BETA', 'Banco Exemplo', null, 150, (select login_id from erp.usuarios where id = :'diretor'));
+select erp._criar_titulo(:'spe', 'pagar', 'avulso', '10000000-0000-0000-0000-000000000007', null, null, '2026-06-02', '2026-06-01',
+  150, array['2026-07-01']::date[], null, null, 'rascunho do credor trocado') as trasc \gset
+select pg_temp.volta();
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, pix_tipo, pix_chave, pix_copia_cola)
+values (:'trasc', 1, 'pix', 'email', 'teste@example.com', '00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF');
+select pg_temp.erro_igual(format($$update erp.titulos set pessoa_id = '10000000-0000-0000-0000-000000000008' where id = %L$$, :'trasc'),
+  'Quem recebe pelo PIX copia e cola da parcela 1 não confere com o credor do título (confira o código de novo ou justifique a exceção)',
+  'pix copia e cola: trocar o credor depois do código conferido é recusado');
+rollback to savepoint sp_bol;
+-- mutações da revisão do #108: o valor da parcela que muda depois da forma, o número trocado e o lançamento que troca
+-- credor e formas juntos
+savepoint sp_bol;
+select pg_temp.sis();
+select erp.registrar_boleto_conferencia('34191090080000000212134567890008899990000015000', '77777777000177', 'AGÊNCIA BETA', 150, null, (select login_id from erp.usuarios where id = :'diretor'));
+select erp._criar_titulo(:'spe', 'pagar', 'avulso', '10000000-0000-0000-0000-000000000007', null, null, '2026-06-02', '2026-06-01',
+  150, array['2026-07-01']::date[], null, null, 'rascunho do valor trocado') as trasc \gset
+select pg_temp.volta();
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (:'trasc', 1, 'boleto', '34191090080000000212134567890008899990000015000');
+select pg_temp.sis();
+update erp.parcelas set valor = 100 where titulo_id = :'trasc';
+select pg_temp.erro_igual(format($$select erp._conferir_recebedores(%L)$$, :'trasc'),
+  'O beneficiário do boleto da parcela 1 não confere com o credor do título (confira o boleto de novo ou justifique a exceção)',
+  'boleto: a parcela que muda de valor depois do boleto conferido não passa na conferência de novo');
+select pg_temp.volta();
+rollback to savepoint sp_bol;
+savepoint sp_bol;
+select pg_temp.sis();
+select erp._criar_titulo(:'spe', 'pagar', 'avulso', '10000000-0000-0000-0000-000000000007', null, null, '2026-06-02', '2026-06-01',
+  150, array['2026-07-01']::date[], null, null, 'rascunho do valor trocado') as trasc \gset
+select pg_temp.volta();
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, pix_tipo, pix_chave, pix_copia_cola)
+values (:'trasc', 1, 'pix', 'email', 'teste@example.com', '00020126390014br.gov.bcb.pix0117teste@example.com5204000053039865406150.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***630485E6');
+select pg_temp.sis();
+update erp.parcelas set valor = 100 where titulo_id = :'trasc';
+select pg_temp.erro_igual(format($$select erp._conferir_recebedores(%L)$$, :'trasc'),
+  'Quem recebe pelo PIX copia e cola da parcela 1 não confere com o credor do título (confira o código de novo ou justifique a exceção)',
+  'pix copia e cola: a parcela que muda de valor depois do código (campo 54) não passa na conferência de novo');
+select pg_temp.volta();
+rollback to savepoint sp_bol;
+savepoint sp_bol;
+select pg_temp.sis();
+-- linha sem valor (o banco registra o valor): só a conferência pega a outra parcela
+select erp.registrar_boleto_conferencia('34191090080000000212134567890008199990000000000', '77777777000177', 'AGÊNCIA BETA', 150, null, (select login_id from erp.usuarios where id = :'diretor'));
+select pg_temp.volta();
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (:'tse', 2, 'boleto', '34191090080000000212134567890008199990000000000');
+select pg_temp.erro_igual(format($$update erp.parcela_pagamentos set numero = 3 where titulo_id = %L and numero = 2$$, :'tse'),
+  'O beneficiário do boleto da parcela 3 não foi conferido (só com a justificativa da exceção)',
+  'boleto: trocar o número da parcela confere de novo o boleto contra o valor da outra parcela');
+rollback to savepoint sp_bol;
+savepoint sp_bol;
+select pg_temp.sis();
+select erp.registrar_boleto_conferencia('34191090080000000212134567890008899990000015000', '77777777000177', 'AGÊNCIA BETA', 150, null, (select login_id from erp.usuarios where id = :'diretor'));
+select erp._criar_titulo(:'spe', 'pagar', 'avulso', '10000000-0000-0000-0000-000000000007', null, null, '2026-06-02', '2026-06-01',
+  150, array['2026-07-01']::date[], null, null, 'rascunho trocado inteiro') as trasc \gset
+select pg_temp.volta();
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha) values (:'trasc', 1, 'boleto', '34191090080000000212134567890008899990000015000');
+set constraints erp.t_titulo_recebedor deferred;
+update erp.titulos set pessoa_id = '10000000-0000-0000-0000-000000000008' where id = :'trasc';
+delete from erp.parcela_pagamentos where titulo_id = :'trasc';
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, pix_tipo, pix_chave) values (:'trasc', 1, 'pix', 'email', 'conserta@example.com');
+set constraints erp.t_titulo_recebedor immediate;
+select pg_temp.ok((select pessoa_id = '10000000-0000-0000-0000-000000000008' from erp.titulos where id = :'trasc'),
+  'recebedor: o lançamento que troca o credor e as formas juntos passa (a conferência é no fim da transação)');
+rollback to savepoint sp_bol;
+select pg_temp.ok(not has_function_privilege('anon', 'erp.boleto_conferido(text)', 'EXECUTE') and not has_function_privilege('anon', 'api.recebedores_divergentes()', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp.registrar_boleto_conferencia(text,text,text,numeric,date,text)', 'EXECUTE')
+                  and (select p.prosecdef and pg_get_userbyid(p.proowner) = 'erp_conferencia' from pg_proc p where p.oid = 'erp.tg_parcela_boleto_recebedor()'::regprocedure),
+  'boleto: a conferência não é de public nem da API, e o gatilho lê o credor por baixo do RLS');
+insert into erp.parcela_pagamentos (titulo_id, numero, forma, boleto_linha, boleto_excecao, pix_copia_cola, pix_copia_cola_excecao)
+values (:'tse', 2, 'boleto', '34191090080000000212134567890008899990000015000', 'Cobrança pela financeira do fornecedor', '00020126650014br.gov.bcb.pix2543pix.example.com/qr/v2/cobv/0123456789abcdef5204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***6304BFDF', 'QR dinâmico do banco do boleto');
 select pg_temp.ok((select count(*) = 2 from erp.parcela_pagamentos where titulo_id = :'tse'),
   'sienge: antes do primeiro voto, quem lança informa a forma de pagamento de cada parcela');
 select pg_temp.ok((select count(*) = 1 from erp.auditoria where tabela = 'parcela_pagamentos' and registro = :'tse' and acao = 'insert' and depois->>'forma' = 'pix'),
@@ -6130,6 +6470,24 @@ select pg_temp.ok((select count(*) = 1 and bool_and(e.dados->'parcelas' = '[{"nu
                   and (select critico from erp.tipos_evento where codigo = 'chave_pix_nova')
                   and exists (select 1 from erp.regras_notificacao where tipo = 'chave_pix_nova' and destino = 'lista' and lista = 'AF' and ativa),
   'S-125: título com chave PIX nunca usada com o credor gera o alerta crítico, para o master e a AF, só da chave nova');
+select pg_temp.ok((select count(*) = 1 and bool_and(e.dados->'parcelas'->0->>'numero' = '2'
+                                                    and e.dados->'parcelas'->0->'recebedor'->>'url' = 'pix.example.com/qr/v2/cobv/0123456789abcdef'
+                                                    and e.dados->'parcelas'->0->>'justificativa' = 'QR dinâmico do banco do boleto')
+                     from erp.eventos e where e.tipo = 'pix_copia_cola_excecao' and e.registro = :'tse')
+                  and exists (select 1 from erp.notificacoes n join erp.eventos e on e.id = n.evento_id
+                               where e.tipo = 'pix_copia_cola_excecao' and e.registro = :'tse' and n.critico and n.user_id = :'diretor'),
+  'pix copia e cola: título com recebedor não conferido gera o alerta crítico ao ir para a fila do Sienge');
+select pg_temp.ok((select count(*) = 1 and bool_and(e.dados->'parcelas'->0->>'numero' = '2'
+                                                    and e.dados->'parcelas'->0->'conferido'->>'cpf_cnpj' = '29732041000154'
+                                                    and e.dados->'parcelas'->0->>'justificativa' = 'Cobrança pela financeira do fornecedor')
+                     from erp.eventos e where e.tipo = 'boleto_excecao' and e.registro = :'tse')
+                  and exists (select 1 from erp.notificacoes n join erp.eventos e on e.id = n.evento_id
+                               where e.tipo = 'boleto_excecao' and e.registro = :'tse' and n.critico and n.user_id = :'diretor'),
+  'boleto: título com beneficiário que não é o credor gera o alerta crítico ao ir para a fila do Sienge');
+select pg_temp.ok((select p.prosecdef and pg_get_userbyid(p.proowner) = 'erp_conferencia' from pg_proc p
+                    where p.oid = 'erp.tg_parcela_pix_copia_cola()'::regprocedure)
+                  and not has_schema_privilege('erp_conferencia', 'erp', 'create'),
+  'pix copia e cola: a conferência do recebedor lê o credor por baixo do RLS (definer de erp_conferencia), sem CREATE no esquema');
 select pg_temp.ok(erp.sienge_enfileirar() = 0, 'sienge: enfileirar de novo não repete');
 select pg_temp.ok(not exists (select 1 from erp.sienge_envios e join erp.titulos t on t.id = e.titulo_id
                                where t.tipo not in ('fornecedor','avulso') or not erp.titulo_aprovado(t.id)),
@@ -6166,8 +6524,10 @@ select pg_temp.ok((select jsonb_agg(x->>'forma' order by (x->>'numero')::int) = 
 -- o pedido confere de novo o boleto (a parcela pode mudar na revisão) e a forma que falta
 savepoint sp_ped;
 alter table erp.parcela_pagamentos disable trigger t_parcela_pagamento;
+alter table erp.parcela_pagamentos disable trigger t_parcela_recebedor_boleto;
 update erp.parcela_pagamentos set boleto_linha = '34191090080000000212134567890008799990000000100' where titulo_id = :'tse' and numero = 2;
 alter table erp.parcela_pagamentos enable trigger t_parcela_pagamento;
+alter table erp.parcela_pagamentos enable trigger t_parcela_recebedor_boleto;
 select pg_temp.erro_igual(format($$select erp.sienge_pedido(%L)$$, :'tse'), 'O valor do boleto (1.00) não é o da parcela 2 (150.00)',
   'S-125: o pedido confere de novo o valor do boleto com a parcela');
 rollback to savepoint sp_ped;
@@ -6287,7 +6647,7 @@ insert into erp.centro_aprovadores values (:'cc_mkt', :'gestor') on conflict do 
 insert into erp.listas_financeiro (lista, user_id) values ('AF', :'contador') on conflict do nothing;
 select pg_temp.volta();
 
--- contrato recorrente: gestor do centro + AF ou AO; quem lançou não aprova
+-- contrato recorrente: gestor do centro + AF ou AD (Moises, 23/11/2026; antes AF ou AO); quem lançou não aprova
 select pg_temp.como(:'analista');
 insert into erp.compromissos (id, empresa_id, tipo, pessoa_id, descricao, inicio, periodicidade, valor_periodo, dia_vencimento)
 values ('61000000-0000-0000-0000-0000000000a1', :'spe', 'assinatura', '10000000-0000-0000-0000-000000000007', 'Assinatura de teste',
@@ -6313,7 +6673,12 @@ select pg_temp.erro_igual($$select erp.decidir_compromisso('61000000-0000-0000-0
   'Seu papel só permite consulta', 'contrato: leitura não aprova');
 select pg_temp.como(:'analista2');
 select pg_temp.erro_igual($$select erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', true)$$,
-  'A aprovação deste contrato é do gestor de cada centro e da AF ou da AO', 'contrato: quem não é gestor do centro nem AF/AO não aprova');
+  'A aprovação deste contrato é do gestor de cada centro e da AF ou da AD', 'contrato: quem não é gestor do centro nem AF/AD não aprova');
+select pg_temp.sis(); insert into erp.listas_financeiro (lista, user_id) values ('AO', :'analista2'); select pg_temp.volta();
+select pg_temp.como(:'analista2');
+select pg_temp.erro_igual($$select erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', true)$$,
+  'A aprovação deste contrato é do gestor de cada centro e da AF ou da AD', 'contrato: a AO não aprova o cadastro (Moises, 23/11/2026)');
+select pg_temp.sis(); delete from erp.listas_financeiro where lista = 'AO' and user_id = :'analista2'; select pg_temp.volta();
 select pg_temp.como(:'gestor');
 select pg_temp.ok(erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', true) = 'pendente', 'contrato: o gestor do centro aprova a vaga dele');
 select pg_temp.erro_igual($$select erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', true)$$,
@@ -6370,6 +6735,15 @@ update erp.compromisso_rateios set percentual = 50 where compromisso_id = '61000
 select pg_temp.sis();
 select pg_temp.ok((select aprovacao_versao = :v1 + 3 and alterado_por = :'analista' from erp.compromissos where id = '61000000-0000-0000-0000-0000000000a1'),
   'contrato: incluir ou mudar linha do rateio abre versão nova');
+select pg_temp.volta();
+select pg_temp.sis(); insert into erp.listas_financeiro (lista, user_id) values ('AD', :'diretor2') on conflict do nothing; select pg_temp.volta();
+select pg_temp.como(:'diretor2');
+select erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', true) as r_ad \gset
+select pg_temp.sis();
+select pg_temp.ok(:'r_ad' = 'pendente'
+                  and exists (select 1 from erp.compromisso_aprovacoes where compromisso_id = '61000000-0000-0000-0000-0000000000a1'
+                                and versao = :v1 + 3 and vaga = 'FIN' and por = :'diretor2'),
+  'contrato: a AD aprova a vaga do financeiro do cadastro (Moises, 23/11/2026)');
 select pg_temp.volta();
 select pg_temp.como(:'diretor');
 select pg_temp.ok(erp.decidir_compromisso('61000000-0000-0000-0000-0000000000a1', true) = 'aprovado', 'contrato: o master aprova todas as vagas de uma vez');
@@ -6994,10 +7368,13 @@ select erp.sienge_registrar_aviso('a1000000-0000-0000-0000-000000000012', 'PAYME
 select erp.sienge_registrar_aviso('a1000000-0000-0000-0000-000000000013', 'PAYMENT_INSTALLMENT_REMOVED', 'h', '{"billId": 7201, "installmentId": 1}');
 select pg_temp.ok((select count(*) = 3 from erp.sienge_avisos where processado_em is null), 'aviso: as remoções de linha nossa ficam pendentes');
 -- pegar e processar
-select evento_id as av1, bill_id as b1, previsao_id as p1, tipo as t1 from erp.sienge_pegar_aviso() \gset
+-- relógio fixo no começo de uma hora cheia: o excesso é contado por hora do relógio (date_trunc), e com now() o teste
+-- falhava quando +70 e +71 minutos caíam em horas diferentes (minutos 49 e 50 de cada hora)
+select date_trunc('hour', now()) + interval '1 hour' as t0 \gset
+select evento_id as av1, bill_id as b1, previsao_id as p1, tipo as t1 from erp.sienge_pegar_aviso(:'t0'::timestamptz) \gset
 select pg_temp.ok(:'av1' = 'a1000000-0000-0000-0000-000000000011' and :b1 = 7202 and :'p1' = '6c000000-0000-0000-0000-0000000000d2' and :'t1' = 'apagar',
   'aviso: o mais antigo vem com a previsão e o tipo (linha a apagar)');
-select evento_id as av2 from erp.sienge_pegar_aviso(now() + interval '1 minute') \gset
+select evento_id as av2 from erp.sienge_pegar_aviso(:'t0'::timestamptz + interval '1 minute') \gset
 select pg_temp.ok(:'av2' = 'a1000000-0000-0000-0000-000000000013'
                   and (select processado_em is not null and resultado = 'título conferido há menos de 30 minutos por outro aviso: sem chamada'
                          from erp.sienge_avisos where evento_id = 'a1000000-0000-0000-0000-000000000012'),
@@ -7009,20 +7386,20 @@ select erp.sienge_terminar_aviso('a1000000-0000-0000-0000-000000000011', 'apagad
 select pg_temp.erro_igual($$select erp.sienge_terminar_aviso('a1000000-0000-0000-0000-000000000011', 'x')$$,
   'Aviso do Sienge inexistente ou já processado', 'aviso: o processado não fecha de novo');
 select erp.sienge_terminar_aviso('a1000000-0000-0000-0000-000000000013', 'Sienge respondeu 500', false);
-select count(*) as n3 from erp.sienge_pegar_aviso(now() + interval '3 minutes') \gset
+select count(*) as n3 from erp.sienge_pegar_aviso(:'t0'::timestamptz + interval '3 minutes') \gset
 select pg_temp.ok(:n3 = 0 and (select resultado = 'a linha já não está pendente no ERP' and processado_em is not null
                                  from erp.sienge_avisos where evento_id = 'a1000000-0000-0000-0000-000000000014'),
   'aviso: o da outra parcela do título já apagado fecha sozinho');
 -- sem resposta: tenta de novo depois de 5 minutos, até 5 vezes
-select pg_temp.ok(exists (select 1 from erp.sienge_pegar_aviso(now() + interval '7 minutes') where tipo = 'esperada'
+select pg_temp.ok(exists (select 1 from erp.sienge_pegar_aviso(:'t0'::timestamptz + interval '7 minutes') where tipo = 'esperada'
                             and previsao_id = '6c000000-0000-0000-0000-0000000000d1'),
   'aviso: vem a linha esperada');
-select pg_temp.ok(not exists (select 1 from erp.sienge_pegar_aviso(now() + interval '9 minutes'))
-                  and exists (select 1 from erp.sienge_pegar_aviso(now() + interval '13 minutes')),
+select pg_temp.ok(not exists (select 1 from erp.sienge_pegar_aviso(:'t0'::timestamptz + interval '9 minutes'))
+                  and exists (select 1 from erp.sienge_pegar_aviso(:'t0'::timestamptz + interval '13 minutes')),
   'aviso: sem resposta, volta depois de 5 minutos');
-select erp.sienge_pegar_aviso(now() + interval '19 minutes');
-select erp.sienge_pegar_aviso(now() + interval '25 minutes');
-select not exists (select 1 from erp.sienge_pegar_aviso(now() + interval '31 minutes')) as nada5 \gset
+select erp.sienge_pegar_aviso(:'t0'::timestamptz + interval '19 minutes');
+select erp.sienge_pegar_aviso(:'t0'::timestamptz + interval '25 minutes');
+select not exists (select 1 from erp.sienge_pegar_aviso(:'t0'::timestamptz + interval '31 minutes')) as nada5 \gset
 select pg_temp.ok(:'nada5'::boolean
                   and (select processado_em is not null and resultado like 'erro: 5 tentativas%' and tentativas = 5
                          from erp.sienge_avisos where evento_id = 'a1000000-0000-0000-0000-000000000013'),
@@ -7030,14 +7407,14 @@ select pg_temp.ok(:'nada5'::boolean
 -- teto por hora (S-136): o 13 foi pego aos 25 minutos
 savepoint sp_av2;
 select erp.sienge_registrar_aviso('a1000000-0000-0000-0000-000000000015', 'PAYMENT_INSTALLMENT_REMOVED', 'h', '{"billId": 7201, "installmentId": 2}');
-select count(*) as n4 from erp.sienge_pegar_aviso(now() + interval '70 minutes', 1) \gset
-select count(*) as n5 from erp.sienge_pegar_aviso(now() + interval '71 minutes', 1) \gset
+select count(*) as n4 from erp.sienge_pegar_aviso(:'t0'::timestamptz + interval '70 minutes', 1) \gset
+select count(*) as n5 from erp.sienge_pegar_aviso(:'t0'::timestamptz + interval '71 minutes', 1) \gset
 select pg_temp.ok(:n4 = 0 and :n5 = 0
                   and (select processado_em is null and pegado_em is null from erp.sienge_avisos where evento_id = 'a1000000-0000-0000-0000-000000000015')
                   and (select count(*) = 1 and min(pegos) = 1 from erp.sienge_avisos_excesso)
                   and (select count(*) = 1 from erp.eventos where tipo = 'sienge_avisos_excesso'),
   'aviso: acima do teto por hora não pega (o aviso espera) e avisa a AF uma vez por hora');
-select pg_temp.ok((select evento_id = 'a1000000-0000-0000-0000-000000000015' from erp.sienge_pegar_aviso(now() + interval '72 minutes', 2)),
+select pg_temp.ok((select evento_id = 'a1000000-0000-0000-0000-000000000015' from erp.sienge_pegar_aviso(:'t0'::timestamptz + interval '72 minutes', 2)),
   'aviso: abaixo do teto pega');
 select pg_temp.erro_igual($$select * from erp.sienge_pegar_aviso(now(), 0)$$, 'Limite de avisos por hora inválido', 'aviso: teto inválido é recusado');
 rollback to savepoint sp_av2;
@@ -7256,8 +7633,8 @@ begin
        or exists (select id from erp.previsoes where sentido = 'pagar' except select id from api.previsoes()) then
       raise exception 'FALHOU: api.previsoes difere do RLS para %', r.u;
     end if;
-    if exists (select id from api.contratos() except select id from erp.compromissos where tipo in ('contrato','assinatura'))
-       or exists (select id from erp.compromissos where tipo in ('contrato','assinatura') except select id from api.contratos()) then
+    if exists (select id from api.contratos() except select id from erp.compromissos where tipo in ('contrato','assinatura','consumo'))
+       or exists (select id from erp.compromissos where tipo in ('contrato','assinatura','consumo') except select id from api.contratos()) then
       raise exception 'FALHOU: api.contratos difere do RLS para %', r.u;
     end if;
   end loop;
@@ -7407,6 +7784,102 @@ select pg_temp.falha(format($$select api.lancar_titulo(%L)$$, jsonb_build_object
   'rateio', jsonb_build_array(jsonb_build_object('nucleo', :'ne_vm', 'centro', :'cc_mkt', 'natureza', pg_temp.nat('05.01.04'), 'percentual', 100)),
   'parcelas', '[{"vencimento": "2026-11-20", "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"}]'::jsonb)),
   'lançar: a mesma nota do mesmo fornecedor não entra duas vezes');
+-- parcelas com o valor do documento (boletos de valores diferentes; pedido do Moises, 20/11/2026)
+create temp table nota_val as select jsonb_build_object(
+  'empresa', :'spe', 'fornecedor', '10000000-0000-0000-0000-000000000007', 'tipo', 'nfse', 'numero', 'T-885',
+  'emissao', '2026-11-05', 'competencia', '2026-11-01', 'valor', 300,
+  'rateio', jsonb_build_array(jsonb_build_object('nucleo', :'ne_vm', 'centro', :'cc_mkt', 'natureza', pg_temp.nat('05.01.04'), 'percentual', 100))) j;
+grant select on nota_val to public;
+select pg_temp.erro_igual(format($$select api.lancar_titulo(%L)$$, (select j || jsonb_build_object('parcelas',
+  '[{"vencimento": "2026-11-20", "valor": 100, "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"},
+    {"vencimento": "2026-12-20", "valor": 150, "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"}]'::jsonb) from nota_val)),
+  'As parcelas somam 250,00, e o valor líquido do título é 300,00', 'parcelas: os valores têm de somar o valor líquido');
+select pg_temp.erro_igual(format($$select api.lancar_titulo(%L)$$, (select j || jsonb_build_object('parcelas',
+  '[{"vencimento": "2026-11-20", "valor": 100, "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"},
+    {"vencimento": "2026-12-20", "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"}]'::jsonb) from nota_val)),
+  'Informe o valor de todas as parcelas, ou de nenhuma', 'parcelas: valor em todas ou em nenhuma');
+select pg_temp.erro_igual(format($$select api.lancar_titulo(%L)$$, (select j || jsonb_build_object('parcelas',
+  '[{"vencimento": "2026-11-20", "valor": 300, "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"},
+    {"vencimento": "2026-12-20", "valor": 0, "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"}]'::jsonb) from nota_val)),
+  'O valor de cada parcela é maior que zero, com até 2 casas', 'parcelas: parcela zerada não entra');
+select pg_temp.erro_igual(format($$select api.lancar_titulo(%L)$$, (select j || jsonb_build_object('parcelas',
+  '[{"vencimento": "2026-11-20", "valor": 100.005, "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"},
+    {"vencimento": "2026-12-20", "valor": 199.995, "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"}]'::jsonb) from nota_val)),
+  'O valor de cada parcela é maior que zero, com até 2 casas', 'parcelas: mais de 2 casas não entra');
+select pg_temp.ok(not exists (select 1 from erp.documentos_fiscais where numero = 'T-885'), 'parcelas: a recusa não deixa a nota');
+select api.lancar_titulo((select j || jsonb_build_object('parcelas',
+  '[{"vencimento": "2026-11-20", "valor": 100, "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com", "pix_copia_cola": " 00020126410014br.gov.bcb.pix0119agencia@example.com5204000053039865406100.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***63046CD8 "},
+    {"vencimento": "2026-12-20", "valor": 200, "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"}]'::jsonb) from nota_val)) as tval \gset
+select pg_temp.ok((select valor = 300 from erp.titulos where id = :'tval')
+                  and (select array_agg(valor order by numero) from erp.parcelas where titulo_id = :'tval') = array[100, 200]::numeric[]
+                  and (select coalesce(sum(l.valor), 0) = -300 from erp.lancamentos l where l.titulo_id = :'tval' and l.estagio = 'comprometido'),
+  'parcelas: cada parcela fica com o valor do documento, e o comprometido é o do título');
+select pg_temp.ok((select pix_copia_cola = '00020126410014br.gov.bcb.pix0119agencia@example.com5204000053039865406100.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***63046CD8' from erp.parcela_pagamentos where titulo_id = :'tval' and numero = 1)
+                  and (select j->'parcelas'->0->>'pix_copia_cola' = '00020126410014br.gov.bcb.pix0119agencia@example.com5204000053039865406100.005802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***63046CD8' and j->'parcelas'->1->'pix_copia_cola' = 'null'::jsonb from api.titulo(:'tval') j),
+  'pix copia e cola: o Lançar título grava o código da parcela (sem os espaços das pontas) e a gaveta do título mostra');
+select pg_temp.erro_igual(format($$select erp.lancar_documento(%L, array['2026-11-20','2026-12-20']::date[], null, array[300]::numeric[])$$,
+                                 (select documento_id from erp.titulos where id = :'tval')),
+  'O documento já foi lançado', 'parcelas: a função da nota continua recusando nota já lançada');
+-- revisão de segurança do #102: a quantidade de valores e o líquido (com retenção) são conferidos
+select pg_temp.como(null);
+select pg_temp.sis();
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+values ('70000000-0000-0000-0000-000000000886', :'spe', '10000000-0000-0000-0000-000000000007', 'nfse', 'T-886', '2026-11-05', '2026-11-01', 300);
+insert into erp.documento_retencoes (documento_id, imposto, valor, orgao_id, vencimento) values
+  ('70000000-0000-0000-0000-000000000886', 'iss', 30, '10000000-0000-0000-0000-000000000006', '2026-12-10');
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('70000000-0000-0000-0000-000000000886', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select pg_temp.volta();
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual($$select erp.lancar_documento('70000000-0000-0000-0000-000000000886', array['2026-11-20','2026-12-20']::date[], null, array[270]::numeric[])$$,
+  'Informe o valor de cada parcela', 'parcelas: menos valores que vencimentos é recusado, mesmo somando o líquido');
+select pg_temp.erro_igual($$select erp.lancar_documento('70000000-0000-0000-0000-000000000886', array['2026-11-20','2026-12-20']::date[], null, array[100, 100, 70]::numeric[])$$,
+  'Informe o valor de cada parcela', 'parcelas: mais valores que vencimentos é recusado, mesmo somando o líquido');
+select pg_temp.erro_igual($$select erp.lancar_documento('70000000-0000-0000-0000-000000000886', array['2026-11-20','2026-12-20']::date[], null, array[100, 200]::numeric[])$$,
+  'As parcelas somam 300,00, e o valor líquido do título é 270,00', 'parcelas: com retenção, a soma igual ao bruto é recusada');
+select erp.lancar_documento('70000000-0000-0000-0000-000000000886', array['2026-11-20','2026-12-20']::date[], null, array[100, 170]::numeric[]) as tret \gset
+select pg_temp.ok((select valor = 270 from erp.titulos where id = :'tret')
+                  and (select array_agg(valor order by numero) from erp.parcelas where titulo_id = :'tret') = array[100, 170]::numeric[],
+  'parcelas: com retenção, a soma igual ao líquido entra');
+-- na revisão, o reenvio relança a nota com os mesmos valores
+select pg_temp.como(null);
+select pg_temp.sis(); insert into erp.centro_aprovadores values (:'cc_mkt', :'gestor') on conflict do nothing; select pg_temp.volta();
+select pg_temp.como(:'gestor');
+select erp.decidir_titulo(:'tval', false, 'conferir o fornecedor', true);
+select pg_temp.como(:'diretor');
+select erp.reenviar_titulo(:'tval', 'conferido') as tval2 \gset
+select pg_temp.ok(:'tval2' <> :'tval' and (select array_agg(valor order by numero) from erp.parcelas where titulo_id = :'tval2') = array[100, 200]::numeric[],
+  'parcelas: o reenvio da revisão mantém o valor de cada parcela');
+-- outra quantidade de parcelas no reenvio: a divisão igual
+select pg_temp.como(:'gestor');
+select erp.decidir_titulo(:'tval2', false, 'três parcelas', true);
+select pg_temp.como(:'diretor');
+select erp.reenviar_titulo(:'tval2', 'em três', array['2026-11-20','2026-12-20','2027-01-20']::date[]) as tval3 \gset
+select pg_temp.ok((select array_agg(valor order by numero) from erp.parcelas where titulo_id = :'tval3') = array[100, 100, 100]::numeric[],
+  'parcelas: o reenvio com outra quantidade de parcelas volta à divisão igual');
+-- retenção nova na revisão muda o líquido: os valores antigos não fecham e as parcelas saem iguais
+select pg_temp.como(:'gestor');
+select erp.decidir_titulo(:'tret', false, 'falta o IRRF', true);
+select pg_temp.como(:'diretor');
+insert into erp.documento_retencoes (documento_id, imposto, valor, orgao_id, vencimento) values
+  ('70000000-0000-0000-0000-000000000886', 'irrf', 20, '10000000-0000-0000-0000-000000000006', '2026-12-20');
+select erp.reenviar_titulo(:'tret', 'IRRF incluído') as tret2 \gset
+select pg_temp.ok((select valor = 250 from erp.titulos where id = :'tret2')
+                  and (select array_agg(valor order by numero) from erp.parcelas where titulo_id = :'tret2') = array[125, 125]::numeric[],
+  'parcelas: líquido mudado na revisão faz as parcelas saírem iguais, sem travar o reenvio');
+select pg_temp.como(null);
+select pg_temp.ok(erp._parcelas_iguais(1, 3) = array[0.34, 0.33, 0.33]::numeric[] and erp._parcelas_iguais(900.01, 2) = array[450.01, 450]::numeric[],
+  'parcelas: a divisão igual é a do Sienge');
+select pg_temp.ok(not has_function_privilege('authenticated', 'erp._parcelas_iguais(numeric, int)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp._liquido_documento(uuid)', 'EXECUTE')
+                  and has_function_privilege('authenticated', 'erp.lancar_documento(uuid, date[], uuid[], numeric[])', 'EXECUTE')
+                  and (select prosecdef and pg_get_userbyid(proowner) = 'erp_situacao' from pg_proc
+                        where oid = 'erp.lancar_documento(uuid, date[], uuid[], numeric[])'::regprocedure)
+                  and (select prosecdef and pg_get_userbyid(proowner) = 'erp_situacao' from pg_proc
+                        where oid = 'erp.reenviar_titulo(uuid, text, date[], uuid[])'::regprocedure)
+                  and not exists (select 1 from pg_proc where oid::regprocedure::text = 'erp.lancar_documento(uuid,date[],uuid[])'),
+  'parcelas: a função da nota continua definer de erp_situacao, e a versão antiga saiu');
+select pg_temp.como(:'diretor');
 -- quem não lança na linha não lança pela tela (o perfil do erp vale aqui também)
 select pg_temp.como(:'analista2');
 select pg_temp.ok(not exists (select 1 from api.naturezas_lancaveis(:'ne_vm', :'cc_obra', null) n
@@ -7477,6 +7950,708 @@ select pg_temp.ok(not exists (select 1 from pg_proc p join pg_namespace n on n.o
                   and not has_schema_privilege('anon', 'api', 'USAGE')
                   and not exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'api'),
   'api: anon e service_role não executam nada do esquema api, e ele não tem tabela nem visão');
+
+\echo '# anexo do título e o que casa com a nota lida (19/11/2026)'
+select pg_temp.como(null);
+begin;
+select pg_temp.sis();
+insert into erp.pessoa_papeis values ('10000000-0000-0000-0000-000000000007', 'fornecedor') on conflict do nothing;
+insert into erp.previsoes (id, empresa_id, origem, pessoa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor) values
+  ('8d000000-0000-0000-0000-000000000001', :'spe', 'manual', '10000000-0000-0000-0000-000000000007', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2026-11-01', '2026-11-20', 900),
+  ('8d000000-0000-0000-0000-000000000002', :'spe', 'manual', '10000000-0000-0000-0000-000000000007', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), '2026-03-01', '2026-03-20', 50);
+insert into erp.compromissos (id, empresa_id, tipo, pessoa_id, descricao, inicio, fim, periodicidade, valor_periodo, dia_vencimento)
+values ('8d000000-0000-0000-0000-000000000003', :'spe', 'assinatura', '10000000-0000-0000-0000-000000000007',
+        'Assinatura da agência', '2026-01-01', '2026-12-31', 'mensal', 950, 18);
+insert into erp.compromisso_rateios (compromisso_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+values ('8d000000-0000-0000-0000-000000000003', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select pe.documento as doc_spe from erp.empresas e join erp.pessoas pe on pe.id = e.pessoa_id where e.id = :'spe' \gset
+select pe.documento as doc_forn from erp.pessoas pe where pe.id = '10000000-0000-0000-0000-000000000007' \gset
+select pg_temp.volta();
+select pg_temp.como(:'leitor');
+select pg_temp.falha($$select api.registrar_anexo('nota.pdf', 'application/pdf', 1000, repeat('a', 64))$$, 'anexo: quem só consulta não sobe arquivo');
+select pg_temp.ok(api.identificar_nota('{}') is null, 'anexo: quem só consulta não recebe a identificação da nota');
+select pg_temp.como(:'diretor');
+select (api.registrar_anexo('NF 881.pdf', 'application/pdf', 1000, repeat('a', 64))->>'id') as anx \gset
+select pg_temp.falha($$select api.registrar_anexo('nota.exe', 'application/x-msdownload', 1000, repeat('b', 64))$$, 'anexo: só PDF, XML e imagem');
+select pg_temp.falha($$select api.registrar_anexo('nota.pdf', 'application/pdf', 1000, 'abc')$$, 'anexo: o sha256 tem 64 dígitos hexadecimais');
+select pg_temp.falha(format($$insert into erp.anexos (nome, tipo_mime, tamanho, sha256, documento_id) values ('x.pdf', 'application/pdf', 1, %L, %L)$$,
+                            repeat('c', 64), '8c000000-0000-0000-0000-000000000005'),
+  'anexo: não nasce ligado a uma nota (a ligação é no lançamento)');
+select api.gravar_leitura(:'anx', jsonb_build_object('valor', 900, 'emitente', :'doc_forn'));
+select pg_temp.ok((select a.criado_por = :'diretor' and a.lido_em is not null and a.leitura->>'valor' = '900' from erp.anexos a where a.id = :'anx'),
+  'anexo: o banco põe quem subiu e grava a leitura');
+-- guias (Moises, 20/11/2026): tipos próprios e o CNPJ do órgão pelo código do recebedor na linha da guia
+select pg_temp.ok(erp.sienge_documento('itbi') = 'ITBI' and erp.sienge_documento('darm') = 'DARM' and erp.sienge_documento('dare') = 'DARE'
+                  and (select pg_get_constraintdef(oid) like '%darf%' from pg_constraint where conname = 'documentos_fiscais_tipo_check'),
+  'guias: IPTU, ITBI, DARF, DARM e DARE são tipos de documento, com o documento de mesmo nome no Sienge');
+select pg_temp.ok((select count(*) = 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                    where n.nspname = 'api' and p.prosrc like '%Tipo de documento inválido%' and p.prosrc like '%''darm''%')
+                  and (select count(*) >= 2 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                        where n.nspname = 'api' and p.prosrc like '%when ''itbi'' then ''ITBI''%'),
+  'guias: o Lançar título aceita os tipos novos e as telas mostram o nome deles');
+select pg_temp.ok(erp.codigo_arrecadacao('816000000000100099990000000000000000000000000000') = array['1', '9999']
+                  and erp.codigo_arrecadacao('86' || substr('816000000000100099990000000000000000000000000000', 3)) is null
+                  and erp.codigo_arrecadacao('34191090080000000212134567890008899990000015000') is null,
+  'guias: o código do recebedor sai da linha de arrecadação (segmento 6 e boleto de cobrança ficam de fora)');
+select pg_temp.ok(erp.completar_recebedor('{"boletos": [{"linha": "826700000068278700970918102694590609329178721737"}]}')->'emitente'->>'documento' = '43776517000180',
+  'guias: a carga inicial traz os órgãos que o financeiro usa no Sienge (código 0097 da conta de água)');
+select pg_temp.como(:'analista');
+select pg_temp.falha($$insert into erp.recebedores_arrecadacao values ('1', '9999', '11222333000181', 'PREFEITURA EXEMPLO')$$,
+  'guias: ninguém pela API cadastra o órgão de um código (só por migration ou SQL do master)');
+select pg_temp.como(:'diretor');
+select pg_temp.falha($$insert into erp.recebedores_arrecadacao values ('1', '9999', '11222333000181', 'PREFEITURA EXEMPLO')$$,
+  'guias: nem o master pela API');
+select pg_temp.como_dono(null);
+insert into erp.recebedores_arrecadacao values ('1', '9999', '11222333000181', 'PREFEITURA EXEMPLO');
+select pg_temp.como(:'diretor');
+select api.gravar_leitura(:'anx', jsonb_build_object('tipo', 'darm', 'emitente', jsonb_build_object('nome', ''),
+                                                     'boletos', jsonb_build_array(jsonb_build_object('linha', '816000000000100099990000000000000000000000000000'))));
+select pg_temp.ok((select a.leitura->'emitente'->>'documento' = '11222333000181' and a.leitura->'emitente'->>'nome' = 'PREFEITURA EXEMPLO'
+                          and a.leitura->'avisos'->>0 like 'CNPJ do emitente pelo código do recebedor%' from erp.anexos a where a.id = :'anx'),
+  'guias: sem o CNPJ lido, o emitente vem do código da guia, com aviso');
+select api.gravar_leitura(:'anx', jsonb_build_object('emitente', jsonb_build_object('documento', :'doc_forn'),
+                                                     'boletos', jsonb_build_array(jsonb_build_object('linha', '816000000000100099990000000000000000000000000000'))));
+select pg_temp.ok((select a.leitura->'emitente'->>'documento' = :'doc_forn'
+                          and a.leitura->'avisos'->>0 like 'O código do recebedor na linha da guia é de PREFEITURA EXEMPLO, e não do CNPJ%'
+                          and jsonb_array_length(a.leitura->'avisos') = 1 from erp.anexos a where a.id = :'anx'),
+  'guias: o CNPJ que o leitor achou fica como veio, com aviso quando o código da guia é de outro CNPJ');
+select api.gravar_leitura(:'anx', jsonb_build_object('emitente', jsonb_build_object('documento', '11.222.333/0002-62'),
+                                                     'boletos', jsonb_build_array(jsonb_build_object('linha', '816000000000100099990000000000000000000000000000'))));
+select pg_temp.ok((select a.leitura->'emitente'->>'documento' = '11.222.333/0002-62' and a.leitura->'avisos' is null from erp.anexos a where a.id = :'anx'),
+  'guias: outra filial do mesmo órgão (mesma raiz do CNPJ) não avisa');
+select pg_temp.ok(erp.completar_recebedor(jsonb_build_object('emitente', jsonb_build_object('documento', :'doc_forn'),
+                    'boletos', jsonb_build_array(jsonb_build_object('linha', '34191090080000000212134567890008899990000015000')))) ->'avisos' is null,
+  'guias: boleto de cobrança não avisa divergência');
+select api.gravar_leitura(:'anx', jsonb_build_object('valor', 900, 'emitente', :'doc_forn'));
+select pg_temp.erro_igual(format($$update erp.anexos set sha256 = %L where id = %L$$, repeat('d', 64), :'anx'),
+  'O arquivo do anexo não muda: suba outro', 'anexo: o arquivo (sha256, nome, tamanho) não muda depois de gravado');
+-- quem não subiu não vê, não lê pela api, não muda a leitura nem apaga
+select pg_temp.como(:'analista2');
+select pg_temp.ok(not exists (select 1 from erp.anexos where id = :'anx') and api.anexo(:'anx') is null,
+  'anexo: o anexo solto só quem subiu vê');
+select pg_temp.erro_igual(format($$select api.gravar_leitura(%L, '{}')$$, :'anx'), 'Anexo não encontrado', 'anexo: outra pessoa não muda a leitura');
+delete from erp.anexos where id = :'anx';
+select pg_temp.como(:'diretor');
+select pg_temp.ok(exists (select 1 from erp.anexos where id = :'anx'), 'anexo: outra pessoa não apaga o anexo solto');
+-- o que casa com a nota
+select api.identificar_nota(jsonb_build_object('tomador', :'doc_spe', 'emitente', :'doc_forn', 'tipo', 'nfse', 'numero', '881',
+                                                'valor', 900, 'emissao', '2026-11-05', 'vencimento', '2026-11-20')) as idn \gset
+select pg_temp.ok((:'idn'::jsonb)->'empresa'->>'id' = :'spe' and (:'idn'::jsonb)->'fornecedor'->>'id' = '10000000-0000-0000-0000-000000000007'
+                  and ((:'idn'::jsonb)->'fornecedor'->>'fornecedor')::boolean,
+  'identificar: acha a empresa pelo CNPJ do tomador e o fornecedor pelo do emitente');
+select pg_temp.ok((select c->>'id' from jsonb_array_elements((:'idn'::jsonb)->'candidatos') c limit 1) = '8d000000-0000-0000-0000-000000000001'
+                  and (select (c->>'pontos')::int = 10 and c->'motivos' @> '["mesmo fornecedor", "mesmo valor", "data próxima"]'
+                              and c->'rateio'->0->>'natureza' = pg_temp.nat('05.01.04')::text
+                         from jsonb_array_elements((:'idn'::jsonb)->'candidatos') c where c->>'id' = '8d000000-0000-0000-0000-000000000001'),
+  'identificar: a previsão do mesmo fornecedor, valor e data vem primeiro, com o rateio para preencher');
+select pg_temp.ok(exists (select 1 from jsonb_array_elements((:'idn'::jsonb)->'candidatos') c
+                           where c->>'id' = '8d000000-0000-0000-0000-000000000003' and c->>'tipo' = 'contrato'
+                             and c->>'data' = '2026-11-18' and c->'motivos' @> '["valor próximo", "vencimento do contrato"]'
+                             and jsonb_array_length(c->'rateio') = 1),
+  'identificar: a assinatura do fornecedor entra, com o vencimento no dia dela e o valor do período');
+select pg_temp.ok(not exists (select 1 from jsonb_array_elements((:'idn'::jsonb)->'candidatos') c where c->>'id' = '8d000000-0000-0000-0000-000000000002'),
+  'identificar: previsão de valor e data longe (só o fornecedor bate) fica de fora');
+select pg_temp.ok(jsonb_array_length((:'idn'::jsonb)->'nota_repetida') = 0, 'identificar: sem nota repetida');
+select pg_temp.ok((api.identificar_nota(jsonb_build_object('tomador', '00000000000000', 'emitente', '00000000000191', 'valor', 900)) ->> 'fornecedor') is null,
+  'identificar: CNPJ que não está no cadastro volta sem empresa e sem fornecedor');
+-- lança com o anexo; o anexo fica ligado e entra no rastro
+select api.lancar_titulo(jsonb_build_object(
+  'empresa', :'spe', 'fornecedor', '10000000-0000-0000-0000-000000000007', 'tipo', 'nfse', 'numero', '0881',
+  'emissao', '2026-11-05', 'competencia', '2026-11-01', 'valor', 900,
+  'rateio', jsonb_build_array(jsonb_build_object('nucleo', :'ne_vm', 'centro', :'cc_mkt', 'natureza', pg_temp.nat('05.01.04'), 'percentual', 100)),
+  'parcelas', '[{"vencimento": "2026-11-20", "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"}]'::jsonb,
+  'previsoes', '["8d000000-0000-0000-0000-000000000001"]'::jsonb,
+  'anexos', jsonb_build_array(:'anx'))) as tan \gset
+select pg_temp.ok((select a.documento_id = t.documento_id and a.ligado_em is not null from erp.anexos a, erp.titulos t where a.id = :'anx' and t.id = :'tan')
+                  and (select r->'anexos'->0->>'id' = :'anx' and r->'anexos'->0->>'nome' = 'NF 881.pdf' from api.titulo_rastro(:'tan') r),
+  'anexo: o lançamento liga o anexo à nota, e o rastro do título mostra o arquivo');
+select pg_temp.erro_igual(format($$select api.gravar_leitura(%L, '{}')$$, :'anx'), 'Anexo não encontrado', 'anexo: ligado à nota, nem quem subiu muda a leitura');
+delete from erp.anexos where id = :'anx';
+select pg_temp.ok(exists (select 1 from erp.anexos where id = :'anx'), 'anexo: ligado à nota, nem quem subiu apaga');
+select pg_temp.ok((select jsonb_array_length(j->'repetido_em') = 1 and j->'repetido_em'->0->>'titulo_id' = :'tan'
+                     from api.registrar_anexo('copia.pdf', 'application/pdf', 1000, repeat('a', 64)) j),
+  'anexo: subir de novo o mesmo arquivo avisa a nota em que ele já está');
+select pg_temp.ok((select jsonb_array_length(j->'nota_repetida') = 1 and j->'nota_repetida'->0->>'titulo_id' = :'tan'
+                     from api.identificar_nota(jsonb_build_object('tomador', :'doc_spe', 'emitente', :'doc_forn', 'tipo', 'nfse', 'numero', '881')) j),
+  'identificar: a nota com o mesmo número do mesmo emitente (zeros à esquerda não contam) volta como repetida');
+select pg_temp.ok((select j->'pagamento'->>'forma' = 'pix' and j->'pagamento'->>'pix_chave' = 'agencia@example.com'
+                     from api.identificar_nota(jsonb_build_object('emitente', :'doc_forn')) j),
+  'identificar: a última chave PIX usada com o fornecedor vem pré-selecionada');
+-- quem não vê a nota não vê o anexo dela nem a repetição; o anexo de outra pessoa não se liga
+select pg_temp.como(:'analista2');
+create temp table anexo_ids as select :'anx'::uuid as anx, :'tan'::uuid as tit, (select documento_id from erp.titulos where id = :'tan') as doc;
+grant select on anexo_ids to public;
+select pg_temp.como(null);
+do $$
+declare r record; i record; j jsonb; c jsonb; n int := 0;
+begin
+  select * into i from anexo_ids;
+  for r in select u.id::text as id from erp.usuarios u where u.ativo loop
+    perform pg_temp.como(r.id);
+    j := api.identificar_nota(jsonb_build_object('emitente', '77777777000177', 'tipo', 'nfse', 'numero', '881', 'valor', 950, 'vencimento', '2026-11-18'));
+    if not erp.vejo_documento(i.doc) then
+      n := n + 1;
+      if exists (select 1 from erp.anexos where id = i.anx) or api.anexo(i.anx) is not null then
+        raise exception 'FALHOU: % vê o anexo de uma nota que não vê', r.id; end if;
+      if j is not null and (j->'nota_repetida')::text like '%' || i.doc || '%' then
+        raise exception 'FALHOU: % recebe como repetida uma nota que não vê', r.id; end if;
+    end if;
+    if j is not null and not erp.vejo_titulo(i.tit) and j->'pagamento'->>'de_titulo' = i.tit::text then
+      raise exception 'FALHOU: % recebe a chave PIX de um título que não vê', r.id; end if;
+    for c in select x from jsonb_array_elements(coalesce(j->'candidatos', '[]')) x loop
+      if (c->>'tipo' = 'previsao' and not erp.vejo_previsao((c->>'id')::uuid))
+         or (c->>'tipo' = 'contrato' and not erp.vejo_compromisso((c->>'id')::uuid)) then
+        raise exception 'FALHOU: % recebe candidato que não vê (%)', r.id, c->>'id'; end if;
+    end loop;
+  end loop;
+  perform pg_temp.como(null);
+  if n = 0 then raise exception 'FALHOU: (teste) nenhum usuário deixa de ver a nota'; end if;
+end $$;
+select pg_temp.ok(true, 'identificar: para cada usuário, o anexo, a nota repetida, a chave PIX e os candidatos só aparecem para quem os vê');
+-- quem não vê nada do Marketing não recebe os candidatos dele
+select pg_temp.como(:'analista2');
+select (api.registrar_anexo('meu.pdf', 'application/pdf', 10, repeat('e', 64))->>'id') as anx2 \gset
+select n.id as nat_b2 from api.naturezas_lancaveis(:'ne_vm', :'cc_obra', null) n order by n.codigo limit 1 \gset
+create temp table nota_a2_anx as select jsonb_build_object(
+  'empresa', :'spe', 'fornecedor', '10000000-0000-0000-0000-000000000007', 'tipo', 'nfse', 'numero', 'T-891',
+  'emissao', '2026-11-05', 'competencia', '2026-11-01', 'valor', 100,
+  'rateio', jsonb_build_array(jsonb_build_object('nucleo', :'ne_vm', 'centro', :'cc_obra', 'natureza', :'nat_b2', 'percentual', 100)),
+  'parcelas', '[{"vencimento": "2026-11-20", "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"}]'::jsonb) j;
+select pg_temp.erro_igual(format($$select api.lancar_titulo(%L)$$, (select j || jsonb_build_object('anexos', jsonb_build_array(:'anx')) from nota_a2_anx)),
+  'Anexo não encontrado ou já ligado a outra nota', 'anexo: o anexo de outra pessoa (ou já ligado) não entra no lançamento');
+select pg_temp.falha(format($$update erp.anexos set documento_id = (select documento_id from erp.titulos where id = %L) where id = %L$$, :'tan', :'anx2'),
+  'anexo: não se liga a nota de outra pessoa, mesmo uma em que ela lança');
+select api.lancar_titulo((select j || jsonb_build_object('anexos', jsonb_build_array(:'anx2')) from nota_a2_anx)) as tan2 \gset
+select pg_temp.ok((select a.documento_id = t.documento_id from erp.anexos a, erp.titulos t where a.id = :'anx2' and t.id = :'tan2'),
+  'anexo: o próprio anexo solto entra no lançamento');
+-- o rastro de um título não traz o anexo de outra nota; o aviso de arquivo repetido ignora nota cancelada
+select pg_temp.como(:'diretor');
+select pg_temp.ok((select jsonb_array_length(r->'anexos') = 1 and r->'anexos'->0->>'id' = :'anx' from api.titulo_rastro(:'tan') r)
+                  and (select jsonb_array_length(r->'anexos') = 1 and r->'anexos'->0->>'id' = :'anx2' from api.titulo_rastro(:'tan2') r),
+  'anexo: o rastro de cada título lista só os anexos da própria nota');
+select pg_temp.sis();
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+values ('8d000000-0000-0000-0000-000000000009', :'spe', '10000000-0000-0000-0000-000000000007', 'nfse', 'T-899', '2026-11-05', '2026-11-01', 100);
+insert into erp.anexos (id, nome, tipo_mime, tamanho, sha256) values ('8d000000-0000-0000-0000-00000000000a', 'cancelada.pdf', 'application/pdf', 10, repeat('f', 64));
+update erp.anexos set documento_id = '8d000000-0000-0000-0000-000000000009' where id = '8d000000-0000-0000-0000-00000000000a';
+set local role erp_situacao;
+update erp.documentos_fiscais set situacao = 'cancelado' where id = '8d000000-0000-0000-0000-000000000009';
+reset role;
+select pg_temp.volta();
+select pg_temp.como(:'diretor');
+select pg_temp.ok((select jsonb_array_length(j->'repetido_em') = 0 from api.registrar_anexo('de novo.pdf', 'application/pdf', 10, repeat('f', 64)) j)
+                  and exists (select 1 from erp.anexos where id = '8d000000-0000-0000-0000-00000000000a'),
+  'anexo: o mesmo arquivo de uma nota cancelada não conta como repetido');
+select pg_temp.como(null);
+rollback;
+
+\echo '# tela Para aprovar (api.aprovacoes e api.decidir, 19/11/2026)'
+select pg_temp.como(null);
+-- transação só de leitura (GET do PostgREST): erro claro, nunca "não é a vez" em tudo (revisão de segurança do #95)
+select pg_temp.como(:'gestor');
+begin read only;
+select pg_temp.erro_igual('select * from api.aprovacoes()', 'api.aprovacoes precisa de transação de escrita (chamar por POST)', 'aprovar: só leitura dá erro claro');
+rollback;
+select pg_temp.como(null);
+begin;
+select pg_temp.sis();
+insert into erp.pessoa_papeis values ('10000000-0000-0000-0000-000000000007', 'fornecedor') on conflict do nothing;
+select pg_temp.volta();
+select pg_temp.como(:'analista');
+select n.id as nat_ap from api.naturezas_lancaveis(:'ne_vm', :'cc_mkt', null) n order by n.codigo limit 1 \gset
+select api.lancar_titulo(jsonb_build_object(
+  'empresa', :'spe', 'fornecedor', '10000000-0000-0000-0000-000000000007', 'tipo', 'nfse', 'numero', 'AP-1',
+  'emissao', '2026-11-05', 'competencia', '2026-11-01', 'valor', 900,
+  'rateio', jsonb_build_array(jsonb_build_object('nucleo', :'ne_vm', 'centro', :'cc_mkt', 'natureza', :'nat_ap', 'percentual', 100)),
+  'parcelas', '[{"vencimento": "2026-11-20", "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"}]'::jsonb)) as tap \gset
+select pg_temp.como(null);
+select pg_temp.sis();
+insert into erp.centro_aprovadores values (:'cc_mkt', :'gestor') on conflict do nothing;
+insert into erp.listas_financeiro (lista, user_id) values ('AF', :'contador') on conflict do nothing;
+insert into erp.compromissos (id, empresa_id, tipo, pessoa_id, descricao, inicio, fim, periodicidade, valor_periodo, dia_vencimento)
+values ('8e000000-0000-0000-0000-000000000001', :'spe', 'assinatura', '10000000-0000-0000-0000-000000000007',
+        'Assinatura para aprovar', '2026-01-01', '2026-12-31', 'mensal', 300, 10);
+insert into erp.compromisso_rateios (compromisso_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+values ('8e000000-0000-0000-0000-000000000001', :'ne_vm', :'cc_mkt', :'nat_ap', 100);
+select pg_temp.volta();
+create temp table apr_conta as select (select count(*) from erp.titulo_aprovacoes) + (select count(*) from erp.compromisso_aprovacoes)
+                                      + (select count(*) from erp.previsao_aprovacoes) as n;
+grant select on apr_conta to public;
+-- quem só consulta não recebe nada; quem não vê o título não recebe a linha dele
+select pg_temp.como(:'leitor');
+select pg_temp.ok(not exists (select 1 from api.aprovacoes()), 'aprovar: quem só consulta não recebe a lista');
+select pg_temp.falha(format($$select api.decidir('titulo', %L, 'aprovar')$$, :'tap'), 'aprovar: quem só consulta não decide');
+-- a vez: o gestor do centro primeiro; quem lançou vê o motivo
+select pg_temp.como(:'gestor');
+select pg_temp.ok((select a.vez and a.esperando = 'gestor do centro, depois AF' and a.area = 'Marketing' and a.valor = 900
+                     from api.aprovacoes() a where a.tipo = 'titulo' and a.id = :'tap'),
+  'aprovar: é a vez do gestor do centro, e a linha diz quem ainda falta');
+select pg_temp.como(:'analista');
+select pg_temp.ok((select not a.vez and a.motivo = 'Quem lançou não aprova o próprio lançamento' from api.aprovacoes() a where a.tipo = 'titulo' and a.id = :'tap'),
+  'aprovar: quem lançou vê a linha sem a vez, com o motivo');
+select pg_temp.como(:'contador');
+select pg_temp.ok((select not a.vez and a.motivo = 'Esta fase de aprovação é do gestor da área' from api.aprovacoes() a where a.tipo = 'titulo' and a.id = :'tap'),
+  'aprovar: a AF espera a fase do gestor (em sequência)');
+-- a simulação não grava nada (master aprovaria tudo de uma vez)
+select pg_temp.como(:'diretor');
+select pg_temp.ok((select bool_and(a.vez) from api.aprovacoes() a where a.id in (:'tap', '8e000000-0000-0000-0000-000000000001'))
+                  and (select n from apr_conta) = (select count(*) from erp.titulo_aprovacoes) + (select count(*) from erp.compromisso_aprovacoes)
+                                                   + (select count(*) from erp.previsao_aprovacoes)
+                  and erp.etapa_titulo(:'tap') = 'aprovacao',
+  'aprovar: listar simula a decisão e não deixa nenhuma aprovação gravada (nem a do master)');
+-- decidir pela api
+select pg_temp.como(:'gestor');
+select pg_temp.erro_igual(format($$select api.decidir('titulo', %L, 'recusar')$$, :'tap'), 'Recusar exige justificativa', 'aprovar: recusar exige justificativa');
+select pg_temp.erro_igual(format($$select api.decidir('titulo', %L, 'talvez')$$, :'tap'), 'Decisão inválida', 'aprovar: decisão desconhecida é recusada');
+select pg_temp.erro_igual($$select api.decidir('contrato', '8e000000-0000-0000-0000-000000000001', 'revisao', 'x')$$, 'Só o título volta para revisão',
+  'aprovar: só o título volta para revisão');
+select pg_temp.ok(api.decidir('titulo', :'tap', 'aprovar') = 'pendente', 'aprovar: o gestor aprova e falta a AF');
+select pg_temp.ok((select not a.vez from api.aprovacoes() a where a.tipo = 'titulo' and a.id = :'tap'), 'aprovar: depois de aprovar, a vez sai do gestor');
+select pg_temp.como(:'contador');
+select pg_temp.ok((select a.vez and a.esperando = 'AF' from api.aprovacoes() a where a.tipo = 'titulo' and a.id = :'tap'), 'aprovar: agora é a vez da AF');
+select api.decidir('titulo', :'tap', 'aprovar') as dec_af \gset
+select pg_temp.ok(:'dec_af' = 'aprovado' and erp.etapa_titulo(:'tap') = 'aprovado'
+                  and not exists (select 1 from api.aprovacoes() a where a.id = :'tap'),
+  'aprovar: a AF aprova, o título sai da lista e segue para o Sienge');
+-- contrato recorrente: gestor do centro e AF ou AD, em qualquer ordem
+select pg_temp.ok((select a.vez and a.esperando like '%gestor de Marketing%' and a.esperando like '%AF ou AD%'
+                     from api.aprovacoes() a where a.tipo = 'contrato' and a.id = '8e000000-0000-0000-0000-000000000001'),
+  'aprovar: o contrato recorrente aparece com as vagas que faltam');
+select pg_temp.ok(api.decidir('contrato', '8e000000-0000-0000-0000-000000000001', 'aprovar') = 'pendente', 'aprovar: a AF aprova o contrato e falta o gestor');
+select pg_temp.como(:'gestor');
+select api.decidir('contrato', '8e000000-0000-0000-0000-000000000001', 'recusar', 'Valor acima do combinado') as dec_ct \gset
+select pg_temp.ok(:'dec_ct' = 'recusado'
+                  and not exists (select 1 from api.aprovacoes() a where a.id = '8e000000-0000-0000-0000-000000000001'),
+  'aprovar: o gestor recusa com justificativa e o contrato sai da lista');
+-- previsão lançada à mão: a mesma alçada do título
+select pg_temp.como(:'analista');
+insert into erp.previsoes (id, empresa_id, origem, pessoa_id, nucleo_economico_id, centro_custo_id, natureza_id, competencia, data_prevista, valor)
+values ('8e000000-0000-0000-0000-000000000002', :'spe', 'manual', '10000000-0000-0000-0000-000000000007', :'ne_vm', :'cc_mkt', :'nat_ap', '2026-12-01', '2026-12-10', 400);
+select pg_temp.ok((select not a.vez and a.motivo is not null from api.aprovacoes() a where a.tipo = 'previsao' and a.id = '8e000000-0000-0000-0000-000000000002'),
+  'aprovar: quem lançou a previsão vê a linha sem a vez');
+select pg_temp.como(:'gestor');
+select pg_temp.ok((select a.vez and a.data = '2026-12-10' and a.valor = 400 from api.aprovacoes() a where a.tipo = 'previsao' and a.id = '8e000000-0000-0000-0000-000000000002'),
+  'aprovar: a previsão à mão aparece na vez do gestor do centro');
+select pg_temp.ok(api.decidir('previsao', '8e000000-0000-0000-0000-000000000002', 'aprovar') in ('pendente', 'aprovado'), 'aprovar: o gestor aprova a previsão pela api');
+-- para cada usuário, a lista só tem o que ele vê
+select pg_temp.como(null);
+do $$
+declare r record; x record;
+begin
+  for r in select u.id::text as id from erp.usuarios u where u.ativo loop
+    perform pg_temp.como(r.id);
+    for x in select * from api.aprovacoes() loop
+      if (x.tipo = 'titulo' and not erp.vejo_titulo(x.id)) or (x.tipo = 'previsao' and not erp.vejo_previsao(x.id))
+         or (x.tipo = 'contrato' and not erp.vejo_compromisso(x.id)) then
+        raise exception 'FALHOU: % recebe na lista de aprovação % que não vê', r.id, x.id;
+      end if;
+    end loop;
+  end loop;
+  perform pg_temp.como(null);
+end $$;
+select pg_temp.ok(true, 'aprovar: para cada usuário, a lista só traz títulos, previsões e contratos que ele vê');
+select pg_temp.como(null);
+rollback;
+
+\echo '# contas recorrentes pela tela (api.salvar_conta e conta de consumo, 20/11/2026)'
+select pg_temp.como(null);
+begin;
+select pg_temp.sis();
+insert into erp.pessoa_papeis values ('10000000-0000-0000-0000-000000000007', 'fornecedor') on conflict do nothing;
+insert into erp.centro_aprovadores values (:'cc_mkt', :'gestor') on conflict do nothing;
+insert into erp.listas_financeiro (lista, user_id) values ('AF', :'contador') on conflict do nothing;
+select pg_temp.volta();
+select pg_temp.como(:'analista');
+select n.id as nat_cr from api.naturezas_lancaveis(:'ne_vm', :'cc_mkt', null) n order by n.codigo limit 1 \gset
+select jsonb_build_object('empresa', :'spe', 'tipo', 'consumo', 'fornecedor', '10000000-0000-0000-0000-000000000007',
+         'descricao', 'Luz do PDV', 'inicio', '2026-11-01', 'dia_vencimento', 6, 'instalacao', '0012.345-6',
+         'faixa_mensal', 1500, 'teto_anual', 16000,
+         'rateio', jsonb_build_array(jsonb_build_object('nucleo', :'ne_vm', 'centro', :'cc_mkt', 'natureza', :'nat_cr', 'percentual', 100))) as cbase \gset
+-- quem só consulta não grava
+select pg_temp.como(:'leitor');
+select pg_temp.falha(format('select api.salvar_conta(%L::jsonb)', :'cbase'), 'conta: quem só consulta não cadastra');
+-- a conta de consumo pede instalação, faixa e teto; o rateio soma 100%
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format('select api.salvar_conta(%L::jsonb)', (:'cbase'::jsonb - 'instalacao')::text),
+  'Informe a instalação, a média esperada por mês e o teto no ano', 'conta: consumo sem instalação é recusado');
+select pg_temp.erro_igual(format('select api.salvar_conta(%L::jsonb)', jsonb_set(:'cbase'::jsonb, '{rateio,0,percentual}', '60')::text),
+  'O rateio precisa somar 100%', 'conta: rateio que não soma 100% é recusado');
+select api.salvar_conta(:'cbase'::jsonb) as ccons \gset
+select pg_temp.ok((select c.tipo = 'consumo' and c.periodicidade = 'mensal' and c.faixa_mensal = 1500
+                     and c.valor_periodo is null from erp.compromissos c where c.id = :'ccons'), 'conta: consumo gravado, mensal');
+select aprovacao_versao as cver from erp.compromissos where id = :'ccons' \gset
+select pg_temp.ok((select not x.aprovado and x.instalacao = '0012.345-6' and x.teto_anual = 16000 and x.posso_alterar
+                     from api.contratos() x where x.id = :'ccons'), 'conta: aparece na lista, em aprovação, e quem lançou altera');
+-- a mesma instalação (escrita de outro jeito) do mesmo fornecedor na mesma empresa não entra duas vezes
+select pg_temp.falha(format('select api.salvar_conta(%L::jsonb)', jsonb_set(:'cbase'::jsonb, '{instalacao}', '"00123456"')::text),
+  'conta: a mesma instalação não entra duas vezes');
+-- vai para a tela Para aprovar com a faixa como valor; o gestor tem a vez, quem lançou não
+select pg_temp.como(:'gestor');
+select pg_temp.ok((select a.vez and a.valor = 1500 from api.aprovacoes() a where a.tipo = 'contrato' and a.id = :'ccons'),
+  'conta: consumo na tela Para aprovar, na vez do gestor, pela faixa');
+select pg_temp.como(:'analista');
+select pg_temp.ok((select not a.vez from api.aprovacoes() a where a.tipo = 'contrato' and a.id = :'ccons'), 'conta: quem lançou não aprova a conta');
+-- api.conta devolve o cadastro para alterar
+select pg_temp.ok((select (x->>'instalacao') = '0012.345-6' and jsonb_array_length(x->'rateio') = 1
+                     and (x->'rateio'->0->>'percentual')::numeric = 100 from api.conta(:'ccons') x), 'conta: o cadastro volta para a tela de alterar');
+-- alterar sem mudar nada não reabre a aprovação; mudar a faixa reabre
+select api.salvar_conta(:'cbase'::jsonb || jsonb_build_object('id', :'ccons'));
+select pg_temp.ok((select aprovacao_versao = :cver from erp.compromissos where id = :'ccons'), 'conta: salvar igual não muda a versão');
+select api.salvar_conta(:'cbase'::jsonb || jsonb_build_object('id', :'ccons', 'faixa_mensal', 1800));
+select pg_temp.ok((select aprovacao_versao = :cver + 1 and faixa_mensal = 1800 from erp.compromissos where id = :'ccons'), 'conta: mudar a faixa pede aprovação de novo');
+select api.salvar_conta(:'cbase'::jsonb || jsonb_build_object('id', :'ccons', 'faixa_mensal', 1800, 'instalacao', '0099'));
+select pg_temp.ok((select aprovacao_versao = :cver + 2 and instalacao = '0099' from erp.compromissos where id = :'ccons'), 'conta: mudar a instalação pede aprovação de novo');
+select api.salvar_conta(:'cbase'::jsonb || jsonb_build_object('id', :'ccons', 'faixa_mensal', 1800, 'instalacao', '0099', 'teto_anual', 99000));
+select pg_temp.ok((select aprovacao_versao = :cver + 3 and teto_anual = 99000 from erp.compromissos where id = :'ccons'), 'conta: mudar o teto pede aprovação de novo');
+-- o vencimento do consumo é opcional e muda sem nova aprovação (é o que a fatura traz; Moises, 20/11/2026)
+select api.salvar_conta(:'cbase'::jsonb || jsonb_build_object('id', :'ccons', 'faixa_mensal', 1800, 'instalacao', '0099', 'teto_anual', 99000, 'dia_vencimento', 12));
+select pg_temp.ok((select aprovacao_versao = :cver + 3 and dia_vencimento = 12 from erp.compromissos where id = :'ccons'), 'conta: mudar o vencimento do consumo não pede aprovação de novo');
+select api.salvar_conta((:'cbase'::jsonb - 'dia_vencimento') || jsonb_build_object('id', :'ccons', 'faixa_mensal', 1800, 'instalacao', '0099', 'teto_anual', 99000));
+select pg_temp.ok((select aprovacao_versao = :cver + 3 and dia_vencimento is null from erp.compromissos where id = :'ccons'), 'conta: o consumo fica sem vencimento');
+-- quem só lê vê a conta sem poder alterar; quem não lança no centro também não
+select pg_temp.como(:'leitor');
+select pg_temp.ok((select coalesce(bool_and(not x.posso_alterar), true) and count(*) > 0 from api.contratos() x where x.id = :'ccons'), 'conta: quem só lê vê a conta e não altera');
+select pg_temp.sis();
+insert into erp.excecoes_centro (user_id, nucleo_economico_id, centro_custo_id, nivel) values (:'analista2', :'ne_vm', :'cc_mkt', 'leitor')
+  on conflict (user_id, nucleo_economico_id, centro_custo_id) do update set nivel = 'leitor', fim = null;
+select pg_temp.volta();
+select pg_temp.como(:'analista2');
+select pg_temp.ok((select coalesce(bool_and(not x.posso_alterar), true) and count(*) > 0 from api.contratos() x where x.id = :'ccons'), 'conta: quem vê e não lança no centro não altera');
+select pg_temp.como(:'analista');
+-- o tipo não muda pela alteração
+select pg_temp.erro_igual(format('select api.salvar_conta(%L::jsonb)', (:'cbase'::jsonb || jsonb_build_object('id', :'ccons', 'tipo', 'assinatura',
+  'valor_periodo', 100, 'periodicidade', 'mensal'))::text), 'Conta não encontrada, encerrada ou sem permissão para alterar', 'conta: o tipo não muda');
+-- contrato de serviço por valor total e assinatura mensal
+select api.salvar_conta(jsonb_build_object('empresa', :'spe', 'tipo', 'contrato', 'fornecedor', '10000000-0000-0000-0000-000000000007',
+  'descricao', 'Agência 12 meses', 'inicio', '2026-12-01', 'fim', '2027-11-30', 'valor_total', 24000, 'instalacao', 'X',
+  'rateio', :'cbase'::jsonb->'rateio')) as cctr \gset
+select pg_temp.ok((select c.tipo = 'contrato' and c.valor_total = 24000 and c.instalacao is null from erp.compromissos c where c.id = :'cctr'),
+  'conta: contrato de serviço gravado sem campos de consumo');
+select pg_temp.erro_igual(format('select api.salvar_conta(%L::jsonb)', jsonb_build_object('empresa', :'spe', 'tipo', 'assinatura',
+  'fornecedor', '10000000-0000-0000-0000-000000000007', 'descricao', 'Software', 'inicio', '2026-12-01', 'valor_periodo', 200,
+  'rateio', :'cbase'::jsonb->'rateio')::text), 'Informe o valor e a periodicidade', 'conta: assinatura sem periodicidade é recusada');
+-- conta encerrada não se altera e sai do "posso alterar"
+select pg_temp.sis();
+update erp.compromissos set situacao = 'encerrado' where id = :'ccons';
+select pg_temp.volta();
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format('select api.salvar_conta(%L::jsonb)', (:'cbase'::jsonb || jsonb_build_object('id', :'ccons', 'faixa_mensal', 2000))::text),
+  'Conta não encontrada, encerrada ou sem permissão para alterar', 'conta: conta encerrada não se altera');
+select pg_temp.ok((select not x.posso_alterar from api.contratos() x where x.id = :'ccons'), 'conta: conta encerrada sai do posso alterar');
+-- contrato sem nada ligado: o fornecedor e o valor mudam (corrige cadastro errado)
+select api.salvar_conta(jsonb_build_object('id', :'cctr', 'empresa', :'spe', 'tipo', 'contrato', 'fornecedor', '10000000-0000-0000-0000-000000000005',
+  'descricao', 'Agência 12 meses', 'inicio', '2026-12-01', 'fim', '2027-11-30', 'valor_total', 1, 'rateio', :'cbase'::jsonb->'rateio'));
+select pg_temp.ok((select pessoa_id = '10000000-0000-0000-0000-000000000005' and valor_total = 1 from erp.compromissos where id = :'cctr'),
+  'conta: sem nota, título ou previsão, o fornecedor e o valor mudam');
+-- contrato só com nota (cancelada): já está ligado, mas o cancelado não conta no lançado
+select pg_temp.sis();
+update erp.compromissos set valor_total = 10000 where id = :'cctr';
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, compromisso_id, tipo, numero, emissao, competencia, valor_bruto, situacao)
+values ('70000000-0000-0000-0000-0000000096a1', :'spe', '10000000-0000-0000-0000-000000000005', :'cctr', 'nfse', '96-1', '2026-12-05', '2026-12-01', 4000, 'rascunho');
+set local role erp_situacao;
+update erp.documentos_fiscais set situacao = 'cancelado' where id = '70000000-0000-0000-0000-0000000096a1';
+reset role;
+select pg_temp.ok((select v.ligado and v.lancado = 0 from erp.compromisso_vinculos(:'cctr') v), 'conta: contrato só com nota cancelada está ligado e não tem lançado');
+select pg_temp.volta();
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format('update erp.compromissos set pessoa_id = %L where id = %L', '10000000-0000-0000-0000-000000000007', :'cctr'),
+  'O fornecedor não muda: o contrato já tem nota, título ou previsão; encerre e cadastre outro', 'conta: contrato só com nota não troca de fornecedor');
+-- título sem nota conta no lançado; nota não cancelada também
+select pg_temp.sis();
+select pg_temp.como(:'analista');
+set local role erp_situacao;
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, compromisso_id, emissao, competencia, valor, situacao)
+values ('81000000-0000-0000-0000-0000000096a1', :'spe', 'avulso', '10000000-0000-0000-0000-000000000005', :'cctr', '2026-12-05', '2026-12-01', 300, 'rascunho');
+reset role;
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, compromisso_id, tipo, numero, emissao, competencia, valor_bruto)
+values ('70000000-0000-0000-0000-0000000096a2', :'spe', '10000000-0000-0000-0000-000000000005', :'cctr', 'nfse', '96-2', '2026-12-05', '2026-12-01', 200);
+select pg_temp.ok((select v.lancado = 500 from erp.compromisso_vinculos(:'cctr') v), 'conta: lançado = título sem nota + nota não cancelada');
+select pg_temp.volta();
+select pg_temp.como(:'analista');
+select pg_temp.falha(format('update erp.compromissos set valor_total = 499.99 where id = %L', :'cctr'), 'conta: o valor não fica abaixo do título sem nota + nota');
+-- direto no banco, sem a api: consumo sem instalação é recusado
+select pg_temp.falha(format($$insert into erp.compromissos (empresa_id, tipo, pessoa_id, descricao, inicio, periodicidade, dia_vencimento, faixa_mensal, teto_anual)
+  values (%L, 'consumo', '10000000-0000-0000-0000-000000000007', 'X', '2026-12-01', 'mensal', 5, 10, 100)$$, :'spe'), 'conta: consumo sem instalação é recusado também direto no banco');
+-- contrato com nota ligada (CT-1, revisão do #96): o fornecedor não muda e o valor não fica abaixo do lançado, em qualquer caminho
+select pg_temp.sis();
+select pg_temp.ok((select v.ligado and v.lancado > 1 from erp.compromisso_vinculos('60000000-0000-0000-0000-000000000002') v),
+  'conta: (teste) o CT-1 tem nota ligada e valor lançado');
+select (erp.compromisso_vinculos('60000000-0000-0000-0000-000000000002')).lancado as ct1_lanc \gset
+select pg_temp.volta();
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual($$update erp.compromissos set pessoa_id = '10000000-0000-0000-0000-000000000007' where id = '60000000-0000-0000-0000-000000000002'$$,
+  'O fornecedor não muda: o contrato já tem nota, título ou previsão; encerre e cadastre outro', 'conta: o fornecedor do contrato com nota não muda');
+select pg_temp.falha($$update erp.compromissos set valor_total = 1 where id = '60000000-0000-0000-0000-000000000002'$$,
+  'conta: o valor do contrato não fica abaixo do já lançado');
+select pg_temp.falha(format('update erp.compromissos set valor_total = %s where id = %L', :ct1_lanc - 0.01, '60000000-0000-0000-0000-000000000002'),
+  'conta: um centavo abaixo do lançado também é recusado');
+update erp.compromissos set valor_total = :ct1_lanc where id = '60000000-0000-0000-0000-000000000002';
+select pg_temp.ok((select valor_total = :ct1_lanc from erp.compromissos where id = '60000000-0000-0000-0000-000000000002'),
+  'conta: o valor igual ao lançado é aceito');
+-- corrida (revisão do #96): a troca de fornecedor ou valor e a nota no mesmo contrato tomam a mesma trava; não se
+-- testa a espera numa conexão só, então confere que os dois gatilhos a tomam
+select pg_temp.ok((select bool_and(pg_get_functiondef(f) like '%pg_advisory_xact_lock(hashtext(''erp.compromisso:''%')
+                     from unnest(array['erp.tg_compromisso_vinculado()'::regprocedure, 'erp.tg_contrato_confere()'::regprocedure]) f),
+  'conta: o contrato e a nota que entra nele tomam a mesma trava');
+
+-- previsão mês a mês (Moises, 23/11/2026). A conferência do calendário roda no fim da transação; aqui, que tudo é
+-- uma transação só, "set constraints ... immediate" a roda na hora.
+select pg_temp.como(:'analista');
+select jsonb_build_object('empresa', :'spe', 'tipo', 'contrato', 'fornecedor', '10000000-0000-0000-0000-000000000007',
+         'descricao', 'Agência trimestre', 'inicio', '2027-01-01', 'fim', '2027-03-31', 'valor_total', 3000,
+         'rateio', :'cbase'::jsonb->'rateio') as kbase \gset
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('meses', jsonb_build_array(
+  jsonb_build_object('mes', '2027-01-01', 'valor', 1000), jsonb_build_object('mes', '2027-02-01', 'valor', 500),
+  jsonb_build_object('mes', '2027-03-01', 'valor', 1500)))) as kctr \gset
+set constraints erp.t_meses_conferem immediate;
+set constraints erp.t_meses_conferem deferred;
+select pg_temp.ok((select jsonb_array_length(x->'meses') = 3 and (x->'meses'->1->>'valor')::numeric = 500 and x->'trava_antes' = 'null'::jsonb
+                     from api.conta(:'kctr') x), 'mês a mês: o contrato grava um valor por mês e devolve o calendário');
+select aprovacao_versao as kver from erp.compromissos where id = :'kctr' \gset
+-- cada caso errado: grava, roda a conferência e volta
+savepoint sp_mes;
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'meses', jsonb_build_array(
+  jsonb_build_object('mes', '2027-01-01', 'valor', 1000), jsonb_build_object('mes', '2027-02-01', 'valor', 500),
+  jsonb_build_object('mes', '2027-03-01', 'valor', 1000))));
+select pg_temp.erro_igual('set constraints erp.t_meses_conferem immediate',
+  'A soma dos meses (R$ 2.500,00) não bate com o valor do contrato (R$ 3.000,00)', 'mês a mês: a soma tem de bater com o valor do contrato');
+rollback to savepoint sp_mes;
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'valor_total', 3500));
+select pg_temp.erro_igual('set constraints erp.t_meses_conferem immediate',
+  'A soma dos meses (R$ 3.000,00) não bate com o valor do contrato (R$ 3.500,00)', 'mês a mês: mudar só o valor do contrato também confere a soma');
+rollback to savepoint sp_mes;
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'meses', jsonb_build_array(
+  jsonb_build_object('mes', '2027-01-01', 'valor', 1000), jsonb_build_object('mes', '2027-02-01', 'valor', 2000))));
+select pg_temp.erro_igual('set constraints erp.t_meses_conferem immediate',
+  'O calendário do contrato precisa ter todos os meses da vigência', 'mês a mês: o contrato tem todos os meses da vigência');
+rollback to savepoint sp_mes;
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'meses', jsonb_build_array(
+  jsonb_build_object('mes', '2027-01-01', 'valor', 1000), jsonb_build_object('mes', '2027-02-01', 'valor', 500),
+  jsonb_build_object('mes', '2027-03-01', 'valor', 1000), jsonb_build_object('mes', '2027-04-01', 'valor', 500))));
+select pg_temp.erro_igual('set constraints erp.t_meses_conferem immediate',
+  'Há mês do calendário fora da vigência', 'mês a mês: mês fora da vigência é recusado');
+rollback to savepoint sp_mes;
+select api.salvar_conta((:'kbase'::jsonb - 'fim') || jsonb_build_object('id', :'kctr'));
+select pg_temp.erro_igual('set constraints erp.t_meses_conferem immediate',
+  'Contrato com previsão mês a mês precisa da data de fim', 'mês a mês: contrato com calendário tem data de fim');
+rollback to savepoint sp_mes;
+select pg_temp.erro_igual(format('select api.salvar_conta(%L::jsonb)', (:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'meses',
+  jsonb_build_array(jsonb_build_object('mes', '2027-01-01', 'valor', -1))))::text),
+  'Cada mês precisa da data e de um valor (zero ou mais)', 'mês a mês: valor negativo é recusado');
+rollback to savepoint sp_mes;
+set constraints erp.t_meses_conferem deferred;
+-- mudar um mês: versão nova (volta para a aprovação); salvar sem mandar os meses não mexe neles
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr'));
+select pg_temp.ok((select aprovacao_versao = :kver from erp.compromissos where id = :'kctr')
+                  and (select count(*) = 3 from erp.compromisso_meses where compromisso_id = :'kctr'),
+  'mês a mês: salvar sem os meses não mexe no calendário nem na versão');
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'meses', jsonb_build_array(
+  jsonb_build_object('mes', '2027-01-01', 'valor', 1200), jsonb_build_object('mes', '2027-02-01', 'valor', 500),
+  jsonb_build_object('mes', '2027-03-01', 'valor', 1300))));
+set constraints erp.t_meses_conferem immediate;
+set constraints erp.t_meses_conferem deferred;
+select pg_temp.ok((select aprovacao_versao > :kver and alterado_por = :'analista' from erp.compromissos where id = :'kctr'),
+  'mês a mês: mudar um mês pede aprovação de novo');
+-- assinatura bimestral não tem calendário; consumo: os meses do ano até o teto
+savepoint sp_mes;
+select api.salvar_conta(jsonb_build_object('empresa', :'spe', 'tipo', 'assinatura', 'fornecedor', '10000000-0000-0000-0000-000000000007',
+  'descricao', 'Software bimestral', 'inicio', '2027-01-01', 'valor_periodo', 200, 'periodicidade', 'bimestral', 'rateio', :'cbase'::jsonb->'rateio',
+  'meses', jsonb_build_array(jsonb_build_object('mes', '2027-01-01', 'valor', 200))));
+select pg_temp.erro_igual('set constraints erp.t_meses_conferem immediate',
+  'A previsão mês a mês só vale para conta mensal', 'mês a mês: assinatura bimestral não tem calendário');
+rollback to savepoint sp_mes;
+select api.salvar_conta(:'cbase'::jsonb || jsonb_build_object('instalacao', 'C-2', 'faixa_mensal', 1000, 'teto_anual', 5000, 'inicio', '2027-01-01',
+  'meses', (select jsonb_agg(jsonb_build_object('mes', m, 'valor', 1000)) from generate_series('2027-01-01'::date, '2027-06-01', '1 month') m)));
+select pg_temp.erro_igual('set constraints erp.t_meses_conferem immediate',
+  'Os meses de 2027 somam R$ 6.000,00, acima do teto no ano (R$ 5.000,00)', 'mês a mês: no consumo, os meses do ano não passam do teto');
+rollback to savepoint sp_mes;
+set constraints erp.t_meses_conferem deferred;
+-- o valor de cada mês nas previsões; sem fim, depois do último mês vale o último; mês com zero não gera previsão
+select api.salvar_conta(jsonb_build_object('empresa', :'spe', 'tipo', 'assinatura', 'fornecedor', '10000000-0000-0000-0000-000000000007',
+  'descricao', 'Software mensal', 'inicio', '2027-01-01', 'valor_periodo', 100, 'periodicidade', 'mensal', 'dia_vencimento', 10,
+  'rateio', :'cbase'::jsonb->'rateio', 'meses', jsonb_build_array(jsonb_build_object('mes', '2027-01-01', 'valor', 100),
+  jsonb_build_object('mes', '2027-02-01', 'valor', 0), jsonb_build_object('mes', '2027-03-01', 'valor', 250)))) as kass \gset
+set constraints erp.t_meses_conferem immediate;
+set constraints erp.t_meses_conferem deferred;
+select pg_temp.ok(erp.valor_do_mes(:'kass', '2027-01-15') = 100 and erp.valor_do_mes(:'kass', '2027-02-01') = 0
+                  and erp.valor_do_mes(:'kass', '2027-07-01') = 250 and erp.valor_do_mes(:'kctr', '2027-03-01') = 1300,
+  'mês a mês: o valor do mês é o do calendário e, sem fim, depois do último vale o último');
+select pg_temp.sis();
+select erp.gerar_previsoes_assinatura(:'kass', '2027-04-30');
+select pg_temp.ok((select count(distinct competencia) = 3 and sum(valor) = 600
+                          and bool_and(competencia in ('2027-01-01', '2027-03-01', '2027-04-01'))
+                     from erp.previsoes where compromisso_id = :'kass'),
+  'mês a mês: as previsões da assinatura saem com o valor de cada mês, e o mês com zero não gera previsão');
+-- depois da primeira aprovação, mês que já passou não muda
+select jsonb_build_object('empresa', :'spe', 'tipo', 'contrato', 'fornecedor', '10000000-0000-0000-0000-000000000007',
+         'descricao', 'Contrato em curso', 'inicio', erp.mes(current_date) - interval '2 months',
+         'fim', erp.mes(current_date) + interval '2 months' - interval '1 day', 'valor_total', 400, 'rateio', :'cbase'::jsonb->'rateio') as pbase,
+       jsonb_build_object('mes', erp.mes(current_date) - interval '2 months', 'valor', 100) as pm2,
+       jsonb_build_object('mes', erp.mes(current_date) - interval '1 month', 'valor', 100) as pm1,
+       erp.mes(current_date) as p0, erp.mes((current_date + interval '1 month')::date) as p1 \gset
+select pg_temp.volta();
+select api.salvar_conta(:'pbase'::jsonb || jsonb_build_object('meses', jsonb_build_array(:'pm2'::jsonb, :'pm1'::jsonb,
+  jsonb_build_object('mes', :'p0', 'valor', 100), jsonb_build_object('mes', :'p1', 'valor', 100)))) as kcur \gset
+set constraints erp.t_meses_conferem immediate;
+set constraints erp.t_meses_conferem deferred;
+select pg_temp.sis();
+set local role erp_situacao;
+insert into erp.compromisso_aprovacoes (compromisso_id, versao, vaga, aprovado, por)
+select id, aprovacao_versao, 'FIN', true, :'contador' from erp.compromissos where id = :'kcur';
+reset role;
+select pg_temp.volta();
+select pg_temp.ok((select (x->>'trava_antes')::date = :'p0'::date from api.conta(:'kcur') x), 'mês a mês: a conta aprovada diz desde que mês o calendário muda');
+select pg_temp.erro_igual(format('select api.salvar_conta(%L::jsonb)', (:'pbase'::jsonb || jsonb_build_object('id', :'kcur', 'meses', jsonb_build_array(
+  jsonb_set(:'pm2'::jsonb, '{valor}', '50'), :'pm1'::jsonb, jsonb_build_object('mes', :'p0', 'valor', 100), jsonb_build_object('mes', :'p1', 'valor', 150))))::text),
+  'Mês que já passou não muda no calendário', 'mês a mês: depois de aprovada, mês que já passou não muda');
+select api.salvar_conta(:'pbase'::jsonb || jsonb_build_object('id', :'kcur', 'meses', jsonb_build_array(:'pm2'::jsonb, :'pm1'::jsonb,
+  jsonb_build_object('mes', :'p0', 'valor', 50), jsonb_build_object('mes', :'p1', 'valor', 150))));
+set constraints erp.t_meses_conferem immediate;
+set constraints erp.t_meses_conferem deferred;
+select pg_temp.ok((select valor = 150 from erp.compromisso_meses where compromisso_id = :'kcur' and competencia = :'p1'),
+  'mês a mês: o mês atual e os de depois mudam');
+-- quem só consulta não grava meses
+select pg_temp.como(:'leitor');
+select pg_temp.falha(format($$insert into erp.compromisso_meses values (%L, '2027-01-01', 1)$$, :'kass'), 'mês a mês: quem só consulta não grava o calendário');
+select pg_temp.como(:'analista');
+
+-- como paga (Moises, 23/11/2026): PIX fixo, TED ou vem com cada cobrança; parte do cadastro aprovado. A conferência
+-- (chave CPF/CNPJ e conta da TED do fornecedor) roda no fim da transação, como a do calendário.
+select aprovacao_versao as kver from erp.compromissos where id = :'kctr' \gset
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento',
+  jsonb_build_object('modo', 'pix', 'pix_tipo', 'cpf_cnpj', 'pix_chave', '77777777000177')));
+set constraints erp.t_pagamento_confere immediate;
+set constraints erp.t_pagamento_confere deferred;
+select pg_temp.ok((select x->'pagamento'->>'modo' = 'pix' and x->'pagamento'->>'pix_chave' = '77777777000177' from api.conta(:'kctr') x)
+                  and (select aprovacao_versao > :kver from erp.compromissos where id = :'kctr'),
+  'como paga: o PIX fixo entra no cadastro e pede aprovação de novo');
+select aprovacao_versao as kver from erp.compromissos where id = :'kctr' \gset
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento',
+  jsonb_build_object('modo', 'pix', 'pix_tipo', 'cpf_cnpj', 'pix_chave', '77777777000177')));
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr'));
+select pg_temp.ok((select aprovacao_versao = :kver from erp.compromissos where id = :'kctr')
+                  and exists (select 1 from erp.compromisso_pagamentos where compromisso_id = :'kctr'),
+  'como paga: salvar a mesma forma, ou sem mandar a forma, não pede aprovação de novo');
+savepoint sp_pag;
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento',
+  jsonb_build_object('modo', 'pix', 'pix_tipo', 'cpf_cnpj', 'pix_chave', '12345678000199')));
+select pg_temp.erro_igual('set constraints erp.t_pagamento_confere immediate',
+  'A chave PIX por CPF/CNPJ não é o documento do fornecedor (só com a justificativa da exceção)', 'como paga: chave CPF/CNPJ de outra pessoa sem justificativa é recusada');
+rollback to savepoint sp_pag;
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento',
+  jsonb_build_object('modo', 'ted', 'banco', '341', 'agencia', '1234', 'conta', '56789', 'conta_digito', '0',
+                     'conta_tipo', 'corrente', 'titular_documento', '12345678000199')));
+select pg_temp.erro_igual('set constraints erp.t_pagamento_confere immediate',
+  'A conta da TED não é do fornecedor (só com a justificativa da exceção)', 'como paga: TED para conta de outra pessoa sem justificativa é recusada');
+rollback to savepoint sp_pag;
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento',
+  jsonb_build_object('modo', 'ted', 'banco', '341', 'agencia', '1234', 'conta', '56789', 'conta_digito', '0',
+                     'conta_tipo', 'corrente', 'titular_documento', '12345678000199', 'excecao', 'Conta da administradora')));
+set constraints erp.t_pagamento_confere immediate;
+set constraints erp.t_pagamento_confere deferred;
+select pg_temp.ok((select excecao = 'Conta da administradora' from erp.compromisso_pagamentos where compromisso_id = :'kctr'),
+  'como paga: TED para outra pessoa entra com a justificativa, que fica para quem aprova');
+rollback to savepoint sp_pag;
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento',
+  jsonb_build_object('modo', 'ted', 'banco', '341', 'agencia', '1234', 'agencia_digito', 'x', 'conta', '56789', 'conta_digito', '0',
+                     'conta_tipo', 'poupanca', 'titular_documento', '77777777000177', 'excecao', 'sobrou')));
+set constraints erp.t_pagamento_confere immediate;
+set constraints erp.t_pagamento_confere deferred;
+select pg_temp.ok((select excecao is null and agencia_digito = 'X' from erp.compromisso_pagamentos where compromisso_id = :'kctr'),
+  'como paga: TED para a conta do fornecedor entra, e a justificativa que sobra some');
+-- trocar o fornecedor confere de novo
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'fornecedor', '10000000-0000-0000-0000-000000000008'));
+select pg_temp.erro_igual('set constraints erp.t_pagamento_confere immediate',
+  'A conta da TED não é do fornecedor (só com a justificativa da exceção)', 'como paga: trocar o fornecedor confere a conta de novo');
+rollback to savepoint sp_pag;
+select pg_temp.falha(format('select api.salvar_conta(%L::jsonb)', (:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento',
+  jsonb_build_object('modo', 'pix', 'pix_tipo', 'email', 'pix_chave', 'nao é email')))::text), 'como paga: chave PIX inválida é recusada');
+rollback to savepoint sp_pag;
+select pg_temp.falha(format('select api.salvar_conta(%L::jsonb)', (:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento',
+  jsonb_build_object('modo', 'ted', 'banco', '341')))::text), 'como paga: TED sem a conta inteira é recusada');
+rollback to savepoint sp_pag;
+select aprovacao_versao as kver from erp.compromissos where id = :'kctr' \gset
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento', jsonb_build_object('modo', 'cobranca')));
+select pg_temp.ok((select x->'pagamento'->>'modo' = 'cobranca' from api.conta(:'kctr') x)
+                  and (select aprovacao_versao > :kver from erp.compromissos where id = :'kctr'),
+  'como paga: "vem com cada cobrança" também é forma cadastrada e pede aprovação');
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento', null));
+select pg_temp.ok((select x->'pagamento' = 'null'::jsonb from api.conta(:'kctr') x), 'como paga: mandar a forma nula tira a forma');
+select pg_temp.como(:'leitor');
+select pg_temp.falha(format($$insert into erp.compromisso_pagamentos (compromisso_id, modo) values (%L, 'cobranca')$$, :'kctr'),
+  'como paga: quem só consulta não grava a forma');
+select pg_temp.como(:'analista');
+
+-- revisão de segurança do #119: o que muda só o calendário ou só a forma também conta como quem alterou, e a volta
+-- da aprovação vale para tirar; as conferências do cadastro rodam mesmo sem passar por api.salvar_conta
+select pg_temp.sis();
+set local role erp_situacao;
+update erp.compromissos set alterado_por = :'contador' where id = :'kctr';
+reset role;
+select pg_temp.volta();
+update erp.compromisso_meses set valor = valor + 100 where compromisso_id = :'kctr' and competencia = '2027-01-01';
+update erp.compromisso_meses set valor = valor - 100 where compromisso_id = :'kctr' and competencia = '2027-02-01';
+set constraints erp.t_meses_conferem immediate;
+set constraints erp.t_meses_conferem deferred;
+select pg_temp.ok((select alterado_por = :'analista' from erp.compromissos where id = :'kctr'),
+  'mês a mês: quem muda só o calendário passa a ser quem alterou (e não aprova a versão nova)');
+select pg_temp.sis();
+set local role erp_situacao;
+update erp.compromissos set alterado_por = :'contador' where id = :'kctr';
+reset role;
+select pg_temp.volta();
+insert into erp.compromisso_pagamentos (compromisso_id, modo) values (:'kctr', 'cobranca');
+select pg_temp.ok((select alterado_por = :'analista' from erp.compromissos where id = :'kctr'),
+  'como paga: quem muda só a forma passa a ser quem alterou (e não aprova a versão nova)');
+select aprovacao_versao as kver from erp.compromissos where id = :'kctr' \gset
+update erp.compromisso_pagamentos set modo = modo where compromisso_id = :'kctr';
+select pg_temp.ok((select aprovacao_versao = :kver from erp.compromissos where id = :'kctr'),
+  'como paga: regravar a forma igual não pede aprovação de novo');
+delete from erp.compromisso_pagamentos where compromisso_id = :'kctr';
+select pg_temp.ok((select aprovacao_versao > :kver from erp.compromissos where id = :'kctr'),
+  'como paga: tirar a forma também volta o cadastro para a aprovação');
+savepoint sp_rev;
+-- mudar o valor ou o fim do contrato sem acertar os meses é recusado (sem api.salvar_conta)
+select pg_temp.sis();
+update erp.compromissos set valor_total = 3500 where id = :'kctr';
+select pg_temp.erro_igual('set constraints erp.t_meses_conferem immediate',
+  'A soma dos meses (R$ 3.000,00) não bate com o valor do contrato (R$ 3.500,00)', 'mês a mês: mudar o valor do contrato direto também confere a soma');
+rollback to savepoint sp_rev;
+select pg_temp.sis();
+update erp.compromissos set fim = '2027-04-30' where id = :'kctr';
+select pg_temp.erro_igual('set constraints erp.t_meses_conferem immediate',
+  'O calendário do contrato precisa ter todos os meses da vigência', 'mês a mês: mudar o fim do contrato direto também confere os meses');
+rollback to savepoint sp_rev;
+-- incluir um mês que já passou, depois da aprovação, é recusado
+select pg_temp.sis();
+delete from erp.compromisso_meses where compromisso_id = :'kcur' and competencia = (:'pm2'::jsonb->>'mes')::date;
+select pg_temp.volta();
+select pg_temp.erro_igual(format('insert into erp.compromisso_meses values (%L, %L, 100)', :'kcur', :'pm2'::jsonb->>'mes'),
+  'Mês que já passou não muda no calendário', 'mês a mês: depois de aprovada, não se inclui mês que já passou');
+rollback to savepoint sp_rev;
+-- trocar o fornecedor e manter a chave CPF/CNPJ do anterior exige a exceção (sem api.salvar_conta)
+select pg_temp.volta();
+insert into erp.compromisso_pagamentos (compromisso_id, modo, pix_tipo, pix_chave) values (:'kctr', 'pix', 'cpf_cnpj', '77777777000177');
+set constraints erp.t_pagamento_confere immediate;
+set constraints erp.t_pagamento_confere deferred;
+select pg_temp.sis();
+update erp.compromissos set pessoa_id = '10000000-0000-0000-0000-000000000008' where id = :'kctr';
+select pg_temp.erro_igual('set constraints erp.t_pagamento_confere immediate',
+  'A chave PIX por CPF/CNPJ não é o documento do fornecedor (só com a justificativa da exceção)', 'como paga: trocar o fornecedor e manter a chave do anterior exige a exceção');
+rollback to savepoint sp_rev;
+-- fornecedor sem CPF/CNPJ: a conta da TED não tem com o que bater, então exige a exceção
+select pg_temp.sis();
+insert into erp.pessoas (id, tipo, nome) values ('10000000-0000-0000-0000-0000000000f1', 'juridica', 'Sem Documento');
+select pg_temp.volta();
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'fornecedor', '10000000-0000-0000-0000-0000000000f1', 'pagamento',
+  jsonb_build_object('modo', 'ted', 'banco', '341', 'agencia', '1234', 'conta', '56789', 'conta_digito', '0',
+                     'conta_tipo', 'corrente', 'titular_documento', '77777777000177')));
+select pg_temp.erro_igual('set constraints erp.t_pagamento_confere immediate',
+  'A conta da TED não é do fornecedor (só com a justificativa da exceção)', 'como paga: fornecedor sem documento exige a exceção');
+rollback to savepoint sp_rev;
+select pg_temp.como(:'analista');
+rollback;
+select pg_temp.como(null);
 
 \echo '# pessoa PJ: o cadastro só o master e os designados veem (Moises, 19/11/2026)'
 begin;
@@ -7621,6 +8796,150 @@ update erp.pessoas set restrita = false where id = '6c000000-0000-0000-0000-0000
 select pg_temp.como(:'gestor');
 select pg_temp.ok(exists (select 1 from erp.pessoas where id = '6c000000-0000-0000-0000-000000000001'), 'pessoa PJ: o master tira a marca e a pessoa volta a aparecer');
 select pg_temp.volta();
+rollback;
+select pg_temp.sis();
+
+-- Limite do leitor por pessoa (Moises, 20/11/2026): padrão 30; administrador ou master mudam o dos outros
+begin;
+select pg_temp.como(:'analista');
+select pg_temp.ok((select (j->>'limite_leitor')::int = 30 from api.eu() j), 'limite do leitor: sem valor, api.eu() traz o padrão 30');
+select pg_temp.erro_igual(format($$select api.definir_limite_leitor(%L, 100)$$, :'gestor'),
+  'Só o administrador ou o master muda o limite do leitor', 'limite do leitor: analista não muda o de outro');
+select pg_temp.ok((select count(*) = 0 from (select 1 from erp.usuarios where id = :'gestor' and limite_leitor is not null) x),
+  'limite do leitor: nada gravado');
+update erp.usuarios set limite_leitor = 500 where id = :'gestor';
+select pg_temp.como_dono(null);
+select pg_temp.ok((select limite_leitor is null from erp.usuarios where id = :'gestor'), 'limite do leitor: update direto do analista não grava (RLS)');
+select pg_temp.como(:'ti');
+select pg_temp.erro_igual(format($$select api.definir_limite_leitor(%L, 100)$$, :'ti'),
+  'Ninguém muda o próprio limite do leitor', 'limite do leitor: o administrador não muda o próprio');
+select pg_temp.erro_igual(format($$select api.definir_limite_leitor(%L, 0)$$, :'analista'),
+  'O limite do leitor vai de 1 a 10000 arquivos a cada 10 minutos', 'limite do leitor: fora de 1 a 10000 é recusado');
+select pg_temp.erro_igual($$select api.definir_limite_leitor('00000000-0000-0000-0000-0000000000ff', 50)$$,
+  'Usuário não encontrado', 'limite do leitor: usuário que não existe');
+select pg_temp.erro_igual(format($$select api.definir_limite_leitor(%L, 101)$$, :'analista'),
+  'Acima de 100 arquivos a cada 10 minutos, só o master muda o limite do leitor', 'limite do leitor: o administrador não passa de 100');
+select pg_temp.como_dono(:'ti');
+select pg_temp.erro_igual(format($$update erp.usuarios set limite_leitor = 500 where id = %L$$, :'analista'),
+  'Acima de 100 arquivos a cada 10 minutos, só o master muda o limite do leitor', 'limite do leitor: nem por update direto o administrador passa de 100');
+select pg_temp.erro_igual($$insert into erp.usuarios (login_id, nome, papel, ativo, limite_leitor) values ('novo-limite', 'Novo', 'leitura', false, 500)$$,
+  'Acima de 100 arquivos a cada 10 minutos, só o master muda o limite do leitor', 'limite do leitor: nem criando usuário o administrador passa de 100');
+select pg_temp.como(:'ti');
+select api.definir_limite_leitor(:'analista', 100);
+select pg_temp.como(:'analista');
+select pg_temp.ok((select (j->>'limite_leitor')::int = 100 from api.eu() j), 'limite do leitor: o administrador muda e api.eu() traz o valor');
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual($$update erp.usuarios set limite_leitor = 1000 where id = erp.eu()$$,
+  'Ninguém muda o próprio papel, acesso ou login', 'limite do leitor: nem o master muda o próprio por update direto');
+select pg_temp.como(:'diretor');
+select api.definir_limite_leitor(:'analista', 1000);
+select pg_temp.como(:'analista');
+select pg_temp.ok((select (j->>'limite_leitor')::int = 1000 from api.eu() j), 'limite do leitor: o master passa de 100');
+select pg_temp.como(:'diretor');
+select api.definir_limite_leitor(:'analista', 10000);
+select pg_temp.erro_igual(format($$select api.definir_limite_leitor(%L, 10001)$$, :'analista'),
+  'O limite do leitor vai de 1 a 10000 arquivos a cada 10 minutos', 'limite do leitor: nem o master passa de 10000');
+select pg_temp.como(:'analista');
+select pg_temp.ok((select (j->>'limite_leitor')::int = 10000 from api.eu() j), 'limite do leitor: o master põe até 10000 (Moises, 20/11/2026)');
+select pg_temp.como_dono(null);
+select pg_temp.falha(format($$update erp.usuarios set limite_leitor = 10001 where id = %L$$, :'analista'),
+  'limite do leitor: a coluna recusa acima de 10000');
+select pg_temp.como(:'diretor');
+select api.definir_limite_leitor(:'analista', null);
+select pg_temp.como(:'analista');
+select pg_temp.ok((select (j->>'limite_leitor')::int = 30 from api.eu() j), 'limite do leitor: o master volta ao padrão com nulo');
+select pg_temp.como_dono(null);
+select pg_temp.ok((select count(*) >= 2 from erp.auditoria where tabela = 'usuarios' and registro = :'analista'),
+  'limite do leitor: as mudanças ficam na auditoria');
+select pg_temp.como(null);
+rollback;
+select pg_temp.sis();
+
+\echo '# apelido das empresas (Moises, 23/11/2026)'
+begin;
+select pg_temp.sis();
+delete from erp.listas_financeiro where user_id in (:'gestor', :'diretor2', :'ti', :'analista2', :'leitor');
+insert into erp.listas_financeiro (lista, user_id) values ('AF', :'gestor'), ('AD', :'diretor2');
+select pg_temp.como(:'gestor');
+select pg_temp.ok(erp.estou_nas_listas(array['AF']), 'apelido: (preparo) a gestora está na AF');
+select pg_temp.como(:'diretor2');
+select pg_temp.ok(erp.estou_nas_listas(array['AD']), 'apelido: (preparo) a sócia está na AD');
+-- quem pode: o master, AF, AD e o administrador; não quem lança sem lista, nem a leitura
+select pg_temp.como(:'diretor');
+select pg_temp.ok(api.salvar_apelido_empresa(:'spe', '  BKM   03 ') = 'BKM 03', 'apelido: o master dá o apelido, sem espaço sobrando');
+select pg_temp.como(:'gestor');
+select pg_temp.ok(api.salvar_apelido_empresa(:'incorp', 'Incorporadora') = 'Incorporadora', 'apelido: AF dá o apelido');
+select pg_temp.como(:'diretor2');
+select pg_temp.ok(api.salvar_apelido_empresa(:'incorp', 'BKM Incorp') = 'BKM Incorp', 'apelido: AD muda o apelido');
+select pg_temp.como(:'ti');
+select pg_temp.ok(not erp.sou_master() and erp.sou_admin(), 'apelido: (preparo) o TI é administrador e não é master');
+select pg_temp.ok(api.salvar_apelido_empresa(:'spe', 'SPE 03') = 'SPE 03', 'apelido: o administrador muda o apelido (Moises, 23/11/2026)');
+update erp.empresas set apelido = 'SPE 03 - Parque Itajubá' where id = :'spe';
+select pg_temp.ok((select apelido = 'SPE 03 - Parque Itajubá' from erp.empresas where id = :'spe'), 'apelido: o administrador muda também por update direto');
+select pg_temp.ok((select bool_and(posso_apelido) from api.empresas()), 'apelido: a tela deixa o administrador mudar');
+select pg_temp.como(:'diretor');
+select api.salvar_apelido_empresa(:'spe', 'BKM 03');
+select pg_temp.como(:'analista2');
+select pg_temp.erro_igual(format($$select api.salvar_apelido_empresa(%L, 'Outra')$$, :'spe'),
+  'Só AF, AD, o administrador e o master dão e mudam o apelido da empresa', 'apelido: quem lança sem lista não muda');
+select pg_temp.falha(format($$update erp.empresas set apelido = 'Outra' where id = %L$$, :'spe'), 'apelido: nem por update direto quem lança muda');
+select pg_temp.ok(pg_temp.erro_como_dono(format($$update erp.empresas set apelido = 'Outra' where id = %L$$, :'spe'))
+                  = 'Só AF, AD, o administrador e o master dão e mudam o apelido da empresa', 'apelido: o gatilho barra por baixo da API');
+select pg_temp.como(:'leitor');
+select pg_temp.falha(format($$select api.salvar_apelido_empresa(%L, 'Outra')$$, :'spe'), 'apelido: a leitura não muda');
+-- AF muda só o apelido: tipo e situação da empresa seguem com o administrador
+select pg_temp.como(:'gestor');
+select pg_temp.erro_igual(format($$update erp.empresas set ativa = false where id = %L$$, :'spe'),
+  'Tipo e situação da empresa só o administrador muda', 'apelido: AF não muda a situação da empresa');
+select pg_temp.erro_igual(format($$update erp.empresas set tipo = 'outra', apelido = 'X1' where id = %L$$, :'spe'),
+  'Tipo e situação da empresa só o administrador muda', 'apelido: AF não muda o tipo junto com o apelido');
+select pg_temp.erro_igual(format($$update erp.empresas set pessoa_id = '10000000-0000-0000-0000-000000000005' where id = %L$$, :'spe'),
+  'Tipo e situação da empresa só o administrador muda', 'apelido: AF não troca a pessoa (o CNPJ) da empresa');
+select pg_temp.ok(pg_temp.erro_como_dono(format($$update erp.empresas set pessoa_id = '10000000-0000-0000-0000-000000000005' where id = %L$$, :'spe'))
+                  = 'Tipo e situação da empresa só o administrador muda', 'apelido: nem por baixo da API AF troca a pessoa da empresa');
+-- nem o nome de outra empresa do grupo
+select pg_temp.erro_igual(format($$select api.salvar_apelido_empresa(%L, %L)$$, :'spe', upper((select nome from erp.pessoas where id = '10000000-0000-0000-0000-000000000002'))),
+  format('O apelido %s é o nome de outra empresa do grupo', upper((select nome from erp.pessoas where id = '10000000-0000-0000-0000-000000000002'))),
+  'apelido: não é a razão social de outra empresa do grupo');
+-- não se repete (sem diferença de maiúscula), tamanho de 2 a 40, vazio tira
+select pg_temp.erro_igual(format($$select api.salvar_apelido_empresa(%L, 'bkm incorp')$$, :'holding'),
+  'Já existe uma empresa com o apelido bkm incorp', 'apelido: não se repete entre as empresas');
+select pg_temp.erro_igual(format($$select api.salvar_apelido_empresa(%L, 'B')$$, :'holding'),
+  'O apelido tem de 2 a 40 letras', 'apelido: no mínimo 2 letras');
+select pg_temp.erro_igual(format($$select api.salvar_apelido_empresa(%L, %L)$$, :'holding', repeat('a', 41)),
+  'O apelido tem de 2 a 40 letras', 'apelido: no máximo 40 letras');
+select pg_temp.ok(api.salvar_apelido_empresa(:'holding', 'Holding') = 'Holding', 'apelido: a holding ganha apelido');
+select pg_temp.ok(api.salvar_apelido_empresa(:'holding', '   ') is null, 'apelido: vazio tira o apelido');
+select pg_temp.erro_igual(format($$select api.salvar_apelido_empresa(%L, 'Nada')$$, '20000000-0000-0000-0000-0000000000ff'),
+  'Empresa não encontrada', 'apelido: empresa que não existe');
+-- o administrador continua mudando o resto da empresa (e o apelido fica)
+select pg_temp.como(:'ti');
+update erp.empresas set ativa = true where id = :'spe';
+select pg_temp.ok((select apelido = 'BKM 03' from erp.empresas where id = :'spe'), 'apelido: o administrador muda a situação e o apelido fica');
+-- as telas: apelido no lugar da razão social; sem apelido, a razão social; a razão social continua ao lado
+select pg_temp.como(:'diretor');
+select pg_temp.ok((select count(*) >= 3 and bool_and(posso_apelido) from api.empresas()), 'apelido: a lista das empresas, e o master pode mudar');
+select pg_temp.ok((select apelido = 'BKM 03' and razao_social = (select nome from erp.pessoas where id = '10000000-0000-0000-0000-000000000003')
+                     from api.empresas() where id = :'spe'), 'apelido: a lista traz o apelido e a razão social');
+select pg_temp.ok((select e->>'nome' = 'BKM 03' and e->>'razao_social' = (select nome from erp.pessoas where id = '10000000-0000-0000-0000-000000000003')
+                     from jsonb_array_elements(api.lancamento_opcoes()->'empresas') e where e->>'id' = :'spe'),
+  'apelido: Lançar título mostra o apelido, com a razão social ao lado');
+select pg_temp.ok((select e->>'nome' = (select nome from erp.pessoas where id = '10000000-0000-0000-0000-000000000001')
+                     from jsonb_array_elements(api.lancamento_opcoes()->'empresas') e where e->>'id' = :'holding'),
+  'apelido: sem apelido, a razão social');
+select pg_temp.ok(not exists (select 1 from api.titulos() t join erp.titulos x on x.id = t.id
+                               where x.empresa_id = :'spe' and t.empresa is distinct from 'BKM 03')
+                  and exists (select 1 from api.titulos() t join erp.titulos x on x.id = t.id where x.empresa_id = :'spe'),
+  'apelido: a lista de títulos mostra o apelido');
+select pg_temp.ok((select apelido = 'BKM 03' and empresa <> 'BKM 03' from bi.d_empresa where empresa_id = :'spe'),
+  'apelido: o BI traz o apelido ao lado da razão social');
+select pg_temp.como(:'analista2');
+select pg_temp.ok((select count(*) >= 3 and not bool_or(posso_apelido) from api.empresas()), 'apelido: quem não pode vê a lista sem poder mudar');
+-- a razão social continua no que confere e sai do sistema (o credor e o envio ao Sienge leem erp.pessoas, que não muda)
+select pg_temp.como_dono(null);
+select pg_temp.ok((select count(*) >= 3 from erp.auditoria where tabela = 'empresas' and registro = :'spe'),
+  'apelido: as mudanças da empresa ficam na auditoria');
+select pg_temp.como(null);
 rollback;
 select pg_temp.sis();
 

@@ -16,7 +16,7 @@ export function Moldura({ children }: { children: ReactNode }) {
   const fechar = useCallback(() => setPerfil(false), []);
   const ref = useFora<HTMLDivElement>(perfil, fechar);
   const busca = q.get('q') ?? '';
-  const comGaveta = /^\/(titulos|previsoes|contratos)\/[^/]+/.test(loc.pathname);
+  const comGaveta = /^\/(aprovar|titulos|previsoes|contratos|empresas)\/[^/]+/.test(loc.pathname);
   const foto = sessao?.user.user_metadata?.avatar_url as string | undefined;
   const atual = ondeEstou(loc.pathname);
 
