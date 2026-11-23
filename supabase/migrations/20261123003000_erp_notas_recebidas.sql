@@ -674,3 +674,76 @@ select pg_temp.dono(f::regprocedure, 'erp_situacao') from unnest(array[
 -- liberar e tirar gravam como erp_acesso, como a designação do PJ
 select pg_temp.dono(f::regprocedure, 'erp_acesso') from unnest(array[
   'erp.liberar_notas_recebidas(uuid, uuid, text, text)', 'erp.retirar_notas_recebidas(uuid, uuid, text)']) f;
+
+-- ---------------------------------------------------------------------------------------------
+-- 10. O login do serviço da busca (Moises, 23/11/2026: "acesso só à caixa de notas")
+-- ---------------------------------------------------------------------------------------------
+-- O serviço (Cloud Run job no bkm-erp) entra com o papel erp_busca_notas: sem tabela nenhuma, sem membro nem papel
+-- para assumir, com EXECUTE só nas sete funções abaixo. Ele vale como sistema só DENTRO delas (security definer:
+-- current_user é o dono); chamando qualquer outra coisa direto, não é sistema e não tem privilégio. O login e a senha
+-- não vêm daqui: quem implanta dá LOGIN com o verificador SCRAM gerado pelo script do serviço (a senha só fica no
+-- Secret Manager). Se a senha vazar, o máximo é gravar nota contra o CNPJ da empresa que bata com a chave.
+do $$ begin
+  if not exists (select 1 from pg_roles where rolname = 'erp_busca_notas') then
+    create role erp_busca_notas nologin noinherit nocreatedb nocreaterole connection limit 2;
+  end if;
+end $$;
+grant usage on schema erp to erp_busca_notas;
+
+create or replace function erp.sistema() returns boolean language sql stable as $$
+  select erp.login_atual() is null
+     and (current_setting('role', true) = 'erp_sistema'
+          or (coalesce(nullif(current_setting('role', true), ''), 'none') = 'none'
+              and (session_user::text = (select r.rolname::text from pg_namespace n join pg_roles r on r.oid = n.nspowner
+                                          where n.nspname = 'erp')
+                   -- o serviço da busca, só de dentro das funções dele (nunca direto)
+                   or (session_user::text = 'erp_busca_notas' and current_user::text <> 'erp_busca_notas')))) $$;
+
+-- O que o serviço lê: o CNPJ da empresa, onde a busca parou e as NF-e que ainda pedem ciência.
+create function erp.busca_notas_empresa(p_empresa uuid) returns text language plpgsql stable as $$
+begin
+  if not erp.sistema() then raise exception 'Só o serviço da busca'; end if;
+  return (select p.documento from erp.empresas e join erp.pessoas p on p.id = e.pessoa_id where e.id = p_empresa and e.ativa);
+end $$;
+create function erp.busca_notas_leitura(p_empresa uuid, p_origem text, out ultimo_nsu bigint, out lida boolean, out bloqueado_ate timestamptz)
+language plpgsql stable as $$
+begin
+  if not erp.sistema() then raise exception 'Só o serviço da busca'; end if;
+  select l.ultimo_nsu, true, l.bloqueado_ate into ultimo_nsu, lida, bloqueado_ate
+    from erp.notas_recebidas_leituras l where l.empresa_id = p_empresa and l.origem = p_origem;
+  ultimo_nsu := coalesce(ultimo_nsu, 0); lida := coalesce(lida, false);
+end $$;
+-- NF-e só em resumo, sem ciência e sem cancelamento, dos últimos 90 dias (as mais antigas primeiro).
+create function erp.busca_notas_sem_ciencia(p_empresa uuid, p_limite int) returns setof text language plpgsql stable as $$
+begin
+  if not erp.sistema() then raise exception 'Só o serviço da busca'; end if;
+  return query select n.chave from erp.notas_recebidas n join erp.notas_recebidas_xml x on x.nota_id = n.id
+    where n.empresa_id = p_empresa and n.tipo = 'nfe' and n.ciencia_em is null and n.cancelada_em is null and not x.completo
+      and n.emissao >= current_date - 90
+    order by n.emissao, n.chave limit least(greatest(coalesce(p_limite, 20), 1), 20);
+end $$;
+
+do $$
+declare f regprocedure;
+begin
+  foreach f in array array['erp.busca_notas_empresa(uuid)', 'erp.busca_notas_leitura(uuid, text)', 'erp.busca_notas_sem_ciencia(uuid, integer)']::regprocedure[] loop
+    execute format('revoke execute on function %s from public', f);
+    if exists (select 1 from pg_roles where rolname = 'anon') then execute format('revoke execute on function %s from anon', f); end if;
+    if exists (select 1 from pg_roles where rolname = 'service_role') then execute format('revoke execute on function %s from service_role', f); end if;
+    if exists (select 1 from pg_roles where rolname = 'authenticated') then execute format('revoke execute on function %s from authenticated', f); end if;
+    execute format('grant execute on function %s to erp_sistema', f);
+  end loop;
+  foreach f in array array['erp.registrar_nota_recebida(uuid, jsonb, text, boolean)',
+    'erp.registrar_evento_nota_recebida(uuid, text, text, boolean, bigint, text)', 'erp.registrar_ciencia_nota_recebida(text)',
+    'erp.registrar_leitura_notas(uuid, text, bigint, bigint, timestamptz, text)', 'erp.busca_notas_empresa(uuid)',
+    'erp.busca_notas_leitura(uuid, text)', 'erp.busca_notas_sem_ciencia(uuid, integer)']::regprocedure[] loop
+    execute format('alter function %s security definer set search_path = erp, pg_catalog, pg_temp', f);
+    execute format('grant execute on function %s to erp_busca_notas', f);
+  end loop;
+end $$;
+-- gravam como erp_situacao (as políticas dele valem nas tabelas da caixa); leem como erp_conferencia
+select pg_temp.dono(f::regprocedure, 'erp_situacao') from unnest(array[
+  'erp.registrar_nota_recebida(uuid, jsonb, text, boolean)', 'erp.registrar_evento_nota_recebida(uuid, text, text, boolean, bigint, text)',
+  'erp.registrar_ciencia_nota_recebida(text)', 'erp.registrar_leitura_notas(uuid, text, bigint, bigint, timestamptz, text)']) f;
+select pg_temp.dono(f::regprocedure, 'erp_conferencia') from unnest(array[
+  'erp.busca_notas_empresa(uuid)', 'erp.busca_notas_leitura(uuid, text)', 'erp.busca_notas_sem_ciencia(uuid, integer)']) f;

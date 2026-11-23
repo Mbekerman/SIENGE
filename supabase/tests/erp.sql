@@ -9590,5 +9590,42 @@ select pg_temp.ok(not erp.vejo_documento('70000000-0000-0000-0000-0000000000a7')
 select pg_temp.como(null);
 rollback;
 
+-- o login do serviço da busca: só as funções da caixa, e é sistema só dentro delas
+begin;
+select pg_temp.sis();
+select pg_temp.ok(not exists (select 1 from pg_auth_members m join pg_roles r on r.oid = m.member where r.rolname = 'erp_busca_notas')
+                  and not exists (select 1 from pg_auth_members m join pg_roles r on r.oid = m.roleid where r.rolname = 'erp_busca_notas')
+                  and not exists (select 1 from information_schema.role_table_grants where grantee = 'erp_busca_notas')
+                  and (select count(*) = 7 from pg_proc p where p.pronamespace in ('erp'::regnamespace, 'api'::regnamespace)
+                         and has_function_privilege('erp_busca_notas', p.oid, 'EXECUTE')),
+  'busca: o login do serviço não é membro de nada, não tem tabela e só executa as 7 funções dele');
+set session authorization erp_busca_notas;
+select pg_temp.ok(erp.busca_notas_empresa(:'spe') = '33333333000133', 'busca: o serviço lê o CNPJ da empresa');
+select erp.registrar_nota_recebida(:'spe', pg_temp.nota('nfe', '77777777000177', '321', 450), '<resNFe/>', false) as nb \gset
+select erp.registrar_leitura_notas(:'spe', 'sefaz', 40, 90, null, null);
+select pg_temp.ok((select ultimo_nsu = 40 and lida from erp.busca_notas_leitura(:'spe', 'sefaz'))
+                  and (select not lida and ultimo_nsu = 0 from erp.busca_notas_leitura(:'spe', 'adn'))
+                  and (select array_agg(c) = array[pg_temp.chave('nfe', '77777777000177', '321')] from erp.busca_notas_sem_ciencia(:'spe', 20) c),
+  'busca: o serviço grava a nota e a leitura e lê onde parou e o que pede ciência');
+select erp.registrar_ciencia_nota_recebida(pg_temp.chave('nfe', '77777777000177', '321'));
+select pg_temp.ok(not exists (select 1 from erp.busca_notas_sem_ciencia(:'spe', 20)), 'busca: com a ciência, a nota sai da lista');
+select pg_temp.erro_igual('select count(*) from erp.notas_recebidas', 'permission denied for table notas_recebidas',
+  'busca: o serviço não lê a tabela direto');
+select pg_temp.erro_igual('select count(*) from erp.titulos', 'permission denied for table titulos', 'busca: nem outra tabela do ERP');
+select pg_temp.erro_igual(format($$select erp.ignorar_nota_recebida(%L, 'xxxx')$$, :'nb'), 'permission denied for function ignorar_nota_recebida',
+  'busca: nem outra função');
+select pg_temp.erro_igual('set role erp_sistema', 'permission denied to set role "erp_sistema"', 'busca: o serviço não vira o papel do sistema');
+-- com um login de usuário posto, deixa de ser sistema: não grava em nome de ninguém
+select set_config('request.jwt.claim.sub', :'diretor', false);
+select pg_temp.erro_igual(format($$select erp.registrar_leitura_notas(%L, 'sefaz', 50, 90, null, null)$$, :'spe'),
+  'Só o serviço da busca grava a leitura das notas', 'busca: com login de usuário posto, o serviço não grava');
+select set_config('request.jwt.claim.sub', '', false);
+reset session authorization;
+select pg_temp.sis();
+select pg_temp.ok((select ciencia_em is not null from erp.notas_recebidas where id = :'nb')
+                  and exists (select 1 from erp.auditoria where tabela = 'notas_recebidas' and registro = :'nb' and por is null),
+  'busca: o que o serviço grava fica na auditoria como sistema');
+rollback;
+
 \echo '# fim'
 do $$ begin raise notice 'TODOS OS TESTES PASSARAM'; end $$;
