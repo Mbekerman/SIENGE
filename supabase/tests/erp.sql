@@ -9673,7 +9673,7 @@ select pg_temp.sis();
 select pg_temp.ok((select ciencia_em is not null from erp.notas_recebidas where id = :'nb')
                   and exists (select 1 from erp.auditoria where tabela = 'notas_recebidas' and registro = :'nb' and por is null),
   'busca: o que o serviço grava fica na auditoria como sistema');
--- a janela do login (migration 20261123004000): abre, fecha e derruba; com o net aberto, não abre
+-- a janela do login (migration 20261123005000): abre, fecha e derruba; com o net aberto, não abre
 -- (a resposta num comando e o catálogo no seguinte: o mesmo comando ainda vê o catálogo de antes)
 select erp.busca_notas_janela('abrir') as j \gset
 select pg_temp.ok(:'j' = 'aberta' and (select rolcanlogin from pg_roles where rolname = 'erp_busca_notas'), 'janela da busca: abre o login');

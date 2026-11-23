@@ -69,7 +69,7 @@ print(f"SCRAM-SHA-256${it}:{b(salt)}${b(hashlib.sha256(ck).digest())}:{b(sk)}")
 PY
 )
   rm -f "$3/senha"
-  # só a senha: o login liga e desliga pela janela (migration 20261123004000), que não abre com o pg_net aberto (S-143)
+  # só a senha: o login liga e desliga pela janela (migration 20261123005000), que não abre com o pg_net aberto (S-143)
   echo; echo "Cole no SQL Editor do Supabase (projeto $1):"; echo
   echo "alter role erp_busca_notas password '$VERIF';"; echo
 }
