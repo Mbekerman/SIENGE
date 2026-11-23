@@ -42,6 +42,9 @@ Deno.serve(async (req) => {
   try {
     const [k] = await sql`select decrypted_secret as v from vault.decrypted_secrets where name = 'sienge_carga_chave'`;
     if (!k?.v || !iguais(req.headers.get('x-carga-chave') ?? '', k.v)) return new Response('não autorizado', { status: 401 });
+    // ritmo (residual do S-143): a agenda é de minuto em minuto; mais de uma chamada em 50 s é recusada sem chamar o Sienge
+    const [rt] = await sql`select sienge.ritmo('carga', 50) as v`;
+    if (!rt?.v) return Response.json({ ok: false }, { status: 429 });
 
     const resultado = await sql.begin(async (tx) => {
       const [c] = await tx<Carga[]>`
