@@ -41,7 +41,7 @@ O Moises sugeriu que praça e regional pudessem ser etiquetas (7/nov/2026). 🟡
 
 - O apelido é opcional, tem de 2 a 40 letras e não se repete entre as empresas.
 - ✅ O master, a AF, a AD e o administrador dão ou mudam o apelido (Moises, 23/nov/2026). 🟡 No PR #120, a mudança vale na hora para todos, inclusive o administrador, e fica no histórico. ⏳ Falta o Moises dizer se a mudança feita pelo administrador passa por aprovação, como manda a regra geral do TI de 14/nov.
-- ✅ As SPEs começam com o apelido **SPE 0X**, onde X é o número de cada uma: SPE 01 a SPE 08 (Moises, 23/nov/2026). A BKM Incorporadora e Construtora S.A. fica com o apelido **Matriz**.
+- ✅ As SPEs começam com o apelido **SPE 0X**, onde X é o número de cada uma: SPE 01 a SPE 08 (Moises, 23/nov/2026). Algumas levam também o nome do empreendimento depois do número, como "SPE 0X - Nome do empreendimento". A BKM Incorporadora e Construtora S.A. fica com o apelido **Matriz**.
 - As telas de Títulos, Previsões, Contas recorrentes, Para aprovar, Lançar título e Nova conta mostram o apelido. Empresa sem apelido aparece pela razão social.
 - A razão social continua nos documentos, no envio ao Sienge e na conferência de quem recebe o pagamento.
 
