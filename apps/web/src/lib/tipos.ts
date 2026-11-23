@@ -62,6 +62,8 @@ export interface ContaCadastro {
   rateio: { nucleo: string | null; centro: string | null; divisao: string | null; natureza: string; percentual: number }[];
   /** previsão mês a mês (vazio = valor igual) e o primeiro mês que ainda muda (nulo = todos) */
   meses: { mes: string; valor: number }[]; trava_antes: string | null;
+  /** como paga (nulo = não informado) */
+  pagamento: import('../pages/ComoPaga').PagGravado | null;
 }
 
 /** Rastro do título (api.titulo_rastro): de onde veio, quem aprovou, o que mudou, os anexos, o contrato e o fornecedor. */

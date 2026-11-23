@@ -393,3 +393,8 @@ button.lt-o:hover{background:#f1f4f9}
 .cal-pergunta{display:flex;flex-direction:column;gap:8px}
 .cal-pergunta .lt-lin{flex-wrap:wrap}
 .cal-pergunta .btn{white-space:normal;height:auto;min-height:40px;text-align:left}
+/* "Pronto para gerar títulos" da conta recorrente */
+.nc-pronto ul{list-style:none;margin:0 0 8px;padding:0;display:grid;gap:6px}
+.nc-pronto li{display:flex;gap:8px;align-items:flex-start;font-size:14px;line-height:20px}
+.nc-pronto li.ok .ic{color:#146c2e}
+.nc-pronto li.falta .ic{color:#7a5900}

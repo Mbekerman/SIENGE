@@ -8514,6 +8514,73 @@ select pg_temp.ok((select valor = 150 from erp.compromisso_meses where compromis
 select pg_temp.como(:'leitor');
 select pg_temp.falha(format($$insert into erp.compromisso_meses values (%L, '2027-01-01', 1)$$, :'kass'), 'mês a mês: quem só consulta não grava o calendário');
 select pg_temp.como(:'analista');
+
+-- como paga (Moises, 23/11/2026): PIX fixo, TED ou vem com cada cobrança; parte do cadastro aprovado. A conferência
+-- (chave CPF/CNPJ e conta da TED do fornecedor) roda no fim da transação, como a do calendário.
+select aprovacao_versao as kver from erp.compromissos where id = :'kctr' \gset
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento',
+  jsonb_build_object('modo', 'pix', 'pix_tipo', 'cpf_cnpj', 'pix_chave', '77777777000177')));
+set constraints erp.t_pagamento_confere immediate;
+set constraints erp.t_pagamento_confere deferred;
+select pg_temp.ok((select x->'pagamento'->>'modo' = 'pix' and x->'pagamento'->>'pix_chave' = '77777777000177' from api.conta(:'kctr') x)
+                  and (select aprovacao_versao > :kver from erp.compromissos where id = :'kctr'),
+  'como paga: o PIX fixo entra no cadastro e pede aprovação de novo');
+select aprovacao_versao as kver from erp.compromissos where id = :'kctr' \gset
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento',
+  jsonb_build_object('modo', 'pix', 'pix_tipo', 'cpf_cnpj', 'pix_chave', '77777777000177')));
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr'));
+select pg_temp.ok((select aprovacao_versao = :kver from erp.compromissos where id = :'kctr')
+                  and exists (select 1 from erp.compromisso_pagamentos where compromisso_id = :'kctr'),
+  'como paga: salvar a mesma forma, ou sem mandar a forma, não pede aprovação de novo');
+savepoint sp_pag;
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento',
+  jsonb_build_object('modo', 'pix', 'pix_tipo', 'cpf_cnpj', 'pix_chave', '12345678000199')));
+select pg_temp.erro_igual('set constraints erp.t_pagamento_confere immediate',
+  'A chave PIX por CPF/CNPJ não é o documento do fornecedor (só com a justificativa da exceção)', 'como paga: chave CPF/CNPJ de outra pessoa sem justificativa é recusada');
+rollback to savepoint sp_pag;
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento',
+  jsonb_build_object('modo', 'ted', 'banco', '341', 'agencia', '1234', 'conta', '56789', 'conta_digito', '0',
+                     'conta_tipo', 'corrente', 'titular_documento', '12345678000199')));
+select pg_temp.erro_igual('set constraints erp.t_pagamento_confere immediate',
+  'A conta da TED não é do fornecedor (só com a justificativa da exceção)', 'como paga: TED para conta de outra pessoa sem justificativa é recusada');
+rollback to savepoint sp_pag;
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento',
+  jsonb_build_object('modo', 'ted', 'banco', '341', 'agencia', '1234', 'conta', '56789', 'conta_digito', '0',
+                     'conta_tipo', 'corrente', 'titular_documento', '12345678000199', 'excecao', 'Conta da administradora')));
+set constraints erp.t_pagamento_confere immediate;
+set constraints erp.t_pagamento_confere deferred;
+select pg_temp.ok((select excecao = 'Conta da administradora' from erp.compromisso_pagamentos where compromisso_id = :'kctr'),
+  'como paga: TED para outra pessoa entra com a justificativa, que fica para quem aprova');
+rollback to savepoint sp_pag;
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento',
+  jsonb_build_object('modo', 'ted', 'banco', '341', 'agencia', '1234', 'agencia_digito', 'x', 'conta', '56789', 'conta_digito', '0',
+                     'conta_tipo', 'poupanca', 'titular_documento', '77777777000177', 'excecao', 'sobrou')));
+set constraints erp.t_pagamento_confere immediate;
+set constraints erp.t_pagamento_confere deferred;
+select pg_temp.ok((select excecao is null and agencia_digito = 'X' from erp.compromisso_pagamentos where compromisso_id = :'kctr'),
+  'como paga: TED para a conta do fornecedor entra, e a justificativa que sobra some');
+-- trocar o fornecedor confere de novo
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'fornecedor', '10000000-0000-0000-0000-000000000008'));
+select pg_temp.erro_igual('set constraints erp.t_pagamento_confere immediate',
+  'A conta da TED não é do fornecedor (só com a justificativa da exceção)', 'como paga: trocar o fornecedor confere a conta de novo');
+rollback to savepoint sp_pag;
+select pg_temp.falha(format('select api.salvar_conta(%L::jsonb)', (:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento',
+  jsonb_build_object('modo', 'pix', 'pix_tipo', 'email', 'pix_chave', 'nao é email')))::text), 'como paga: chave PIX inválida é recusada');
+rollback to savepoint sp_pag;
+select pg_temp.falha(format('select api.salvar_conta(%L::jsonb)', (:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento',
+  jsonb_build_object('modo', 'ted', 'banco', '341')))::text), 'como paga: TED sem a conta inteira é recusada');
+rollback to savepoint sp_pag;
+select aprovacao_versao as kver from erp.compromissos where id = :'kctr' \gset
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento', jsonb_build_object('modo', 'cobranca')));
+select pg_temp.ok((select x->'pagamento'->>'modo' = 'cobranca' from api.conta(:'kctr') x)
+                  and (select aprovacao_versao > :kver from erp.compromissos where id = :'kctr'),
+  'como paga: "vem com cada cobrança" também é forma cadastrada e pede aprovação');
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento', null));
+select pg_temp.ok((select x->'pagamento' = 'null'::jsonb from api.conta(:'kctr') x), 'como paga: mandar a forma nula tira a forma');
+select pg_temp.como(:'leitor');
+select pg_temp.falha(format($$insert into erp.compromisso_pagamentos (compromisso_id, modo) values (%L, 'cobranca')$$, :'kctr'),
+  'como paga: quem só consulta não grava a forma');
+select pg_temp.como(:'analista');
 rollback;
 select pg_temp.como(null);
 

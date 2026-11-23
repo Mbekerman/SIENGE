@@ -10,6 +10,7 @@ import { mensagemErro, rpc } from '../lib/supabase';
 import type { ContaCadastro, Contrato, FornecedorBusca, OpcoesLancamento } from '../lib/tipos';
 import { BuscaFornecedor, Campo, LinhaRateio, divisoesDe, juntar, novaLinha, type Linha } from './Lancar';
 import { Calendario, centavos, completar, igual, mesesDaVigencia, type Meses } from './Calendario';
+import { ComoPaga, Pronto, faltaNoPag, pagDoBanco, pagParaBanco, type Pag } from './ComoPaga';
 
 type Tipo = Contrato['tipo'];
 const TIPOS: [Tipo, string, string][] = [
@@ -43,6 +44,9 @@ export function ContaRecorrente({ id, fechar, salvo }: { id?: string; fechar: ()
   const [meses, setMeses] = useState<Meses | null>(null);
   const [mexeuMeses, setMexeuMeses] = useState(false);
   const [vendoMeses, setVendoMeses] = useState(false);
+  // como paga: nulo = não informado; mexeu = manda ao salvar (senão não mexe)
+  const [pag, setPag] = useState<Pag | null>(null);
+  const [mexeuPag, setMexeuPag] = useState(false);
 
   const c = cq.data;
   useEffect(() => {
@@ -51,6 +55,7 @@ export function ContaRecorrente({ id, fechar, salvo }: { id?: string; fechar: ()
     setInicio(c.inicio); setFim(c.fim ?? ''); setDia(c.dia_vencimento ? String(c.dia_vencimento) : ''); setPer(c.periodicidade ?? 'mensal');
     setValorTxt(txt(c.tipo === 'contrato' ? c.valor_total : c.valor_periodo));
     setInstalacao(c.instalacao ?? ''); setFaixaTxt(txt(c.faixa_mensal)); setTetoTxt(txt(c.teto_anual));
+    setPag(pagDoBanco(c.pagamento));
     setMeses(c.meses.length ? Object.fromEntries(c.meses.map(m => [m.mes.slice(0, 10), reais(Number(m.valor))])) : null);
     setLinhas(c.rateio.length ? c.rateio.map(r => ({ ...novaLinha(String(r.percentual)), nucleo: r.nucleo ?? '', centro: r.centro ?? '', divisao: r.divisao ?? '', natureza: r.natureza })) : [novaLinha()]);
   }, [c]);
@@ -91,6 +96,8 @@ export function ContaRecorrente({ id, fechar, salvo }: { id?: string; fechar: ()
   if (dia && !(Number.isInteger(nDia) && nDia >= 1 && nDia <= 31)) falta.push('o dia do vencimento (1 a 31)');
   if (meses && !podeMeses) falta.push(tipo === 'contrato' ? 'o fim da vigência para a previsão mês a mês' : 'a assinatura mensal para a previsão mês a mês');
   if (anoAcimaDoTeto) falta.push(`os meses de ${anoAcimaDoTeto} dentro do teto no ano`);
+  const faltaPag = faltaNoPag(pag, forn?.documento);
+  if (faltaPag.length) falta.push('os dados de como paga');
   if (linhas.some(l => !l.nucleo || !l.centro || !l.natureza || (divisoesDe(o, l.centro).length > 0 && !l.divisao))) falta.push('o rateio completo');
   else if (Math.abs(somaPct - 100) > 0.00005) falta.push('o rateio somando 100%');
 
@@ -104,6 +111,7 @@ export function ContaRecorrente({ id, fechar, salvo }: { id?: string; fechar: ()
       caucao_percentual: tipo === 'contrato' ? (c?.caucao_percentual ?? 0) : null,
       instalacao: consumo ? instalacao.trim() : null, faixa_mensal: consumo ? faixa : null, teto_anual: consumo ? teto : null,
       rateio: linhas.map(l => ({ nucleo: l.nucleo, centro: l.centro, divisao: l.divisao || null, natureza: l.natureza, percentual: Number(l.pct.replace(',', '.')) })),
+      ...(mexeuPag ? { pagamento: pagParaBanco(pag) } : {}),
       ...(mexeuMeses ? { meses: mesesFinais ? Object.entries(mesesFinais).sort().map(([mes, v]) => ({ mes, valor: centavos(v) / 100 })) : [] } : {}),
     } }),
     onSuccess: novo => {
@@ -214,6 +222,16 @@ export function ContaRecorrente({ id, fechar, salvo }: { id?: string; fechar: ()
             </div>
           </>}
         </section>
+
+        <ComoPaga p={pag} mudar={x => { setPag(x); setMexeuPag(true); }} doc={forn?.documento} tentou={tentou} />
+        <Pronto itens={[
+          [consumo ? 'Concessionária' : 'Fornecedor', Boolean(forn)],
+          ['Empresa que paga', Boolean(empresa)],
+          ['Onde entra, somando 100%', !linhas.some(l => !l.nucleo || !l.centro || !l.natureza || (divisoesDe(o, l.centro).length > 0 && !l.divisao)) && Math.abs(somaPct - 100) <= 0.00005],
+          [consumo ? 'Valor previsto de cada mês' : 'Valor de cada título', consumo ? Boolean(faixa) : Boolean(valor), mesesFinais ? 'mês a mês' : undefined],
+          ['Dia do vencimento', Boolean(dia) || consumo, !dia && consumo ? 'vem na fatura' : undefined],
+          ['Como paga', Boolean(pag) && !faltaPag.length],
+        ]} />
       </>}
     </Popup>
   );
