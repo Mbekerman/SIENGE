@@ -433,6 +433,9 @@ test('lote: só os arquivos sem resultado, na ordem, até o limite', () => {
   assert.equal(nomeSaida(`${ENTRADA}a.pdf`), `${SAIDA}a.pdf.json`);
   assert.deepEqual(pendentes(ent, new Set([`${SAIDA}a.pdf.json`]), 10), [`${ENTRADA}b.pdf`, `${ENTRADA}c.pdf`]);
   assert.deepEqual(pendentes(ent, new Set(), 1), [`${ENTRADA}a.pdf`]);
+  // outra rodada (outro modelo) numa pasta própria: o que a primeira leu não conta
+  assert.equal(nomeSaida(`${ENTRADA}a.pdf`, 'lote/saida-haiku/'), 'lote/saida-haiku/a.pdf.json');
+  assert.deepEqual(pendentes(ent, new Set([`${SAIDA}a.pdf.json`, 'lote/saida-haiku/b.pdf.json']), 10, 'lote/saida-haiku/'), [`${ENTRADA}a.pdf`, `${ENTRADA}c.pdf`]);
 });
 
 test('lote: lê como o leitor e guarda os tokens; a falha da IA fica para a próxima rodada', async () => {
