@@ -85,7 +85,7 @@ Experiência pedida pelo Moises (6/nov/2026), com o que cada passo exige tecnica
 
 Recomendações aceitas pelo Moises em 6/nov/2026: contratos novos do dia a dia com item a R$ 1,00 por unidade (o CTP/28 já é assim).
 
-## 5.3.1 Caixa das notas recebidas [Banco construído, 23/nov/2026; serviço da busca e tela a fazer]
+## 5.3.1 Caixa das notas recebidas [Banco e serviço construídos, 23/nov/2026; publicação e tela a fazer]
 
 Pedido do Moises (17/11/2026): buscar as notas emitidas contra os CNPJs do grupo. Depois do teste do ADN (23/11/2026; ver [04](04-integracao-sienge.md#48-outras-integrações-adn-da-nfs-e-testado-23nov2026-job-único-teste-adn)), decidido fazer por conta própria: NF-e na SEFAZ (distribuição DF-e, com a ciência da operação automática em toda nota, para baixar o XML completo) e NFS-e no Ambiente de Dados Nacional. A importação de NF-e do Sienge fica parada (dois sistemas no mesmo CNPJ dividem o limite da SEFAZ).
 
@@ -101,6 +101,8 @@ Banco (migration `20261123003000_erp_notas_recebidas.sql`):
 Quem vê (Moises, 23/11/2026): AF, AO, AD, diretor e master veem a caixa inteira; o master e o AD liberam outras pessoas por empresa e tipo (`api.liberar_notas_recebidas`, `api.retirar_notas_recebidas`); quem vê a nota lançada vê a recebida ligada a ela. Nota de PJ (emitente com `pessoas.restrita`, pelo cadastro de hoje) só o master e os designados, também na auditoria. Quem lança sem acesso à caixa acha a nota dele por `api.buscar_nota_recebida`: pela chave de acesso, ou CNPJ do emitente + número + valor exatos (o valor impede adivinhar as notas de outros centros pela sequência dos números). Pelo emitente, só acha nota nova de empresa em que a pessoa lança, e no máximo 20 buscas por pessoa por hora (`erp.limite_busca_notas`); toda busca fica em `erp.notas_recebidas_buscas` (quem, critério, nota achada), que só cresce e que o master e o AD leem (cada um lê as suas). Ignorar e voltar: financeiro e master.
 
 Telas: `api.notas_recebidas(situacao)`, `api.nota_recebida_xml`, `api.notas_recebidas_leituras`, `api.notas_recebidas_acessos`.
+
+Serviço da busca (`servicos/busca-notas`, Cloud Run Job `erp-busca-notas`, de hora em hora; publicado por `publicar.sh`): para cada empresa com certificado, (1) ADN: `GET /DFe/{NSU}` a partir do último lido, lotes de até 50, até 40 lotes por rodada; (2) SEFAZ: `distNSU` a partir do último NSU, até 20 consultas, parando no fim da fila (espera de 1 hora gravada em `bloqueado_ate`, como a SEFAZ exige; 656 também bloqueia 1 hora); (3) ciência da operação (evento 210210, assinado com o A1, RSA-SHA1 e C14N) das NF-e que chegaram só em resumo nos últimos 90 dias, em lotes de 20; o XML completo chega depois, por outro NSU. Documento que o banco recusa não para o lote: o NSU anda e o erro fica na leitura (`erro`). O certificado tem de ser da empresa (raiz do CNPJ no nome) e estar no prazo; o log sai só com contagens e os dias até o certificado vencer. O banco: login `erp_busca_notas` (sem tabela, sem papel; EXECUTE só em `registrar_nota_recebida`, `registrar_evento_nota_recebida`, `registrar_ciencia_nota_recebida`, `registrar_leitura_notas`, `busca_notas_empresa`, `busca_notas_leitura` e `busca_notas_sem_ciencia`, que são security definer); `erp.sistema()` o reconhece só dentro dessas funções.
 
 ## 5.4 Depois da autorização [Desenhado]
 
