@@ -49,6 +49,7 @@ jobs:
       - run: node --test --experimental-strip-types servicos/sienge-aviso/logica.test.ts
       - run: node --test --experimental-strip-types servicos/conferir-pagamento/logica.test.ts
       - run: node --test --experimental-strip-types servicos/teste-adn/logica.test.ts
+      - run: node --test --experimental-strip-types apps/web/testes/conjunto.test.ts
       - run: node --test pagina/prv.test.mjs
 
   leitor:
