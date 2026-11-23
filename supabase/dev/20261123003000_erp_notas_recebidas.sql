@@ -333,8 +333,8 @@ end $$;
 
 -- A auditoria (lida pelo administrador) esconde as linhas das notas de PJ, como as outras linhas de PJ.
 select pg_temp.trocar('erp.vejo_auditoria(text, text, jsonb, jsonb)'::regprocedure,
-  $x$    if p_tabela = 'pessoas' and coalesce((d ->> 'restrita')::boolean, false) then return false; end if;$x$,
-  $x$    if p_tabela = 'pessoas' and coalesce((d ->> 'restrita')::boolean, false) then return false; end if;
+  $x$if p_tabela = 'pessoas' and coalesce((d ->> 'restrita')::boolean, false) then return false; end if;$x$,
+  $x$if p_tabela = 'pessoas' and coalesce((d ->> 'restrita')::boolean, false) then return false; end if;
     if p_tabela = 'notas_recebidas' and erp._nota_recebida_pj(d ->> 'emitente_documento') then return false; end if;$x$);
 
 -- ---------------------------------------------------------------------------------------------
