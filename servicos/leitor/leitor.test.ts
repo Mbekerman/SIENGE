@@ -470,6 +470,18 @@ test('CPF e CNPJ lidos com dígito verificador errado saem vazios, com aviso', (
   assert.equal(errado.tomador?.documento, undefined);
   assert.deepEqual(errado.avisos, ['CNPJ do emitente lido com dígito verificador errado (11222333000118): confira no documento',
     'CPF do tomador lido com dígito verificador errado: confira no documento']);
-  // outros tamanhos e máscara passam como vieram
-  assert.equal(converter({ tipo: 'outro', emitente: { documento: '123456' } }, 'm').emitente?.documento, '123456');
+  // rótulo não contorna a conta; outro tamanho sai vazio
+  const rot = converter({ tipo: 'nfse', emitente: { documento: 'CNPJ 11.222.333/0001-18' }, tomador: { documento: 'CPF: 529.982.247-25' } }, 'm');
+  assert.equal(rot.emitente?.documento, undefined);
+  assert.equal(rot.tomador?.documento, '52998224725');
+  assert.equal(converter({ tipo: 'nfse', emitente: { documento: 'CNPJ nº 11.222.333/0001-81' } }, 'm').emitente?.documento, '11222333000181');
+  const curto = converter({ tipo: 'outro', emitente: { documento: '123456' } }, 'm');
+  assert.equal(curto.emitente?.documento, undefined);
+  assert.deepEqual(curto.avisos, ['Documento do emitente lido não é um CPF nem um CNPJ: confira no documento']);
+  // CNPJ alfanumérico: o exemplo da Receita (12.ABC.345/01DE-35) confere e fica com as letras; com o DV errado sai vazio
+  assert.ok(cnpjValido('12ABC34501DE35'));
+  assert.equal(converter({ tipo: 'nfse', emitente: { documento: '12.ABC.345/01DE-35' } }, 'm').emitente?.documento, '12ABC34501DE35');
+  assert.equal(converter({ tipo: 'nfse', emitente: { documento: '12.ABC.345/01DE-53' } }, 'm').emitente?.documento, undefined);
+  // documento mascarado segue pelo caminho da máscara
+  assert.equal(converter({ tipo: 'nfse', tomador: { documento: '***.982.247-**' } }, 'm').tomador?.documento_mascara !== undefined, true);
 });
