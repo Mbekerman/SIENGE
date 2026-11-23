@@ -121,7 +121,7 @@ Alguns pontos dependem de decisões em aberto, indicadas abaixo.
 - **Como as notas chegam:** o sistema busca sozinho, várias vezes ao dia, as NF-e (material) na SEFAZ e as NFS-e (serviço) no ambiente nacional da nota de serviço. ✅ Toda NF-e recebe a ciência da operação automaticamente, para o sistema baixar a nota completa.
 - ✅ **Agrupada por empresa**, não por núcleo, porque a nota só traz o CNPJ da empresa.
 - ✅ **Quem vê:** AF, AO, AD, diretor e master veem a caixa inteira. O master e o AD liberam outras pessoas por empresa e por tipo (material ou serviço), sempre com o motivo, e podem tirar a liberação.
-- ✅ **Quem lança sem acesso à caixa** acha a própria nota pela chave de acesso, ou pelo CNPJ do emitente com o número e o valor exato da nota.
+- ✅ **Quem lança sem acesso à caixa** acha a própria nota pela chave de acesso ou pelo CNPJ do emitente e o número. 🟡 Sem a chave, o sistema pede também o valor exato da nota, para ninguém percorrer a sequência de números de um fornecedor. Falta o Moises confirmar.
 - ✅ **Nota de PJ:** só o master e os designados veem.
 - 🟡 **Situação da nota:** nova, vinculada ou ignorada. Fica vinculada sozinha quando a nota é lançada no ERP. Ignorar exige o motivo, e só o financeiro ou o master ignora.
 - 🟡 A nota cancelada pelo emitente fica marcada como cancelada.

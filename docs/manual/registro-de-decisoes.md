@@ -6,7 +6,7 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
-| 23/nov/2026 | Caixa das notas recebidas contra os CNPJs do grupo: NF-e da SEFAZ (com ciência automática) e NFS-e do ambiente nacional, agrupadas por empresa; AF, AO, AD, diretor e master veem tudo; master e AD liberam outras pessoas por empresa e tipo, com motivo; quem lança acha a própria nota pela chave ou pelo CNPJ, número e valor; nota de PJ só master e designados (banco no PR #126, ainda não juntado) | [Lançar nota](financeiro/lancar-nota-fiscal.md#caixa-das-notas-recebidas) |
+| 23/nov/2026 | Caixa das notas recebidas contra os CNPJs do grupo: NF-e da SEFAZ (com ciência automática) e NFS-e do ambiente nacional, agrupadas por empresa; AF, AO, AD, diretor e master veem tudo; master e AD liberam outras pessoas por empresa e tipo, com motivo; quem lança acha a própria nota pela chave ou pelo CNPJ e número; nota de PJ só master e designados (banco no PR #126, ainda não juntado) | [Lançar nota](financeiro/lancar-nota-fiscal.md#caixa-das-notas-recebidas) |
 | 23/nov/2026 | Orçamento de área: um por núcleo econômico, centro e ano, por natureza, nível e mês; informativo, sem pré-aprovação e fora do acumulado da alçada | [Orçamento](financeiro/orcamento-e-fluxo-de-caixa.md#orçamento-de-área) |
 | 23/nov/2026 | O orçamento de área cria o gestor do centro e aprovam a AF com um AO do centro, ou o AD sozinho | [Orçamento](financeiro/orcamento-e-fluxo-de-caixa.md#orçamento-de-área) |
 | 23/nov/2026 | Todos os meses do orçamento vão ao Sienge como PRV; na revisão, só a linha que mudou troca de PRV | [Orçamento](financeiro/orcamento-e-fluxo-de-caixa.md#orçamento-de-área) |
