@@ -112,6 +112,21 @@ Alguns pontos dependem de decisões em aberto, indicadas abaixo.
 
 **E depois?** A nota segue para aprovação e para o financeiro. O caminho até o Sienge depende de uma decisão em aberto:
 
+## Caixa das notas recebidas
+
+✅ **Decidido** (Moises, 23/nov/2026). O sistema mostra numa caixa as notas que os fornecedores emitem contra os CNPJs do grupo, antes mesmo de alguém lançar.
+
+> 🟡 O banco está no PR #126, ainda não juntado. ⏳ A busca automática das notas e a tela ainda não existem.
+
+- **Como as notas chegam:** o sistema busca sozinho, várias vezes ao dia, as NF-e (material) na SEFAZ e as NFS-e (serviço) no ambiente nacional da nota de serviço. ✅ Toda NF-e recebe a ciência da operação automaticamente, para o sistema baixar a nota completa.
+- ✅ **Agrupada por empresa**, não por núcleo, porque a nota só traz o CNPJ da empresa.
+- ✅ **Quem vê:** AF, AO, AD, diretor e master veem a caixa inteira. O master e o AD liberam outras pessoas por empresa e por tipo (material ou serviço), sempre com o motivo, e podem tirar a liberação.
+- ✅ **Quem lança sem acesso à caixa** acha a própria nota pela chave de acesso, ou pelo CNPJ do emitente com o número e o valor exato da nota.
+- ✅ **Nota de PJ:** só o master e os designados veem.
+- 🟡 **Situação da nota:** nova, vinculada ou ignorada. Fica vinculada sozinha quando a nota é lançada no ERP. Ignorar exige o motivo, e só o financeiro ou o master ignora.
+- 🟡 A nota cancelada pelo emitente fica marcada como cancelada.
+- 🟡 **No Sienge,** a importação de NF-e fica parada, porque a nossa busca substitui e as duas dividiriam o limite de consultas da SEFAZ. É a recomendação, e o Moises não se opôs.
+
 ## ⏳ Em aberto: como a nota chega ao Sienge
 
 | Caminho | Como funciona | Custo |
