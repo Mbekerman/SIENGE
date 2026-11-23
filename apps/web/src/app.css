@@ -383,3 +383,13 @@ button.lt-o:hover{background:#f1f4f9}
 .lt-sec .nt{display:block;padding:8px 12px;border-radius:8px;font-size:13px;line-height:18px}
 .lt-senha,.lt-sug{display:flex;flex-direction:column;gap:8px}
 .lt-cc{display:block;overflow-wrap:anywhere;margin-top:2px}
+
+/* Previsão mês a mês (pages/Calendario.tsx) */
+.cal-grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:8px 12px}
+.cal-mes{display:flex;flex-direction:column;gap:4px}
+.cal-mes .lt-in{text-align:right}
+.cal-total{display:grid;grid-template-columns:1fr auto;gap:4px 16px;padding:12px 0 0;border-top:1px solid #e3e7ec}
+.cal-total b{font-weight:500;text-align:right}
+.cal-pergunta{display:flex;flex-direction:column;gap:8px}
+.cal-pergunta .lt-lin{flex-wrap:wrap}
+.cal-pergunta .btn{white-space:normal;height:auto;min-height:40px;text-align:left}

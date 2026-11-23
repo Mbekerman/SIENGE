@@ -8393,6 +8393,127 @@ select pg_temp.ok((select valor_total = :ct1_lanc from erp.compromissos where id
 select pg_temp.ok((select bool_and(pg_get_functiondef(f) like '%pg_advisory_xact_lock(hashtext(''erp.compromisso:''%')
                      from unnest(array['erp.tg_compromisso_vinculado()'::regprocedure, 'erp.tg_contrato_confere()'::regprocedure]) f),
   'conta: o contrato e a nota que entra nele tomam a mesma trava');
+
+-- previsão mês a mês (Moises, 23/11/2026). A conferência do calendário roda no fim da transação; aqui, que tudo é
+-- uma transação só, "set constraints ... immediate" a roda na hora.
+select pg_temp.como(:'analista');
+select jsonb_build_object('empresa', :'spe', 'tipo', 'contrato', 'fornecedor', '10000000-0000-0000-0000-000000000007',
+         'descricao', 'Agência trimestre', 'inicio', '2027-01-01', 'fim', '2027-03-31', 'valor_total', 3000,
+         'rateio', :'cbase'::jsonb->'rateio') as kbase \gset
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('meses', jsonb_build_array(
+  jsonb_build_object('mes', '2027-01-01', 'valor', 1000), jsonb_build_object('mes', '2027-02-01', 'valor', 500),
+  jsonb_build_object('mes', '2027-03-01', 'valor', 1500)))) as kctr \gset
+set constraints erp.t_meses_conferem immediate;
+set constraints erp.t_meses_conferem deferred;
+select pg_temp.ok((select jsonb_array_length(x->'meses') = 3 and (x->'meses'->1->>'valor')::numeric = 500 and x->'trava_antes' = 'null'::jsonb
+                     from api.conta(:'kctr') x), 'mês a mês: o contrato grava um valor por mês e devolve o calendário');
+select aprovacao_versao as kver from erp.compromissos where id = :'kctr' \gset
+-- cada caso errado: grava, roda a conferência e volta
+savepoint sp_mes;
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'meses', jsonb_build_array(
+  jsonb_build_object('mes', '2027-01-01', 'valor', 1000), jsonb_build_object('mes', '2027-02-01', 'valor', 500),
+  jsonb_build_object('mes', '2027-03-01', 'valor', 1000))));
+select pg_temp.erro_igual('set constraints erp.t_meses_conferem immediate',
+  'A soma dos meses (R$ 2.500,00) não bate com o valor do contrato (R$ 3.000,00)', 'mês a mês: a soma tem de bater com o valor do contrato');
+rollback to savepoint sp_mes;
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'valor_total', 3500));
+select pg_temp.erro_igual('set constraints erp.t_meses_conferem immediate',
+  'A soma dos meses (R$ 3.000,00) não bate com o valor do contrato (R$ 3.500,00)', 'mês a mês: mudar só o valor do contrato também confere a soma');
+rollback to savepoint sp_mes;
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'meses', jsonb_build_array(
+  jsonb_build_object('mes', '2027-01-01', 'valor', 1000), jsonb_build_object('mes', '2027-02-01', 'valor', 2000))));
+select pg_temp.erro_igual('set constraints erp.t_meses_conferem immediate',
+  'O calendário do contrato precisa ter todos os meses da vigência', 'mês a mês: o contrato tem todos os meses da vigência');
+rollback to savepoint sp_mes;
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'meses', jsonb_build_array(
+  jsonb_build_object('mes', '2027-01-01', 'valor', 1000), jsonb_build_object('mes', '2027-02-01', 'valor', 500),
+  jsonb_build_object('mes', '2027-03-01', 'valor', 1000), jsonb_build_object('mes', '2027-04-01', 'valor', 500))));
+select pg_temp.erro_igual('set constraints erp.t_meses_conferem immediate',
+  'Há mês do calendário fora da vigência', 'mês a mês: mês fora da vigência é recusado');
+rollback to savepoint sp_mes;
+select api.salvar_conta((:'kbase'::jsonb - 'fim') || jsonb_build_object('id', :'kctr'));
+select pg_temp.erro_igual('set constraints erp.t_meses_conferem immediate',
+  'Contrato com previsão mês a mês precisa da data de fim', 'mês a mês: contrato com calendário tem data de fim');
+rollback to savepoint sp_mes;
+select pg_temp.erro_igual(format('select api.salvar_conta(%L::jsonb)', (:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'meses',
+  jsonb_build_array(jsonb_build_object('mes', '2027-01-01', 'valor', -1))))::text),
+  'Cada mês precisa da data e de um valor (zero ou mais)', 'mês a mês: valor negativo é recusado');
+rollback to savepoint sp_mes;
+set constraints erp.t_meses_conferem deferred;
+-- mudar um mês: versão nova (volta para a aprovação); salvar sem mandar os meses não mexe neles
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr'));
+select pg_temp.ok((select aprovacao_versao = :kver from erp.compromissos where id = :'kctr')
+                  and (select count(*) = 3 from erp.compromisso_meses where compromisso_id = :'kctr'),
+  'mês a mês: salvar sem os meses não mexe no calendário nem na versão');
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'meses', jsonb_build_array(
+  jsonb_build_object('mes', '2027-01-01', 'valor', 1200), jsonb_build_object('mes', '2027-02-01', 'valor', 500),
+  jsonb_build_object('mes', '2027-03-01', 'valor', 1300))));
+set constraints erp.t_meses_conferem immediate;
+set constraints erp.t_meses_conferem deferred;
+select pg_temp.ok((select aprovacao_versao > :kver and alterado_por = :'analista' from erp.compromissos where id = :'kctr'),
+  'mês a mês: mudar um mês pede aprovação de novo');
+-- assinatura bimestral não tem calendário; consumo: os meses do ano até o teto
+savepoint sp_mes;
+select api.salvar_conta(jsonb_build_object('empresa', :'spe', 'tipo', 'assinatura', 'fornecedor', '10000000-0000-0000-0000-000000000007',
+  'descricao', 'Software bimestral', 'inicio', '2027-01-01', 'valor_periodo', 200, 'periodicidade', 'bimestral', 'rateio', :'cbase'::jsonb->'rateio',
+  'meses', jsonb_build_array(jsonb_build_object('mes', '2027-01-01', 'valor', 200))));
+select pg_temp.erro_igual('set constraints erp.t_meses_conferem immediate',
+  'A previsão mês a mês só vale para conta mensal', 'mês a mês: assinatura bimestral não tem calendário');
+rollback to savepoint sp_mes;
+select api.salvar_conta(:'cbase'::jsonb || jsonb_build_object('instalacao', 'C-2', 'faixa_mensal', 1000, 'teto_anual', 5000, 'inicio', '2027-01-01',
+  'meses', (select jsonb_agg(jsonb_build_object('mes', m, 'valor', 1000)) from generate_series('2027-01-01'::date, '2027-06-01', '1 month') m)));
+select pg_temp.erro_igual('set constraints erp.t_meses_conferem immediate',
+  'Os meses de 2027 somam R$ 6.000,00, acima do teto no ano (R$ 5.000,00)', 'mês a mês: no consumo, os meses do ano não passam do teto');
+rollback to savepoint sp_mes;
+set constraints erp.t_meses_conferem deferred;
+-- o valor de cada mês nas previsões; sem fim, depois do último mês vale o último; mês com zero não gera previsão
+select api.salvar_conta(jsonb_build_object('empresa', :'spe', 'tipo', 'assinatura', 'fornecedor', '10000000-0000-0000-0000-000000000007',
+  'descricao', 'Software mensal', 'inicio', '2027-01-01', 'valor_periodo', 100, 'periodicidade', 'mensal', 'dia_vencimento', 10,
+  'rateio', :'cbase'::jsonb->'rateio', 'meses', jsonb_build_array(jsonb_build_object('mes', '2027-01-01', 'valor', 100),
+  jsonb_build_object('mes', '2027-02-01', 'valor', 0), jsonb_build_object('mes', '2027-03-01', 'valor', 250)))) as kass \gset
+set constraints erp.t_meses_conferem immediate;
+set constraints erp.t_meses_conferem deferred;
+select pg_temp.ok(erp.valor_do_mes(:'kass', '2027-01-15') = 100 and erp.valor_do_mes(:'kass', '2027-02-01') = 0
+                  and erp.valor_do_mes(:'kass', '2027-07-01') = 250 and erp.valor_do_mes(:'kctr', '2027-03-01') = 1300,
+  'mês a mês: o valor do mês é o do calendário e, sem fim, depois do último vale o último');
+select pg_temp.sis();
+select erp.gerar_previsoes_assinatura(:'kass', '2027-04-30');
+select pg_temp.ok((select count(distinct competencia) = 3 and sum(valor) = 600
+                          and bool_and(competencia in ('2027-01-01', '2027-03-01', '2027-04-01'))
+                     from erp.previsoes where compromisso_id = :'kass'),
+  'mês a mês: as previsões da assinatura saem com o valor de cada mês, e o mês com zero não gera previsão');
+-- depois da primeira aprovação, mês que já passou não muda
+select jsonb_build_object('empresa', :'spe', 'tipo', 'contrato', 'fornecedor', '10000000-0000-0000-0000-000000000007',
+         'descricao', 'Contrato em curso', 'inicio', erp.mes(current_date) - interval '2 months',
+         'fim', erp.mes(current_date) + interval '2 months' - interval '1 day', 'valor_total', 400, 'rateio', :'cbase'::jsonb->'rateio') as pbase,
+       jsonb_build_object('mes', erp.mes(current_date) - interval '2 months', 'valor', 100) as pm2,
+       jsonb_build_object('mes', erp.mes(current_date) - interval '1 month', 'valor', 100) as pm1,
+       erp.mes(current_date) as p0, erp.mes((current_date + interval '1 month')::date) as p1 \gset
+select pg_temp.volta();
+select api.salvar_conta(:'pbase'::jsonb || jsonb_build_object('meses', jsonb_build_array(:'pm2'::jsonb, :'pm1'::jsonb,
+  jsonb_build_object('mes', :'p0', 'valor', 100), jsonb_build_object('mes', :'p1', 'valor', 100)))) as kcur \gset
+set constraints erp.t_meses_conferem immediate;
+set constraints erp.t_meses_conferem deferred;
+select pg_temp.sis();
+set local role erp_situacao;
+insert into erp.compromisso_aprovacoes (compromisso_id, versao, vaga, aprovado, por)
+select id, aprovacao_versao, 'FIN', true, :'contador' from erp.compromissos where id = :'kcur';
+reset role;
+select pg_temp.volta();
+select pg_temp.ok((select (x->>'trava_antes')::date = :'p0'::date from api.conta(:'kcur') x), 'mês a mês: a conta aprovada diz desde que mês o calendário muda');
+select pg_temp.erro_igual(format('select api.salvar_conta(%L::jsonb)', (:'pbase'::jsonb || jsonb_build_object('id', :'kcur', 'meses', jsonb_build_array(
+  jsonb_set(:'pm2'::jsonb, '{valor}', '50'), :'pm1'::jsonb, jsonb_build_object('mes', :'p0', 'valor', 100), jsonb_build_object('mes', :'p1', 'valor', 150))))::text),
+  'Mês que já passou não muda no calendário', 'mês a mês: depois de aprovada, mês que já passou não muda');
+select api.salvar_conta(:'pbase'::jsonb || jsonb_build_object('id', :'kcur', 'meses', jsonb_build_array(:'pm2'::jsonb, :'pm1'::jsonb,
+  jsonb_build_object('mes', :'p0', 'valor', 50), jsonb_build_object('mes', :'p1', 'valor', 150))));
+set constraints erp.t_meses_conferem immediate;
+set constraints erp.t_meses_conferem deferred;
+select pg_temp.ok((select valor = 150 from erp.compromisso_meses where compromisso_id = :'kcur' and competencia = :'p1'),
+  'mês a mês: o mês atual e os de depois mudam');
+-- quem só consulta não grava meses
+select pg_temp.como(:'leitor');
+select pg_temp.falha(format($$insert into erp.compromisso_meses values (%L, '2027-01-01', 1)$$, :'kass'), 'mês a mês: quem só consulta não grava o calendário');
+select pg_temp.como(:'analista');
 rollback;
 select pg_temp.como(null);
 

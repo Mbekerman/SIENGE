@@ -60,6 +60,8 @@ export interface ContaCadastro {
   inicio: string; fim: string | null; periodicidade: string | null; valor_periodo: number | null; valor_total: number | null; dia_vencimento: number | null;
   caucao_percentual: number | null; instalacao: string | null; faixa_mensal: number | null; teto_anual: number | null; situacao: string;
   rateio: { nucleo: string | null; centro: string | null; divisao: string | null; natureza: string; percentual: number }[];
+  /** previsão mês a mês (vazio = valor igual) e o primeiro mês que ainda muda (nulo = todos) */
+  meses: { mes: string; valor: number }[]; trava_antes: string | null;
 }
 
 /** Rastro do título (api.titulo_rastro): de onde veio, quem aprovou, o que mudou, os anexos, o contrato e o fornecedor. */
