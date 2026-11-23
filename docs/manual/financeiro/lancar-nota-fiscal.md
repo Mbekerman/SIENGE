@@ -117,7 +117,7 @@ Alguns pontos dependem de decisões em aberto, indicadas abaixo.
 
 ✅ **Decidido** (Moises, 23/nov/2026). O sistema mostra numa caixa as notas que os fornecedores emitem contra os CNPJs do grupo, antes mesmo de alguém lançar.
 
-> ✅ O banco e o serviço da busca estão no sistema (PR #126, juntado em 23/nov/2026). ⏳ A tela ainda não existe, e a busca só liga depois de uma correção pendente no Supabase.
+> ✅ O banco e o serviço da busca estão no sistema (PR #126, juntado em 23/nov/2026). A busca já pode ser ligada (Moises aceitou o risco que faltava, 23/nov/2026). ⏳ A tela ainda não existe.
 
 - **Como as notas chegam:** o sistema busca sozinho, várias vezes ao dia, as NF-e (material) na SEFAZ e as NFS-e (serviço) no ambiente nacional da nota de serviço. ✅ Toda NF-e recebe a ciência da operação automaticamente, para o sistema baixar a nota completa.
 - ✅ **Agrupada por empresa**, não por núcleo, porque a nota só traz o CNPJ da empresa.
