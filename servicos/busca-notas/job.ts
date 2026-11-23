@@ -4,7 +4,8 @@
 // Variáveis: NOTAS_DB_URL (segredo: a URL do banco com o login erp_busca_notas); NOTAS_CERTS (pasta, padrão /certs),
 // com uma subpasta por empresa, com o nome do id dela no ERP e o arquivo pem dentro (chave privada e certificado A1
 // em PEM, montados do Secret Manager); NOTAS_UF (código IBGE da UF do autor na SEFAZ, padrão 35); NOTAS_CA (opcional:
-// PEM com as raízes da ICP-Brasil, que a SEFAZ usa e o Node não traz).
+// PEM com as raízes da ICP-Brasil, que a SEFAZ usa e o Node não traz); NOTAS_DB_CA (o certificado raiz do Supabase, para
+// conferir o servidor do banco: sem ele o serviço não sobe).
 import { Agent, request } from 'node:https';
 import { createHash, createPrivateKey, createSign, X509Certificate } from 'node:crypto';
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
@@ -43,12 +44,14 @@ function http(agent: Agent, url: string, metodo: 'GET' | 'POST', cabecalhos: Rec
 async function main() {
   const url = process.env.NOTAS_DB_URL;
   if (!url) throw new Error('falta NOTAS_DB_URL');
+  const dbCa = process.env.NOTAS_DB_CA;
+  if (!dbCa || !existsSync(dbCa)) throw new Error('falta NOTAS_DB_CA (o certificado raiz do Supabase)');
   const dir = process.env.NOTAS_CERTS ?? '/certs';
   const uf = process.env.NOTAS_UF ?? '35';
   const extra = process.env.NOTAS_CA && existsSync(process.env.NOTAS_CA) ? [readFileSync(process.env.NOTAS_CA, 'utf8')] : [];
   const empresas = readdirSync(dir).filter((d) => UUID.test(d) && existsSync(join(dir, d, 'pem')));
   if (!empresas.length) throw new Error('nenhum certificado em ' + dir);
-  const banco = bancoPg(url);
+  const banco = bancoPg(url, readFileSync(dbCa, 'utf8'));
   const ritmo = { lotesAdn: 40, lotesSefaz: 20, lotesCiencia: 5, pausa: (ms: number) => new Promise<void>((ok) => setTimeout(ok, ms)), agora: () => new Date() };
   const sha1b64 = (s: string) => createHash('sha1').update(s, 'utf8').digest('base64');
   let falhou = false;

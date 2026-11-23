@@ -6,8 +6,10 @@ import type { Banco, Leitura, Origem } from './ciclo.ts';
 
 export type BancoPg = Banco & { cnpj(empresa: string): Promise<string | null>; fechar(): Promise<void> };
 
-export function bancoPg(url: string): BancoPg {
-  const sql = postgres(url, { max: 1, prepare: false, idle_timeout: 20, connect_timeout: 30, onnotice: () => {} });
+// ca: o certificado raiz do Supabase (Database > SSL), para conferir o servidor e o nome dele (verify-full), não só cifrar.
+export function bancoPg(url: string, ca: string): BancoPg {
+  const sql = postgres(url, { max: 1, prepare: false, idle_timeout: 20, connect_timeout: 30, onnotice: () => {},
+                              ssl: { ca, rejectUnauthorized: true } });
   return {
     async cnpj(empresa) {
       const [r] = await sql`select erp.busca_notas_empresa(${empresa}::uuid) as v`;

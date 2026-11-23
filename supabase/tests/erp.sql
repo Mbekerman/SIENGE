@@ -9482,7 +9482,21 @@ select pg_temp.ok(erp._lanco_na_empresa(:'spe') and not erp._lanco_na_empresa(:'
 select pg_temp.ok((select count(*) = 6 and count(*) filter (where criterio = 'emitente') = 3 and count(nota_id) = 3
                      and bool_and(user_id = :'analista2') from erp.notas_recebidas_buscas),
   'notas recebidas: toda busca fica registrada, com o critério e a nota achada');
-select count(api.buscar_nota_recebida(null, '55555555000155', '9' || g, 1)) from generate_series(1, 17) g;
+-- só ver (leitor) em todos os centros da empresa não basta para achar pelo emitente; pela chave, acha
+select pg_temp.sis();
+insert into erp.excecoes_centro (user_id, nucleo_economico_id, centro_custo_id, nivel)
+select :'analista2', n.id, nc.centro_custo_id, 'leitor' from erp.nucleos_economicos n
+  join erp.nucleo_centros nc on nc.nucleo_economico_id = n.id where n.empresa_id = :'spe'
+on conflict (user_id, nucleo_economico_id, centro_custo_id) do update set nivel = 'leitor', fim = null;
+select pg_temp.como(:'analista2');
+select pg_temp.ok(erp.escrevo() and not erp._lanco_na_empresa(:'spe')
+                  and api.buscar_nota_recebida(null, '55555555000155', '500', 1500) is null
+                  and (select x->>'id' = :'nr1' from api.buscar_nota_recebida(pg_temp.chave('nfse', '55555555000155', '500')) x),
+  'notas recebidas: quem só vê a empresa (sem lançar) não acha pelo emitente');
+select pg_temp.sis();
+delete from erp.excecoes_centro where user_id = :'analista2' and nucleo_economico_id in (select id from erp.nucleos_economicos where empresa_id = :'spe');
+select pg_temp.como(:'analista2');
+select count(api.buscar_nota_recebida(null, '55555555000155', '9' || g, 1)) from generate_series(1, 16) g;
 select pg_temp.erro_igual($$select api.buscar_nota_recebida(null, '55555555000155', '500', 1500)$$,
   'Limite de buscas pelo emitente nesta hora; busque pela chave de acesso', 'notas recebidas: a busca pelo emitente tem limite por hora');
 select pg_temp.ok((select x->>'id' = :'nr1' from api.buscar_nota_recebida(pg_temp.chave('nfse', '55555555000155', '500')) x),
@@ -9587,6 +9601,29 @@ select pg_temp.ok(erp.vejo_documento('70000000-0000-0000-0000-0000000000a7')
 select pg_temp.como(:'leitor');
 select pg_temp.ok(not erp.vejo_documento('70000000-0000-0000-0000-0000000000a7') and not exists (select 1 from api.notas_recebidas()),
   'notas recebidas: quem não vê a nota lançada não vê a nota recebida ligada');
+-- NF-e: a série também tem de bater, nos dois caminhos (a nota que chega depois e a lançada depois)
+select pg_temp.sis();
+select emitente_id as emit_id_l from erp.documentos_fiscais where id = :'doc_l' \gset
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, serie, emissao, competencia, valor_bruto) values
+  ('70000000-0000-0000-0000-0000000000b2', :'emp_l', :'emit_id_l', 'nfe', '4242', '2', '2026-11-10', '2026-11-01', 333),
+  ('70000000-0000-0000-0000-0000000000b3', :'emp_l', :'emit_id_l', 'nfe', '4242', '3', '2026-11-10', '2026-11-01', 333),
+  ('70000000-0000-0000-0000-0000000000b1', :'emp_l', :'emit_id_l', 'nfe', '04242', '001', '2026-11-10', '2026-11-01', 333);
+set role erp_situacao;
+update erp.documentos_fiscais set situacao = 'lancado', lancado_em = clock_timestamp() where id = '70000000-0000-0000-0000-0000000000b2';
+reset role;
+select erp.registrar_nota_recebida(:'emp_l', pg_temp.nota('nfe', :'emit_l', '4242', 333, :'tom_l'), '<resNFe/>', false) as nr_s \gset
+select pg_temp.ok((select situacao = 'nova' from erp.notas_recebidas where id = :'nr_s'),
+  'notas recebidas: a NF-e que chega não se liga à lançada de outra série');
+set role erp_situacao;
+update erp.documentos_fiscais set situacao = 'lancado', lancado_em = clock_timestamp() where id = '70000000-0000-0000-0000-0000000000b3';
+reset role;
+select pg_temp.ok((select situacao = 'nova' from erp.notas_recebidas where id = :'nr_s'),
+  'notas recebidas: nem a lançada depois com outra série');
+set role erp_situacao;
+update erp.documentos_fiscais set situacao = 'lancado', lancado_em = clock_timestamp() where id = '70000000-0000-0000-0000-0000000000b1';
+reset role;
+select pg_temp.ok((select situacao = 'vinculada' and documento_id = '70000000-0000-0000-0000-0000000000b1' from erp.notas_recebidas where id = :'nr_s'),
+  'notas recebidas: com a mesma série (zeros à esquerda não contam), a NF-e se liga');
 select pg_temp.como(null);
 rollback;
 
@@ -9596,9 +9633,13 @@ select pg_temp.sis();
 select pg_temp.ok(not exists (select 1 from pg_auth_members m join pg_roles r on r.oid = m.member where r.rolname = 'erp_busca_notas')
                   and not exists (select 1 from pg_auth_members m join pg_roles r on r.oid = m.roleid where r.rolname = 'erp_busca_notas')
                   and not exists (select 1 from information_schema.role_table_grants where grantee = 'erp_busca_notas')
-                  and (select count(*) = 7 from pg_proc p where p.pronamespace in ('erp'::regnamespace, 'api'::regnamespace)
-                         and has_function_privilege('erp_busca_notas', p.oid, 'EXECUTE')),
-  'busca: o login do serviço não é membro de nada, não tem tabela e só executa as 7 funções dele');
+                  and (select count(*) = 7 from pg_proc p join pg_namespace s on s.oid = p.pronamespace
+                        where s.nspname not in ('pg_catalog', 'information_schema') and s.nspname !~ '^pg_(temp|toast)'
+                          and has_schema_privilege('erp_busca_notas', s.oid, 'USAGE')
+                          and p.prorettype <> 'trigger'::regtype   -- função de gatilho não se chama direto
+                          and has_function_privilege('erp_busca_notas', p.oid, 'EXECUTE'))
+                  and not has_schema_privilege('erp_busca_notas', 'net', 'USAGE'),
+  'busca: o login do serviço não é membro de nada, não tem tabela e só executa as 7 funções dele (em nenhum esquema; nem o net)');
 set session authorization erp_busca_notas;
 select pg_temp.ok(erp.busca_notas_empresa(:'spe') = '33333333000133', 'busca: o serviço lê o CNPJ da empresa');
 select erp.registrar_nota_recebida(:'spe', pg_temp.nota('nfe', '77777777000177', '321', 450), '<resNFe/>', false) as nb \gset
@@ -9614,6 +9655,8 @@ select pg_temp.erro_igual('select count(*) from erp.notas_recebidas', 'permissio
 select pg_temp.erro_igual('select count(*) from erp.titulos', 'permission denied for table titulos', 'busca: nem outra tabela do ERP');
 select pg_temp.erro_igual(format($$select erp.ignorar_nota_recebida(%L, 'xxxx')$$, :'nb'), 'permission denied for function ignorar_nota_recebida',
   'busca: nem outra função');
+select pg_temp.erro_igual($$select net.http_post('http://exemplo.invalido')$$, 'permission denied for schema net',
+  'busca: o serviço não chama a rede do banco (pg_net, S-143)');
 select pg_temp.erro_igual('set role erp_sistema', 'permission denied to set role "erp_sistema"', 'busca: o serviço não vira o papel do sistema');
 -- com um login de usuário posto, deixa de ser sistema: não grava em nome de ninguém
 select set_config('request.jwt.claim.sub', :'diretor', false);

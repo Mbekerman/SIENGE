@@ -747,3 +747,28 @@ select pg_temp.dono(f::regprocedure, 'erp_situacao') from unnest(array[
   'erp.registrar_ciencia_nota_recebida(text)', 'erp.registrar_leitura_notas(uuid, text, bigint, bigint, timestamptz, text)']) f;
 select pg_temp.dono(f::regprocedure, 'erp_conferencia') from unnest(array[
   'erp.busca_notas_empresa(uuid)', 'erp.busca_notas_leitura(uuid, text)', 'erp.busca_notas_sem_ciencia(uuid, integer)']) f;
+
+-- ---------------------------------------------------------------------------------------------
+-- 11. S-143: o pg_net fechado a PUBLIC
+-- ---------------------------------------------------------------------------------------------
+-- No Supabase o schema net (pg_net) vem com USAGE e EXECUTE para PUBLIC. O erp_busca_notas é o primeiro login nosso
+-- fora do sistema: com a URL vazada, faria requisição HTTP de dentro do banco. Quem usa o net de propósito (o pg_cron
+-- do sienge-escrita e da carga, como postgres, dono ou com grant próprio; os webhooks do Supabase, pelo
+-- supabase_functions_admin) continua. Sem privilégio para tirar (net de outro dono), nada muda aqui: o comando que dá
+-- LOGIN ao erp_busca_notas (publicar.sh --banco) recusa enquanto o papel alcançar o net.
+do $$
+declare f regprocedure;
+begin
+  if exists (select 1 from pg_namespace where nspname = 'net') then
+    if exists (select 1 from pg_roles where rolname = 'supabase_functions_admin') then
+      execute 'grant usage on schema net to supabase_functions_admin';
+      for f in select p.oid::regprocedure from pg_proc p where p.pronamespace = 'net'::regnamespace loop
+        execute format('grant execute on function %s to supabase_functions_admin', f);
+      end loop;
+    end if;
+    revoke usage on schema net from public;
+    for f in select p.oid::regprocedure from pg_proc p where p.pronamespace = 'net'::regnamespace loop
+      execute format('revoke execute on function %s from public', f);
+    end loop;
+  end if;
+end $$;

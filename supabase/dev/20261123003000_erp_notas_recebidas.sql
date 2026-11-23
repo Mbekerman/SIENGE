@@ -754,6 +754,31 @@ select pg_temp.dono(f::regprocedure, 'erp_situacao') from unnest(array[
 select pg_temp.dono(f::regprocedure, 'erp_conferencia') from unnest(array[
   'erp.busca_notas_empresa(uuid)', 'erp.busca_notas_leitura(uuid, text)', 'erp.busca_notas_sem_ciencia(uuid, integer)']) f;
 
+-- ---------------------------------------------------------------------------------------------
+-- 11. S-143: o pg_net fechado a PUBLIC
+-- ---------------------------------------------------------------------------------------------
+-- No Supabase o schema net (pg_net) vem com USAGE e EXECUTE para PUBLIC. O erp_busca_notas é o primeiro login nosso
+-- fora do sistema: com a URL vazada, faria requisição HTTP de dentro do banco. Quem usa o net de propósito (o pg_cron
+-- do sienge-escrita e da carga, como postgres, dono ou com grant próprio; os webhooks do Supabase, pelo
+-- supabase_functions_admin) continua. Sem privilégio para tirar (net de outro dono), nada muda aqui: o comando que dá
+-- LOGIN ao erp_busca_notas (publicar.sh --banco) recusa enquanto o papel alcançar o net.
+do $$
+declare f regprocedure;
+begin
+  if exists (select 1 from pg_namespace where nspname = 'net') then
+    if exists (select 1 from pg_roles where rolname = 'supabase_functions_admin') then
+      execute 'grant usage on schema net to supabase_functions_admin';
+      for f in select p.oid::regprocedure from pg_proc p where p.pronamespace = 'net'::regnamespace loop
+        execute format('grant execute on function %s to supabase_functions_admin', f);
+      end loop;
+    end if;
+    revoke usage on schema net from public;
+    for f in select p.oid::regprocedure from pg_proc p where p.pronamespace = 'net'::regnamespace loop
+      execute format('revoke execute on function %s from public', f);
+    end loop;
+  end if;
+end $$;
+
 -- conferências (dão erro e desfazem tudo se algo não ficou certo)
 do $$ begin
   if pg_get_functiondef('erp.vejo_auditoria(text, text, jsonb, jsonb)'::regprocedure) not like '%notas_recebidas%' then
@@ -766,6 +791,12 @@ do $$ begin
                         'registrar_evento_nota_recebida','registrar_ciencia_nota_recebida','registrar_leitura_notas',
                         'busca_notas_empresa','busca_notas_leitura','busca_notas_sem_ciencia')) <> 19 then
     raise exception 'Conferência: funções definer';
+  end if;
+  if exists (select 1 from pg_namespace where nspname = 'net') then
+    if not has_schema_privilege('postgres', 'net', 'usage') then raise exception 'Conferência: o postgres perdeu o net (pg_cron)'; end if;
+    if has_schema_privilege('erp_busca_notas', 'net', 'usage') then
+      raise warning 'S-143: o net continua aberto a PUBLIC (o postgres não pôde tirar). O LOGIN do erp_busca_notas fica recusado até fechar.';
+    end if;
   end if;
   if exists (select 1 from pg_namespace n where n.nspname = 'erp'
               and (has_schema_privilege('erp_situacao', n.oid, 'create') or has_schema_privilege('erp_conferencia', n.oid, 'create')

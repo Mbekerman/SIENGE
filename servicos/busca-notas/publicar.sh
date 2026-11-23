@@ -6,8 +6,10 @@
 # Rodar no Cloud Shell do projeto bkm-erp, pelo Moises, nesta ordem:
 #   1. bash publicar.sh --certificado ~/arquivo.pfx    (uma vez por empresa: pede o id da empresa no ERP e a senha do
 #                                                      certificado; guarda chave + certificado em PEM; apaga o .pfx)
-#   2. bash publicar.sh --banco                        (gera a senha do login, guarda a URL do banco e mostra o comando
-#                                                      ALTER ROLE para colar no SQL Editor do Supabase; a senha não aparece)
+#   2. bash publicar.sh --banco ~/prod-ca-2021.crt     (o certificado raiz do Supabase, de Database > Settings > SSL: o
+#                                                      serviço confere o servidor do banco com ele; gera a senha do login,
+#                                                      guarda a URL e mostra o SQL para colar no SQL Editor do Supabase,
+#                                                      que só liga o login com a rede do banco, o pg_net, fechada; S-143)
 #   3. bash publicar.sh --publicar                     (publica o job com o código da develop e roda uma vez)
 #   4. bash publicar.sh --agendar                      (de hora em hora, pelo Cloud Scheduler)
 #   bash publicar.sh --rodar     roda de novo e mostra o log
@@ -21,6 +23,7 @@ SA=$NOME@$P.iam.gserviceaccount.com
 SA_AGENDA=erp-busca-notas-agenda@$P.iam.gserviceaccount.com
 S_DB=notas-db-url
 S_CA=notas-ca-icp
+S_DBCA=notas-db-ca
 gcloud config set project "$P" >/dev/null
 [ -n "$(gcloud config get-value account 2>/dev/null)" ] || { echo "Entre antes: gcloud auth login" >&2; exit 1; }
 
@@ -69,13 +72,18 @@ case "${1:-}" in
   rm -rf "$T"; rm -f "$PFX"
   echo "Certificado guardado em $S e o .pfx apagado do Cloud Shell. Depois: bash publicar.sh --publicar" ;;
 --banco)
+  DBCA=${2:?"informe o certificado do Supabase: bash publicar.sh --banco ~/prod-ca-2021.crt"}
+  [ -f "$DBCA" ] || { echo "Não achei $DBCA" >&2; exit 1; }
+  openssl x509 -in "$DBCA" -noout -text 2>/dev/null | grep -q 'CA:TRUE' || { echo "$DBCA não é um certificado de autoridade (CA)." >&2; exit 1; }
+  openssl x509 -in "$DBCA" -noout -subject -enddate -fingerprint -sha256 | sed 's/^/  /'
   conta
+  segredo "$S_DBCA" "$DBCA"
   read -r -p "Ref do projeto Supabase (Settings > General): " REF
   read -r -p "Host do pooler de sessão (Connect > Session pooler, ex.: aws-0-sa-east-1.pooler.supabase.com): " HOST
   [[ "$REF" =~ ^[a-z0-9]{20}$ && "$HOST" =~ ^[a-z0-9.-]+\.supabase\.com$ ]] || { echo "Ref ou host inválidos." >&2; exit 1; }
   umask 077; T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
   openssl rand -hex 24 > "$T/senha"
-  printf 'postgresql://erp_busca_notas.%s:%s@%s:5432/postgres?sslmode=require' "$REF" "$(cat "$T/senha")" > "$T/url"
+  printf 'postgresql://erp_busca_notas.%s:%s@%s:5432/postgres?sslmode=verify-full' "$REF" "$(cat "$T/senha")" > "$T/url"
   segredo "$S_DB" "$T/url"
   # o banco guarda só o verificador SCRAM: a senha não passa pelo SQL Editor
   VERIF=$(python3 - "$T/senha" <<'PY'
@@ -88,14 +96,25 @@ print(f"SCRAM-SHA-256${it}:{b(salt)}${b(hashlib.sha256(ck).digest())}:{b(sk)}")
 PY
 )
   rm -rf "$T"
-  echo; echo "Cole no SQL Editor do Supabase (projeto $REF):"; echo
-  echo "alter role erp_busca_notas login password '$VERIF';"
+  echo; echo "Cole no SQL Editor do Supabase (projeto $REF). Só liga o login se o pg_net estiver fechado (S-143):"; echo
+  cat <<SQL
+do \$\$ begin
+  if exists (select 1 from pg_namespace where nspname = 'net')
+     and (has_schema_privilege('erp_busca_notas', 'net', 'usage')
+          or exists (select 1 from pg_class c where c.relnamespace = 'net'::regnamespace
+                      and has_table_privilege('erp_busca_notas', c.oid, 'select'))) then
+    raise exception 'S-143: o pg_net continua aberto a todos os logins; o login do serviço não foi ligado';
+  end if;
+  alter role erp_busca_notas login password '$VERIF';
+end \$\$;
+SQL
   echo; echo "Depois: bash publicar.sh --publicar" ;;
 --publicar|--rodar)
   conta; conferir_compute
   CERTS=$(certs_montados)
   [ -n "$CERTS" ] || { echo "Nenhum certificado guardado: bash publicar.sh --certificado ~/arquivo.pfx" >&2; exit 1; }
-  gcloud secrets describe "$S_DB" >/dev/null 2>&1 || { echo "Falta o banco: bash publicar.sh --banco" >&2; exit 1; }
+  gcloud secrets describe "$S_DB" >/dev/null 2>&1 && gcloud secrets describe "$S_DBCA" >/dev/null 2>&1 || \
+    { echo "Falta o banco: bash publicar.sh --banco ~/prod-ca-2021.crt" >&2; exit 1; }
   if [ "$1" = --publicar ]; then
     # raízes da ICP-Brasil (a SEFAZ usa certificado de servidor dessa cadeia, que o Node não traz)
     umask 077; T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
@@ -105,15 +124,23 @@ PY
       openssl x509 -in "$T/$v.pem" -noout -subject -fingerprint -sha256 | sed 's/^/  /'
       cat "$T/$v.pem" >> "$T/ca"
     done
-    [ -s "$T/ca" ] && segredo "$S_CA" "$T/ca"
+    # confiança no primeiro uso: depois de guardadas, raízes diferentes das guardadas são recusadas (compare as
+    # impressões digitais acima com as do site do ITI na primeira vez); para trocar de propósito, NOTAS_CA_NOVA=1
+    if [ -s "$T/ca" ] && gcloud secrets describe "$S_CA" >/dev/null 2>&1; then
+      gcloud secrets versions access latest --secret "$S_CA" > "$T/ca.guardada"
+      if ! cmp -s "$T/ca" "$T/ca.guardada"; then
+        [ "${NOTAS_CA_NOVA:-}" = 1 ] || { echo "As raízes da ICP-Brasil baixadas agora são diferentes das guardadas. Confira no site do ITI e, se for de propósito, rode com NOTAS_CA_NOVA=1." >&2; exit 1; }
+        segredo "$S_CA" "$T/ca"
+      fi
+    elif [ -s "$T/ca" ]; then segredo "$S_CA" "$T/ca"; fi
     rm -rf "$T"
     umask 022   # o código clonado precisa ser legível dentro da imagem (lição do teste do ADN, 23/11/2026)
     DIR=$(mktemp -d); git clone --depth 1 --branch "${NOTAS_BRANCH:-develop}" https://github.com/Mbekerman/SIENGE.git "$DIR/SIENGE"
     CA=""; gcloud secrets describe "$S_CA" >/dev/null 2>&1 && CA="/ca/pem=$S_CA:latest,"
     gcloud run jobs deploy "$NOME" --source "$DIR/SIENGE/servicos/busca-notas" --region "$R" \
       --service-account "$SA" --tasks 1 --max-retries 0 --task-timeout 50m --memory 512Mi --cpu 1 \
-      --set-secrets "${CERTS}${CA}NOTAS_DB_URL=$S_DB:latest" \
-      --set-env-vars "NOTAS_UF=${NOTAS_UF:-35}$([ -n "$CA" ] && echo ',NOTAS_CA=/ca/pem')"
+      --set-secrets "${CERTS}${CA}/dbca/pem=$S_DBCA:latest,NOTAS_DB_URL=$S_DB:latest" \
+      --set-env-vars "NOTAS_UF=${NOTAS_UF:-35},NOTAS_DB_CA=/dbca/pem$([ -n "$CA" ] && echo ',NOTAS_CA=/ca/pem')"
   fi
   gcloud run jobs execute "$NOME" --region "$R" --wait || true
   EXE=$(gcloud run jobs describe "$NOME" --region "$R" --format='value(status.latestCreatedExecution.name)')
@@ -136,5 +163,5 @@ PY
 --parar)
   gcloud scheduler jobs delete "$NOME" --location "$R" --quiet && echo "Agendamento tirado." ;;
 *)
-  sed -n '2,16p' "$0"; exit 1 ;;
+  sed -n '2,17p' "$0"; exit 1 ;;
 esac
