@@ -8581,6 +8581,75 @@ select pg_temp.como(:'leitor');
 select pg_temp.falha(format($$insert into erp.compromisso_pagamentos (compromisso_id, modo) values (%L, 'cobranca')$$, :'kctr'),
   'como paga: quem só consulta não grava a forma');
 select pg_temp.como(:'analista');
+
+-- revisão de segurança do #119: o que muda só o calendário ou só a forma também conta como quem alterou, e a volta
+-- da aprovação vale para tirar; as conferências do cadastro rodam mesmo sem passar por api.salvar_conta
+select pg_temp.sis();
+set local role erp_situacao;
+update erp.compromissos set alterado_por = :'contador' where id = :'kctr';
+reset role;
+select pg_temp.volta();
+update erp.compromisso_meses set valor = valor + 100 where compromisso_id = :'kctr' and competencia = '2027-01-01';
+update erp.compromisso_meses set valor = valor - 100 where compromisso_id = :'kctr' and competencia = '2027-02-01';
+set constraints erp.t_meses_conferem immediate;
+set constraints erp.t_meses_conferem deferred;
+select pg_temp.ok((select alterado_por = :'analista' from erp.compromissos where id = :'kctr'),
+  'mês a mês: quem muda só o calendário passa a ser quem alterou (e não aprova a versão nova)');
+select pg_temp.sis();
+set local role erp_situacao;
+update erp.compromissos set alterado_por = :'contador' where id = :'kctr';
+reset role;
+select pg_temp.volta();
+insert into erp.compromisso_pagamentos (compromisso_id, modo) values (:'kctr', 'cobranca');
+select pg_temp.ok((select alterado_por = :'analista' from erp.compromissos where id = :'kctr'),
+  'como paga: quem muda só a forma passa a ser quem alterou (e não aprova a versão nova)');
+select aprovacao_versao as kver from erp.compromissos where id = :'kctr' \gset
+update erp.compromisso_pagamentos set modo = modo where compromisso_id = :'kctr';
+select pg_temp.ok((select aprovacao_versao = :kver from erp.compromissos where id = :'kctr'),
+  'como paga: regravar a forma igual não pede aprovação de novo');
+delete from erp.compromisso_pagamentos where compromisso_id = :'kctr';
+select pg_temp.ok((select aprovacao_versao > :kver from erp.compromissos where id = :'kctr'),
+  'como paga: tirar a forma também volta o cadastro para a aprovação');
+savepoint sp_rev;
+-- mudar o valor ou o fim do contrato sem acertar os meses é recusado (sem api.salvar_conta)
+select pg_temp.sis();
+update erp.compromissos set valor_total = 3500 where id = :'kctr';
+select pg_temp.erro_igual('set constraints erp.t_meses_conferem immediate',
+  'A soma dos meses (R$ 3.000,00) não bate com o valor do contrato (R$ 3.500,00)', 'mês a mês: mudar o valor do contrato direto também confere a soma');
+rollback to savepoint sp_rev;
+select pg_temp.sis();
+update erp.compromissos set fim = '2027-04-30' where id = :'kctr';
+select pg_temp.erro_igual('set constraints erp.t_meses_conferem immediate',
+  'O calendário do contrato precisa ter todos os meses da vigência', 'mês a mês: mudar o fim do contrato direto também confere os meses');
+rollback to savepoint sp_rev;
+-- incluir um mês que já passou, depois da aprovação, é recusado
+select pg_temp.sis();
+delete from erp.compromisso_meses where compromisso_id = :'kcur' and competencia = (:'pm2'::jsonb->>'mes')::date;
+select pg_temp.volta();
+select pg_temp.erro_igual(format('insert into erp.compromisso_meses values (%L, %L, 100)', :'kcur', :'pm2'::jsonb->>'mes'),
+  'Mês que já passou não muda no calendário', 'mês a mês: depois de aprovada, não se inclui mês que já passou');
+rollback to savepoint sp_rev;
+-- trocar o fornecedor e manter a chave CPF/CNPJ do anterior exige a exceção (sem api.salvar_conta)
+select pg_temp.volta();
+insert into erp.compromisso_pagamentos (compromisso_id, modo, pix_tipo, pix_chave) values (:'kctr', 'pix', 'cpf_cnpj', '77777777000177');
+set constraints erp.t_pagamento_confere immediate;
+set constraints erp.t_pagamento_confere deferred;
+select pg_temp.sis();
+update erp.compromissos set pessoa_id = '10000000-0000-0000-0000-000000000008' where id = :'kctr';
+select pg_temp.erro_igual('set constraints erp.t_pagamento_confere immediate',
+  'A chave PIX por CPF/CNPJ não é o documento do fornecedor (só com a justificativa da exceção)', 'como paga: trocar o fornecedor e manter a chave do anterior exige a exceção');
+rollback to savepoint sp_rev;
+-- fornecedor sem CPF/CNPJ: a conta da TED não tem com o que bater, então exige a exceção
+select pg_temp.sis();
+insert into erp.pessoas (id, tipo, nome) values ('10000000-0000-0000-0000-0000000000f1', 'juridica', 'Sem Documento');
+select pg_temp.volta();
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'fornecedor', '10000000-0000-0000-0000-0000000000f1', 'pagamento',
+  jsonb_build_object('modo', 'ted', 'banco', '341', 'agencia', '1234', 'conta', '56789', 'conta_digito', '0',
+                     'conta_tipo', 'corrente', 'titular_documento', '77777777000177')));
+select pg_temp.erro_igual('set constraints erp.t_pagamento_confere immediate',
+  'A conta da TED não é do fornecedor (só com a justificativa da exceção)', 'como paga: fornecedor sem documento exige a exceção');
+rollback to savepoint sp_rev;
+select pg_temp.como(:'analista');
 rollback;
 select pg_temp.como(null);
 
