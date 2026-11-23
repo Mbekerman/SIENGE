@@ -9655,6 +9655,11 @@ select pg_temp.erro_igual('select count(*) from erp.notas_recebidas', 'permissio
 select pg_temp.erro_igual('select count(*) from erp.titulos', 'permission denied for table titulos', 'busca: nem outra tabela do ERP');
 select pg_temp.erro_igual(format($$select erp.ignorar_nota_recebida(%L, 'xxxx')$$, :'nb'), 'permission denied for function ignorar_nota_recebida',
   'busca: nem outra função');
+-- a mesma consulta do serviço (servicos/busca-notas/banco.ts, SQL_NET_ABERTO), que ele roda no começo de cada rodada
+select pg_temp.ok(not (select exists (select 1 from pg_namespace n where n.nspname = 'net'
+  and (has_schema_privilege(n.oid, 'USAGE')
+       or exists (select 1 from pg_class c where c.relnamespace = n.oid and has_table_privilege(c.oid, 'SELECT'))))),
+  'busca: o serviço confere que não alcança o net, e consegue conferir');
 select pg_temp.erro_igual($$select net.http_post('http://exemplo.invalido')$$, 'permission denied for schema net',
   'busca: o serviço não chama a rede do banco (pg_net, S-143)');
 select pg_temp.erro_igual('set role erp_sistema', 'permission denied to set role "erp_sistema"', 'busca: o serviço não vira o papel do sistema');

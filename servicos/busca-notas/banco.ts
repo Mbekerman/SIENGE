@@ -4,13 +4,23 @@
 import postgres from 'postgres';
 import type { Banco, Leitura, Origem } from './ciclo.ts';
 
-export type BancoPg = Banco & { cnpj(empresa: string): Promise<string | null>; fechar(): Promise<void> };
+export type BancoPg = Banco & { cnpj(empresa: string): Promise<string | null>; netAberto(): Promise<boolean>; fechar(): Promise<void> };
+
+// S-143: o pg_net do Supabase não fecha pelo SQL Editor. O login só é ligado com ele fechado, e o serviço confere de novo
+// a cada rodada (uma atualização do Supabase pode reabrir). A mesma consulta está nos testes do banco (erp.sql).
+export const SQL_NET_ABERTO = `select exists (select 1 from pg_namespace n where n.nspname = 'net'
+  and (has_schema_privilege(n.oid, 'USAGE')
+       or exists (select 1 from pg_class c where c.relnamespace = n.oid and has_table_privilege(c.oid, 'SELECT')))) as v`;
 
 // ca: o certificado raiz do Supabase (Database > SSL), para conferir o servidor e o nome dele (verify-full), não só cifrar.
 export function bancoPg(url: string, ca: string): BancoPg {
   const sql = postgres(url, { max: 1, prepare: false, idle_timeout: 20, connect_timeout: 30, onnotice: () => {},
                               ssl: { ca, rejectUnauthorized: true } });
   return {
+    async netAberto() {
+      const [r] = await sql.unsafe(SQL_NET_ABERTO);
+      return Boolean(r?.v);
+    },
     async cnpj(empresa) {
       const [r] = await sql`select erp.busca_notas_empresa(${empresa}::uuid) as v`;
       return (r?.v as string | null) ?? null;

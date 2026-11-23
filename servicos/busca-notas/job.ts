@@ -52,6 +52,10 @@ async function main() {
   const empresas = readdirSync(dir).filter((d) => UUID.test(d) && existsSync(join(dir, d, 'pem')));
   if (!empresas.length) throw new Error('nenhum certificado em ' + dir);
   const banco = bancoPg(url, readFileSync(dbCa, 'utf8'));
+  if (await banco.netAberto()) {
+    await banco.fechar();
+    throw new Error('S-143: este login alcança o pg_net; a rodada não roda até fechar');
+  }
   const ritmo = { lotesAdn: 40, lotesSefaz: 20, lotesCiencia: 5, pausa: (ms: number) => new Promise<void>((ok) => setTimeout(ok, ms)), agora: () => new Date() };
   const sha1b64 = (s: string) => createHash('sha1').update(s, 'utf8').digest('base64');
   let falhou = false;
