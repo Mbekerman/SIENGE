@@ -40,14 +40,14 @@ O Moises sugeriu que praça e regional pudessem ser etiquetas (7/nov/2026). 🟡
 🟡 Como ficou no PR #120, ainda não juntado:
 
 - O apelido é opcional, tem de 2 a 40 letras e não se repete entre as empresas.
-- ✅ O master, a AF, a AD e o administrador dão ou mudam o apelido (Moises, 23/nov/2026). 🟡 A mudança feita pelo administrador segue a regra geral do TI e passa por aprovação, configurável tipo a tipo; o PR #120 ainda não tem isso.
-- ✅ As SPEs começam com o apelido **SPE 0X**, onde X é o número de cada uma: SPE 01 a SPE 08 (Moises, 23/nov/2026). A BKM Incorporadora fica sem apelido por ora e aparece pela razão social.
+- ✅ O master, a AF, a AD e o administrador dão ou mudam o apelido (Moises, 23/nov/2026). 🟡 No PR #120, a mudança vale na hora para todos, inclusive o administrador, e fica no histórico. ⏳ Falta o Moises dizer se a mudança feita pelo administrador passa por aprovação, como manda a regra geral do TI de 14/nov.
+- ✅ As SPEs começam com o apelido **SPE 0X**, onde X é o número de cada uma: SPE 01 a SPE 08 (Moises, 23/nov/2026). A BKM Incorporadora e Construtora S.A. fica com o apelido **Matriz**.
 - As telas de Títulos, Previsões, Contas recorrentes, Para aprovar, Lançar título e Nova conta mostram o apelido. Empresa sem apelido aparece pela razão social.
 - A razão social continua nos documentos, no envio ao Sienge e na conferência de quem recebe o pagamento.
 
 ### Tarefa: dar ou mudar o apelido de uma empresa
 
-**Quem faz:** master, AF, AD ou administrador (🟡 a do administrador passa por aprovação).
+**Quem faz:** master, AF, AD ou administrador (⏳ a do administrador talvez passe por aprovação).
 
 1. Abra **Cadastros › Empresas**. A lista mostra apelido, razão social, CNPJ e tipo, das empresas ativas e inativas.
 2. Toque na empresa. Abre uma gaveta ao lado.
