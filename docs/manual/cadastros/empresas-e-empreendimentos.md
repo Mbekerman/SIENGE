@@ -33,6 +33,31 @@ O Moises sugeriu que praça e regional pudessem ser etiquetas (7/nov/2026). 🟡
 
 ✅ **A Muchmore fica fora do ERP** (Moises, 15/nov/2026). Ela é a empresa 1 do Sienge, com os centros SSG, SSB e FCA. Não vira núcleo econômico e o histórico dela não é trazido do Sienge.
 
+## Apelido da empresa
+
+✅ **Pedido do Moises** (23/nov/2026): cada empresa do grupo pode ter um **apelido**, o nome pelo qual o sistema a chama, além da razão social. É como um nome fantasia só para uso interno.
+
+🟡 Como ficou no PR #120, ainda não juntado:
+
+- O apelido é opcional, tem de 2 a 40 letras e não se repete entre as empresas.
+- 🟡 Só o master, a AF e a AD dão ou mudam o apelido. O administrador não. Falta o Moises confirmar quem pode editar.
+- As telas de Títulos, Previsões, Contas recorrentes, Para aprovar, Lançar título e Nova conta mostram o apelido. Empresa sem apelido aparece pela razão social.
+- A razão social continua nos documentos, no envio ao Sienge e na conferência de quem recebe o pagamento.
+
+### Tarefa: dar ou mudar o apelido de uma empresa
+
+**Quem faz:** 🟡 master, AF ou AD.
+
+1. Abra **Cadastros › Empresas**. A lista mostra apelido, razão social, CNPJ e tipo, das empresas ativas e inativas.
+2. Toque na empresa. Abre uma gaveta ao lado.
+3. Digite o apelido no campo **Apelido**. Ele grava quando você sai do campo ou aperta Enter. Esc volta ao que estava.
+4. Para tirar o apelido, apague o campo e saia dele.
+
+![Lista de empresas no computador](../imagens/cadastros/empresas-lista-desktop.png)
+![Campo Apelido no computador](../imagens/cadastros/empresas-apelido-desktop.png)
+![Lista de empresas no celular](../imagens/cadastros/empresas-lista-celular.png)
+![Campo Apelido no celular](../imagens/cadastros/empresas-apelido-celular.png)
+
 ## Tarefa: cadastrar uma nova SPE e seu empreendimento
 
 > ⏳ As telas ainda não existem. O roteiro abaixo segue as regras decididas.
