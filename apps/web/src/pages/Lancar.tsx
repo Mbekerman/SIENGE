@@ -25,10 +25,10 @@ const novaParcela = (base?: Parcela, doc?: string | null): Parcela => ({
   pix_chave: base?.pix_chave ?? (doc ?? ''), boleto: '', excecao: base?.excecao ?? '', pix_cc: '', cc_exc: '', bol_exc: '',
 });
 
-/** A chave como o banco aceita: CPF/CNPJ só dígitos, e-mail minúsculo, telefone com +55. */
+/** A chave como o banco aceita: CPF/CNPJ sem pontuação, e-mail minúsculo, telefone com +55. */
 export function chave(t: PixTipo, v: string): string {
   const s = v.trim();
-  if (t === 'cpf_cnpj') return s.replace(/\D/g, '');
+  if (t === 'cpf_cnpj') return s.toUpperCase().replace(/[^0-9A-Z]/g, '');   // também o CNPJ alfanumérico
   if (t === 'telefone') { const d = s.replace(/\D/g, ''); return d.startsWith('55') && d.length >= 12 ? `+${d}` : `+55${d}`; }
   return s.toLowerCase();
 }

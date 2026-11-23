@@ -16,6 +16,7 @@ export type PagGravado = { [K in keyof Pag]: K extends 'modo' ? Modo : string | 
 const MODOS: [Modo | '', string][] = [['', 'Ainda não informado'], ['pix', 'PIX fixo (a mesma chave todo mês)'], ['ted', 'TED (a mesma conta todo mês)'], ['cobranca', 'Vem com cada cobrança (boleto ou PIX copia e cola)']];
 const PIX: [PixTipo, string][] = [['cpf_cnpj', 'CPF ou CNPJ'], ['email', 'E-mail'], ['telefone', 'Telefone'], ['aleatoria', 'Chave aleatória']];
 const so = (s: string) => s.replace(/\D/g, '');
+const docSo = (s: string) => s.toUpperCase().replace(/[^0-9A-Z]/g, '');   // CPF/CNPJ, também o alfanumérico
 
 export const pagVazio = (modo: Modo, doc: string | null | undefined): Pag => ({
   modo, pix_tipo: 'cpf_cnpj', pix_chave: doc ?? '', banco: '', agencia: '', agencia_digito: '', conta: '', conta_digito: '',
@@ -28,7 +29,7 @@ export const pagDoBanco = (g: PagGravado | null | undefined): Pag | null => g ? 
 } : null;
 
 /** De quem é o dinheiro: o documento para onde vai (chave CPF/CNPJ ou titular da TED); nulo = não dá para comparar. */
-const destino = (p: Pag) => p.modo === 'ted' ? so(p.titular_documento) : p.modo === 'pix' && p.pix_tipo === 'cpf_cnpj' ? so(p.pix_chave) : null;
+const destino = (p: Pag) => p.modo === 'ted' ? docSo(p.titular_documento) : p.modo === 'pix' && p.pix_tipo === 'cpf_cnpj' ? docSo(p.pix_chave) : null;
 export const pagaOutro = (p: Pag | null, doc: string | null | undefined) => Boolean(p && doc && destino(p) && destino(p) !== doc);
 
 /** O que falta na forma escolhida (vazio = completa). */
@@ -40,7 +41,7 @@ export function faltaNoPag(p: Pag | null, doc: string | null | undefined): strin
     if (so(p.banco).length !== 3) f.push('o banco (3 dígitos)');
     if (!so(p.agencia)) f.push('a agência');
     if (!so(p.conta) || !/^[0-9X]$/i.test(p.conta_digito.trim())) f.push('a conta com o dígito');
-    if (![11, 14].includes(so(p.titular_documento).length)) f.push('o CPF ou CNPJ do titular');
+    if (![11, 14].includes(docSo(p.titular_documento).length)) f.push('o CPF ou CNPJ do titular');
   }
   if (pagaOutro(p, doc) && !p.excecao.trim()) f.push('a justificativa de pagar a outra pessoa');
   return f;
@@ -50,7 +51,7 @@ export function faltaNoPag(p: Pag | null, doc: string | null | undefined): strin
 export const pagParaBanco = (p: Pag | null) => !p ? null : p.modo === 'cobranca' ? { modo: 'cobranca' }
   : p.modo === 'pix' ? { modo: 'pix', pix_tipo: p.pix_tipo, pix_chave: chave(p.pix_tipo, p.pix_chave), excecao: p.excecao.trim() || null }
   : { modo: 'ted', banco: so(p.banco), agencia: so(p.agencia), agencia_digito: p.agencia_digito.trim().toUpperCase() || null, conta: so(p.conta),
-      conta_digito: p.conta_digito.trim().toUpperCase(), conta_tipo: p.conta_tipo, titular_documento: so(p.titular_documento), excecao: p.excecao.trim() || null };
+      conta_digito: p.conta_digito.trim().toUpperCase(), conta_tipo: p.conta_tipo, titular_documento: docSo(p.titular_documento), excecao: p.excecao.trim() || null };
 
 /** Em uma linha, para a gaveta e para quem aprova. */
 export function textoPag(p: Pag | null): string | null {
@@ -104,7 +105,7 @@ export function ComoPaga({ p, mudar, doc, tentou }: { p: Pag | null; mudar: (p: 
           </div>
         </Campo>
         <Campo r="CPF ou CNPJ do titular">
-          <input className={`lt-in num ${err(![11, 14].includes(so(p.titular_documento).length))}`} inputMode="numeric" value={p.titular_documento} onChange={e => m({ titular_documento: e.target.value })} />
+          <input className={`lt-in num ${err(![11, 14].includes(docSo(p.titular_documento).length))}`} value={p.titular_documento} onChange={e => m({ titular_documento: e.target.value })} />
         </Campo>
       </>}
       {p && pagaOutro(p, doc) && (

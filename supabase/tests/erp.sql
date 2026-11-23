@@ -9705,5 +9705,38 @@ select pg_temp.ok(not has_function_privilege('erp_busca_notas', 'erp.busca_notas
   'janela da busca: só o dono das migrations chama');
 rollback;
 
+-- ---------------------------------------------------------------------
+\echo '# CNPJ alfanumérico (Receita, desde julho/2026)'
+begin;
+select pg_temp.como(null);
+select pg_temp.ok(erp.cnpj_valido('12ABC34501DE35') and erp.cnpj_valido('29732041000154')
+                  and not erp.cnpj_valido('12ABC34501DE53') and not erp.cnpj_valido('12abc34501de35')
+                  and not erp.cnpj_valido('11111111111111') and not erp.cnpj_valido('12ABC34501DE3') and not erp.cnpj_valido(null),
+  'cnpj: o DV confere nos dois formatos (letra vale ASCII − 48), só em maiúsculas');
+select pg_temp.ok(erp.cnpj_aceito('12ABC34501DE35') and erp.cnpj_aceito('29732041000154') and erp.cnpj_aceito('29732041000199')
+                  and not erp.cnpj_aceito('12ABC34501DE53') and not erp.cnpj_aceito('12abc34501de35'),
+  'cnpj: o só de dígitos continua como estava; o com letra só com o DV certo');
+insert into erp.pessoas (id, tipo, nome, documento) values ('5a000000-0000-0000-0000-000000000001', 'juridica', 'Alfa Teste Ltda', '12ABC34501DE35');
+insert into erp.pessoa_papeis (pessoa_id, papel) values ('5a000000-0000-0000-0000-000000000001', 'fornecedor');
+select pg_temp.ok(true, 'cnpj: credor com CNPJ alfanumérico válido entra');
+select pg_temp.falha($q$insert into erp.pessoas (tipo, nome, documento) values ('juridica', 'Erro', '12ABC34501DE53')$q$, 'cnpj: alfanumérico com DV errado é recusado');
+select pg_temp.falha($q$insert into erp.pessoas (tipo, nome, documento) values ('juridica', 'Erro', '12abc34501de35')$q$, 'cnpj: minúsculas são recusadas');
+select pg_temp.falha($q$insert into erp.pessoas (tipo, nome, documento) values ('fisica', 'Erro', '5299822472A')$q$, 'cnpj: CPF continua só com dígitos');
+select pg_temp.ok(erp.chave_pix_valida('cpf_cnpj', '12ABC34501DE35') and not erp.chave_pix_valida('cpf_cnpj', '12ABC34501DE53')
+                  and erp.chave_pix_valida('cpf_cnpj', '52998224725'),
+  'cnpj: chave PIX CPF/CNPJ aceita o alfanumérico com o DV certo');
+select pg_temp.ok((select bool_and(pg_get_constraintdef(oid) like '%A-Z%') from pg_constraint
+                    where conrelid in ('erp.pix_conferencias'::regclass, 'erp.boleto_conferencias'::regclass) and contype = 'c'
+                      and pg_get_constraintdef(oid) like '%cpf_cnpj ~%'),
+  'cnpj: a conferência de quem recebe guarda o documento com letras');
+select pg_temp.ok(exists (select 1 from api.fornecedores('12.ABC.345/01DE') where id = '5a000000-0000-0000-0000-000000000001')
+                  and exists (select 1 from api.fornecedores('12abc') where id = '5a000000-0000-0000-0000-000000000001'),
+  'cnpj: a busca do fornecedor pelo documento não joga fora as letras');
+select pg_temp.como(:'diretor');
+select pg_temp.ok((api.identificar_nota('{"emitente": "12.ABC.345/01DE-35"}'::jsonb)->'fornecedor'->>'id') = '5a000000-0000-0000-0000-000000000001',
+  'cnpj: a nota de emitente com CNPJ alfanumérico acha o fornecedor');
+select pg_temp.como(null);
+rollback;
+
 \echo '# fim'
 do $$ begin raise notice 'TODOS OS TESTES PASSARAM'; end $$;
