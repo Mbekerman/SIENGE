@@ -245,3 +245,4 @@ Não é o Sienge, mas fica aqui com os outros limites externos.
 - Teste: 949 documentos em 20 lotes, com 1 s de pausa entre eles, sem bloqueio.
 - O A1 pode vir em PKCS#12 com cifra antiga (RC2/3DES), que o OpenSSL 3 do Node 22 recusa. No teste, `--openssl-legacy-provider`. No serviço definitivo, converter o PFX para AES uma vez antes de guardar e não usar o provedor legado (ver [08](08-seguranca.md)).
 - O Cloud Run grava a linha JSON do job em `jsonPayload`.
+- Resultado (BKM 03, notas recebidas por competência): jan a out/2026, 684 no ADN × 652 títulos NFSE no Sienge; antes de 2026, poucas (antes da obrigação nacional). Decisão do Moises (23/11/2026): construir a busca (ver [05](05-contas-a-pagar.md), 5.3.1).
