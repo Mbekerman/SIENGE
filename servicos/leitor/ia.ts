@@ -140,7 +140,8 @@ export function converter(j: Record<string, any>, modelo: string, hoje = new Dat
   const tipos: TipoDocumento[] = ['nfe', 'nfse', 'fatura', 'boleto', 'iptu', 'itbi', 'darf', 'darm', 'dare', 'recibo', 'outro'];
   const avisos: string[] = (Array.isArray(j.observacoes) ? j.observacoes : []).filter((s: unknown) => typeof s === 'string' && s.trim());
   const p = (x: any, quem: string) => {
-    const m = mascara(x?.documento);
+    // um CNPJ alfanumérico válido com X não é máscara
+    const m = typeof x?.documento === 'string' && cnpjValido(normalDocumento(x.documento)) ? undefined : mascara(x?.documento);
     return { documento: m ? undefined : documentoConferido(x?.documento, quem, avisos), documento_mascara: m, nome: str(x?.nome) };
   };
   const emissao = data(j.emissao);
@@ -187,10 +188,11 @@ export function cnpjValido(d: string): boolean {
   };
   return dv(12) === Number(d[12]) && dv(13) === Number(d[13]);
 }
+const normalDocumento = (x: string) => x.normalize('NFKD').toUpperCase().replace(/\b(CNPJ|CPF|MF|N[O]?)\b|N[º°]/g, ' ').replace(/[^0-9A-Z]/g, '');
 function documentoConferido(x: unknown, quem: string, avisos: string[]): string | undefined {
   if (typeof x !== 'string') return undefined;
   // sem os rótulos (CNPJ, CPF, MF, nº) e a pontuação; o que sobra tem de ser um CPF ou um CNPJ que confere
-  const d = x.normalize('NFKD').toUpperCase().replace(/\b(CNPJ|CPF|MF|N[O]?)\b|N[º°]/g, ' ').replace(/[^0-9A-Z]/g, '');
+  const d = normalDocumento(x);
   if (!d) return undefined;
   if (/^\d{11}$/.test(d)) {
     if (cpfValido(d)) return d;
