@@ -14,7 +14,9 @@ export const SQL_NET_ABERTO = `select exists (select 1 from pg_namespace n where
 
 // ca: o certificado raiz do Supabase (Database > SSL), para conferir o servidor e o nome dele (verify-full), não só cifrar.
 export function bancoPg(url: string, ca: string): BancoPg {
-  const sql = postgres(url, { max: 1, prepare: false, idle_timeout: 20, connect_timeout: 30, onnotice: () => {},
+  // Uma conexão só, aberta no começo e mantida a rodada inteira: o login só fica ligado dos minutos 5 a 15 de cada hora
+  // (migration 20261123004000), então reconectar depois disso falharia.
+  const sql = postgres(url, { max: 1, prepare: false, idle_timeout: 0, max_lifetime: null, connect_timeout: 30, onnotice: () => {},
                               ssl: { ca, rejectUnauthorized: true } });
   return {
     async netAberto() {

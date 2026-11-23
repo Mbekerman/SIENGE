@@ -34,6 +34,8 @@ function iguais(a: string, b: string): boolean {
   return d === 0;
 }
 
+// A resposta vai só com ok: o pg_net guarda as respostas por horas numa tabela que qualquer login direto lê (S-143).
+// O detalhe do passo fica no log da função (Supabase > Edge Functions > Logs).
 Deno.serve(async (req) => {
   const sql = postgres(Deno.env.get('SUPABASE_DB_URL')!, { max: 1, prepare: false });
   let cargaId: number | null = null; // a carga deste passo, para o erro cair nela e não em outra
@@ -122,7 +124,8 @@ Deno.serve(async (req) => {
       await tx`update sienge.cargas set pedacos_lidos = ${acao.pedaco}, ultimo_erro = null, tentativas = 0 where id = ${c.id}`;
       return { carga: c.id, passo: `pedaço ${acao.pedaco}`, espelho: e.n };
     });
-    return Response.json(resultado);
+    console.log(JSON.stringify(resultado));
+    return Response.json({ ok: true });
   } catch (err) {
     const msg = String((err as Error)?.message ?? err).slice(0, 500);
     // erro antes de escolher a carga (banco, Vault): não é de carga nenhuma
@@ -134,7 +137,8 @@ Deno.serve(async (req) => {
                   where id = ${cargaId}`;
       } catch { /* o erro original é o que importa */ }
     }
-    return Response.json({ erro: msg }, { status: 500 });
+    console.error(msg);
+    return Response.json({ ok: false }, { status: 500 });
   } finally {
     await sql.end();
   }

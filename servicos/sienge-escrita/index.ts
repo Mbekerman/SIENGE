@@ -25,6 +25,8 @@ function iguais(a: string, b: string): boolean {
   return d === 0;
 }
 
+// A resposta vai só com ok: o pg_net guarda as respostas por horas numa tabela que qualquer login direto lê (S-143).
+// O detalhe da rodada fica no log da função (Supabase > Edge Functions > Logs).
 Deno.serve(async (req) => {
   const sql = postgres(Deno.env.get('SUPABASE_DB_URL')!, { max: 1, prepare: false });
   try {
@@ -32,15 +34,18 @@ Deno.serve(async (req) => {
     if (!k?.v || !iguais(req.headers.get('x-escrita-chave') ?? '', k.v)) return new Response('não autorizado', { status: 401 });
     const pedido = await req.json().catch(() => ({}));
     if (pedido?.tarefa === 'avisos') {
-      return Response.json({ avisos: await processarAvisos(bancoPostgres(sql), httpSienge(BASE, credencial())) });
+      console.log(JSON.stringify({ avisos: await processarAvisos(bancoPostgres(sql), httpSienge(BASE, credencial())) }));
+      return Response.json({ ok: true });
     }
     const credores = (Deno.env.get('SIENGE_CREDORES_TESTE') ?? '823').split(',').map((x) => Number(x.trim())).filter(Number.isInteger);
     const r = await processarUm(bancoPostgres(sql), httpSienge(BASE, credencial()), {
       ambiente: Deno.env.get('SIENGE_AMBIENTE'), credoresTeste: credores,
     });
-    return Response.json(r);
+    console.log(JSON.stringify(r));
+    return Response.json({ ok: true });
   } catch (err) {
-    return Response.json({ erro: String((err as Error)?.message ?? err).slice(0, 500) }, { status: 500 });
+    console.error(String((err as Error)?.message ?? err).slice(0, 500));
+    return Response.json({ ok: false }, { status: 500 });
   } finally {
     await sql.end();
   }
