@@ -9,6 +9,8 @@ import { documento, hojeISO, lerReais, reais } from '../lib/format';
 import { mensagemErro, rpc } from '../lib/supabase';
 import type { ContaCadastro, Contrato, FornecedorBusca, OpcoesLancamento } from '../lib/tipos';
 import { BuscaFornecedor, Campo, LinhaRateio, divisoesDe, juntar, novaLinha, type Linha } from './Lancar';
+import { Calendario, centavos, completar, igual, mesesDaVigencia, type Meses } from './Calendario';
+import { ComoPaga, Pronto, faltaNoPag, pagDoBanco, pagParaBanco, type Pag } from './ComoPaga';
 
 type Tipo = Contrato['tipo'];
 const TIPOS: [Tipo, string, string][] = [
@@ -38,6 +40,13 @@ export function ContaRecorrente({ id, fechar, salvo }: { id?: string; fechar: ()
   const [tetoTxt, setTetoTxt] = useState('');
   const [linhas, setLinhas] = useState<Linha[]>([novaLinha()]);
   const [tentou, setTentou] = useState(false);
+  // previsão mês a mês: nulo = valor igual; mexeu = manda os meses ao salvar (senão não mexe neles)
+  const [meses, setMeses] = useState<Meses | null>(null);
+  const [mexeuMeses, setMexeuMeses] = useState(false);
+  const [vendoMeses, setVendoMeses] = useState(false);
+  // como paga: nulo = não informado; mexeu = manda ao salvar (senão não mexe)
+  const [pag, setPag] = useState<Pag | null>(null);
+  const [mexeuPag, setMexeuPag] = useState(false);
 
   const c = cq.data;
   useEffect(() => {
@@ -46,6 +55,8 @@ export function ContaRecorrente({ id, fechar, salvo }: { id?: string; fechar: ()
     setInicio(c.inicio); setFim(c.fim ?? ''); setDia(c.dia_vencimento ? String(c.dia_vencimento) : ''); setPer(c.periodicidade ?? 'mensal');
     setValorTxt(txt(c.tipo === 'contrato' ? c.valor_total : c.valor_periodo));
     setInstalacao(c.instalacao ?? ''); setFaixaTxt(txt(c.faixa_mensal)); setTetoTxt(txt(c.teto_anual));
+    setPag(pagDoBanco(c.pagamento));
+    setMeses(c.meses.length ? Object.fromEntries(c.meses.map(m => [m.mes.slice(0, 10), reais(Number(m.valor))])) : null);
     setLinhas(c.rateio.length ? c.rateio.map(r => ({ ...novaLinha(String(r.percentual)), nucleo: r.nucleo ?? '', centro: r.centro ?? '', divisao: r.divisao ?? '', natureza: r.natureza })) : [novaLinha()]);
   }, [c]);
 
@@ -57,6 +68,19 @@ export function ContaRecorrente({ id, fechar, salvo }: { id?: string; fechar: ()
   const somaPct = linhas.reduce((a, l) => a + (Number(l.pct.replace(',', '.')) || 0), 0);
   const muda = (k: number, m: Partial<Linha>) => setLinhas(ls => ls.map(l => (l.k === k ? { ...l, ...m } : l)));
   const consumo = tipo === 'consumo';
+  const lista = mesesDaVigencia(inicio, fim, hojeISO());
+  const podeMeses = consumo || (tipo === 'assinatura' && per === 'mensal') || (tipo === 'contrato' && Boolean(fim) && Boolean(valor));
+  const iguais = tipo === 'contrato' ? igual(Math.round((valor ?? 0) * 100), lista.length) : [];
+  const igualPorMes = (i: number) => tipo === 'contrato' ? iguais[i] ?? 0 : Math.round(((consumo ? faixa : valor) ?? 0) * 100);
+  const mesesFinais = meses ? completar(meses, lista, igualPorMes) : null;
+  const somaMeses = mesesFinais ? Object.values(mesesFinais).reduce((a, v) => a + centavos(v), 0) : 0;
+  const travaAntes = c?.trava_antes?.slice(0, 10) ?? null;
+  const mudarMeses = (m: Meses | null) => { setMeses(m); setMexeuMeses(true); };
+  const abrirMeses = () => { setMeses(completar(meses, lista, igualPorMes)); setMexeuMeses(true); setVendoMeses(true); };
+  const anoAcimaDoTeto = consumo && mesesFinais && teto
+    ? [...new Set(Object.keys(mesesFinais).map(k => k.slice(0, 4)))].find(a =>
+        Object.entries(mesesFinais).filter(([k]) => k.startsWith(a)).reduce((s, [, v]) => s + centavos(v), 0) > Math.round(teto * 100))
+    : undefined;
 
   const falta: string[] = [];
   if (!empresa) falta.push('a empresa');
@@ -70,6 +94,10 @@ export function ContaRecorrente({ id, fechar, salvo }: { id?: string; fechar: ()
     if (!teto || teto <= 0) falta.push('o teto no ano');
   } else if (!valor || valor <= 0) falta.push(tipo === 'contrato' ? 'o valor do contrato' : 'o valor');
   if (dia && !(Number.isInteger(nDia) && nDia >= 1 && nDia <= 31)) falta.push('o dia do vencimento (1 a 31)');
+  if (meses && !podeMeses) falta.push(tipo === 'contrato' ? 'o fim da vigência para a previsão mês a mês' : 'a assinatura mensal para a previsão mês a mês');
+  if (anoAcimaDoTeto) falta.push(`os meses de ${anoAcimaDoTeto} dentro do teto no ano`);
+  const faltaPag = faltaNoPag(pag, forn?.documento);
+  if (faltaPag.length) falta.push('os dados de como paga');
   if (linhas.some(l => !l.nucleo || !l.centro || !l.natureza || (divisoesDe(o, l.centro).length > 0 && !l.divisao))) falta.push('o rateio completo');
   else if (Math.abs(somaPct - 100) > 0.00005) falta.push('o rateio somando 100%');
 
@@ -83,21 +111,40 @@ export function ContaRecorrente({ id, fechar, salvo }: { id?: string; fechar: ()
       caucao_percentual: tipo === 'contrato' ? (c?.caucao_percentual ?? 0) : null,
       instalacao: consumo ? instalacao.trim() : null, faixa_mensal: consumo ? faixa : null, teto_anual: consumo ? teto : null,
       rateio: linhas.map(l => ({ nucleo: l.nucleo, centro: l.centro, divisao: l.divisao || null, natureza: l.natureza, percentual: Number(l.pct.replace(',', '.')) })),
+      ...(mexeuPag ? { pagamento: pagParaBanco(pag) } : {}),
+      ...(mexeuMeses ? { meses: mesesFinais ? Object.entries(mesesFinais).sort().map(([mes, v]) => ({ mes, valor: centavos(v) / 100 })) : [] } : {}),
     } }),
     onSuccess: novo => {
       qc.invalidateQueries({ queryKey: ['contratos'] }); qc.invalidateQueries({ queryKey: ['conta', novo] });
       qc.invalidateQueries({ queryKey: ['aprovacoes'] }); salvo(novo);
     },
   });
-  const salvar = () => { setTentou(true); if (!falta.length) enviar.mutate(); };
+  // contrato com a soma dos meses diferente do valor: volta ao calendário, que pergunta o que ajustar (Moises, 23/11/2026)
+  const somaDifere = tipo === 'contrato' && Boolean(mesesFinais) && somaMeses !== Math.round((valor ?? 0) * 100);
+  const salvar = () => { setTentou(true); if (somaDifere && !falta.length) { setVendoMeses(true); return; } if (!falta.length) enviar.mutate(); };
   const erro = (x: boolean) => (tentou && x ? 'err' : '');
   const reaisBlur = (v: number | null, set: (s: string) => void) => () => { if (v) set(reais(v)); };
+
+  if (vendoMeses && mesesFinais) {
+    return (
+      <Popup titulo="Previsão mês a mês" fechar={() => setVendoMeses(false)} pe={<>
+        {anoAcimaDoTeto ? <span className="lt-erro"><Ic n="warn" s={18} />Os meses de {anoAcimaDoTeto} passam do teto no ano.</span>
+          : somaDifere ? <span className="lt-erro"><Ic n="warn" s={18} />Escolha o que ajustar para a soma bater.</span>
+          : <span className="sec peq esp">Mudar um mês manda a conta de novo para aprovação.</span>}
+        <button className="btn p" onClick={() => setVendoMeses(false)}>Voltar ao cadastro</button>
+      </>}>
+        <Calendario meses={mesesFinais} mudar={mudarMeses} travaAntes={travaAntes} tipo={tipo}
+          valorContrato={Math.round((valor ?? 0) * 100)} teto={Math.round((teto ?? 0) * 100)}
+          ajustarContrato={cv => setValorTxt(reais(cv / 100))} />
+      </Popup>
+    );
+  }
 
   return (
     <Popup titulo={id ? 'Alterar conta recorrente' : 'Nova conta recorrente'} fechar={fechar} pe={<>
       {enviar.error ? <span className="lt-erro"><Ic n="warn" s={18} />{mensagemErro(enviar.error)}</span>
         : tentou && falta.length ? <span className="lt-erro"><Ic n="warn" s={18} />Falta {juntar(falta)}.</span>
-        : <span className="sec peq esp">Aprovam: o gestor de cada área e AF ou AO.</span>}
+        : <span className="sec peq esp">Aprovam: o gestor de cada área e AF ou AD.</span>}
       <button className="btn t" onClick={fechar}>Cancelar</button>
       <button className="btn p" onClick={salvar} disabled={enviar.isPending || !o || (Boolean(id) && !c)}>
         {enviar.isPending ? 'Enviando…' : id ? 'Salvar' : 'Enviar para aprovação'}</button>
@@ -120,7 +167,7 @@ export function ContaRecorrente({ id, fechar, salvo }: { id?: string; fechar: ()
           <Campo r="Empresa">
             <select className={`lt-in ${erro(!empresa)}`} value={empresa} onChange={e => { setEmpresa(e.target.value); setLinhas([novaLinha()]); }}>
               <option value="">Escolha quem paga</option>
-              {o.empresas.map(e => <option key={e.id} value={e.id}>{e.nome}{e.documento ? ` · ${documento(e.documento)}` : ''}</option>)}
+              {o.empresas.map(e => <option key={e.id} value={e.id} title={e.razao_social}>{e.nome}{e.documento ? ` · ${documento(e.documento)}` : ''}</option>)}
             </select>
           </Campo>
           <Campo r={consumo ? 'Concessionária' : 'Fornecedor'}><BuscaFornecedor v={forn} erro={tentou && !forn} mudar={setForn} /></Campo>
@@ -154,6 +201,15 @@ export function ContaRecorrente({ id, fechar, salvo }: { id?: string; fechar: ()
               <input className={`lt-in num nc-dia ${erro(Boolean(dia) && !(nDia >= 1 && nDia <= 31))}`} inputMode="numeric" placeholder="Opcional" value={dia} onChange={e => setDia(e.target.value.replace(/\D/g, '').slice(0, 2))} aria-label="Dia do vencimento" />
             </div>
           </Campo>
+          <Campo r="Previsão" msg={!podeMeses ? (tipo === 'contrato' ? 'Para prever mês a mês, informe o valor e o fim da vigência.'
+              : tipo === 'assinatura' ? 'Mês a mês só na assinatura mensal.' : undefined)
+            : mesesFinais ? `Mês a mês, ${reais(somaMeses / 100)} em ${lista.length} meses${fim ? '' : '; depois, o valor do último mês'}.`
+            : 'O mesmo valor todo mês.'}>
+            <div className="lt-lin">
+              <button className="btn sm" disabled={!podeMeses} onClick={abrirMeses}><Ic n="lista" s={18} />{mesesFinais ? 'Alterar mês a mês' : 'Prever mês a mês'}</button>
+              {mesesFinais && <button className="btn t sm" onClick={() => mudarMeses(null)}>Voltar ao valor igual</button>}
+            </div>
+          </Campo>
         </div></section>
 
         <section className="lt-sec"><h3>Onde entra</h3>
@@ -166,6 +222,16 @@ export function ContaRecorrente({ id, fechar, salvo }: { id?: string; fechar: ()
             </div>
           </>}
         </section>
+
+        <ComoPaga p={pag} mudar={x => { setPag(x); setMexeuPag(true); }} doc={forn?.documento} tentou={tentou} />
+        <Pronto itens={[
+          [consumo ? 'Concessionária' : 'Fornecedor', Boolean(forn)],
+          ['Empresa que paga', Boolean(empresa)],
+          ['Onde entra, somando 100%', !linhas.some(l => !l.nucleo || !l.centro || !l.natureza || (divisoesDe(o, l.centro).length > 0 && !l.divisao)) && Math.abs(somaPct - 100) <= 0.00005],
+          [consumo ? 'Valor previsto de cada mês' : 'Valor de cada título', consumo ? Boolean(faixa) : Boolean(valor), mesesFinais ? 'mês a mês' : undefined],
+          ['Dia do vencimento', Boolean(dia) || consumo, !dia && consumo ? 'vem na fatura' : undefined],
+          ['Como paga', Boolean(pag) && !faltaPag.length],
+        ]} />
       </>}
     </Popup>
   );

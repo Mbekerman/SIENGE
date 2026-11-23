@@ -142,7 +142,7 @@ Conta recorrente é a que se repete todo mês. Ela fica cadastrada uma vez e gan
 | **Contrato de serviço** | software, contabilidade, vigilância, limpeza, mídia | fornecedor, empresa pagadora, valor mensal, vigência, reajuste, dia de vencimento, dados de pagamento (PIX, conta ou boleto), núcleo econômico, centro de custo, natureza, gestor e o PDF do contrato |
 | **Conta de consumo** | energia, água, telefone | faixa máxima por mês, teto no ano e o número da instalação ou do cliente (é ele que identifica a fatura quando a concessionária usa um CNPJ só para todas as contas) |
 
-**Aprovação do cadastro:** cada conta recorrente é aprovada pelo gestor e por alguém da AF ou da AO antes de valer. **Trocar PIX, conta, valor ou faixa exige nova aprovação.**
+**Aprovação do cadastro:** cada conta recorrente é aprovada pelo gestor de cada centro e por alguém da AF ou da AD antes de valer (Moises, 23/nov/2026; antes AF ou AO). **Trocar PIX, conta, valor ou faixa exige nova aprovação.**
 
 ### Tarefa: cadastrar uma conta recorrente
 
@@ -153,9 +153,12 @@ Conta recorrente é a que se repete todo mês. Ela fica cadastrada uma vez e gan
 3. Preencha:
    - **Contrato de serviço:** fornecedor, valor mensal, vigência, reajuste (por exemplo, "IPCA, todo dezembro"), dia de vencimento, pagamento (vem do cadastro do fornecedor), núcleo econômico, centro de custo, natureza, gestor e o PDF do contrato;
    - **Conta de consumo:** concessionária, número da instalação (como está na fatura; é por ele que o sistema acha a fatura), faixa por mês, teto no ano, vencimento, pagamento (por exemplo, boleto da fatura), núcleo econômico, centro de custo, natureza e gestor.
-4. Clique em **Enviar para aprovação**. Aprovam o gestor e alguém da AF ou da AO. Enquanto isso, a conta aparece com a marca **Cadastro em aprovação**.
+   - **Previsão mês a mês** (opcional; contrato com data de fim, assinatura mensal ou conta de consumo): o botão **Prever mês a mês** abre um quadro com um campo por mês da vigência (sem data de fim, 12 meses a partir do início ou do mês de hoje; depois do último mês, a previsão segue com o valor dele). No contrato, a soma dos meses tem de dar o valor do contrato: se não der, o sistema pergunta qual ajustar, **Ajustar o contrato** para a soma ou **Ajustar o calendário** para o valor (a diferença vai para os meses que ainda mudam, na proporção de cada um). Na conta de consumo, os meses de cada ano não passam do teto no ano, e a fatura de cada mês é comparada com a previsão daquele mês (não com a média), quando a conferência da fatura entrar. **Voltar ao valor igual** apaga o calendário (Moises, 23/nov/2026).
+   - **Como paga** (opcional): **PIX fixo** (a mesma chave todo mês), **TED** (banco, agência, conta com o dígito, corrente ou poupança, e o CPF ou CNPJ do titular) ou **Vem com cada cobrança** (o boleto ou o PIX copia e cola chega com a nota de cada mês; se vier de outro jeito, a AF escolhe). A chave CPF/CNPJ e a conta da TED têm de ser do fornecedor; de outra pessoa, só com a justificativa, que quem aprova vê (Moises, 23/nov/2026).
+   - No fim, a lista **Pronto para gerar títulos** mostra o que falta para a nota do mês virar título sem pedir mais nada: fornecedor, empresa, onde entra somando 100%, valor, dia do vencimento (na conta de consumo, vem na fatura) e como paga. Não é obrigatório: dá para enviar e completar depois.
+4. Clique em **Enviar para aprovação**. Aprovam o gestor e alguém da AF ou da AD. Enquanto isso, a conta aparece com a marca **Cadastro em aprovação**.
 
-**Se precisar mudar:** trocar PIX, conta, valor ou faixa manda a conta de novo para aprovação.
+**Se precisar mudar:** trocar a forma de pagamento (PIX, TED, conta), valor, faixa ou um mês do calendário manda a conta de novo para aprovação. Depois de aprovada, mês que já passou não muda.
 
 
 > 🧪 Telas em protótipo (linha F), ainda sem código. Pedido do Moises, 8/nov/2026.
