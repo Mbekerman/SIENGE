@@ -1,4 +1,4 @@
--- bkm_dev, 23/nov/2026: apelido das empresas (migration 20261123000200). Colar inteiro no SQL Editor.
+-- bkm_dev, 23/nov/2026: apelido das empresas (migration 20261123001000). Colar inteiro no SQL Editor.
 -- Se alguma conferência do fim falhar, dá erro e nada fica.
 begin;
 grant erp_conferencia to current_user with inherit false, set true;
