@@ -66,6 +66,7 @@ Ao clicar em **Lançar**, o título vai para a aprovação e abre na gaveta. Se 
   - emitente sem cadastro;
   - boleto que o banco não confirmou;
   - valor ou beneficiário diferentes do boleto.
+  - 🟡 CPF ou CNPJ lido com dígito verificador errado, do emitente ou do tomador (PR #127, ainda não juntado): o campo vem vazio, com o aviso "CNPJ do emitente lido com dígito verificador errado: confira no documento", e a pessoa digita o número olhando a nota. É o mesmo que já acontece com a chave de acesso.
 - **Nota com retenção trava o Lançar.** Quando a leitura acha tributo retido, ou um líquido abaixo do bruto, aparece um aviso vermelho: "Nota com retenção ainda não se lança… espere a tela de retenções". O Lançar só destrava se a pessoa marcar "Conferi o documento: a nota não tem retenção (a leitura errou)". ⚠️ Quem lança à mão, sem arquivo, uma nota com retenção ainda lança pelo valor bruto; isso vai ao Moises.
 - **De onde a nota vem:** o bloco lista as origens possíveis (previsão, contrato, assinatura, conta de consumo ou pedido de compra), com a mais provável já marcada. Escolher uma origem preenche o rateio e a previsão; "Nenhum destes" limpa os dois.
 - **Depois de lido:** tudo continua editável, e o arquivo fica ligado à nota.
