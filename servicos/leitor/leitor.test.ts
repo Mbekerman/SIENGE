@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { pdfCriptografado, senhasCandidatas, tentarSenhas, tipoPelosBytes } from './arquivo.ts';
 import { conferirLinha } from './boleto.ts';
 import { type Bucket, type Deps, Recusa, abrirComSenha, baixar, pedidoIdentificar, subir } from './fluxo.ts';
-import { chaveValida, converter, copiaColaValido, ESQUEMA, mascara } from './ia.ts';
+import { chaveValida, cnpjValido, converter, copiaColaValido, cpfValido, ESQUEMA, mascara } from './ia.ts';
 import { Limite } from './limite.ts';
 import { ENTRADA, SAIDA, lerArquivo, nomeSaida, pendentes } from './lote.ts';
 import { lerXml } from './xml.ts';
@@ -450,4 +450,26 @@ test('lote: lê como o leitor e guarda os tokens; a falha da IA fica para a pró
   assert.match(z.erro!, /não é PDF/); assert.equal(z.erro_ia, undefined);
   const s = await lerArquivo('s.pdf', Buffer.from('%PDF-1.4\n/Encrypt 5 0 R\n%%EOF'), ia, async () => null);
   assert.match(s.erro!, /senha/);
+});
+
+test('CPF e CNPJ lidos com dígito verificador errado saem vazios, com aviso', () => {
+  assert.ok(cnpjValido('11222333000181'));
+  assert.ok(!cnpjValido('11222333000180'));
+  assert.ok(!cnpjValido('00000000000000'));
+  assert.ok(cpfValido('52998224725'));
+  assert.ok(!cpfValido('52998224726'));
+  assert.ok(!cpfValido('11111111111'));
+  const ok = converter({ tipo: 'nfse', emitente: { documento: '11.222.333/0001-81' }, tomador: { documento: '529.982.247-25' } }, 'm');
+  assert.equal(ok.emitente?.documento, '11222333000181');
+  assert.equal(ok.tomador?.documento, '52998224725');
+  assert.equal(ok.avisos, undefined);
+  // dois dígitos trocados, como no lote de 23/11/2026
+  const errado = converter({ tipo: 'nfse', emitente: { documento: '11.222.333/0001-18', nome: 'X' }, tomador: { documento: '529.982.247-26' } }, 'm');
+  assert.equal(errado.emitente?.documento, undefined);
+  assert.equal(errado.emitente?.nome, 'X');
+  assert.equal(errado.tomador?.documento, undefined);
+  assert.deepEqual(errado.avisos, ['CNPJ do emitente lido com dígito verificador errado (11222333000118): confira no documento',
+    'CPF do tomador lido com dígito verificador errado: confira no documento']);
+  // outros tamanhos e máscara passam como vieram
+  assert.equal(converter({ tipo: 'outro', emitente: { documento: '123456' } }, 'm').emitente?.documento, '123456');
 });
