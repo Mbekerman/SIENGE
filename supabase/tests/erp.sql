@@ -1010,7 +1010,7 @@ select pg_temp.ok(not exists (
        'designar_pj','retirar_pj','vejo_pj','vejo_auditoria','previsao_aprovada_vista','contrato_aprovado_visto','contrato_confere','compromisso_vinculos','pix_conferido','boleto_conferido','completar_recebedor','credor_novo',
        'criar_orcamento_area','salvar_orcamento_area','enviar_orcamento','descartar_orcamento','decidir_orcamento','minha_vaga_orcamento',
        '_vejo_nota_recebida','_vejo_leitura_notas','buscar_nota_recebida','ignorar_nota_recebida','voltar_nota_recebida',
-       'liberar_notas_recebidas','retirar_notas_recebidas','_libero_notas_recebidas')),
+       'liberar_notas_recebidas','retirar_notas_recebidas','_libero_notas_recebidas','_lanco_na_empresa')),
   'catálogo: das funções security definer, authenticated só executa as da lista (RPCs e conferências de quem está logado)');
 select pg_temp.ok(not has_function_privilege('authenticated', 'erp._aplicar_mudanca_acesso(uuid)', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp.gerar_avisos_sucessao()', 'EXECUTE')
@@ -9344,8 +9344,9 @@ create function pg_temp.nota(p_tipo text, p_doc text, p_num text, p_valor numeri
     'emissao', '2026-11-10', 'competencia', case p_tipo when 'nfse' then '2026-10-15' end, 'valor', p_valor, 'municipio', '3549904') $$;
 begin;
 select pg_temp.sis();
-delete from erp.listas_financeiro where user_id in (:'analista2', :'leitor', :'diretor2', :'gestor');
-insert into erp.listas_financeiro (lista, user_id) values ('AD', :'diretor2');
+delete from erp.listas_financeiro where user_id in (:'analista2', :'leitor', :'diretor2', :'gestor', :'contador');
+-- a gestora no AD e o contador no AF; a sócia é só diretora (sem lista)
+insert into erp.listas_financeiro (lista, user_id) values ('AD', :'gestor'), ('AF', :'contador');
 -- o serviço da busca grava; a mesma chave não entra duas vezes
 select erp.registrar_nota_recebida(:'spe', pg_temp.nota('nfse', '55555555000155', '500', 1500), '<NFSe>500</NFSe>', true) as nr1 \gset
 select pg_temp.ok(erp.registrar_nota_recebida(:'spe', pg_temp.nota('nfse', '55555555000155', '500', 1500), '<NFSe>outra</NFSe>', true) = :'nr1'
@@ -9386,6 +9387,10 @@ select pg_temp.erro_igual(format($$select erp.registrar_leitura_notas(%L, 'adn',
 -- nota de PJ: o emitente tem cadastro restrito
 update erp.pessoas set restrita = true where id = '10000000-0000-0000-0000-000000000008';
 select erp.registrar_nota_recebida(:'spe', pg_temp.nota('nfse', '88888888000188', '7', 9000), '<NFSe>PJ</NFSe>', true) as nr_pj \gset
+-- uma NFS-e de outra empresa do grupo, do mesmo emitente
+select em.id as emp_b, p.documento as tom_b from erp.empresas em join erp.pessoas p on p.id = em.pessoa_id
+ where em.id <> :'spe' and p.documento ~ '^[0-9]{14}$' order by p.documento limit 1 \gset
+select erp.registrar_nota_recebida(:'emp_b', pg_temp.nota('nfse', '55555555000155', '900', 700, :'tom_b'), '<NFSe>B</NFSe>', true) as nr_b \gset
 
 -- só o serviço da busca grava
 select pg_temp.como(:'diretor');
@@ -9402,15 +9407,16 @@ select pg_temp.erro_igual(format($$select erp.registrar_leitura_notas(%L, 'adn',
   'Só o serviço da busca grava a leitura das notas', 'notas recebidas: a leitura só o serviço grava');
 
 -- quem vê: master, financeiro e diretor; a de PJ, só o master e os designados
-select pg_temp.ok((select count(*) = 3 from api.notas_recebidas()), 'notas recebidas: o master vê todas, inclusive a de PJ');
+select pg_temp.ok((select count(*) = 4 from api.notas_recebidas()), 'notas recebidas: o master vê todas, inclusive a de PJ');
 select pg_temp.como(:'analista');
-select pg_temp.ok((select count(*) = 2 from api.notas_recebidas()) and not exists (select 1 from erp.notas_recebidas where id = :'nr_pj'),
+select pg_temp.ok((select count(*) = 3 from api.notas_recebidas()) and not exists (select 1 from erp.notas_recebidas where id = :'nr_pj'),
   'notas recebidas: o AO vê a caixa, menos a nota de PJ');
 select pg_temp.ok(api.nota_recebida_xml(:'nr1') = '<NFSe>500</NFSe>' and api.nota_recebida_xml(:'nr_pj') is null,
   'notas recebidas: o XML segue a nota (o da de PJ não aparece)');
 select pg_temp.ok((select count(*) = 1 from api.notas_recebidas_leituras()), 'notas recebidas: o financeiro vê a última busca');
 select pg_temp.como(:'diretor2');
-select pg_temp.ok((select count(*) = 2 from api.notas_recebidas()), 'notas recebidas: o diretor vê a caixa, menos a de PJ');
+select pg_temp.ok(not erp.financeiro() and (select count(*) = 3 from api.notas_recebidas()),
+  'notas recebidas: o diretor (sem lista do financeiro) vê a caixa, menos a de PJ');
 select pg_temp.como(:'analista2');
 select pg_temp.ok(not exists (select 1 from api.notas_recebidas()) and not exists (select 1 from api.notas_recebidas_leituras())
                   and api.nota_recebida_xml(:'nr1') is null and not exists (select 1 from erp.notas_recebidas_eventos),
@@ -9424,23 +9430,31 @@ select pg_temp.erro_igual(format($$select api.liberar_notas_recebidas(%L, %L, 'n
   'Só o master e o AD liberam quem vê as notas recebidas', 'notas recebidas: o AO não libera');
 select pg_temp.erro_igual(format($$insert into erp.notas_recebidas_acessos (user_id, empresa_id, tipo, motivo, por) values (%L, %L, 'nfse', 'xxx', %L)$$, :'analista2', :'spe', :'analista'),
   'Só o master e o AD liberam quem vê as notas recebidas', 'notas recebidas: nem por baixo da API o AO libera');
+select pg_temp.como(:'contador');
+select pg_temp.erro_igual(format($$select api.liberar_notas_recebidas(%L, %L, 'nfse', 'Lança as notas da obra')$$, :'analista2', :'spe'),
+  'Só o master e o AD liberam quem vê as notas recebidas', 'notas recebidas: o AF não libera');
+select pg_temp.como(:'diretor2');
+select pg_temp.erro_igual(format($$select api.liberar_notas_recebidas(%L, %L, 'nfse', 'Lança as notas da obra')$$, :'analista2', :'spe'),
+  'Só o master e o AD liberam quem vê as notas recebidas', 'notas recebidas: o diretor sem AD não libera');
 select pg_temp.como(:'diretor');
 select pg_temp.erro_igual(format($$select api.liberar_notas_recebidas(%L, %L, 'nfse', '')$$, :'analista2', :'spe'),
   'Diga o motivo da liberação', 'notas recebidas: liberar pede o motivo');
 select pg_temp.erro_igual(format($$select api.liberar_notas_recebidas(%L, %L, 'material', 'Obra')$$, :'analista2', :'spe'),
   'Tipo de nota: nfe (material) ou nfse (serviço)', 'notas recebidas: o tipo é material (nfe) ou serviço (nfse)');
 select api.liberar_notas_recebidas(:'analista2', :'spe', 'nfse', 'Lança as notas de serviço da obra');
+select api.liberar_notas_recebidas(:'contador', :'emp_b', 'nfse', 'Confere as notas de serviço da outra empresa');
 select pg_temp.como(:'analista2');
 select pg_temp.ok((select count(*) = 1 and bool_and(id = :'nr1') from api.notas_recebidas()),
-  'notas recebidas: liberada para serviço, a pessoa vê as NFS-e da empresa, não as NF-e nem a de PJ');
-select pg_temp.ok((select count(*) = 1 from api.notas_recebidas_leituras()) and (select count(*) = 1 from api.notas_recebidas_acessos()),
-  'notas recebidas: a pessoa liberada vê a última busca da empresa e a própria liberação');
-select pg_temp.como(:'diretor2');
+  'notas recebidas: liberada para serviço, a pessoa vê as NFS-e da empresa, não as NF-e, a de PJ nem as de outra empresa');
+select pg_temp.ok((select count(*) = 1 from api.notas_recebidas_leituras())
+                  and (select count(*) = 1 and bool_and(user_id = :'analista2') from api.notas_recebidas_acessos()),
+  'notas recebidas: a pessoa liberada vê a última busca da empresa e só a própria liberação');
+select pg_temp.como(:'gestor');
 select api.liberar_notas_recebidas(:'analista2', :'spe', 'nfe', 'Compra os materiais da obra');
-select pg_temp.ok((select count(*) = 2 from api.notas_recebidas_acessos()), 'notas recebidas: o AD libera e vê as liberações');
+select pg_temp.ok((select count(*) = 3 from api.notas_recebidas_acessos()), 'notas recebidas: o AD libera e vê as liberações');
 select pg_temp.como(:'analista2');
 select pg_temp.ok((select count(*) = 2 from api.notas_recebidas()), 'notas recebidas: liberada para material também, vê as NF-e');
-select pg_temp.como(:'diretor2');
+select pg_temp.como(:'gestor');
 select api.retirar_notas_recebidas(:'analista2', :'spe', 'nfe');
 select pg_temp.erro_igual(format($$select api.retirar_notas_recebidas(%L, %L, 'nfe')$$, :'analista2', :'spe'),
   'Esta pessoa não tem essa liberação', 'notas recebidas: tirar o que não existe dá erro');
@@ -9461,6 +9475,24 @@ select pg_temp.erro_igual($$select api.buscar_nota_recebida(null, '5555555500015
   'Informe a chave de acesso, ou o CNPJ do emitente com o número e o valor', 'notas recebidas: CNPJ e número sem o valor não buscam');
 select pg_temp.ok(api.buscar_nota_recebida(pg_temp.chave('nfse', '88888888000188', '7')) is null,
   'notas recebidas: a nota de PJ não aparece na busca de quem não vê o PJ');
+select pg_temp.ok(erp._lanco_na_empresa(:'spe') and not erp._lanco_na_empresa(:'emp_b')
+                  and api.buscar_nota_recebida(null, '55555555000155', '900', 700) is null
+                  and (select x->>'id' = :'nr_b' from api.buscar_nota_recebida(pg_temp.chave('nfse', '55555555000155', '900')) x),
+  'notas recebidas: pelo emitente, só acha nota de empresa em que a pessoa lança (pela chave, acha)');
+select pg_temp.ok((select count(*) = 6 and count(*) filter (where criterio = 'emitente') = 3 and count(nota_id) = 3
+                     and bool_and(user_id = :'analista2') from erp.notas_recebidas_buscas),
+  'notas recebidas: toda busca fica registrada, com o critério e a nota achada');
+select count(api.buscar_nota_recebida(null, '55555555000155', '9' || g, 1)) from generate_series(1, 17) g;
+select pg_temp.erro_igual($$select api.buscar_nota_recebida(null, '55555555000155', '500', 1500)$$,
+  'Limite de buscas pelo emitente nesta hora; busque pela chave de acesso', 'notas recebidas: a busca pelo emitente tem limite por hora');
+select pg_temp.ok((select x->>'id' = :'nr1' from api.buscar_nota_recebida(pg_temp.chave('nfse', '55555555000155', '500')) x),
+  'notas recebidas: a busca pela chave não entra no limite');
+select pg_temp.erro_igual($$update erp.notas_recebidas_buscas set criterio = 'chave'$$,
+  'O registro das buscas não muda nem se apaga', 'notas recebidas: o registro das buscas não muda');
+select pg_temp.como(:'contador');
+select pg_temp.ok(not exists (select 1 from erp.notas_recebidas_buscas), 'notas recebidas: o AF não vê as buscas dos outros');
+select pg_temp.como(:'gestor');
+select pg_temp.ok(exists (select 1 from erp.notas_recebidas_buscas where user_id = :'analista2'), 'notas recebidas: o AD vê as buscas');
 select pg_temp.como(:'leitor');
 select pg_temp.erro_igual(format($$select api.buscar_nota_recebida(%L)$$, pg_temp.chave('nfse', '55555555000155', '500')),
   'Sem permissão para lançar', 'notas recebidas: a leitura não busca');
@@ -9479,6 +9511,8 @@ select pg_temp.ok((select situacao = 'ignorada' and ignorada_por = :'analista' f
   'notas recebidas: o AO ignora com o motivo');
 select pg_temp.erro_igual(format($$select api.ignorar_nota_recebida(%L, 'De novo')$$, :'nr1'),
   'Só a nota nova se ignora', 'notas recebidas: a ignorada não se ignora de novo');
+select pg_temp.ok(erp._lanco_na_empresa(:'spe') and api.buscar_nota_recebida(null, '55555555000155', '500', 1500) is null,
+  'notas recebidas: pelo emitente, a nota ignorada não aparece');
 select api.voltar_nota_recebida(:'nr1');
 select pg_temp.ok((select situacao = 'nova' and ignorada_motivo is null from erp.notas_recebidas where id = :'nr1'),
   'notas recebidas: a ignorada volta a nova');
@@ -9494,16 +9528,30 @@ rollback;
 -- ligação com a nota lançada no ERP: a nota recebida acha a lançada e a lançada acha a recebida
 begin;
 select pg_temp.sis();
-select d.id as doc_l, d.empresa_id as emp_l, d.tipo as tipo_l, d.numero as num_l, p.documento as emit_l, e.documento as tom_l
+select d.id as doc_l, d.empresa_id as emp_l, d.tipo as tipo_l, d.numero as num_l, p.documento as emit_l, e.documento as tom_l,
+       d.valor_bruto as val_l
   from erp.documentos_fiscais d join erp.pessoas p on p.id = d.emitente_id
   join erp.empresas em on em.id = d.empresa_id join erp.pessoas e on e.id = em.pessoa_id
  where d.situacao = 'lancado' and d.tipo = 'nfse' and d.numero ~ '^[0-9]+$' and not p.restrita
  order by d.lancado_em limit 1 \gset
-select erp.registrar_nota_recebida(:'emp_l', pg_temp.nota('nfse', :'emit_l', ltrim(:'num_l', '0'), 100, :'tom_l'), '<NFSe/>', true) as nr_l \gset
+select em.id as emp_outra, p.documento as tom_outra from erp.empresas em join erp.pessoas p on p.id = em.pessoa_id
+ where em.id <> :'emp_l' and p.documento ~ '^[0-9]{14}$' order by p.documento limit 1 \gset
+-- outra chave para o mesmo emitente e número (outro município na chave da NFS-e)
+create function pg_temp.chave_b(p_doc text, p_num text) returns text language sql as $$
+  select '3550308' || substr(pg_temp.chave('nfse', p_doc, p_num), 8) $$;
+-- a mesma nota (emitente, número e valor) noutra empresa, com emissão mais nova: não liga ao documento desta
+select erp.registrar_nota_recebida(:'emp_outra', pg_temp.nota('nfse', :'emit_l', ltrim(:'num_l', '0'), :'val_l', :'tom_outra')
+         || jsonb_build_object('chave', pg_temp.chave_b(:'emit_l', ltrim(:'num_l', '0')), 'emissao', '2026-11-20'), '<NFSe/>', true) as nr_outra \gset
+select pg_temp.ok((select situacao = 'nova' and documento_id is null from erp.notas_recebidas where id = :'nr_outra'),
+  'notas recebidas: a nota de outra empresa, com o mesmo emitente e número, não se liga ao documento desta');
+-- com outro valor, não liga: fica nova para o financeiro ver
+select erp.registrar_nota_recebida(:'emp_l', pg_temp.nota('nfse', :'emit_l', ltrim(:'num_l', '0'), :'val_l'::numeric + 1, :'tom_l')
+         || jsonb_build_object('chave', '3304557' || substr(pg_temp.chave('nfse', :'emit_l', ltrim(:'num_l', '0')), 8), 'emissao', '2026-11-21'), '<NFSe/>', true) as nr_valor \gset
+select pg_temp.ok((select situacao = 'nova' from erp.notas_recebidas where id = :'nr_valor'),
+  'notas recebidas: com valor diferente do lançado, a nota não se liga');
+select erp.registrar_nota_recebida(:'emp_l', pg_temp.nota('nfse', :'emit_l', ltrim(:'num_l', '0'), :'val_l', :'tom_l'), '<NFSe/>', true) as nr_l \gset
 select pg_temp.ok((select situacao = 'vinculada' and documento_id = :'doc_l' from erp.notas_recebidas where id = :'nr_l'),
   'notas recebidas: a nota que chega depois do lançamento se liga sozinha à nota lançada');
-select em.id as emp_outra, p.documento as tom_outra from erp.empresas em join erp.pessoas p on p.id = em.pessoa_id
- where em.id <> :'emp_l' order by p.documento limit 1 \gset
 select pg_temp.erro_igual(format($$select erp.registrar_nota_recebida(%L, pg_temp.nota('nfse', %L, %L, 100, %L) || '{"nsu": 99}', '<NFSe/>', true)$$,
                                  :'emp_outra', :'emit_l', ltrim(:'num_l', '0'), :'tom_outra'),
   'A nota já está na caixa de outra empresa', 'notas recebidas: a mesma chave não entra em outra empresa');
@@ -9514,15 +9562,32 @@ reset role;
 select pg_temp.ok((select situacao = 'nova' and documento_id is null from erp.notas_recebidas where id = :'nr_l'),
   'notas recebidas: a nota lançada cancelada solta a nota recebida, que volta a nova');
 -- e a nota lançada depois acha a nota recebida que já estava na caixa
+-- (gravado em nome do analista sem lista, que passa a ser quem lançou)
+select pg_temp.como_dono(:'analista2');
 insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
 select '70000000-0000-0000-0000-0000000000a7', d.empresa_id, d.emitente_id, 'nfse', '00' || ltrim(:'num_l', '0'), d.emissao, d.competencia, d.valor_bruto
   from erp.documentos_fiscais d where d.id = :'doc_l';
+select pg_temp.sis();
 select pg_temp.ok((select situacao = 'nova' from erp.notas_recebidas where id = :'nr_l'), 'notas recebidas: a nota em rascunho no ERP ainda não liga');
 set role erp_situacao;
 update erp.documentos_fiscais set situacao = 'lancado', lancado_em = clock_timestamp() where id = '70000000-0000-0000-0000-0000000000a7';
 reset role;
-select pg_temp.ok((select situacao = 'vinculada' and documento_id = '70000000-0000-0000-0000-0000000000a7' from erp.notas_recebidas where id = :'nr_l'),
-  'notas recebidas: lançada no ERP (com zeros à esquerda no número), a nota se liga à que já estava na caixa');
+select pg_temp.ok((select situacao = 'vinculada' and documento_id = '70000000-0000-0000-0000-0000000000a7' from erp.notas_recebidas where id = :'nr_l')
+                  and (select situacao = 'nova' from erp.notas_recebidas where id = :'nr_outra')
+                  and (select situacao = 'nova' from erp.notas_recebidas where id = :'nr_valor'),
+  'notas recebidas: lançada no ERP (com zeros à esquerda no número), a nota se liga à da mesma empresa e valor que já estava na caixa');
+-- quem vê o documento lançado vê a nota ligada a ele; quem não vê, não
+delete from erp.listas_financeiro where user_id in (:'analista2', :'leitor');
+delete from erp.notas_recebidas_acessos where user_id in (:'analista2', :'leitor');
+select pg_temp.como(:'analista2');
+select pg_temp.como(:'analista2');
+select pg_temp.ok(erp.vejo_documento('70000000-0000-0000-0000-0000000000a7')
+                  and (select count(*) = 1 and bool_and(id = :'nr_l') from api.notas_recebidas()),
+  'notas recebidas: quem vê a nota lançada vê a nota recebida ligada a ela, e só ela');
+select pg_temp.como(:'leitor');
+select pg_temp.ok(not erp.vejo_documento('70000000-0000-0000-0000-0000000000a7') and not exists (select 1 from api.notas_recebidas()),
+  'notas recebidas: quem não vê a nota lançada não vê a nota recebida ligada');
+select pg_temp.como(null);
 rollback;
 
 \echo '# fim'

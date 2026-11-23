@@ -169,6 +169,17 @@ create table erp.notas_recebidas_acessos (
   primary key (user_id, empresa_id, tipo)
 );
 
+-- 1.6 erp.notas_recebidas_buscas: cada busca de quem lança (revisão do #126, 23/11/2026): quem, por qual critério e se
+-- achou. Serve ao limite por hora da busca pelo emitente e à conferência do financeiro. Só cresce.
+create table erp.notas_recebidas_buscas (
+  id       bigint generated always as identity primary key,
+  user_id  uuid not null references erp.usuarios,
+  em       timestamptz not null default clock_timestamp(),
+  criterio text not null check (criterio in ('chave', 'emitente')),
+  nota_id  uuid references erp.notas_recebidas
+);
+create index on erp.notas_recebidas_buscas (user_id, em);
+
 -- ---------------------------------------------------------------------------------------------
 -- 2. Travas das tabelas
 -- ---------------------------------------------------------------------------------------------
@@ -237,6 +248,14 @@ end $$;
 create trigger t_nota_recebida_leitura before insert or update or delete on erp.notas_recebidas_leituras
   for each row execute function erp.tg_nota_recebida_leitura();
 
+create function erp.tg_nota_recebida_busca() returns trigger language plpgsql as $$
+begin
+  if tg_op <> 'INSERT' then raise exception 'O registro das buscas não muda nem se apaga'; end if;
+  return new;
+end $$;
+create trigger t_nota_recebida_busca before insert or update or delete on erp.notas_recebidas_buscas
+  for each row execute function erp.tg_nota_recebida_busca();
+
 -- ---------------------------------------------------------------------------------------------
 -- 3. Quem vê
 -- ---------------------------------------------------------------------------------------------
@@ -260,25 +279,45 @@ create function erp._vejo_leitura_notas(p_empresa uuid) returns boolean language
   select erp.membro() and (erp.sou_master() or erp.financeiro() or coalesce(erp.meu_papel(), '') = 'diretor'
                            or exists (select 1 from erp.notas_recebidas_acessos a where a.user_id = erp.eu() and a.empresa_id = p_empresa)) $$;
 
+-- Lança em alguma linha da empresa (algum núcleo dela × centro ligado).
+create function erp._lanco_na_empresa(p_empresa uuid) returns boolean language sql stable as $$
+  select erp.escrevo() and (erp.sou_master() or exists (
+    select 1 from erp.nucleos_economicos n join erp.nucleo_centros nc on nc.nucleo_economico_id = n.id and nc.ligado
+     where n.empresa_id = p_empresa and n.ativo and (erp.acesso(erp.eu(), n.id, nc.centro_custo_id)).lanca)) $$;
+
+-- Limite da busca pelo emitente, por pessoa e por hora (a busca pela chave não tem limite: a chave não se adivinha).
+create function erp.limite_busca_notas() returns int language sql immutable as $$ select 20 $$;
+
 -- Quem lança acha a nota dele: pela chave de acesso, ou pelo CNPJ ou CPF do emitente com o número e o valor exatos.
--- Volta a nota (com o XML se ainda está nova) ou nada. A de PJ, só para quem vê o PJ.
+-- Pelo emitente (revisão do #126): só a nota nova, de empresa em que a pessoa lança, e no máximo erp.limite_busca_notas()
+-- buscas por hora. Toda busca fica registrada. Volta a nota (com o XML se ainda está nova) ou nada. A de PJ, só para quem vê o PJ.
 create function erp.buscar_nota_recebida(p_chave text, p_emitente text, p_numero text, p_valor numeric) returns jsonb
-language plpgsql stable as $$
+language plpgsql as $$
 declare n erp.notas_recebidas; v_chave text := regexp_replace(coalesce(p_chave, ''), '\D', '', 'g');
         v_doc text := regexp_replace(coalesce(p_emitente, ''), '\D', '', 'g');
         v_num text := ltrim(regexp_replace(coalesce(p_numero, ''), '\D', '', 'g'), '0');
+        v_crit text;
 begin
   if not erp.escrevo() then raise exception 'Sem permissão para lançar'; end if;
   if v_chave <> '' then
+    v_crit := 'chave';
     select * into n from erp.notas_recebidas where chave = v_chave;
   elsif length(v_doc) in (11, 14) and v_num <> '' and p_valor is not null then
-    select * into n from erp.notas_recebidas
-     where emitente_documento = v_doc and numero = v_num and valor = round(p_valor, 2)
-     order by emissao desc limit 1;
+    v_crit := 'emitente';
+    if (select count(*) from erp.notas_recebidas_buscas b where b.user_id = erp.eu() and b.criterio = 'emitente'
+         and b.em > clock_timestamp() - interval '1 hour') >= erp.limite_busca_notas() then
+      raise exception 'Limite de buscas pelo emitente nesta hora; busque pela chave de acesso';
+    end if;
+    select * into n from erp.notas_recebidas r
+     where r.emitente_documento = v_doc and r.numero = v_num and r.valor = round(p_valor, 2) and r.situacao = 'nova'
+       and erp._lanco_na_empresa(r.empresa_id)
+     order by r.emissao desc limit 1;
   else
     raise exception 'Informe a chave de acesso, ou o CNPJ do emitente com o número e o valor';
   end if;
-  if n.id is null or (erp._nota_recebida_pj(n.emitente_documento) and not erp.vejo_pj()) then return null; end if;
+  if n.id is not null and erp._nota_recebida_pj(n.emitente_documento) and not erp.vejo_pj() then n := null; end if;
+  insert into erp.notas_recebidas_buscas (user_id, criterio, nota_id) values (erp.eu(), v_crit, n.id);
+  if n.id is null then return null; end if;
   return jsonb_build_object('id', n.id, 'empresa', n.empresa_id, 'tipo', n.tipo, 'chave', n.chave,
     'emitente_documento', n.emitente_documento, 'emitente_nome', n.emitente_nome, 'numero', n.numero, 'serie', n.serie,
     'emissao', n.emissao, 'competencia', n.competencia, 'valor', n.valor, 'municipio', n.municipio,
@@ -295,7 +334,8 @@ select pg_temp.trocar('erp.vejo_auditoria(text, text, jsonb, jsonb)'::regprocedu
 -- ---------------------------------------------------------------------------------------------
 -- 4. Ligação com a nota lançada no ERP
 -- ---------------------------------------------------------------------------------------------
--- Liga a nota recebida nova à nota lançada (não cancelada) da mesma empresa, tipo, emitente e número.
+-- Liga a nota recebida nova à nota lançada (não cancelada) da mesma empresa, tipo, emitente, número, série (NF-e) e
+-- valor (revisão do #126: com outro valor, ou outra série, não liga e a nota fica nova para o financeiro ver).
 create function erp._casar_nota_recebida(p_nota uuid) returns void language plpgsql as $$
 declare n erp.notas_recebidas; v_doc uuid;
 begin
@@ -303,7 +343,8 @@ begin
   if n.situacao is distinct from 'nova' then return; end if;
   select d.id into v_doc from erp.documentos_fiscais d join erp.pessoas p on p.id = d.emitente_id
    where d.situacao = 'lancado' and d.empresa_id = n.empresa_id and d.tipo = n.tipo
-     and p.documento = n.emitente_documento and ltrim(d.numero, '0') = n.numero
+     and p.documento = n.emitente_documento and ltrim(d.numero, '0') = n.numero and d.valor_bruto = n.valor
+     and (n.tipo = 'nfse' or ltrim(d.serie, '0') = n.serie)
      and not exists (select 1 from erp.notas_recebidas x where x.documento_id = d.id)
    order by d.lancado_em limit 1;
   if v_doc is not null then
@@ -321,7 +362,8 @@ begin
         and not exists (select 1 from erp.notas_recebidas x where x.documento_id = new.id) then
     select r.id into v_nota from erp.notas_recebidas r join erp.pessoas p on p.documento = r.emitente_documento
      where p.id = new.emitente_id and r.situacao = 'nova' and r.empresa_id = new.empresa_id and r.tipo = new.tipo
-       and r.numero = ltrim(new.numero, '0')
+       and r.numero = ltrim(new.numero, '0') and r.valor = new.valor_bruto
+       and (r.tipo = 'nfse' or r.serie = ltrim(new.serie, '0'))
      order by r.emissao desc limit 1;
     if v_nota is not null then
       update erp.notas_recebidas set situacao = 'vinculada', documento_id = new.id, vinculada_em = clock_timestamp() where id = v_nota;
@@ -525,7 +567,7 @@ language sql stable security invoker set search_path = pg_catalog, pg_temp as $$
 
 create function api.buscar_nota_recebida(p_chave text, p_emitente text default null, p_numero text default null,
                                          p_valor numeric default null) returns jsonb
-language sql stable security invoker set search_path = pg_catalog, pg_temp as $$
+language sql volatile security invoker set search_path = pg_catalog, pg_temp as $$
   select erp.buscar_nota_recebida(p_chave, p_emitente, p_numero, p_valor) $$;
 create function api.ignorar_nota_recebida(p_nota uuid, p_motivo text) returns void
 language sql volatile security invoker set search_path = pg_catalog, pg_temp as $$ select erp.ignorar_nota_recebida(p_nota, p_motivo) $$;
@@ -554,6 +596,7 @@ select pg_temp.tabela('notas_recebidas_xml');
 select pg_temp.tabela('notas_recebidas_eventos');
 select pg_temp.tabela('notas_recebidas_leituras');
 select pg_temp.tabela('notas_recebidas_acessos');
+select pg_temp.tabela('notas_recebidas_buscas');
 -- só leitura pela API, sempre pela regra de quem vê a nota
 create policy perfil_le on erp.notas_recebidas for select to authenticated
   using (erp._vejo_nota_recebida(empresa_id, tipo, emitente_documento, documento_id));
@@ -564,8 +607,10 @@ create policy perfil_le on erp.notas_recebidas_eventos for select to authenticat
 create policy perfil_le on erp.notas_recebidas_leituras for select to authenticated using (erp._vejo_leitura_notas(empresa_id));
 create policy perfil_le on erp.notas_recebidas_acessos for select to authenticated
   using (erp.membro() and (erp.sou_master() or erp.estou_nas_listas(array['AD']) or user_id = erp.eu()));
+create policy perfil_le on erp.notas_recebidas_buscas for select to authenticated
+  using (erp.membro() and (erp.sou_master() or erp.estou_nas_listas(array['AD']) or user_id = erp.eu()));
 grant select on erp.notas_recebidas, erp.notas_recebidas_xml, erp.notas_recebidas_eventos, erp.notas_recebidas_leituras,
-  erp.notas_recebidas_acessos to authenticated;
+  erp.notas_recebidas_acessos, erp.notas_recebidas_buscas to authenticated;
 select pg_temp.auditar('notas_recebidas', 'id');
 select pg_temp.auditar('notas_recebidas_leituras', 'empresa_id');
 select pg_temp.auditar('notas_recebidas_acessos', 'user_id');
@@ -581,7 +626,8 @@ begin
     'erp.registrar_leitura_notas(uuid, text, bigint, bigint, timestamptz, text)', 'erp._vejo_nota_recebida(uuid, text, text, uuid)',
     'erp._vejo_leitura_notas(uuid)', 'erp.buscar_nota_recebida(text, text, text, numeric)', 'erp.ignorar_nota_recebida(uuid, text)',
     'erp.voltar_nota_recebida(uuid)', 'erp.liberar_notas_recebidas(uuid, uuid, text, text)',
-    'erp.retirar_notas_recebidas(uuid, uuid, text)', 'erp.tg_nota_recebida_acesso()', 'erp._libero_notas_recebidas()']::regprocedure[] loop
+    'erp.retirar_notas_recebidas(uuid, uuid, text)', 'erp.tg_nota_recebida_acesso()', 'erp._libero_notas_recebidas()',
+    'erp.tg_nota_recebida_busca()', 'erp._lanco_na_empresa(uuid)', 'erp.limite_busca_notas()']::regprocedure[] loop
     execute format('revoke execute on function %s from public', f);
     if exists (select 1 from pg_roles where rolname = 'anon') then execute format('revoke execute on function %s from anon', f); end if;
     if exists (select 1 from pg_roles where rolname = 'service_role') then execute format('revoke execute on function %s from service_role', f); end if;
@@ -603,8 +649,8 @@ do $$ begin
   if exists (select 1 from pg_roles where rolname = 'authenticated') then
     grant execute on function erp._vejo_nota_recebida(uuid, text, text, uuid), erp._vejo_leitura_notas(uuid),
       erp.buscar_nota_recebida(text, text, text, numeric), erp.ignorar_nota_recebida(uuid, text), erp.voltar_nota_recebida(uuid),
-      erp.liberar_notas_recebidas(uuid, uuid, text, text), erp.retirar_notas_recebidas(uuid, uuid, text), erp._libero_notas_recebidas()
-      to authenticated;
+      erp.liberar_notas_recebidas(uuid, uuid, text, text), erp.retirar_notas_recebidas(uuid, uuid, text), erp._libero_notas_recebidas(),
+      erp._lanco_na_empresa(uuid), erp.limite_busca_notas() to authenticated;
   end if;
 end $$;
 do $$
@@ -613,7 +659,7 @@ begin
   foreach f in array array['erp._nota_recebida_pj(text)', 'erp._vejo_nota_recebida(uuid, text, text, uuid)', 'erp._vejo_leitura_notas(uuid)',
     'erp.buscar_nota_recebida(text, text, text, numeric)', 'erp.ignorar_nota_recebida(uuid, text)', 'erp.voltar_nota_recebida(uuid)',
     'erp._casar_nota_recebida(uuid)', 'erp.tg_documento_nota_recebida()', 'erp.liberar_notas_recebidas(uuid, uuid, text, text)',
-    'erp.retirar_notas_recebidas(uuid, uuid, text)', 'erp._libero_notas_recebidas()'] loop
+    'erp.retirar_notas_recebidas(uuid, uuid, text)', 'erp._libero_notas_recebidas()', 'erp._lanco_na_empresa(uuid)'] loop
     execute format('alter function %s security definer set search_path = erp, pg_catalog, pg_temp', f);
   end loop;
 end $$;
@@ -621,10 +667,10 @@ end $$;
 -- a nota no ERP não grava na caixa, mas o lançamento dele liga a nota).
 select pg_temp.dono(f::regprocedure, 'erp_conferencia') from unnest(array[
   'erp._nota_recebida_pj(text)', 'erp._vejo_nota_recebida(uuid, text, text, uuid)', 'erp._vejo_leitura_notas(uuid)',
-  'erp.buscar_nota_recebida(text, text, text, numeric)', 'erp._libero_notas_recebidas()']) f;
+  'erp._libero_notas_recebidas()', 'erp._lanco_na_empresa(uuid)']) f;
 select pg_temp.dono(f::regprocedure, 'erp_situacao') from unnest(array[
   'erp.ignorar_nota_recebida(uuid, text)', 'erp.voltar_nota_recebida(uuid)', 'erp._casar_nota_recebida(uuid)',
-  'erp.tg_documento_nota_recebida()']) f;
+  'erp.tg_documento_nota_recebida()', 'erp.buscar_nota_recebida(text, text, text, numeric)']) f;
 -- liberar e tirar gravam como erp_acesso, como a designação do PJ
 select pg_temp.dono(f::regprocedure, 'erp_acesso') from unnest(array[
   'erp.liberar_notas_recebidas(uuid, uuid, text, text)', 'erp.retirar_notas_recebidas(uuid, uuid, text)']) f;
