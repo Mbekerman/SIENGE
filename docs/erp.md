@@ -139,7 +139,9 @@ O realizado do livro sempre bate com o dinheiro que saiu do banco, e a DRE só e
 | Tabela | O que guarda | Regras principais |
 |---|---|---|
 | `orcamento_versoes` | As versões datadas: viabilidade, aprovado e reprojeções | Publicada, a versão não muda. Publicar uma viabilidade ou um aprovado substitui a versão vigente do mesmo tipo |
-| `orcamento_linhas` | Os valores por núcleo, centro de custo, natureza e mês | O custo de capital ("só no orçado") só entra aqui |
+| `orcamento_linhas` | Os valores por núcleo, centro de custo, natureza e mês (no orçamento de área, também o nível do centro) | O custo de capital ("só no orçado") só entra aqui |
+| `orcamento_aprovacoes` | Os votos do orçamento de área (vaga MASTER, AD, AF ou AO do centro), a cada envio | Só as funções gravam; não se muda nem se apaga |
+| `documentos_fora_orcamento` | As notas marcadas como fora do orçamento, com o motivo | Só com a nota em rascunho; não consomem o orçado |
 | `lancamentos` | **O livro:** estágio (orçado, previsto, comprometido, realizado), empresa, núcleo econômico, centro de custo, divisão, natureza, competência, data de caixa, valor e a origem (previsão, título, parcela, quitação, pagamento, caução ou linha de orçamento) | Não se apaga nem se edita. A natureza só muda pela reclassificação |
 
 O livro é escrito sozinho, a cada passo:
@@ -153,6 +155,7 @@ O livro é escrito sozinho, a cada passo:
 | Caução retida | Comprometido sem data de caixa |
 | Caução liberada | Sai do "sem data" e passa para o título, com vencimento |
 | Orçamento publicado | Orçado |
+| Orçamento de área aprovado | Orçado, e uma previsão sem fornecedor por linha do mês corrente em diante, refeita com o saldo a cada nota que consome |
 
 ### Visões
 

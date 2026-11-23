@@ -5,14 +5,15 @@
 //
 // Variáveis: BUCKET, as ANTHROPIC_* do leitor (federação, sem chave guardada), LOTE_LIMITE (quantos arquivos ainda sem
 // resultado ler nesta rodada; padrão 20), LOTE_PARALELO (padrão 4) e LOTE_CNPJS (CNPJs das empresas, separados por
-// vírgula, para abrir PDF com senha como o leitor faz; opcional). Rodar de novo continua de onde parou.
+// vírgula, para abrir PDF com senha como o leitor faz; opcional), LOTE_MODELO (outro modelo, para comparar; padrão o
+// do leitor) e LOTE_SAIDA (pasta da rodada, lote/<nome>/; padrão lote/saida/). Rodar de novo continua de onde parou.
 import { execFile } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { LIMITE, pdfCriptografado, senhasCandidatas, tentarSenhas, textoUtf8, tipoPelosBytes } from './arquivo.ts';
-import { type Entrada, clienteFederado, lerComIaDetalhe } from './ia.ts';
+import { type Entrada, MODELO, clienteFederado, lerComIaDetalhe } from './ia.ts';
 import { lerXml } from './xml.ts';
 import type { Leitura } from './leitura.ts';
 
@@ -32,12 +33,13 @@ export interface Resultado {
   erro_tipo?: string;  // só o tipo do erro vai ao log (a mensagem pode trazer trecho do documento; revisão do #110)
 }
 
-// O nome do resultado: o do arquivo, sem a pasta de entrada.
-export const nomeSaida = (objeto: string) => SAIDA + objeto.slice(ENTRADA.length) + '.json';
+// O nome do resultado: o do arquivo, sem a pasta de entrada, na pasta de saída da rodada (LOTE_SAIDA separa a rodada
+// de outro modelo da anterior).
+export const nomeSaida = (objeto: string, saida = SAIDA) => saida + objeto.slice(ENTRADA.length) + '.json';
 
 // O que falta ler: os da entrada sem resultado, na ordem do nome, até o limite.
-export function pendentes(entrada: string[], saidas: Set<string>, limite: number): string[] {
-  return entrada.filter((o) => o !== ENTRADA && !o.endsWith('/') && !saidas.has(nomeSaida(o))).sort().slice(0, limite);
+export function pendentes(entrada: string[], saidas: Set<string>, limite: number, saida = SAIDA): string[] {
+  return entrada.filter((o) => o !== ENTRADA && !o.endsWith('/') && !saidas.has(nomeSaida(o, saida))).sort().slice(0, limite);
 }
 
 // Lê um arquivo como o leitor lê (XML de nota sem IA; PDF, foto e XML desconhecido pela IA), sem banco.
@@ -148,18 +150,21 @@ async function main() {
   const limite = Math.max(1, Number(process.env.LOTE_LIMITE ?? 20) || 20);
   const paralelo = Math.min(16, Math.max(1, Number(process.env.LOTE_PARALELO ?? 4) || 4));
   const senhas = ['', ...senhasCandidatas((process.env.LOTE_CNPJS ?? '').split(',').map((s) => s.replace(/\D/g, '')).filter(Boolean))];
+  const modelo = process.env.LOTE_MODELO || MODELO;
+  const pasta = process.env.LOTE_SAIDA || SAIDA;
+  if (!/^lote\/[a-z0-9-]+\/$/.test(pasta) || pasta === ENTRADA) throw new Error('LOTE_SAIDA tem de ser lote/<nome>/');
   const cliente = await clienteFederado();
 
-  const fila = pendentes(await listar(bucket, ENTRADA), new Set(await listar(bucket, SAIDA)), limite);
-  log('lote começou', { arquivos: fila.length, paralelo });
+  const fila = pendentes(await listar(bucket, ENTRADA), new Set(await listar(bucket, pasta)), limite, pasta);
+  log('lote começou', { arquivos: fila.length, paralelo, modelo, saida: pasta });
   let feitos = 0, erros = 0, entrada = 0, saida = 0;
   const trabalhar = async () => {
     for (let o = fila.shift(); o; o = fila.shift()) {
-      const r = await lerArquivo(o.slice(ENTRADA.length), await baixar(bucket, o), (e) => lerComIaDetalhe(cliente, e),
+      const r = await lerArquivo(o.slice(ENTRADA.length), await baixar(bucket, o), (e) => lerComIaDetalhe(cliente, e, new Date(), modelo),
         (pdf) => abrirPdf(pdf, senhas));
       feitos++; if (r.erro) erros++;
       if (r.erro_ia) { log('a IA falhou; fica para a próxima rodada', { arquivo: r.arquivo, erro: r.erro_tipo }); continue; }
-      await gravar(bucket, nomeSaida(o), JSON.stringify(r));
+      await gravar(bucket, nomeSaida(o, pasta), JSON.stringify(r));
       entrada += r.uso?.entrada ?? 0; saida += r.uso?.saida ?? 0;
       if (feitos % 20 === 0) log('andamento', { feitos, erros, tokens_entrada: entrada, tokens_saida: saida });
     }
