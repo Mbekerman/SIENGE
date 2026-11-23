@@ -8584,5 +8584,81 @@ select pg_temp.como(null);
 rollback;
 select pg_temp.sis();
 
+\echo '# apelido das empresas (Moises, 23/11/2026)'
+begin;
+select pg_temp.sis();
+delete from erp.listas_financeiro where user_id in (:'gestor', :'diretor2', :'ti', :'analista2', :'leitor');
+insert into erp.listas_financeiro (lista, user_id) values ('AF', :'gestor'), ('AD', :'diretor2');
+select pg_temp.como(:'gestor');
+select pg_temp.ok(erp.estou_nas_listas(array['AF']), 'apelido: (preparo) a gestora está na AF');
+select pg_temp.como(:'diretor2');
+select pg_temp.ok(erp.estou_nas_listas(array['AD']), 'apelido: (preparo) a sócia está na AD');
+-- quem pode: o master, AF e AD; não o administrador, nem quem lança sem lista, nem a leitura
+select pg_temp.como(:'diretor');
+select pg_temp.ok(api.salvar_apelido_empresa(:'spe', '  BKM   03 ') = 'BKM 03', 'apelido: o master dá o apelido, sem espaço sobrando');
+select pg_temp.como(:'gestor');
+select pg_temp.ok(api.salvar_apelido_empresa(:'incorp', 'Incorporadora') = 'Incorporadora', 'apelido: AF dá o apelido');
+select pg_temp.como(:'diretor2');
+select pg_temp.ok(api.salvar_apelido_empresa(:'incorp', 'BKM Incorp') = 'BKM Incorp', 'apelido: AD muda o apelido');
+select pg_temp.como(:'ti');
+select pg_temp.erro_igual(format($$select api.salvar_apelido_empresa(%L, 'Outra')$$, :'spe'),
+  'Só AF, AD e o master dão e mudam o apelido da empresa', 'apelido: o administrador não muda o apelido');
+select pg_temp.falha(format($$update erp.empresas set apelido = 'Outra' where id = %L$$, :'spe'), 'apelido: nem por update direto o administrador muda');
+select pg_temp.como(:'analista2');
+select pg_temp.erro_igual(format($$select api.salvar_apelido_empresa(%L, 'Outra')$$, :'spe'),
+  'Só AF, AD e o master dão e mudam o apelido da empresa', 'apelido: quem lança sem lista não muda');
+select pg_temp.falha(format($$update erp.empresas set apelido = 'Outra' where id = %L$$, :'spe'), 'apelido: nem por update direto quem lança muda');
+select pg_temp.ok(pg_temp.erro_como_dono(format($$update erp.empresas set apelido = 'Outra' where id = %L$$, :'spe'))
+                  = 'Só AF, AD e o master dão e mudam o apelido da empresa', 'apelido: o gatilho barra por baixo da API');
+select pg_temp.como(:'leitor');
+select pg_temp.falha(format($$select api.salvar_apelido_empresa(%L, 'Outra')$$, :'spe'), 'apelido: a leitura não muda');
+-- AF muda só o apelido: tipo e situação da empresa seguem com o administrador
+select pg_temp.como(:'gestor');
+select pg_temp.erro_igual(format($$update erp.empresas set ativa = false where id = %L$$, :'spe'),
+  'Tipo e situação da empresa só o administrador muda', 'apelido: AF não muda a situação da empresa');
+select pg_temp.erro_igual(format($$update erp.empresas set tipo = 'outra', apelido = 'X1' where id = %L$$, :'spe'),
+  'Tipo e situação da empresa só o administrador muda', 'apelido: AF não muda o tipo junto com o apelido');
+-- não se repete (sem diferença de maiúscula), tamanho de 2 a 40, vazio tira
+select pg_temp.erro_igual(format($$select api.salvar_apelido_empresa(%L, 'bkm incorp')$$, :'holding'),
+  'Já existe uma empresa com o apelido bkm incorp', 'apelido: não se repete entre as empresas');
+select pg_temp.erro_igual(format($$select api.salvar_apelido_empresa(%L, 'B')$$, :'holding'),
+  'O apelido tem de 2 a 40 letras', 'apelido: no mínimo 2 letras');
+select pg_temp.erro_igual(format($$select api.salvar_apelido_empresa(%L, %L)$$, :'holding', repeat('a', 41)),
+  'O apelido tem de 2 a 40 letras', 'apelido: no máximo 40 letras');
+select pg_temp.ok(api.salvar_apelido_empresa(:'holding', 'Holding') = 'Holding', 'apelido: a holding ganha apelido');
+select pg_temp.ok(api.salvar_apelido_empresa(:'holding', '   ') is null, 'apelido: vazio tira o apelido');
+select pg_temp.erro_igual(format($$select api.salvar_apelido_empresa(%L, 'Nada')$$, '20000000-0000-0000-0000-0000000000ff'),
+  'Empresa não encontrada', 'apelido: empresa que não existe');
+-- o administrador continua mudando o resto da empresa (e o apelido fica)
+select pg_temp.como(:'ti');
+update erp.empresas set ativa = true where id = :'spe';
+select pg_temp.ok((select apelido = 'BKM 03' from erp.empresas where id = :'spe'), 'apelido: o administrador muda a situação e o apelido fica');
+-- as telas: apelido no lugar da razão social; sem apelido, a razão social; a razão social continua ao lado
+select pg_temp.como(:'diretor');
+select pg_temp.ok((select count(*) >= 3 and bool_and(posso_apelido) from api.empresas()), 'apelido: a lista das empresas, e o master pode mudar');
+select pg_temp.ok((select apelido = 'BKM 03' and razao_social = (select nome from erp.pessoas where id = '10000000-0000-0000-0000-000000000003')
+                     from api.empresas() where id = :'spe'), 'apelido: a lista traz o apelido e a razão social');
+select pg_temp.ok((select e->>'nome' = 'BKM 03' and e->>'razao_social' = (select nome from erp.pessoas where id = '10000000-0000-0000-0000-000000000003')
+                     from jsonb_array_elements(api.lancamento_opcoes()->'empresas') e where e->>'id' = :'spe'),
+  'apelido: Lançar título mostra o apelido, com a razão social ao lado');
+select pg_temp.ok((select e->>'nome' = (select nome from erp.pessoas where id = '10000000-0000-0000-0000-000000000001')
+                     from jsonb_array_elements(api.lancamento_opcoes()->'empresas') e where e->>'id' = :'holding'),
+  'apelido: sem apelido, a razão social');
+select pg_temp.ok(not exists (select 1 from api.titulos() t join erp.titulos x on x.id = t.id
+                               where x.empresa_id = :'spe' and t.empresa is distinct from 'BKM 03')
+                  and exists (select 1 from api.titulos() t join erp.titulos x on x.id = t.id where x.empresa_id = :'spe'),
+  'apelido: a lista de títulos mostra o apelido');
+select pg_temp.ok((select apelido = 'BKM 03' and empresa <> 'BKM 03' from bi.d_empresa where empresa_id = :'spe'),
+  'apelido: o BI traz o apelido ao lado da razão social');
+select pg_temp.como(:'analista2');
+select pg_temp.ok((select count(*) >= 3 and not bool_or(posso_apelido) from api.empresas()), 'apelido: quem não pode vê a lista sem poder mudar');
+-- a razão social continua no que confere e sai do sistema (o credor e o envio ao Sienge leem erp.pessoas, que não muda)
+select pg_temp.como_dono(null);
+select pg_temp.ok((select count(*) >= 3 from erp.auditoria where tabela = 'empresas' and registro = :'spe'),
+  'apelido: as mudanças da empresa ficam na auditoria');
+select pg_temp.como(null);
+rollback;
+select pg_temp.sis();
+
 \echo '# fim'
 do $$ begin raise notice 'TODOS OS TESTES PASSARAM'; end $$;

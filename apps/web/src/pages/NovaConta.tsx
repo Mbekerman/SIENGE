@@ -120,7 +120,7 @@ export function ContaRecorrente({ id, fechar, salvo }: { id?: string; fechar: ()
           <Campo r="Empresa">
             <select className={`lt-in ${erro(!empresa)}`} value={empresa} onChange={e => { setEmpresa(e.target.value); setLinhas([novaLinha()]); }}>
               <option value="">Escolha quem paga</option>
-              {o.empresas.map(e => <option key={e.id} value={e.id}>{e.nome}{e.documento ? ` · ${documento(e.documento)}` : ''}</option>)}
+              {o.empresas.map(e => <option key={e.id} value={e.id} title={e.razao_social}>{e.nome}{e.documento ? ` · ${documento(e.documento)}` : ''}</option>)}
             </select>
           </Campo>
           <Campo r={consumo ? 'Concessionária' : 'Fornecedor'}><BuscaFornecedor v={forn} erro={tentou && !forn} mudar={setForn} /></Campo>

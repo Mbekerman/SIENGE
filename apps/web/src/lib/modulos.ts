@@ -17,7 +17,7 @@ export const MODULOS: Modulo[] = [
       { r: 'Plano financeiro' },
     ],
   },
-  { k: 'cad', r: 'Cadastros', ic: 'lista', subs: [{ r: 'Fornecedores' }, { r: 'Núcleos e centros' }, { r: 'Naturezas' }] },
+  { k: 'cad', r: 'Cadastros', ic: 'lista', subs: [{ r: 'Empresas', to: '/empresas', rotas: ['/empresas'] }, { r: 'Fornecedores' }, { r: 'Núcleos e centros' }, { r: 'Naturezas' }] },
   { k: 'rel', r: 'Relatórios', ic: 'grafico', subs: [{ r: 'Contas a pagar' }] },
   { k: 'adm', r: 'Admin', ic: 'escudo', subs: [{ r: 'Pessoas e acessos' }, { r: 'Alçadas' }, { r: 'Notificações' }] },
 ];

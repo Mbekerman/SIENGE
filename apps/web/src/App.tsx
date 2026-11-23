@@ -9,6 +9,7 @@ import { Aprovar } from './pages/Aprovar';
 import { Previsoes } from './pages/Previsoes';
 import { Contratos } from './pages/Contratos';
 import { ContasPagar } from './pages/ContasPagar';
+import { Empresas } from './pages/Empresas';
 
 export function App() {
   const { sessao, carregando, eu, euCarregando, euErro } = useSessao();
@@ -28,6 +29,7 @@ export function App() {
         <Route path="/titulos/:id?" element={<Titulos />} />
         <Route path="/previsoes/:id?" element={<Previsoes />} />
         <Route path="/contratos/:id?" element={<Contratos />} />
+        <Route path="/empresas/:id?" element={<Empresas />} />
         <Route path="*" element={<Navigate to="/contas-a-pagar" replace />} />
       </Routes>
     </Moldura>

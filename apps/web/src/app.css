@@ -383,3 +383,7 @@ button.lt-o:hover{background:#f1f4f9}
 .lt-sec .nt{display:block;padding:8px 12px;border-radius:8px;font-size:13px;line-height:18px}
 .lt-senha,.lt-sug{display:flex;flex-direction:column;gap:8px}
 .lt-cc{display:block;overflow-wrap:anywhere;margin-top:2px}
+
+/* Cadastros › Empresas: o apelido editado no lugar, na gaveta */
+.em-ap{display:flex;flex-direction:column;gap:6px}
+.em-rot{font-size:14px;line-height:20px;font-weight:500}
