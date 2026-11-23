@@ -2,7 +2,15 @@
 -- Se algo falhar, dá erro e nada fica. O corpo é o mesmo da migration; o script só se dá os papéis donos das funções
 -- (sem herdar, só set) durante a transação e os tira antes do commit.
 begin;
-grant erp_conferencia, erp_situacao, erp_acesso, erp_sistema to current_user with inherit false, set true;
+grant erp_conferencia, erp_situacao, erp_acesso to current_user with inherit false, set true;
+-- erp_sistema: no bkm_dev o postgres já o tem para sempre (set true, inherit false, dado em 17/11 e usado pelo envio
+-- ao Sienge). Só dá (e tira no fim) se ainda não tiver; nunca mexe no grant que já existe (revisão de segurança do #122).
+do $$ begin
+  if not exists (select 1 from pg_auth_members where roleid = 'erp_sistema'::regrole and member = current_user::regrole and set_option) then
+    execute format('grant erp_sistema to %I with inherit false, set true', current_user);
+    perform set_config('bkm.tirar_erp_sistema', 'sim', true);
+  end if;
+end $$;
 
 -- Orçamento de área (Moises, 23/nov/2026: "temos que ter uma criação de Orçamento, sem necessariamente estar atrelado a
 -- fornecedores. Somente a Centro de custos (e seu nível) e conta financeira, pra poder lançar provisão de despesas").
@@ -833,11 +841,15 @@ do $$ begin
     raise exception 'Conferência: create no esquema sobrou';
   end if;
 end $$;
-revoke erp_conferencia, erp_situacao, erp_acesso, erp_sistema from current_user;
+revoke erp_conferencia, erp_situacao, erp_acesso from current_user;
+do $$ begin
+  if current_setting('bkm.tirar_erp_sistema', true) = 'sim' then execute format('revoke erp_sistema from %I', current_user); end if;
+end $$;
 commit;
 
 -- Depois do commit (devem dar true)
-select (select relforcerowsecurity from pg_class where oid = 'erp.orcamento_aprovacoes'::regclass) as rls_aprovacoes,
+select pg_has_role('erp_sistema', 'SET') = (select count(*) > 0 from pg_auth_members where roleid = 'erp_sistema'::regrole and member = current_user::regrole) as erp_sistema_como_antes,
+       (select relforcerowsecurity from pg_class where oid = 'erp.orcamento_aprovacoes'::regclass) as rls_aprovacoes,
        (select relforcerowsecurity from pg_class where oid = 'erp.documentos_fora_orcamento'::regclass) as rls_fora,
        not has_function_privilege('authenticated', 'erp._refazer_orcamento(uuid, uuid, uuid, uuid, date)', 'EXECUTE') as refazer_fora_da_api,
        has_function_privilege('authenticated', 'api.orcamento_area(uuid)', 'EXECUTE') as tela_na_api;

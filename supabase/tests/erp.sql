@@ -9120,6 +9120,118 @@ select pg_temp.ok(:'o_enf' and not exists (select 1 from erp.previsoes where orc
   'orçamento: passada a carência, a sobra do mês sai das previsões no enfileiramento (o mês corrente fica)');
 select pg_temp.falha($$update erp.regra_alcada_pagamento set orcamento_carencia_dias = 90$$, 'orçamento: carência acima de 60 dias é recusada');
 select pg_temp.volta();
+-- mais uma revisão, para as travas da aprovação (revisão de segurança do #122)
+select pg_temp.como(:'gestor');
+select api.criar_orcamento_area(:'ne_vm', :'cc_mkt', :o_ano) as o_v3 \gset
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format($$select api.salvar_orcamento_area(%L, '[]'::jsonb)$$, :'o_v3'),
+  'Só o gestor do centro de custo monta o orçamento da área', 'orçamento: quem não é gestor do centro não salva');
+select pg_temp.sis();
+update erp.naturezas set restrita = true where codigo = '04.01';
+select pg_temp.volta();
+select pg_temp.como(:'gestor');
+select pg_temp.erro_igual(format($$select api.salvar_orcamento_area(%L, jsonb_build_array(jsonb_build_object('natureza', %L, 'nivel', %L, 'competencia', %L, 'valor', 5)))$$,
+  :'o_v3', pg_temp.nat('04.01'), :'o_on', :'o_m0'),
+  format('A natureza "%s" é restrita e não entra no orçamento de área', (select nome from erp.naturezas where codigo = '04.01')),
+  'orçamento: natureza restrita (PJ) não entra no orçamento de área');
+-- quem mudou por último (não quem criou) também não aprova: a AF que é gestora do centro salva e tenta aprovar
+select pg_temp.sis();
+insert into erp.centro_aprovadores values (:'cc_mkt', :'contador') on conflict do nothing;
+select pg_temp.volta();
+select pg_temp.como(:'contador');
+select (select jsonb_agg(jsonb_build_object('natureza', l.natureza_id, 'nivel', coalesce(l.subdivisao_id, l.divisao_id),
+                                            'competencia', l.competencia, 'valor', -l.valor + case when l.natureza_id = :'o_nb' and l.competencia = :'o_m0' then 100 else 0 end))
+          from erp.orcamento_linhas l where l.versao_id = :'o_v3') as o_l3 \gset
+select api.salvar_orcamento_area(:'o_v3', :'o_l3') as n \gset
+select pg_temp.como(:'gestor');
+select api.enviar_orcamento(:'o_v3');
+select pg_temp.como(:'contador');
+select pg_temp.erro_igual(format($$select api.decidir('orcamento', %L, 'aprovar')$$, :'o_v3'), 'Quem montou ou mudou o orçamento não aprova',
+  'orçamento: quem mudou por último não aprova');
+select pg_temp.sis();
+delete from erp.centro_aprovadores where centro_custo_id = :'cc_mkt' and user_id = :'contador';
+select pg_temp.volta();
+-- salvar tira o envio, e a aprovação dada antes do envio de agora não vale
+select pg_temp.como(:'gestor');
+select api.salvar_orcamento_area(:'o_v3', :'o_l3') as n \gset
+select pg_temp.ok((select enviado_em is null and alterado_por = :'gestor' from erp.orcamento_versoes where id = :'o_v3'), 'orçamento: salvar tira o envio');
+select api.enviar_orcamento(:'o_v3');
+select pg_temp.como(:'contador');
+select pg_temp.ok(api.decidir('orcamento', :'o_v3', 'aprovar') = 'pendente', 'orçamento: (preparo) a AF aprova');
+select pg_temp.como(:'gestor');
+select api.salvar_orcamento_area(:'o_v3', :'o_l3') as n \gset
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format($$select api.decidir('orcamento', %L, 'aprovar')$$, :'o_v3'), 'O orçamento não está esperando aprovação',
+  'orçamento: depois de salvar, sem novo envio ninguém aprova');
+select pg_temp.como(:'gestor');
+select api.enviar_orcamento(:'o_v3');
+select pg_temp.como(:'analista');
+select pg_temp.ok(api.decidir('orcamento', :'o_v3', 'aprovar') = 'pendente', 'orçamento: a aprovação da AF de antes do novo envio não vale (falta a AF)');
+-- a mesma vaga não aprova duas vezes (dois da AF)
+select pg_temp.sis();
+insert into erp.listas_financeiro (lista, user_id) values ('AF', :'analista2') on conflict do nothing;
+delete from erp.listas_financeiro where lista = 'AO' and user_id = :'analista2';
+select pg_temp.volta();
+select pg_temp.como(:'contador');
+select pg_temp.ok(api.decidir('orcamento', :'o_v3', 'recusar', 'Ver o Google') = 'recusado', 'orçamento: (preparo) a AF recusa');
+-- a recusa derruba a aprovação: mesmo com AF e AO aprovando no mesmo envio, há recusa e não aprova
+select pg_temp.como_dono(:'gestor');
+set local role erp_situacao;
+update erp.orcamento_versoes set enviado_em = (select min(em) from erp.orcamento_aprovacoes where versao_id = :'o_v3') - interval '1 second' where id = :'o_v3';
+insert into erp.orcamento_aprovacoes (versao_id, vaga, aprovado, por) values (:'o_v3', 'AF', true, :'analista2');
+reset role;
+select pg_temp.ok(not erp.orcamento_aprovado(:'o_v3')
+                  and exists (select 1 from erp.orcamento_aprovacoes where versao_id = :'o_v3' and aprovado and vaga = 'AF')
+                  and exists (select 1 from erp.orcamento_aprovacoes where versao_id = :'o_v3' and aprovado and vaga = 'AO'),
+  'orçamento: a recusa no mesmo envio derruba a aprovação');
+set local role erp_situacao;
+update erp.orcamento_versoes set enviado_em = null where id = :'o_v3';
+reset role;
+select pg_temp.como(:'gestor');
+select api.enviar_orcamento(:'o_v3');
+select pg_temp.como(:'analista2');
+select pg_temp.ok(api.decidir('orcamento', :'o_v3', 'aprovar') = 'pendente', 'orçamento: (preparo) uma pessoa da AF aprova');
+select pg_temp.como(:'contador');
+select pg_temp.erro_igual(format($$select api.decidir('orcamento', %L, 'aprovar')$$, :'o_v3'), 'A vaga AF já aprovou este orçamento',
+  'orçamento: a mesma vaga não aprova duas vezes');
+-- o mês virou entre salvar e aprovar: a publicação confere de novo os meses que já passaram
+\if :o_tem_passado
+select pg_temp.como_dono(:'gestor');
+set local role erp_situacao;
+update erp.orcamento_linhas set valor = valor - 1 where versao_id = :'o_v3' and competencia = :'o_mp';
+reset role;
+select pg_temp.como(:'diretor2');
+select pg_temp.erro_igual(format($$select api.decidir('orcamento', %L, 'aprovar')$$, :'o_v3'), 'Os meses que já passaram não mudam',
+  'orçamento: a publicação recusa mês passado diferente do vigente');
+select pg_temp.como_dono(:'gestor');
+set local role erp_situacao;
+update erp.orcamento_linhas set valor = valor + 1 where versao_id = :'o_v3' and competencia = :'o_mp';
+reset role;
+\endif
+select pg_temp.como(:'diretor2');
+select pg_temp.ok(api.decidir('orcamento', :'o_v3', 'aprovar') = 'aprovado', 'orçamento: (preparo) o AD aprova a revisão');
+-- consumo só no mesmo mês e no nível igual ou acima: nem outro mês, nem o nível ao lado
+select pg_temp.como(:'diretor');
+select erp.pedir_mudanca_acesso('divisoes', 'incluir', jsonb_build_object('id', '87000000-0000-0000-0000-0000000000e3', 'mae_id', :'o_on', 'nome', 'Meta Orç', 'copiar_de', :'o_go'), 'Meta');
+select pg_temp.como(:'analista');
+select api.lancar_titulo(jsonb_build_object(
+  'empresa', :'spe', 'fornecedor', '10000000-0000-0000-0000-000000000007', 'tipo', 'nfse', 'numero', 'ORC-3',
+  'emissao', :'o_m0', 'competencia', (:'o_m0'::date + interval '1 month')::date, 'valor', 40,
+  'rateio', jsonb_build_array(jsonb_build_object('nucleo', :'ne_vm', 'centro', :'cc_mkt', 'divisao', :'o_go', 'natureza', :'o_na', 'percentual', 100)),
+  'parcelas', jsonb_build_array(jsonb_build_object('vencimento', (:'o_m0'::date + 20), 'forma', 'pix', 'pix_tipo', 'email', 'pix_chave', 'agencia@example.com')))) as o_t3 \gset
+select api.lancar_titulo(jsonb_build_object(
+  'empresa', :'spe', 'fornecedor', '10000000-0000-0000-0000-000000000007', 'tipo', 'nfse', 'numero', 'ORC-4',
+  'emissao', :'o_m0', 'competencia', :'o_m0', 'valor', 40,
+  'rateio', jsonb_build_array(jsonb_build_object('nucleo', :'ne_vm', 'centro', :'cc_mkt', 'divisao', '87000000-0000-0000-0000-0000000000e3', 'natureza', :'o_nb', 'percentual', 100)),
+  'parcelas', jsonb_build_array(jsonb_build_object('vencimento', (:'o_m0'::date + 20), 'forma', 'pix', 'pix_tipo', 'email', 'pix_chave', 'agencia@example.com')))) as o_t4 \gset
+select pg_temp.como_dono(null);
+select pg_temp.ok(exists (select 1 from erp.previsoes where orcamento_linha_id is not null and situacao = 'aberta' and natureza_id = :'o_na' and competencia = :'o_m0')
+                  and not exists (select 1 from erp.titulo_previsoes where titulo_id = :'o_t3'),
+  'orçamento: a nota de outro mês não consome o orçado deste mês');
+select pg_temp.ok(exists (select 1 from erp.previsoes where orcamento_linha_id is not null and situacao = 'aberta' and natureza_id = :'o_nb' and competencia = :'o_m0')
+                  and not exists (select 1 from erp.titulo_previsoes where titulo_id = :'o_t4')
+                  and not erp.nivel_acima(:'o_go', :'o_on') and not erp.nivel_acima(:'o_go', '87000000-0000-0000-0000-0000000000e3'),
+  'orçamento: a nota do nível ao lado não consome a linha de outro nível (só o nível igual ou acima)');
 -- auditoria e a API sem gravação direta na aprovação
 select pg_temp.como_dono(null);
 select pg_temp.ok(exists (select 1 from erp.auditoria where tabela = 'orcamento_aprovacoes')
