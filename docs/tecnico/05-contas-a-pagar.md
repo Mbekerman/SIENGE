@@ -85,6 +85,23 @@ Experiência pedida pelo Moises (6/nov/2026), com o que cada passo exige tecnica
 
 Recomendações aceitas pelo Moises em 6/nov/2026: contratos novos do dia a dia com item a R$ 1,00 por unidade (o CTP/28 já é assim).
 
+## 5.3.1 Caixa das notas recebidas [Banco construído, 23/nov/2026; serviço da busca e tela a fazer]
+
+Pedido do Moises (17/11/2026): buscar as notas emitidas contra os CNPJs do grupo. Depois do teste do ADN (23/11/2026; ver [04](04-integracao-sienge.md#48-outras-integrações-adn-da-nfs-e-testado-23nov2026-job-único-teste-adn)), decidido fazer por conta própria: NF-e na SEFAZ (distribuição DF-e, com a ciência da operação automática em toda nota, para baixar o XML completo) e NFS-e no Ambiente de Dados Nacional. A importação de NF-e do Sienge fica parada (dois sistemas no mesmo CNPJ dividem o limite da SEFAZ).
+
+Banco (migration `20261123003000_erp_notas_recebidas.sql`):
+
+- `erp.notas_recebidas`: uma linha por chave de acesso (NF-e 44 dígitos, NFS-e 50), com empresa, emitente (CNPJ ou CPF e nome como vieram), número sem zeros à esquerda, série, emissão, competência (NFS-e: `dCompet`; NF-e: mês da emissão), valor, município, ciência e cancelamento. Os dados nunca mudam nem se apagam. Situação: `nova`, `vinculada` (a uma nota lançada no ERP) ou `ignorada` (com motivo).
+- `erp.notas_recebidas_xml`: o XML à parte, fora da auditoria. Na NF-e o resumo dá lugar ao completo uma vez; o completo não muda.
+- `erp.notas_recebidas_eventos` (cancelamento e outros; o repetido não entra) e `erp.notas_recebidas_leituras` (último NSU por empresa e origem, que não volta; bloqueio da SEFAZ; erro).
+- `erp.notas_recebidas_acessos`: pessoa × empresa × tipo (`nfe` = material, `nfse` = serviço), com motivo.
+- Só o sistema grava (`erp.registrar_nota_recebida`, `registrar_evento_nota_recebida`, `registrar_ciencia_nota_recebida`, `registrar_leitura_notas`, sem EXECUTE para a API). A nota tem de ser contra o CNPJ da empresa, e emitente, número e série têm de bater com a chave.
+- Ligação: a nota recebida nova se liga sozinha à nota lançada (não cancelada) da mesma empresa, tipo, emitente e número, chegue antes ou depois do lançamento (gatilho `t_documento_nota_recebida` em `documentos_fiscais`); a nota lançada cancelada solta a ligação.
+
+Quem vê (Moises, 23/11/2026): AF, AO, AD, diretor e master veem a caixa inteira; o master e o AD liberam outras pessoas por empresa e tipo (`api.liberar_notas_recebidas`, `api.retirar_notas_recebidas`); quem vê a nota lançada vê a recebida ligada a ela. Nota de PJ (emitente com `pessoas.restrita`, pelo cadastro de hoje) só o master e os designados, também na auditoria. Quem lança sem acesso à caixa acha a nota dele por `api.buscar_nota_recebida`: pela chave de acesso, ou CNPJ do emitente + número + valor exatos (o valor impede adivinhar as notas de outros centros pela sequência dos números). Ignorar e voltar: financeiro e master.
+
+Telas: `api.notas_recebidas(situacao)`, `api.nota_recebida_xml`, `api.notas_recebidas_leituras`, `api.notas_recebidas_acessos`.
+
 ## 5.4 Depois da autorização [Desenhado]
 
 Seleção para pagamento, remessa, pagamento e baixa continuam no Sienge e no banco. O sistema só acompanha pelos avisos (autorização, envio ao banco, baixa, estorno, movimento bancário) e avisa quem lançou a nota. Como a BKM paga hoje (remessa, integração bancária ou internet banking) ainda não foi respondido [A decidir].
