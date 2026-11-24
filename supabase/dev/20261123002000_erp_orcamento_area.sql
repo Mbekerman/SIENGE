@@ -1,4 +1,7 @@
--- bkm_dev, 23/nov/2026: orçamento de área (PR do orçamento, migration 20261123002000). Colar inteiro no SQL Editor.
+-- bkm_dev, 23/nov/2026: orçamento de área (PR #122, migration 20261123002000). Colar inteiro no SQL Editor.
+-- v3 (23/nov, 21h30): as funções trocadas são recriadas inteiras (definição final da develop), depois de conferir que a
+-- versão no banco é a esperada, sem contar comentários e espaços. A v1 e a v2 falharam no editor procurando trechos
+-- de texto (o bkm_dev tem as funções com CRLF e uma sem um comentário). Conferido contra o pg_get_functiondef do bkm_dev.
 -- Se algo falhar, dá erro e nada fica. O corpo é o mesmo da migration; o script só se dá os papéis donos das funções
 -- (sem herdar, só set) durante a transação e os tira antes do commit.
 begin;
@@ -42,28 +45,28 @@ end $$;
 -- todos os AO (a aprovação, só aos do centro).
 --
 -- O mesmo corpo roda no bkm_dev (supabase/dev/ com o mesmo nome), onde o postgres não é superusuário: as trocas de
--- função de outro dono passam por pg_temp.trocar, a troca de dono por pg_temp.dono e os gatilhos da auditoria por
+-- função de outro dono passam por pg_temp.recriar (função inteira, depois de conferir a versão), a troca de dono por pg_temp.dono e os gatilhos da auditoria por
 -- pg_temp.auditar, que assumem o papel certo e dão o create no esquema só durante a troca.
 
 -- ---------------------------------------------------------------------------------------------
 -- 0. Ferramentas da migration (só nesta sessão)
 -- ---------------------------------------------------------------------------------------------
--- Troca cada trecho (que tem de aparecer uma vez só) na definição atual da função e a regrava como o dono dela.
-create function pg_temp.trocar(p_fn regprocedure, variadic p_pares text[]) returns void language plpgsql as $$
-declare v text := pg_get_functiondef(p_fn); i int; v_n int; v_dono text; v_esq text; v_dar boolean;
+-- Recria a função inteira como o dono dela, se a versão no banco for a esperada.
+create function pg_temp.recriar(p_fn regprocedure, p_esperado text, p_def text) returns void language plpgsql as $$
+declare v_dono text; v_esq text; v_dar boolean;
 begin
-  for i in 1 .. coalesce(array_length(p_pares, 1), 0) by 2 loop
-    v_n := (length(v) - length(replace(v, p_pares[i], ''))) / length(p_pares[i]);
-    if v_n <> 1 then raise exception '%: trecho achado % vezes (esperado 1): %', p_fn, v_n, left(p_pares[i], 120); end if;
-    v := replace(v, p_pares[i], p_pares[i + 1]);
-  end loop;
+  -- confere a versão atual (sem comentários, espaços e quebras de linha, que o editor do Supabase pode mudar) e
+  -- recria a função inteira; não depende de achar trechos no texto dela
+  if md5(regexp_replace(regexp_replace(pg_get_functiondef(p_fn), '--[^' || chr(10) || ']*', '', 'g'), '\s+', '', 'g')) <> p_esperado then
+    raise exception '%: a versão no banco não é a esperada (falta migration anterior?); nada foi mudado', p_fn;
+  end if;
   select pg_get_userbyid(p.proowner), n.nspname into v_dono, v_esq
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace where p.oid = p_fn;
-  if v_dono = current_user then execute v; return; end if;
+  if v_dono = current_user then execute p_def; return; end if;
   v_dar := not has_schema_privilege(v_dono, v_esq, 'create');
   if v_dar then execute format('grant create on schema %I to %I', v_esq, v_dono); end if;
   execute format('set local role %I', v_dono);
-  execute v;
+  execute p_def;
   reset role;
   if v_dar then execute format('revoke create on schema %I from %I', v_esq, v_dono); end if;
 end $$;
@@ -123,25 +126,164 @@ create trigger t_lista_centros before insert or update of centros on erp.listas_
   for each row execute function erp.tg_lista_centros();
 
 -- o pedido de acesso aprovado grava os centros do AO (na alteração, sem a chave "centros", ficam os de antes)
-select pg_temp.trocar('erp._aplicar_mudanca_acesso(uuid)'::regprocedure,
-  'insert into erp.listas_financeiro (lista, user_id, aprova_proprio, avisa_proprio)
-      select r.lista, r.user_id, coalesce(r.aprova_proprio, false), coalesce(r.avisa_proprio, true)',
-  'insert into erp.listas_financeiro (lista, user_id, aprova_proprio, avisa_proprio, centros)
-      select r.lista, r.user_id, coalesce(r.aprova_proprio, false), coalesce(r.avisa_proprio, true), coalesce(r.centros, ''{}'')',
-  'set aprova_proprio = r.aprova_proprio, avisa_proprio = r.avisa_proprio',
-  'set aprova_proprio = r.aprova_proprio, avisa_proprio = r.avisa_proprio, centros = coalesce(r.centros, t.centros)');
+select pg_temp.recriar('erp._aplicar_mudanca_acesso(uuid)'::regprocedure, 'b3c1708f96e8f23b276781830544880c', $def$CREATE OR REPLACE FUNCTION erp._aplicar_mudanca_acesso(p_id uuid)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'erp', 'pg_catalog', 'pg_temp'
+AS $function$
+declare m erp.mudancas_acesso; d jsonb;
+begin
+  select * into m from erp.mudancas_acesso where id = p_id for update;
+  d := m.dados;
+  if m.operacao <> 'incluir' and erp._linha_acesso(m.tabela, d) is distinct from m.antes then
+    update erp.mudancas_acesso set situacao = 'obsoleta', encerrada_em = clock_timestamp() where id = p_id;
+    return;
+  end if;
+  case m.tabela
+  when 'perfis_modelo' then
+    if m.operacao = 'incluir' then insert into erp.perfis_modelo select * from jsonb_populate_record(null::erp.perfis_modelo, d || jsonb_build_object('ativo', coalesce((d->>'ativo')::boolean, true)));
+    elsif m.operacao = 'alterar' then update erp.perfis_modelo t set nome = r.nome, descricao = r.descricao, ativo = r.ativo from jsonb_populate_record(null::erp.perfis_modelo, d) r where t.id = r.id;
+    else delete from erp.perfis_modelo where id = (d->>'id')::uuid; end if;
+  when 'perfil_centros' then
+    -- a data de criação é sempre a de quando vale (é o corte das divisões futuras)
+    if m.operacao = 'incluir' then
+      insert into erp.perfil_centros (perfil_id, centro_custo_id, nivel, divisoes, divisoes_futuras)
+      select r.perfil_id, r.centro_custo_id, r.nivel, coalesce(r.divisoes, 'todas'), coalesce(r.divisoes_futuras, false)
+        from jsonb_populate_record(null::erp.perfil_centros, d) r;
+    elsif m.operacao = 'alterar' then update erp.perfil_centros t set nivel = r.nivel, divisoes = r.divisoes, divisoes_futuras = r.divisoes_futuras from jsonb_populate_record(null::erp.perfil_centros, d) r where t.perfil_id = r.perfil_id and t.centro_custo_id = r.centro_custo_id;
+    else delete from erp.perfil_centros where perfil_id = (d->>'perfil_id')::uuid and centro_custo_id = (d->>'centro_custo_id')::uuid; end if;
+  when 'perfil_centro_divisoes' then
+    if m.operacao = 'incluir' then insert into erp.perfil_centro_divisoes select * from jsonb_populate_record(null::erp.perfil_centro_divisoes, d);
+    elsif m.operacao = 'alterar' then update erp.perfil_centro_divisoes t set incluir = r.incluir, nivel = r.nivel from jsonb_populate_record(null::erp.perfil_centro_divisoes, d) r where t.perfil_id = r.perfil_id and t.divisao_id = r.divisao_id;
+    else delete from erp.perfil_centro_divisoes where perfil_id = (d->>'perfil_id')::uuid and divisao_id = (d->>'divisao_id')::uuid; end if;
+  when 'divisoes' then
+    if m.operacao = 'incluir' then
+      insert into erp.divisoes (id, centro_custo_id, mae_id, nome, ativa)
+      values ((d->>'id')::uuid,
+              coalesce((d->>'centro_custo_id')::uuid, (select centro_custo_id from erp.divisoes where id = (d->>'mae_id')::uuid)),
+              (d->>'mae_id')::uuid, d->>'nome', coalesce((d->>'ativa')::boolean, true));
+      if d ? 'copiar_de' then
+        insert into erp.naturezas_liberadas (centro_custo_id, divisao_id, natureza_id)
+        select l.centro_custo_id, (d->>'id')::uuid, l.natureza_id from erp.naturezas_liberadas l, erp._origem_naturezas(d) o
+         where l.centro_custo_id = o.o_centro and l.divisao_id is not distinct from o.o_divisao;
+      else
+        insert into erp.naturezas_liberadas (centro_custo_id, divisao_id, natureza_id)
+        select distinct (select centro_custo_id from erp.divisoes where id = (d->>'id')::uuid), (d->>'id')::uuid, n::uuid
+          from jsonb_array_elements_text(d->'naturezas') n
+        on conflict do nothing;
+      end if;
+      -- o nível de cima (ou o centro) deixa de ter lista: vale a soma das de baixo
+      delete from erp.naturezas_liberadas
+       where centro_custo_id = (select centro_custo_id from erp.divisoes where id = (d->>'id')::uuid)
+         and divisao_id is not distinct from (d->>'mae_id')::uuid;
+    else update erp.divisoes set nome = d->>'nome', ativa = (d->>'ativa')::boolean where id = (d->>'id')::uuid; end if;
+  when 'perfil_naturezas' then
+    if m.operacao = 'incluir' then insert into erp.perfil_naturezas select * from jsonb_populate_record(null::erp.perfil_naturezas, d);
+    elsif m.operacao = 'excluir' then delete from erp.perfil_naturezas where perfil_id = (d->>'perfil_id')::uuid and natureza_id = (d->>'natureza_id')::uuid;
+    else raise exception 'Linha de natureza do modelo não se altera: exclua e inclua'; end if;
+  when 'atribuicoes' then
+    if m.operacao = 'incluir' then
+      insert into erp.atribuicoes (id, user_id, perfil_id, escopo, inicio, fim)
+      select r.id, r.user_id, r.perfil_id, r.escopo, coalesce((d->>'inicio')::date, current_date), r.fim
+        from jsonb_populate_record(null::erp.atribuicoes, d) r;
+    elsif m.operacao = 'alterar' then update erp.atribuicoes t set perfil_id = r.perfil_id, escopo = r.escopo, inicio = r.inicio, fim = r.fim from jsonb_populate_record(null::erp.atribuicoes, d) r where t.id = r.id;
+    else delete from erp.atribuicoes where id = (d->>'id')::uuid; end if;
+  when 'atribuicao_tipos' then
+    if m.operacao = 'incluir' then insert into erp.atribuicao_tipos select * from jsonb_populate_record(null::erp.atribuicao_tipos, d);
+    elsif m.operacao = 'excluir' then delete from erp.atribuicao_tipos where atribuicao_id = (d->>'atribuicao_id')::uuid and tipo_nucleo = d->>'tipo_nucleo';
+    else raise exception 'Tipo da atribuição não se altera: exclua e inclua'; end if;
+  when 'atribuicao_nucleos' then
+    if m.operacao = 'incluir' then insert into erp.atribuicao_nucleos select * from jsonb_populate_record(null::erp.atribuicao_nucleos, d);
+    elsif m.operacao = 'alterar' then update erp.atribuicao_nucleos t set incluir = r.incluir from jsonb_populate_record(null::erp.atribuicao_nucleos, d) r where t.atribuicao_id = r.atribuicao_id and t.nucleo_economico_id = r.nucleo_economico_id;
+    else delete from erp.atribuicao_nucleos where atribuicao_id = (d->>'atribuicao_id')::uuid and nucleo_economico_id = (d->>'nucleo_economico_id')::uuid; end if;
+  when 'excecoes_centro' then
+    if m.operacao = 'incluir' then insert into erp.excecoes_centro select * from jsonb_populate_record(null::erp.excecoes_centro, d);
+    elsif m.operacao = 'alterar' then update erp.excecoes_centro t set nivel = r.nivel, fim = r.fim from jsonb_populate_record(null::erp.excecoes_centro, d) r where t.user_id = r.user_id and t.nucleo_economico_id = r.nucleo_economico_id and t.centro_custo_id = r.centro_custo_id;
+    else delete from erp.excecoes_centro where user_id = (d->>'user_id')::uuid and nucleo_economico_id = (d->>'nucleo_economico_id')::uuid and centro_custo_id = (d->>'centro_custo_id')::uuid; end if;
+  when 'excecoes_divisao' then
+    if m.operacao = 'incluir' then insert into erp.excecoes_divisao select * from jsonb_populate_record(null::erp.excecoes_divisao, d);
+    elsif m.operacao = 'alterar' then update erp.excecoes_divisao t set nivel = r.nivel, fim = r.fim from jsonb_populate_record(null::erp.excecoes_divisao, d) r where t.user_id = r.user_id and t.nucleo_economico_id = r.nucleo_economico_id and t.divisao_id = r.divisao_id;
+    else delete from erp.excecoes_divisao where user_id = (d->>'user_id')::uuid and nucleo_economico_id = (d->>'nucleo_economico_id')::uuid and divisao_id = (d->>'divisao_id')::uuid; end if;
+  when 'excecoes_natureza' then
+    if m.operacao = 'incluir' then insert into erp.excecoes_natureza select * from jsonb_populate_record(null::erp.excecoes_natureza, d);
+    elsif m.operacao = 'alterar' then update erp.excecoes_natureza t set efeito = r.efeito, fim = r.fim from jsonb_populate_record(null::erp.excecoes_natureza, d) r where t.id = r.id;
+    else delete from erp.excecoes_natureza where id = (d->>'id')::uuid; end if;
+  when 'centro_diretores' then
+    if m.operacao = 'incluir' then insert into erp.centro_diretores select * from jsonb_populate_record(null::erp.centro_diretores, d);
+    elsif m.operacao = 'excluir' then delete from erp.centro_diretores where centro_custo_id = (d->>'centro_custo_id')::uuid and user_id = (d->>'user_id')::uuid;
+    else raise exception 'Diretor da área não se altera: exclua e inclua'; end if;
+  when 'centro_aprovadores' then
+    if m.operacao = 'incluir' then insert into erp.centro_aprovadores select * from jsonb_populate_record(null::erp.centro_aprovadores, d);
+    elsif m.operacao = 'excluir' then delete from erp.centro_aprovadores where centro_custo_id = (d->>'centro_custo_id')::uuid and user_id = (d->>'user_id')::uuid;
+    else raise exception 'Gestor da área não se altera: exclua e inclua'; end if;
+  when 'listas_financeiro' then
+    if m.operacao = 'incluir' then
+      insert into erp.listas_financeiro (lista, user_id, aprova_proprio, avisa_proprio, centros)
+      select r.lista, r.user_id, coalesce(r.aprova_proprio, false), coalesce(r.avisa_proprio, true), coalesce(r.centros, '{}')
+        from jsonb_populate_record(null::erp.listas_financeiro, d) r;
+    elsif m.operacao = 'excluir' then delete from erp.listas_financeiro where lista = d->>'lista' and user_id = (d->>'user_id')::uuid;
+    else update erp.listas_financeiro t set aprova_proprio = r.aprova_proprio, avisa_proprio = r.avisa_proprio, centros = coalesce(r.centros, t.centros)
+           from jsonb_populate_record(null::erp.listas_financeiro, d) r where t.lista = r.lista and t.user_id = r.user_id; end if;
+  when 'tipos_nucleo' then
+    if m.operacao = 'incluir' then
+      insert into erp.tipos_nucleo (codigo, nome, exige_empreendimento, ativo)
+      select r.codigo, r.nome, coalesce(r.exige_empreendimento, false), coalesce(r.ativo, true) from jsonb_populate_record(null::erp.tipos_nucleo, d) r;
+    elsif m.operacao = 'alterar' then update erp.tipos_nucleo t set nome = r.nome, exige_empreendimento = r.exige_empreendimento, ativo = r.ativo from jsonb_populate_record(null::erp.tipos_nucleo, d) r where t.codigo = r.codigo;
+    else delete from erp.tipos_nucleo where codigo = d->>'codigo'; end if;
+  when 'aprovadores_acesso' then
+    if m.operacao = 'incluir' then insert into erp.aprovadores_acesso values ((d->>'user_id')::uuid);
+    elsif m.operacao = 'excluir' then delete from erp.aprovadores_acesso where user_id = (d->>'user_id')::uuid;
+    else raise exception 'Aprovador de acesso não se altera: exclua e inclua'; end if;
+  when 'regra_acesso' then update erp.regra_acesso set minimo = (d->>'minimo')::int, sucessao_dias = (d->>'sucessao_dias')::int;
+  when 'naturezas' then update erp.naturezas set restrita = (d->>'restrita')::boolean, mae_id = (d->>'mae_id')::uuid where id = (d->>'id')::uuid;
+  when 'nucleos_economicos' then update erp.nucleos_economicos set tipo = d->>'tipo' where id = (d->>'id')::uuid;
+  when 'usuarios' then update erp.usuarios set papel = d->>'papel', contador = (d->>'contador')::boolean, ativo = (d->>'ativo')::boolean where id = (d->>'id')::uuid;
+  end case;
+  update erp.mudancas_acesso set situacao = 'aplicada', encerrada_em = clock_timestamp() where id = p_id;
+end $function$$def$);
 
 -- a vaga AO_CENTRO: o AO ligado ao centro (ou o AD)
-select pg_temp.trocar('erp._ocupa_vaga(text, uuid, uuid)'::regprocedure,
-  $x$    when p_vaga = 'AD' then$x$,
-  $x$    when p_vaga = 'AO_CENTRO' then exists (select 1 from erp.listas_financeiro
+select pg_temp.recriar('erp._ocupa_vaga(text, uuid, uuid)'::regprocedure, '346cc9eb190d0cbbce8abb4b26d0601d', $def$CREATE OR REPLACE FUNCTION erp._ocupa_vaga(p_vaga text, p_centro uuid, p_user uuid)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+begin
+  if not exists (select 1 from erp.usuarios where id = p_user and ativo and not administrador and not so_sucessao) then return false; end if;
+  return case
+    when p_vaga = 'AREA' then exists (select 1 from erp.centro_aprovadores where centro_custo_id = p_centro and user_id = p_user)
+    when p_vaga = 'DIRETOR_AREA' then exists (select 1 from erp.centro_diretores where centro_custo_id = p_centro and user_id = p_user)
+    when p_vaga in ('AF','AO') then exists (select 1 from erp.listas_financeiro where lista in (p_vaga, 'AD') and user_id = p_user)
+    when p_vaga = 'AO_CENTRO' then exists (select 1 from erp.listas_financeiro
                                             where user_id = p_user and (lista = 'AD' or (lista = 'AO' and p_centro = any(centros))))
-    when p_vaga = 'AD' then$x$);
-select pg_temp.trocar('erp.tg_alcada_vagas()'::regprocedure,
-  $x$if e in ('AREA','DIRETOR_AREA','AF','AO','AD') then continue; end if;$x$,
-  $x$if e in ('AREA','DIRETOR_AREA','AF','AO','AO_CENTRO','AD') then continue; end if;$x$,
-  $x$(use AREA, DIRETOR_AREA, AF, AO, AD ou P: e o usuário)$x$,
-  $x$(use AREA, DIRETOR_AREA, AF, AO, AO_CENTRO, AD ou P: e o usuário)$x$);
+    when p_vaga = 'AD' then exists (select 1 from erp.listas_financeiro where lista = 'AD' and user_id = p_user)
+    when p_vaga = 'PJ' then erp.ve_pj(p_user)          -- o master ou um designado (Moises, 18/11/2026)
+    when p_vaga like 'P:%' then substr(p_vaga, 3)::uuid = p_user
+    else false end;
+end $function$$def$);
+select pg_temp.recriar('erp.tg_alcada_vagas()'::regprocedure, '7a3069eda4463f02de2de39d5a21fb73', $def$CREATE OR REPLACE FUNCTION erp.tg_alcada_vagas()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+declare e text; v_user uuid;
+begin
+  if tg_op = 'DELETE' then return old; end if;
+  foreach e in array new.fases loop
+    if e in ('AREA','DIRETOR_AREA','AF','AO','AO_CENTRO','AD') then continue; end if;
+    if e !~ '^P:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+      raise exception 'Vaga de aprovação inválida: % (use AREA, DIRETOR_AREA, AF, AO, AO_CENTRO, AD ou P: e o usuário)', e;
+    end if;
+    v_user := substr(e, 3)::uuid;
+    if not exists (select 1 from erp.usuarios where id = v_user) then raise exception 'Aprovador da vaga não existe: %', v_user; end if;
+    perform erp.recusar_admin_aprovador(v_user);
+    perform erp.recusar_so_sucessao(v_user);
+  end loop;
+  if (select count(*) from unnest(new.fases) x where x like 'P:%') <> (select count(distinct x) from unnest(new.fases) x where x like 'P:%') then
+    raise exception 'A mesma pessoa não ocupa duas vagas da faixa';
+  end if;
+  return new;
+end $function$$def$);
 
 -- ---------------------------------------------------------------------------------------------
 -- 2. Carência da sobra do mês
@@ -202,10 +344,32 @@ create trigger t_orcamento_area before insert or update or delete on erp.orcamen
   for each row execute function erp.tg_orcamento_area();
 
 -- o orçamento de obra continua publicado à mão; o de área, só pela aprovação
-select pg_temp.trocar('erp.publicar_orcamento(uuid)'::regprocedure,
-  $x$  if v.situacao <> 'rascunho' then raise exception 'Só se publica versão em rascunho'; end if;$x$,
-  $x$  if v.situacao <> 'rascunho' then raise exception 'Só se publica versão em rascunho'; end if;
-  if v.tipo = 'area' then raise exception 'O orçamento de área é publicado pela aprovação'; end if;$x$);
+select pg_temp.recriar('erp.publicar_orcamento(uuid)'::regprocedure, '13f8fb619eebcc7da89da2ee5662e1b2', $def$CREATE OR REPLACE FUNCTION erp.publicar_orcamento(p_versao uuid)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'erp', 'pg_catalog', 'pg_temp'
+AS $function$
+declare v erp.orcamento_versoes;
+begin
+  perform erp.exigir_editor();
+  if not erp.sistema() and exists (select 1 from erp.orcamento_linhas l where l.versao_id = p_versao
+                                     and not erp.lanco(l.nucleo_economico_id, l.centro_custo_id, l.natureza_id, null, l.divisao_id)) then
+    raise exception 'Você não lança em todas as linhas deste orçamento';
+  end if;
+  select * into v from erp.orcamento_versoes where id = p_versao for update;
+  if v.situacao <> 'rascunho' then raise exception 'Só se publica versão em rascunho'; end if;
+  if v.tipo = 'area' then raise exception 'O orçamento de área é publicado pela aprovação'; end if;
+  update erp.orcamento_versoes set situacao = 'substituida'
+   where empresa_id = v.empresa_id and empreendimento_id is not distinct from v.empreendimento_id
+     and tipo = v.tipo and situacao = 'vigente' and tipo <> 'reprojecao';
+  insert into erp.lancamentos (estagio, orcamento_versao_id, empresa_id, nucleo_economico_id, natureza_id,
+                                  centro_custo_id, divisao_id, subdivisao_id, competencia, data_caixa, valor, orcamento_linha_id)
+  select 'orcado', v.id, v.empresa_id, l.nucleo_economico_id, l.natureza_id, l.centro_custo_id, l.divisao_id, l.subdivisao_id,
+         l.competencia, l.data_caixa, l.valor, l.id
+  from erp.orcamento_linhas l where l.versao_id = v.id;
+  update erp.orcamento_versoes set situacao = 'vigente' where id = v.id;
+end $function$$def$);
 
 -- ---------------------------------------------------------------------------------------------
 -- 4. A previsão do orçamento
@@ -217,29 +381,122 @@ create index previsoes_orcamento_abertas on erp.previsoes (centro_custo_id, natu
   where orcamento_linha_id is not null and situacao = 'aberta';
 
 -- A previsão do orçamento nasce, se encerra e muda só pelo orçamento (nem cancelar à mão nem reclassificar).
-select pg_temp.trocar('erp.tg_previsao_guarda()'::regprocedure,
-  $x$    if new.situacao <> 'aberta' then raise exception 'Previsão nasce aberta'; end if;$x$,
-  $x$    if new.situacao <> 'aberta' then raise exception 'Previsão nasce aberta'; end if;
+select pg_temp.recriar('erp.tg_previsao_guarda()'::regprocedure, '7f4cbca6f3e3d700ef49f28848d71d35', $def$CREATE OR REPLACE FUNCTION erp.tg_previsao_guarda()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+begin
+  if tg_op = 'INSERT' then
+    if new.situacao <> 'aberta' then raise exception 'Previsão nasce aberta'; end if;
     if new.orcamento_linha_id is not null and not erp.agindo_como('erp_situacao') then
       raise exception 'A previsão do orçamento de área nasce da aprovação do orçamento';
-    end if;$x$,
-  $x$  if new.natureza_id <> old.natureza_id and not erp.agindo_como('erp_reclassificacao') then$x$,
-  $x$  if old.orcamento_linha_id is not null and (new.natureza_id <> old.natureza_id or not erp.agindo_como('erp_situacao')) then
+    end if;
+    return new;
+  end if;
+  if (to_jsonb(new) - 'situacao' - 'natureza_id') <> (to_jsonb(old) - 'situacao' - 'natureza_id') then
+    raise exception 'Previsão não se edita; cancele e crie outra';
+  end if;
+  if old.orcamento_linha_id is not null and (new.natureza_id <> old.natureza_id or not erp.agindo_como('erp_situacao')) then
     raise exception 'A previsão do orçamento de área muda só pelo orçamento (revise o orçamento)';
   end if;
-  if new.natureza_id <> old.natureza_id and not erp.agindo_como('erp_reclassificacao') then$x$);
+  if new.natureza_id <> old.natureza_id and not erp.agindo_como('erp_reclassificacao') then
+    raise exception 'A natureza da previsão só muda pela reclassificação';
+  end if;
+  if new.situacao <> old.situacao and not (new.situacao = 'cancelada' and old.situacao = 'aberta')
+     and not erp.agindo_como('erp_situacao') then
+    raise exception 'A previsão só pode ser cancelada; ela é consumida pelos títulos';
+  end if;
+  return new;
+end $function$$def$);
 -- ... e fica fora da alçada (o orçamento já foi aprovado) e do acumulado do mês (é informativo)
-select pg_temp.trocar('erp.tg_previsao_alcada()'::regprocedure,
-  'or new.origem_previsao_id is not null then return null; end if;',
-  'or new.origem_previsao_id is not null or new.orcamento_linha_id is not null then return null; end if;');
-select pg_temp.trocar('erp._previsoes_no_acumulado(uuid, uuid, date, uuid, uuid, uuid, uuid)'::regprocedure,
-  '     and not erp.natureza_restrita(q.natureza_id)',
-  '     and not erp.natureza_restrita(q.natureza_id)
-     and q.orcamento_linha_id is null');
-select pg_temp.trocar('erp.encerrar_previsao(uuid, text, date)'::regprocedure,
-  $x$  if p.situacao <> 'aberta' then raise exception 'Só previsão aberta se encerra'; end if;$x$,
-  $x$  if p.situacao <> 'aberta' then raise exception 'Só previsão aberta se encerra'; end if;
-  if p.orcamento_linha_id is not null then raise exception 'A previsão do orçamento de área se refaz sozinha'; end if;$x$);
+select pg_temp.recriar('erp.tg_previsao_alcada()'::regprocedure, 'b49a4953ca783cca60e33e0f061fb971', $def$CREATE OR REPLACE FUNCTION erp.tg_previsao_alcada()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'erp', 'pg_catalog', 'pg_temp'
+AS $function$
+declare f erp.alcadas_pagamento; v_centro boolean := false;
+begin
+  if new.sentido <> 'pagar' or erp.previsao_do_contrato(new.id) is not null
+     or new.origem_previsao_id is not null or new.orcamento_linha_id is not null then return null; end if;
+  if erp.natureza_restrita(new.natureza_id) then
+    perform erp._fixar_alcada_previsao_pj(new);
+    return null;
+  end if;
+  if new.centro_custo_id is null then
+    perform erp._fixar_alcada_previsao_sem_centro(new);
+    return null;
+  end if;
+  perform 1 from erp.centros_custo where id = new.centro_custo_id for update;   -- como no título (S-060)
+  if new.divisao_id is not null and exists (select 1 from erp.alcadas_pagamento ap where ap.divisao_id = new.divisao_id) then
+    f := erp._fixar_alcada_previsao(new, new.centro_custo_id, new.divisao_id);
+    v_centro := coalesce(f.passa_pelo_centro, true);
+  end if;
+  -- centro sem gestor e sem faixas próprias também entra: nada é aprovado sem aprovador (Moises, 18/11/2026)
+  if v_centro
+     or new.divisao_id is null or not exists (select 1 from erp.alcadas_pagamento ap where ap.divisao_id = new.divisao_id) then
+    perform erp._fixar_alcada_previsao(new, new.centro_custo_id, null);
+  end if;
+  return null;
+end $function$$def$);
+select pg_temp.recriar('erp._previsoes_no_acumulado(uuid, uuid, date, uuid, uuid, uuid, uuid)'::regprocedure, '58cad891e64cba3a8085a8e7b01cadd5', $def$CREATE OR REPLACE FUNCTION erp._previsoes_no_acumulado(p_empresa uuid, p_pessoa uuid, p_mes date, p_centro uuid, p_divisao uuid, p_nucleo uuid, p_excluir uuid)
+ RETURNS numeric
+ LANGUAGE sql
+ STABLE
+AS $function$
+  select coalesce(sum(erp._previsao_saldo(q.id)), 0)
+    from erp.previsoes q, erp.regra_alcada_pagamento g
+   where q.sentido = 'pagar' and q.situacao = 'aberta' and erp.mes(q.competencia) = erp.mes(p_mes)
+     and q.id is distinct from p_excluir
+     and not erp.natureza_restrita(q.natureza_id)
+     and q.orcamento_linha_id is null
+     and ((q.centro_custo_id = p_centro and (p_divisao is null or q.divisao_id = p_divisao))
+          or (g.soma_fornecedor and p_pessoa is not null and q.pessoa_id = p_pessoa))
+     and (g.acumulado = 'centro' or q.empresa_id = p_empresa)
+     and (g.acumulado <> 'nucleo_centro' or q.centro_custo_id <> p_centro
+          or (p_divisao is not null and q.divisao_id is distinct from p_divisao)
+          or q.nucleo_economico_id is not distinct from p_nucleo) $function$$def$);
+select pg_temp.recriar('erp.encerrar_previsao(uuid, text, date)'::regprocedure, 'a061daa0cc3b04df7b3aeaea05e304a6', $def$CREATE OR REPLACE FUNCTION erp.encerrar_previsao(p_previsao uuid, p_destino text, p_data date DEFAULT NULL::date)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'erp', 'pg_catalog', 'pg_temp'
+AS $function$
+declare p erp.previsoes; v_saldo numeric; v_nova uuid;
+begin
+  perform erp.exigir_editor();
+  select * into p from erp.previsoes where id = p_previsao for update;
+  if p.id is null or not erp.vejo_previsao(p.id) then raise exception 'Previsão não existe'; end if;
+  if not erp.lanco(p.nucleo_economico_id, p.centro_custo_id, p.natureza_id, p.criada_por, p.divisao_id) then
+    raise exception 'Você não lança nesta previsão';
+  end if;
+  if p.situacao <> 'aberta' then raise exception 'Só previsão aberta se encerra'; end if;
+  if p.orcamento_linha_id is not null then raise exception 'A previsão do orçamento de área se refaz sozinha'; end if;
+  if not exists (select 1 from erp.titulo_previsoes tp join erp.titulos t on t.id = tp.titulo_id
+                  where tp.previsao_id = p.id and t.situacao <> 'cancelado') then
+    raise exception 'A previsão ainda não foi consumida por nenhuma nota; para desistir, cancele';
+  end if;
+  v_saldo := erp._previsao_saldo(p.id);
+  if p_destino = 'saving' then
+    if p_data is not null then raise exception 'Saving não tem data'; end if;
+  elsif p_destino = 'saldo' then
+    if p_data is null then raise exception 'Informe a data em que o saldo será pago'; end if;
+    if p_data < (now() at time zone 'America/Sao_Paulo')::date then raise exception 'A data do saldo já passou'; end if;
+    if not erp.previsao_aprovada(p.id) then raise exception 'A previsão original não está aprovada; lance o saldo como previsão nova'; end if;
+  else
+    raise exception 'Destino é saldo ou saving';
+  end if;
+  update erp.previsoes set situacao = 'encerrada' where id = p.id;
+  if p_destino = 'saldo' then
+    insert into erp.previsoes (empresa_id, sentido, origem, origem_previsao_id, compromisso_id, pessoa_id, nucleo_economico_id,
+                               natureza_id, centro_custo_id, divisao_id, subdivisao_id, competencia, data_prevista, valor, descricao)
+    values (p.empresa_id, p.sentido, 'saldo_previsao', p.id, p.compromisso_id, p.pessoa_id, p.nucleo_economico_id,
+            p.natureza_id, p.centro_custo_id, p.divisao_id, p.subdivisao_id, erp.mes(p_data), p_data, v_saldo,
+            left('Saldo · ' || coalesce(p.descricao, ''), 500))
+    returning id into v_nova;
+  end if;
+  return v_nova;
+end $function$$def$);
 
 -- A nota casa com a previsão do orçamento só no mesmo mês de competência e com a linha do rateio no nível da
 -- previsão ou abaixo dele. As outras previsões, como antes.
@@ -412,12 +669,107 @@ begin
 end $$;
 
 -- lancar_documento: as previsões do orçamento saem do consumo de antes e entram no consumo por linha do rateio
-select pg_temp.trocar('erp.lancar_documento(uuid, date[], uuid[], numeric[])'::regprocedure,
-  E'    where erp._previsao_casa(pr, d)\n',
-  E'    where erp._previsao_casa(pr, d) and pr.orcamento_linha_id is null\n',
-  '  -- a alçada é fixada depois do consumo',
-  '  perform erp._consumir_orcamento(v_tit, d);   -- orçamento de área (Moises, 23/11/2026)
-  -- a alçada é fixada depois do consumo');
+select pg_temp.recriar('erp.lancar_documento(uuid, date[], uuid[], numeric[])'::regprocedure, '43ee397e8bf323963e0426e5b8c68bdc', $def$CREATE OR REPLACE FUNCTION erp.lancar_documento(p_documento uuid, p_vencimentos date[], p_previsoes uuid[] DEFAULT NULL::uuid[], p_valores numeric[] DEFAULT NULL::numeric[])
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'erp', 'pg_catalog', 'pg_temp'
+AS $function$
+declare d erp.documentos_fiscais; v_ret numeric; v_liquido numeric; v_tit uuid; v_imp uuid; r record;
+        v_resta numeric; v_cons numeric; v_lim numeric; p record; i int;
+begin
+  perform erp.exigir_editor();
+  if not erp.sistema() and not erp.lanco_documento(p_documento) then
+    raise exception 'Você não lança em todas as linhas desta nota';
+  end if;
+  select * into d from erp.documentos_fiscais where id = p_documento for update;
+  if d.situacao <> 'rascunho' then raise exception 'O documento já foi lançado'; end if;
+  if coalesce(array_length(p_vencimentos, 1), 0) = 0 then raise exception 'Informe ao menos um vencimento'; end if;
+  if not erp.rateio_completo('documento', d.id) then raise exception 'O rateio do documento não soma 100%%'; end if;
+  perform erp.checar_competencia('documento', d.id, d.emissao, d.competencia);
+  if d.caucao_valor is null then
+    d.caucao_valor := round(d.valor_bruto * coalesce((select caucao_percentual from erp.compromissos where id = d.compromisso_id), 0) / 100, 2);
+  end if;
+  if d.caucao_valor > 0 and d.compromisso_id is null then raise exception 'Caução só existe com contrato'; end if;
+  select coalesce(sum(valor), 0) into v_ret from erp.documento_retencoes where documento_id = d.id;
+  v_liquido := d.valor_bruto - v_ret - d.caucao_valor;
+  if v_liquido <= 0 then raise exception 'Retenções e caução passam do valor da nota'; end if;
+
+  v_tit := erp._criar_titulo(d.empresa_id, 'pagar', 'fornecedor', d.emitente_id, d.id, d.compromisso_id,
+                                d.emissao, d.competencia, v_liquido, p_vencimentos, 'documento', d.id, null);
+  -- valor de cada parcela como está no documento (boletos de valores diferentes); sem ele, iguais
+  if p_valores is not null then
+    if coalesce(array_length(p_valores, 1), 0) <> array_length(p_vencimentos, 1) then
+      raise exception 'Informe o valor de cada parcela';
+    end if;
+    if exists (select 1 from unnest(p_valores) v where v is null or v <= 0 or v <> round(v, 2)) then
+      raise exception 'O valor de cada parcela é maior que zero, com até 2 casas';
+    end if;
+    if (select sum(v) from unnest(p_valores) v) <> v_liquido then
+      raise exception 'As parcelas somam %, e o valor líquido do título é %',
+        replace(to_char((select sum(v) from unnest(p_valores) v), 'FM999999999990.00'), '.', ','),
+        replace(to_char(v_liquido, 'FM999999999990.00'), '.', ',');
+    end if;
+    for i in 1..array_length(p_valores, 1) loop
+      update erp.parcelas set valor = p_valores[i] where titulo_id = v_tit and numero = i;
+    end loop;
+  end if;
+  -- consumo das previsões (as dadas, ou as abertas do mesmo contrato, da mais antiga), até o bruto.
+  -- Só casa previsão da mesma empresa, do mesmo fornecedor (ou sem fornecedor) e com o mesmo
+  -- núcleo, centro de custo e natureza de uma linha do rateio da nota (S-030). Previsão dada que
+  -- não casa é recusada, nunca ignorada.
+  if p_previsoes is not null and exists (
+       select 1 from unnest(p_previsoes) as x(id)
+       where not exists (select 1 from erp.previsoes pr where pr.id = x.id and erp._previsao_casa(pr, d))) then
+    raise exception 'Previsão que não é desta nota: precisa ser aberta, da mesma empresa e fornecedor, e com o mesmo núcleo, centro de custo e natureza do rateio';
+  end if;
+  v_resta := d.valor_bruto;
+  for p in
+    select pr.id, pr.nucleo_economico_id, pr.centro_custo_id, pr.natureza_id from erp.previsoes pr
+    where erp._previsao_casa(pr, d) and pr.orcamento_linha_id is null
+      and (case when p_previsoes is not null then pr.id = any(p_previsoes)
+                else d.compromisso_id is not null and pr.compromisso_id = d.compromisso_id end)
+    order by pr.data_prevista, pr.criada_em
+  loop
+    exit when v_resta <= 0;
+    -- só até a parte do bruto rateada no mesmo núcleo, centro e natureza da previsão,
+    -- descontado o que outras previsões da mesma combinação já consumiram nesta nota
+    select round(d.valor_bruto * coalesce(sum(dr.percentual), 0) / 100, 2)
+           - coalesce((select sum(tp.valor) from erp.titulo_previsoes tp join erp.previsoes q on q.id = tp.previsao_id
+                       where tp.titulo_id = v_tit
+                         and q.nucleo_economico_id is not distinct from p.nucleo_economico_id
+                         and q.centro_custo_id is not distinct from p.centro_custo_id
+                         and q.natureza_id = p.natureza_id), 0)
+      into v_lim
+      from erp.documento_rateios dr
+     where dr.documento_id = d.id
+       and dr.nucleo_economico_id is not distinct from p.nucleo_economico_id
+       and dr.centro_custo_id is not distinct from p.centro_custo_id
+       and dr.natureza_id = p.natureza_id;
+    v_cons := least(v_resta, erp._previsao_saldo(p.id), v_lim);
+    continue when v_cons <= 0;
+    insert into erp.titulo_previsoes (titulo_id, previsao_id, valor) values (v_tit, p.id, v_cons);
+    v_resta := v_resta - v_cons;
+  end loop;
+  perform erp._consumir_orcamento(v_tit, d);   -- orçamento de área (Moises, 23/11/2026)
+  -- a alçada é fixada depois do consumo: a nota conta no acumulado só o que passa do saldo da previsão
+  perform erp._confirmar_titulo(v_tit);
+
+  for r in select * from erp.documento_retencoes where documento_id = d.id loop
+    v_imp := erp._criar_titulo(d.empresa_id, 'pagar', 'imposto', r.orgao_id, d.id, d.compromisso_id,
+                                  d.emissao, d.competencia, r.valor, array[r.vencimento], 'documento', d.id,
+                                  upper(r.imposto) || ' retido na nota ' || d.numero);
+    perform erp._confirmar_titulo(v_imp);
+  end loop;
+
+  if d.caucao_valor > 0 then
+    insert into erp.caucao_movimentos (compromisso_id, tipo, valor, documento_id)
+    values (d.compromisso_id, 'retencao', d.caucao_valor, d.id);
+  end if;
+
+  update erp.documentos_fiscais set situacao = 'lancado', lancado_em = now(), caucao_valor = d.caucao_valor where id = d.id;
+  return v_tit;
+end $function$$def$);
 
 -- O mês que passou da carência: a sobra sai (a previsão é encerrada e o PRV vai para a lista de apagar).
 -- Roda no começo de cada enfileiramento do Sienge (só o sistema). Definer erp_situacao (abaixo).
@@ -430,10 +782,74 @@ begin
   get diagnostics n = row_count;
   return n;
 end $$;
-select pg_temp.trocar('erp.sienge_enfileirar()'::regprocedure,
-  E'  if not erp.sistema() then raise exception \'Só o sistema enfileira o envio ao Sienge\'; end if;\n',
-  E'  if not erp.sistema() then raise exception \'Só o sistema enfileira o envio ao Sienge\'; end if;\n'
-  || E'  perform erp.orcamento_vencer();   -- a sobra do mês do orçamento de área, depois da carência\n');
+select pg_temp.recriar('erp.sienge_enfileirar()'::regprocedure, 'b160dd98105adc7c7aabc682c174b665', $def$CREATE OR REPLACE FUNCTION erp.sienge_enfileirar()
+ RETURNS integer
+ LANGUAGE plpgsql
+AS $function$
+declare n int := 0; m int; r record;
+begin
+  if not erp.sistema() then raise exception 'Só o sistema enfileira o envio ao Sienge'; end if;
+  perform erp.orcamento_vencer();   -- a sobra do mês do orçamento de área, depois da carência
+  for r in
+    with novos as (
+      insert into erp.sienge_envios (titulo_id)
+      select t.id from erp.titulos t
+       where t.sentido = 'pagar' and t.tipo in ('fornecedor','avulso') and t.situacao = 'aberto'
+         and not exists (select 1 from erp.sienge_envios e where e.titulo_id = t.id)
+         and erp.titulo_aprovado(t.id)
+      on conflict do nothing
+      returning titulo_id)
+    select x.titulo_id, t.pessoa_id,
+           (select jsonb_agg(jsonb_build_object('numero', g.numero, 'pix_tipo', g.pix_tipo, 'pix_chave', g.pix_chave) order by g.numero)
+              from erp.parcela_pagamentos g
+             where g.titulo_id = x.titulo_id and g.forma = 'pix'
+               and not erp._chave_pix_conhecida(t.pessoa_id, g.pix_chave, x.titulo_id)) as chaves,
+           (select array[r2.nucleo_economico_id, r2.centro_custo_id] from erp.titulo_rateios r2
+             where r2.titulo_id = x.titulo_id order by r2.percentual desc, r2.id limit 1) as onde
+      from novos x join erp.titulos t on t.id = x.titulo_id
+  loop
+    n := n + 1;
+    if exists (select 1 from erp.parcela_pagamentos g where g.titulo_id = r.titulo_id and g.boleto_excecao is not null) then
+      perform erp.registrar_evento('boleto_excecao', 'titulos', r.titulo_id::text, r.onde[1], r.onde[2],
+        jsonb_build_object('titulo_id', r.titulo_id, 'pessoa_id', r.pessoa_id,
+          'parcelas', (select jsonb_agg(jsonb_build_object('numero', g.numero, 'conferido', erp.boleto_conferido(g.boleto_linha),
+                                                           'justificativa', g.boleto_excecao) order by g.numero)
+                         from erp.parcela_pagamentos g where g.titulo_id = r.titulo_id and g.boleto_excecao is not null),
+          'motivo', 'Boleto com beneficiário não conferido'));
+    end if;
+    if exists (select 1 from erp.parcela_pagamentos g where g.titulo_id = r.titulo_id and g.pix_copia_cola_excecao is not null) then
+      perform erp.registrar_evento('pix_copia_cola_excecao', 'titulos', r.titulo_id::text, r.onde[1], r.onde[2],
+        jsonb_build_object('titulo_id', r.titulo_id, 'pessoa_id', r.pessoa_id,
+          'parcelas', (select jsonb_agg(jsonb_build_object('numero', g.numero, 'recebedor', erp.pix_copia_cola_recebedor(g.pix_copia_cola),
+                                                           'conferido', erp.pix_conferido(g.pix_copia_cola),
+                                                           'justificativa', g.pix_copia_cola_excecao) order by g.numero)
+                         from erp.parcela_pagamentos g where g.titulo_id = r.titulo_id and g.pix_copia_cola_excecao is not null),
+          'motivo', 'PIX copia e cola com recebedor não conferido'));
+    end if;
+    if r.chaves is not null then
+      perform erp.registrar_evento('chave_pix_nova', 'titulos', r.titulo_id::text, r.onde[1], r.onde[2],
+        jsonb_build_object('titulo_id', r.titulo_id, 'pessoa_id', r.pessoa_id, 'parcelas', r.chaves,
+                           'motivo', 'Chave PIX nunca usada com este credor: '
+                                     || (select string_agg(c->>'pix_chave', ', ') from jsonb_array_elements(r.chaves) c)));
+    end if;
+  end loop;
+
+  insert into erp.sienge_previsoes (previsao_id)
+  select p.id from erp.previsoes p
+   where p.sentido = 'pagar' and p.situacao = 'aberta'
+     and not exists (select 1 from erp.sienge_previsoes s where s.previsao_id = p.id)
+     and erp.previsao_aprovada(p.id)
+  on conflict do nothing;
+  get diagnostics m = row_count;
+
+  update erp.sienge_previsoes s set apagar_desde = clock_timestamp()
+    from erp.previsoes p
+   where p.id = s.previsao_id and p.situacao <> 'aberta' and s.sienge_id is not null and s.apagar_desde is null;
+  update erp.sienge_previsoes s set situacao = 'descartado', erro = 'A previsão saiu de aberta antes de ir ao Sienge'
+    from erp.previsoes p
+   where p.id = s.previsao_id and p.situacao <> 'aberta' and s.sienge_id is null and s.situacao <> 'descartado';
+  return n + m;
+end $function$$def$);
 
 -- Quem é o gestor do centro, e a vaga que a pessoa ocupa na aprovação do orçamento
 create function erp._gestor_orcamento(p_centro uuid, p_user uuid) returns boolean language sql stable as $$
@@ -750,10 +1166,21 @@ begin
   end if;
 end $$;
 -- a tela Para aprovar decide o orçamento pelo mesmo api.decidir
-select pg_temp.trocar('api.decidir(text, uuid, text, text, uuid, uuid)'::regprocedure,
-  $x$    when 'contrato' then$x$,
-  $x$    when 'orcamento' then erp.decidir_orcamento(p_id, p_decisao = 'aprovar', nullif(trim(p_justificativa), ''))
-    when 'contrato' then$x$);
+select pg_temp.recriar('api.decidir(text, uuid, text, text, uuid, uuid)'::regprocedure, '3fa9d42a307ab21c93a4033901c48cc1', $def$CREATE OR REPLACE FUNCTION api.decidir(p_tipo text, p_id uuid, p_decisao text, p_justificativa text DEFAULT NULL::text, p_centro uuid DEFAULT NULL::uuid, p_divisao uuid DEFAULT NULL::uuid)
+ RETURNS text
+ LANGUAGE plpgsql
+ SET search_path TO 'pg_catalog', 'pg_temp'
+AS $function$
+begin
+  if p_decisao not in ('aprovar', 'recusar', 'revisao') then raise exception 'Decisão inválida'; end if;
+  if p_decisao = 'revisao' and p_tipo <> 'titulo' then raise exception 'Só o título volta para revisão'; end if;
+  return case p_tipo
+    when 'titulo' then erp.decidir_titulo(p_id, p_decisao = 'aprovar', nullif(trim(p_justificativa), ''), p_decisao = 'revisao', p_centro, p_divisao)
+    when 'previsao' then erp.decidir_previsao(p_id, p_decisao = 'aprovar', nullif(trim(p_justificativa), ''), p_centro, p_divisao)
+    when 'orcamento' then erp.decidir_orcamento(p_id, p_decisao = 'aprovar', nullif(trim(p_justificativa), ''))
+    when 'contrato' then erp.decidir_compromisso(p_id, p_decisao = 'aprovar', nullif(trim(p_justificativa), ''))
+    else null end;
+end $function$$def$);
 
 -- ---------------------------------------------------------------------------------------------
 -- 9. Segurança
