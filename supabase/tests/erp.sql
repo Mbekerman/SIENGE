@@ -10269,5 +10269,65 @@ select pg_temp.volta();
 select pg_temp.como(null);
 rollback;
 
+-- ---------------------------------------------------------------------
+\echo '# credores do Sienge (Moises, 24/11/2026)'
+begin;
+select pg_temp.como(null);
+-- pessoa do ERP com documento e sem ligação: o credor do Sienge com o mesmo CNPJ se liga a ela
+insert into erp.pessoas (id, tipo, nome, documento) values ('5c000000-0000-0000-0000-000000000001', 'juridica', 'Já cadastrada', '11222333000181');
+set local role erp_sistema;
+select erp.sienge_importar_credores($$[
+  {"id": 9001, "name": "Fornecedor  Novo", "tradeName": "Novo", "cnpj": "45.997.418/0001-53", "active": true},
+  {"id": 9002, "name": "Pessoa Física", "cpf": "529.982.247-25", "active": false},
+  {"id": 9003, "name": "Mesma empresa", "cnpj": "11222333000181"},
+  {"id": 9004, "name": "Credor repetido no Sienge", "cnpj": "45997418000153"},
+  {"id": 9005, "name": "Sem documento"},
+  {"id": 9006, "name": "Alfanumérico", "cnpj": "12ABC34501DE35"},
+  {"id": 9007, "name": "Documento torto", "cnpj": "123"},
+  {"id": "9008", "name": "Código em texto"},
+  {"id": 9009, "name": "   "}
+]$$::jsonb) as imp \gset
+reset role;
+select pg_temp.ok((:'imp'::jsonb)->>'novos' = '5' and (:'imp'::jsonb)->>'ligados' = '1' and (:'imp'::jsonb)->>'ja_ligados' = '0',
+  'credores: 5 novos, 1 ligado a pessoa que já existia');
+select pg_temp.ok((select p.nome = 'Fornecedor Novo' and p.nome_fantasia = 'Novo' and p.documento = '45997418000153' and p.tipo = 'juridica' and p.ativa
+                          and exists (select 1 from erp.pessoa_papeis x where x.pessoa_id = p.id and x.papel = 'fornecedor')
+                     from erp.pessoas p join erp.codigos_externos e on e.registro_id = p.id and e.sistema = 'sienge' and e.tabela = 'pessoas' and e.codigo = '9001'),
+  'credores: o novo entra com nome, fantasia, CNPJ só com dígitos e o papel de fornecedor');
+select pg_temp.ok((select p.tipo = 'fisica' and p.documento = '52998224725' and not p.ativa
+                     from erp.pessoas p join erp.codigos_externos e on e.registro_id = p.id and e.codigo = '9002' and e.tabela = 'pessoas'),
+  'credores: CPF vira pessoa física; o inativo no Sienge entra inativo');
+select pg_temp.ok((select registro_id = '5c000000-0000-0000-0000-000000000001' from erp.codigos_externos where sistema = 'sienge' and tabela = 'pessoas' and codigo = '9003')
+                  and (select nome = 'Já cadastrada' from erp.pessoas where id = '5c000000-0000-0000-0000-000000000001'),
+  'credores: o mesmo CNPJ liga à pessoa que já existia, sem mudar o nome');
+select pg_temp.ok(not exists (select 1 from erp.codigos_externos where sistema = 'sienge' and tabela = 'pessoas' and codigo in ('9004', '9008', '9009'))
+                  and (:'imp'::jsonb)->'avisos' @> '[{"id": 9004, "motivo": "o mesmo documento é de outro credor do Sienge"}]',
+  'credores: CNPJ repetido no Sienge não se liga a uma segunda pessoa, e o código em texto ou o nome vazio ficam de fora');
+select pg_temp.ok((select p.documento is null from erp.pessoas p join erp.codigos_externos e on e.registro_id = p.id and e.codigo = '9007' and e.tabela = 'pessoas')
+                  and (select p.documento = '12ABC34501DE35' from erp.pessoas p join erp.codigos_externos e on e.registro_id = p.id and e.codigo = '9006' and e.tabela = 'pessoas'),
+  'credores: documento torto entra sem documento (com aviso); o CNPJ alfanumérico entra');
+-- de novo: nada muda e nada se duplica
+set local role erp_sistema;
+select erp.sienge_importar_credores('[{"id": 9001, "name": "Outro nome", "cnpj": "45997418000153"}, {"id": 9003, "name": "Mesma", "cnpj": "99888777000100"}]'::jsonb) as imp2 \gset
+reset role;
+select pg_temp.ok((:'imp2'::jsonb)->>'ja_ligados' = '2' and (:'imp2'::jsonb)->>'novos' = '0'
+                  and (select nome = 'Fornecedor Novo' from erp.pessoas p join erp.codigos_externos e on e.registro_id = p.id and e.codigo = '9001' and e.tabela = 'pessoas')
+                  and (:'imp2'::jsonb)->'avisos' @> '[{"id": 9003, "motivo": "o documento no Sienge mudou; o ERP ficou como estava"}]',
+  'credores: importar de novo não duplica nem muda o cadastro; documento mudado no Sienge vira aviso');
+-- emitente já classificado como PJ: o credor entra restrito
+insert into erp.emitentes_classificacao (documento, classe, por) values ('06990590000123', 'pj', :'diretor');
+set local role erp_sistema;
+select erp.sienge_importar_credores('[{"id": 9010, "name": "PJ do Sienge", "cnpj": "06.990.590/0001-23"}, {"id": 9011, "name": "Comum", "cnpj": "33000167000101"}]'::jsonb) as imp3 \gset
+reset role;
+select pg_temp.ok((select p.restrita from erp.pessoas p join erp.codigos_externos e on e.registro_id = p.id and e.codigo = '9010' and e.tabela = 'pessoas')
+                  and (select not p.restrita from erp.pessoas p join erp.codigos_externos e on e.registro_id = p.id and e.codigo = '9011' and e.tabela = 'pessoas'),
+  'credores: emitente classificado como PJ entra restrito; o sem classificação entra comum');
+-- só o sistema
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual($$select erp.sienge_importar_credores('[]'::jsonb)$$, 'permission denied for function sienge_importar_credores',
+  'credores: login (até de diretor) não chama a importação');
+select pg_temp.como(null);
+rollback;
+
 \echo '# fim'
 do $$ begin raise notice 'TODOS OS TESTES PASSARAM'; end $$;
