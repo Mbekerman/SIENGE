@@ -20,7 +20,7 @@ O cadastro guarda: CPF ou CNPJ, nome, contatos, dados bancários e Pix.
 4. Informe os dados bancários e o Pix. Eles serão a forma de pagamento padrão das notas desse fornecedor.
 5. Salve.
 
-**O que o sistema confere:** CPF ou CNPJ válido e não repetido. 🟡 O CNPJ com letras, o novo formato da Receita, também é aceito (PR #133, ainda não juntado).
+**O que o sistema confere:** CPF ou CNPJ válido e não repetido. ✅ O CNPJ com letras, o novo formato da Receita, também é aceito (PR #133, juntado).
 
 **Bom saber:** no teste de 6/nov/2026, o título gerado no Sienge já veio com o Pix do fornecedor puxado do cadastro dele.
 

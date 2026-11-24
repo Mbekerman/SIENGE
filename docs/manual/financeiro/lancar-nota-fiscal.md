@@ -59,7 +59,7 @@ O botão **Lançar título** fica na página Títulos e abre uma janela com esta
 
 ✅ Sem prefixo do fornecedor no número (Moises, 24/nov/2026, descartando o formato "fornecedor.número"): fornecedor, tipo de documento e número ficam em campos separados.
 
-🟡 **Documento repetido** (PR #133, ainda não juntado):
+✅ **Documento repetido** (PR #133, juntado em 24/nov/2026):
 - O sistema recusa lançar de novo o mesmo fornecedor com o mesmo tipo de documento e o mesmo número. A recusa é direta, sem pedido de aprovação; essa escolha foi da equipe e falta o Moises confirmar.
 - Zeros à esquerda, pontos, traços, barras e maiúsculas não contam: "00.101" é o mesmo que "101", e "BKM-0001" é o mesmo que "bkm0001".
 - Na série da nota também não contam os zeros à esquerda: a série "1" e a "001" são a mesma.
@@ -86,7 +86,7 @@ Ao clicar em **Lançar**, o título vai para a aprovação e abre na gaveta. Se 
 - **Limite de envio** (Moises, 20/nov/2026; PR #101, juntado): cada pessoa sobe até 30 arquivos ao leitor a cada 10 minutos. Quem passa do limite vê o aviso "Muitos arquivos em pouco tempo; espere alguns minutos". O administrador ou o master podem mudar o número de cada pessoa, de 1 a 1.000, e ninguém muda o próprio. Ainda não há tela para isso; a mudança é feita direto no banco.
 - **No rastro do título**, o botão Anexos passa a baixar o arquivo.
 
-🟡 **Vários arquivos por título, no PR #133** (ainda não juntado). O bloco **Arquivo da nota** passa a se chamar **Arquivos do título**:
+✅ **Vários arquivos por título, no PR #133** (juntado em 24/nov/2026). O bloco **Arquivo da nota** passa a se chamar **Arquivos do título**:
 - Aceita a nota, o boleto e os anexos, de uma vez ou um a um, com **Adicionar arquivo** e **Tirar**. Todos ficam anexados ao título.
 - A nota preenche a tela. O boleto que vem num arquivo separado entra na parcela dele, casado pelo valor e pelo vencimento, e não mais pela ordem.
 - Arquivo que chega depois da nota (um boleto, um anexo) refaz só as parcelas, com o aviso "As parcelas foram preenchidas de novo com os arquivos novos; o resto da tela ficou como estava". Confira as parcelas se você tinha mudado alguma à mão. Se a nota chega depois do boleto, ela preenche a tela inteira, como o primeiro arquivo. Tirar um arquivo tem o mesmo efeito.

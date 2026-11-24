@@ -254,13 +254,7 @@ Conta recorrente é a que se repete todo mês. Ela fica cadastrada uma vez e gan
 
 **Na lista**, as contas de consumo ganham um grupo próprio, com "média R$ X por mês".
 
-**Ainda falta:** a regra de aprovação da nota de cada mês, que entra no PR das notas.
-- **Contrato de serviço e assinatura:** a nota passa pelo gestor e depois por alguém da AF ou da AD.
-- **Conta de consumo** (Moises, 20/nov/2026): a fatura vai direto para a AF, a AO ou a AD quando cumpre duas condições:
-  - fica até X% acima da média esperada;
-  - somada ao que já se pagou no ano, fica dentro do teto anual.
-
-  Se não cumprir, passa antes pelo gestor. O X vale para a empresa toda e começa em 30%. Ele fica nas Configurações e, como é configuração de dinheiro, só muda por pedido de mudança com aprovação.
+**Quem aprova a nota de cada mês:** ver **Quem aprova a nota do mês**, mais abaixo nesta página.
 
 **Como era no protótipo (linha F):**
 
@@ -299,13 +293,13 @@ Conta recorrente é a que se repete todo mês. Ela fica cadastrada uma vez e gan
 - quem recebe a nota (o tomador) é a empresa pagadora certa;
 - o contrato está vigente;
 - o mês ainda não tem nota (não deixa mandar a nota duas vezes);
-- o valor cabe na regra: no contrato de serviço, o valor mensal com os reajustes aprovados; na conta de consumo, até X% acima da média esperada (começa em 30%) e dentro do teto do ano.
+- o valor cabe na regra: no contrato de serviço, o valor mensal com os reajustes aprovados; na conta de consumo, até X% acima da previsão daquele mês (começa em 30%) e dentro do teto do ano.
 
 O que não bate vira **exceção**: o pedido só segue com justificativa. Na tela, as marcas "CNPJ igual ao do contrato" e "igual ao contrato" aparecem embaixo do fornecedor e do valor.
 
 **Quem não pode aprovar esse pedido:** quem arrastou a nota e quem mexeu por último no cadastro da conta.
 
-✅ **Quem aprova a nota do mês** (Moises, 23/nov/2026): com a conta aprovada, a nota segue só o rito dela, não as faixas do centro. 🟡 PR #135, ainda não juntado: o sistema ainda não faz isto.
+✅ **Quem aprova a nota do mês** (Moises, 23/nov/2026): com a conta aprovada, a nota segue só o rito dela, não as faixas do centro. Está no sistema (PR #135, juntado em 24/nov/2026).
 
 - **Contrato de serviço e assinatura:** o gestor do centro (confere que o serviço foi prestado) e depois a AF ou a AD.
 - **Conta de consumo:** se as faturas do mês (esta mais as que já entraram no mesmo mês) ficam até 30% acima da previsão daquele mês e o ano continua dentro do teto, vai direto a alguém da AF, da AO ou da AD. Acima disso, o gestor do centro aprova primeiro. O percentual muda nas configurações.
