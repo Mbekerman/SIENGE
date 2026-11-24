@@ -41,7 +41,7 @@ export function dataHora(s: string | null | undefined): string {
 /** CPF ou CNPJ só com dígitos → com pontuação. */
 export function documento(s: string | null | undefined): string {
   if (!s) return '';
-  if (s.length === 14) return s.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+  if (s.length === 14) return s.replace(/^([0-9A-Z]{2})([0-9A-Z]{3})([0-9A-Z]{3})([0-9A-Z]{4})(\d{2})$/, '$1.$2.$3/$4-$5');  // também o CNPJ alfanumérico
   if (s.length === 11) return s.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
   return s;
 }
