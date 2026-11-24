@@ -1070,7 +1070,7 @@ select pg_temp.ok(not exists (
        'criar_orcamento_area','salvar_orcamento_area','enviar_orcamento','descartar_orcamento','decidir_orcamento','minha_vaga_orcamento',
        '_vejo_nota_recebida','_vejo_leitura_notas','buscar_nota_recebida','ignorar_nota_recebida','voltar_nota_recebida',
        'liberar_notas_recebidas','retirar_notas_recebidas','_libero_notas_recebidas','_lanco_na_empresa',
-       '_no_grupo_notas','_cuido_pj','designar_notas','retirar_notas','classificar_emitente','decidir_pedido_emitente')),
+       '_no_grupo_notas','_cuido_pj','designar_notas','retirar_notas','classificar_emitente','decidir_pedido_emitente','usar_forma_do_cadastro')),
   'catálogo: das funções security definer, authenticated só executa as da lista (RPCs e conferências de quem está logado)');
 select pg_temp.ok(not has_function_privilege('authenticated', 'erp._aplicar_mudanca_acesso(uuid)', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp.gerar_avisos_sucessao()', 'EXECUTE')
@@ -10265,6 +10265,222 @@ select erp.lancar_documento('70000000-0000-0000-0000-0000000c0023', array['2027-
 select pg_temp.sis();
 select pg_temp.ok((select count(*) >= 1 and bool_and(compromisso_id is null) from erp.titulo_alcadas where titulo_id = :'r23'),
   'rito: nota numa divisão fora do rateio da conta segue as faixas');
+select pg_temp.volta();
+select pg_temp.como(null);
+rollback;
+
+\echo '# forma de pagamento do cadastro no título, com a TED (Moises, 23/11/2026)'
+begin;
+select pg_temp.sis();
+insert into erp.centro_aprovadores values (:'cc_mkt', :'gestor') on conflict do nothing;
+insert into erp.listas_financeiro (lista, user_id) values ('AF', :'contador') on conflict do nothing;
+insert into erp.pessoa_papeis values ('10000000-0000-0000-0000-000000000007', 'fornecedor') on conflict do nothing;
+select pg_temp.volta();
+select pg_temp.como(:'analista');
+insert into erp.compromissos (id, empresa_id, tipo, pessoa_id, descricao, inicio, periodicidade, valor_periodo, dia_vencimento) values
+  ('61000000-0000-0000-0000-0000000000d1', :'spe', 'assinatura', '10000000-0000-0000-0000-000000000007', 'Software com PIX fixo', '2027-01-01', 'mensal', 500, 10),
+  ('61000000-0000-0000-0000-0000000000d2', :'spe', 'assinatura', '10000000-0000-0000-0000-000000000007', 'Software com TED', '2027-01-01', 'mensal', 500, 10),
+  ('61000000-0000-0000-0000-0000000000d3', :'spe', 'assinatura', '10000000-0000-0000-0000-000000000007', 'Software com boleto', '2027-01-01', 'mensal', 500, 10);
+insert into erp.compromisso_rateios (compromisso_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+  select x::uuid, :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100
+    from unnest(array['61000000-0000-0000-0000-0000000000d1', '61000000-0000-0000-0000-0000000000d2', '61000000-0000-0000-0000-0000000000d3']) x;
+insert into erp.compromisso_pagamentos (compromisso_id, modo, pix_tipo, pix_chave) values ('61000000-0000-0000-0000-0000000000d1', 'pix', 'cpf_cnpj', '77777777000177');
+insert into erp.compromisso_pagamentos (compromisso_id, modo, banco, agencia, conta, conta_digito, conta_tipo, titular_documento)
+  values ('61000000-0000-0000-0000-0000000000d2', 'ted', '341', '1234', '56789', '0', 'corrente', '77777777000177');
+insert into erp.compromisso_pagamentos (compromisso_id, modo) values ('61000000-0000-0000-0000-0000000000d3', 'cobranca');
+select pg_temp.como(:'gestor');
+select erp.decidir_compromisso(x::uuid, true)
+  from unnest(array['61000000-0000-0000-0000-0000000000d1', '61000000-0000-0000-0000-0000000000d2', '61000000-0000-0000-0000-0000000000d3']) x;
+select pg_temp.como(:'contador');
+select pg_temp.ok((select bool_and(erp.decidir_compromisso(x::uuid, true) = 'aprovado')
+                     from unnest(array['61000000-0000-0000-0000-0000000000d1', '61000000-0000-0000-0000-0000000000d2', '61000000-0000-0000-0000-0000000000d3']) x),
+  'forma do cadastro: as três contas aprovadas');
+select pg_temp.como(:'analista');
+select jsonb_build_object('empresa', :'spe', 'fornecedor', '10000000-0000-0000-0000-000000000007', 'tipo', 'nfse',
+  'emissao', '2027-01-05', 'competencia', '2027-01-01', 'valor', 500,
+  'rateio', jsonb_build_array(jsonb_build_object('nucleo', :'ne_vm', 'centro', :'cc_mkt', 'natureza', pg_temp.nat('05.01.04'), 'percentual', 100)))::text as fbase \gset
+select api.lancar_titulo(:'fbase'::jsonb || jsonb_build_object('numero', 'FC-1', 'compromisso', '61000000-0000-0000-0000-0000000000d1',
+  'parcelas', '[{"vencimento": "2027-01-20", "forma": "cadastro"}]'::jsonb)) as fc1 \gset
+select api.lancar_titulo(:'fbase'::jsonb || jsonb_build_object('numero', 'FC-2', 'compromisso', '61000000-0000-0000-0000-0000000000d2',
+  'parcelas', '[{"vencimento": "2027-01-20", "forma": "cadastro"}]'::jsonb)) as fc2 \gset
+select pg_temp.ok((select forma = 'pix' and pix_tipo = 'cpf_cnpj' and pix_chave = '77777777000177' and pix_excecao is null
+                     from erp.parcela_pagamentos where titulo_id = :'fc1'),
+  'forma do cadastro: a parcela recebe o PIX fixo da conta');
+select pg_temp.ok((select forma = 'ted' and ted_banco = '341' and ted_agencia = '1234' and ted_conta = '56789' and ted_conta_digito = '0'
+                          and ted_conta_tipo = 'corrente' and ted_titular_documento = '77777777000177' and ted_excecao is null
+                     from erp.parcela_pagamentos where titulo_id = :'fc2'),
+  'forma do cadastro: a parcela recebe a TED da conta');
+select pg_temp.erro_igual(format($$select api.lancar_titulo(%L)$$, :'fbase'::jsonb || jsonb_build_object('numero', 'FC-3',
+  'compromisso', '61000000-0000-0000-0000-0000000000d3', 'parcelas', '[{"vencimento": "2027-01-20", "forma": "cadastro"}]'::jsonb)),
+  'A conta não tem PIX fixo nem TED no cadastro: informe a forma de pagamento desta cobrança',
+  'forma do cadastro: conta "vem com cada cobrança" não tem forma para copiar');
+select pg_temp.ok(not exists (select 1 from erp.avisos_forma_pagamento(:'fc1') a where array_to_string(a.avisos, '|') like '%Diferente%'),
+  'forma do cadastro: a parcela com a forma da conta não tem o aviso de diferença');
+select pg_temp.ok((select 'Conta da TED nova para este credor' = any (avisos) from erp.avisos_forma_pagamento(:'fc2') where numero = 1),
+  'TED: a conta nunca usada com o credor aparece para quem aprova');
+select api.lancar_titulo(:'fbase'::jsonb || jsonb_build_object('numero', 'FC-9', 'compromisso', '61000000-0000-0000-0000-0000000000d2',
+  'parcelas', '[{"vencimento": "2027-01-21", "forma": "cadastro"}]'::jsonb)) as fc9 \gset
+select pg_temp.ok((select 'Conta da TED nova para este credor' = any (avisos) from erp.avisos_forma_pagamento(:'fc9') where numero = 1),
+  'TED: a conta de outro título que ainda não foi ao Sienge não conta como conhecida (lançar não cala o alerta)');
+-- a TED na parcela: o titular é o credor, ou só com a justificativa
+select pg_temp.erro_igual(format($$update erp.parcela_pagamentos set ted_titular_documento = '29732041000154' where titulo_id = %L$$, :'fc2'),
+  'A conta da TED da parcela 1 não é do credor do título (só com a justificativa da exceção)',
+  'TED: conta de outra pessoa sem justificativa é recusada');
+update erp.parcela_pagamentos set ted_titular_documento = '29732041000154', ted_excecao = 'Conta da administradora' where titulo_id = :'fc2';
+select pg_temp.ok((select 'Conta da TED de outra pessoa: Conta da administradora' = any (avisos) from erp.avisos_forma_pagamento(:'fc2') where numero = 1)
+                  and (select array_to_string(avisos, '|') like '%Diferente da forma cadastrada na conta recorrente: TED (banco 341, agência 1234, conta 56789-0). A AF escolhe qual vale%'
+                         from erp.avisos_forma_pagamento(:'fc2') where numero = 1),
+  'TED: com a justificativa entra, e quem aprova vê a justificativa e a diferença do cadastro');
+update erp.parcela_pagamentos set ted_titular_documento = '77777777000177', ted_excecao = 'sobra' where titulo_id = :'fc2';
+select pg_temp.ok((select ted_excecao is null from erp.parcela_pagamentos where titulo_id = :'fc2'), 'TED: a justificativa que sobra some');
+select pg_temp.falha(format($$update erp.parcela_pagamentos set ted_conta = null where titulo_id = %L$$, :'fc2'), 'TED: sem a conta é recusada');
+select pg_temp.falha(format($$update erp.parcela_pagamentos set ted_banco = '34' where titulo_id = %L$$, :'fc2'), 'TED: banco com 3 dígitos');
+select pg_temp.falha(format($$update erp.parcela_pagamentos set pix_copia_cola = '00020126360014br.gov.bcb.pix0114777777770001775204000053039865802BR5918FORNECEDOR EXEMPLO6009SAO PAULO62070503***63049C9D' where titulo_id = %L$$, :'fc2'),
+  'TED: não leva PIX copia e cola');
+select pg_temp.falha(format($$update erp.parcela_pagamentos set ted_excecao = 'x' where titulo_id = %L and forma = 'pix'$$, :'fc1'),
+  'TED: os campos da TED só na TED');
+-- veio de outra forma: a AF escolhe
+select api.lancar_titulo(:'fbase'::jsonb || jsonb_build_object('numero', 'FC-4', 'compromisso', '61000000-0000-0000-0000-0000000000d1',
+  'parcelas', '[{"vencimento": "2027-01-20", "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"}]'::jsonb)) as fc4 \gset
+select api.lancar_titulo(:'fbase'::jsonb || jsonb_build_object('numero', 'FC-5', 'compromisso', '61000000-0000-0000-0000-0000000000d3',
+  'parcelas', '[{"vencimento": "2027-01-20", "forma": "pix", "pix_tipo": "email", "pix_chave": "agencia@example.com"}]'::jsonb)) as fc5 \gset
+select pg_temp.ok((select array_to_string(avisos, '|') like '%Diferente da forma cadastrada na conta recorrente: PIX fixo (77777777000177). A AF escolhe qual vale%'
+                     from erp.avisos_forma_pagamento(:'fc4') where numero = 1)
+                  and (select array_to_string(avisos, '|') like '%Diferente da forma cadastrada na conta recorrente: vem com cada cobrança%'
+                         from erp.avisos_forma_pagamento(:'fc5') where numero = 1),
+  'forma do cadastro: a forma diferente da cadastrada aparece para quem aprova');
+select pg_temp.ok((select x->'avisos' ? 'Diferente da forma cadastrada na conta recorrente: PIX fixo (77777777000177). A AF escolhe qual vale'
+                     from jsonb_array_elements(api.titulo(:'fc4')->'parcelas') x)
+                  and (select x->>'forma' = 'ted' and x->'ted'->>'banco' = '341' and x->'ted'->>'conta' = '56789'
+                          and x->'ted'->>'titular_documento' = '77777777000177'
+                     from jsonb_array_elements(api.titulo(:'fc2')->'parcelas') x),
+  'tela do título: mostra a TED da parcela e os avisos da forma de pagamento');
+select pg_temp.erro_igual(format($$select api.usar_forma_do_cadastro(%L)$$, :'fc4'), 'A escolha da forma de pagamento é da AF',
+  'forma do cadastro: quem lançou (e não é AF) não troca');
+select pg_temp.como(:'gestor');
+select pg_temp.erro_igual(format($$select api.usar_forma_do_cadastro(%L)$$, :'fc4'), 'A escolha da forma de pagamento é da AF',
+  'forma do cadastro: o gestor não troca');
+select erp.decidir_titulo(:'fc4', true);
+select pg_temp.sis();
+select pg_temp.erro_igual(format($$update erp.parcela_pagamentos set pix_tipo = 'cpf_cnpj', pix_chave = '77777777000177' where titulo_id = %L$$, :'fc4'),
+  'A forma de pagamento só muda antes do primeiro voto da alçada (ou na revisão do título)',
+  'forma do cadastro: depois do voto, nem a forma do cadastro entra sem a escolha da AF');
+select pg_temp.volta();
+select pg_temp.como(:'contador');
+select api.usar_forma_do_cadastro(:'fc4') as trocadas \gset
+select pg_temp.ok(:trocadas = 1
+                  and (select forma = 'pix' and pix_tipo = 'cpf_cnpj' and pix_chave = '77777777000177' from erp.parcela_pagamentos where titulo_id = :'fc4')
+                  and exists (select 1 from erp.titulo_forma_cadastro where titulo_id = :'fc4' and por = :'contador'),
+  'forma do cadastro: a AF troca, depois do voto do gestor, e fica registrado');
+select pg_temp.ok((select 'A AF trocou para a forma cadastrada na conta recorrente' = any (avisos)
+                          and array_to_string(avisos, '|') not like '%Diferente%' from erp.avisos_forma_pagamento(:'fc4') where numero = 1),
+  'forma do cadastro: quem aprova vê que a AF trocou');
+select pg_temp.erro_igual(format($$select api.usar_forma_do_cadastro(%L)$$, :'fc4'), 'As parcelas já estão com a forma cadastrada',
+  'forma do cadastro: trocar de novo não faz nada');
+select pg_temp.sis();
+select pg_temp.erro_igual(format($$update erp.parcela_pagamentos set pix_tipo = 'email', pix_chave = 'agencia@example.com' where titulo_id = %L$$, :'fc4'),
+  'A forma de pagamento só muda antes do primeiro voto da alçada (ou na revisão do título)',
+  'forma do cadastro: a escolha da AF só abre a forma do cadastro');
+select pg_temp.volta();
+select pg_temp.como(:'contador');
+select pg_temp.erro_igual(format($$select api.usar_forma_do_cadastro(%L)$$, :'fc5'), 'Na conta, a forma vem com cada cobrança: vale a desta nota',
+  'forma do cadastro: na conta "vem com cada cobrança" não há o que trocar');
+select pg_temp.ok(erp.decidir_titulo(:'fc4', true) = 'aprovado', 'forma do cadastro: a AF aprova depois de trocar');
+select pg_temp.erro_igual(format($$select api.usar_forma_do_cadastro(%L)$$, :'fc4'), 'A forma só se troca com o título em aprovação',
+  'forma do cadastro: título aprovado não troca');
+-- a TED no pedido ao Sienge
+select pg_temp.como(:'gestor');
+select erp.decidir_titulo(:'fc2', true);
+select pg_temp.como(:'contador');
+select erp.decidir_titulo(:'fc2', true);
+select pg_temp.sis();
+insert into erp.codigos_externos (sistema, tabela, registro_id, codigo) values
+  ('sienge', 'empresas', :'spe', '11'), ('sienge', 'pessoas', '10000000-0000-0000-0000-000000000007', '823') on conflict do nothing;
+insert into erp.sienge_centros (nucleo_economico_id, centro_custo_id, sienge_centro) values (:'ne_vm', :'cc_mkt', 100) on conflict do nothing;
+insert into erp.sienge_contas (natureza_id, centro_custo_id, sienge_conta) values (pg_temp.nat('05.01.04'), :'cc_mkt', '2030224') on conflict do nothing;
+select erp.sienge_pedido(:'fc2') as pedted \gset
+select pg_temp.ok((select x->>'forma' = 'ted' and x->'ted'->>'banco' = '341' and x->'ted'->>'agencia' = '1234' and x->'ted'->>'conta' = '56789'
+                          and x->'ted'->>'conta_digito' = '0' and x->'ted'->>'conta_tipo' = 'corrente'
+                          and x->'ted'->>'titular_documento' = '77777777000177' and x->'ted'->>'titular_nome' = 'Agência Beta'
+                     from jsonb_array_elements(:'pedted'::jsonb->'parcelas') x),
+  'TED: o pedido ao Sienge leva banco, agência, conta, tipo e o titular');
+select erp.sienge_enfileirar();
+select pg_temp.ok(exists (select 1 from erp.eventos where tipo = 'conta_ted_nova' and registro = :'fc2'),
+  'TED: conta nunca usada com o credor gera o alerta crítico ao ir para a fila do Sienge');
+-- a conta já usada com o credor, mas com outro titular, é conta nova (revisão de segurança, 24/11)
+select pg_temp.ok((select 'Conta da TED nova para este credor' = any (avisos) from erp.avisos_forma_pagamento(:'fc9') where numero = 1),
+  'TED: na fila do Sienge, mas ainda sem o título criado lá, a conta continua nova');
+update erp.sienge_envios set sienge_id = 9901 where titulo_id = :'fc2';
+select pg_temp.ok(erp._conta_ted_conhecida('10000000-0000-0000-0000-000000000007', '341', '1234', '56789', '0', '77777777000177', :'fc1')
+                  and not erp._conta_ted_conhecida('10000000-0000-0000-0000-000000000007', '341', '1234', '56789', '0', '29732041000154', :'fc1'),
+  'TED: a conta conhecida é a mesma conta com o mesmo titular');
+select pg_temp.volta();
+-- a troca da AF só vale na transação dela (revisão de segurança, 24/11): com o registro de outra transação, a forma não muda
+select pg_temp.como(:'analista');
+select api.lancar_titulo(:'fbase'::jsonb || jsonb_build_object('numero', 'FC-7', 'compromisso', '61000000-0000-0000-0000-0000000000d1',
+  'parcelas', '[{"vencimento": "2027-02-20", "forma": "pix", "pix_tipo": "email", "pix_chave": "outra@example.com"}]'::jsonb)) as fc7 \gset
+select api.lancar_titulo(:'fbase'::jsonb || jsonb_build_object('numero', 'FC-11', 'compromisso', '61000000-0000-0000-0000-0000000000d1',
+  'parcelas', '[{"vencimento": "2027-02-20", "forma": "pix", "pix_tipo": "email", "pix_chave": "outra@example.com"}]'::jsonb)) as fc11 \gset
+select pg_temp.como(:'gestor');
+select erp.decidir_titulo(:'fc7', true);
+select pg_temp.como(:'contador');
+select api.usar_forma_do_cadastro(:'fc7');
+select pg_temp.como(null);
+update erp.titulo_forma_cadastro set txid = txid - 1 where titulo_id = :'fc7';
+select pg_temp.sis();
+select pg_temp.erro_igual(format($$update erp.parcela_pagamentos set pix_chave = pix_chave where titulo_id = %L$$, :'fc7'),
+  'A forma de pagamento só muda antes do primeiro voto da alçada (ou na revisão do título)',
+  'forma do cadastro: a escolha da AF gravada em outra transação não abre a forma, nem para mantê-la');
+select pg_temp.volta();
+select pg_temp.como(null);
+update erp.titulo_forma_cadastro set txid = txid_current() where titulo_id = :'fc7';
+-- a versão do cadastro esperando aprovação nunca vale como "a cadastrada" (revisão de segurança, 24/11)
+select pg_temp.como(:'analista');
+update erp.compromisso_pagamentos set pix_tipo = 'email', pix_chave = 'agencia@example.com' where compromisso_id = '61000000-0000-0000-0000-0000000000d1';
+select pg_temp.sis();
+select pg_temp.ok(not erp.compromisso_aprovado('61000000-0000-0000-0000-0000000000d1'), 'forma do cadastro: mudar a forma volta a conta à aprovação');
+select pg_temp.volta();
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format($$select api.lancar_titulo(%L)$$, :'fbase'::jsonb || jsonb_build_object('numero', 'FC-8',
+  'compromisso', '61000000-0000-0000-0000-0000000000d1', 'parcelas', '[{"vencimento": "2027-02-20", "forma": "cadastro"}]'::jsonb)),
+  'O cadastro da forma está esperando aprovação: informe a forma de pagamento desta cobrança',
+  'forma do cadastro: a versão esperando aprovação não vai ao título');
+select pg_temp.sis();
+select pg_temp.erro_igual(format($$update erp.parcela_pagamentos set pix_tipo = 'email', pix_chave = 'agencia@example.com' where titulo_id = %L$$, :'fc7'),
+  'A forma de pagamento só muda antes do primeiro voto da alçada (ou na revisão do título)',
+  'forma do cadastro: mesmo com a escolha da AF nesta transação, a forma esperando aprovação não entra depois do voto');
+select pg_temp.volta();
+select pg_temp.como(:'analista');
+select pg_temp.ok((select 'O cadastro da forma de pagamento da conta está esperando aprovação' = any (avisos)
+                          and array_to_string(avisos, '|') not like '%cadastrada%' and array_to_string(avisos, '|') not like '%agencia@%'
+                     from erp.avisos_forma_pagamento(:'fc11') where numero = 1),
+  'forma do cadastro: o aviso diz que o cadastro espera aprovação e não chama a versão pendente de cadastrada');
+select pg_temp.como(:'contador');
+select pg_temp.erro_igual(format($$select api.usar_forma_do_cadastro(%L)$$, :'fc11'), 'O cadastro da forma está esperando aprovação',
+  'forma do cadastro: a AF não troca para a versão esperando aprovação');
+-- quem lançou não escolhe (sem ser master)
+select pg_temp.sis();
+insert into erp.listas_financeiro (lista, user_id) values ('AF', :'analista2') on conflict do nothing;
+select pg_temp.volta();
+select pg_temp.como(:'analista2');
+select api.lancar_titulo(:'fbase'::jsonb || jsonb_build_object('numero', 'FC-10', 'compromisso', '61000000-0000-0000-0000-0000000000d2',
+  'parcelas', '[{"vencimento": "2027-03-20", "forma": "pix", "pix_tipo": "email", "pix_chave": "outra@example.com"}]'::jsonb)) as fc10 \gset
+select pg_temp.erro_igual(format($$select api.usar_forma_do_cadastro(%L)$$, :'fc10'), 'Quem lançou não escolhe a forma de pagamento',
+  'forma do cadastro: quem lançou, mesmo sendo da AF, não escolhe a forma');
+-- a AF vê todo título que aprova; o que ela não vê é o de PJ (natureza restrita, só do master e dos designados)
+select pg_temp.sis(); update erp.naturezas set restrita = true where codigo = '05.01.04'; select pg_temp.volta();
+select pg_temp.como(:'contador');
+select pg_temp.ok(not erp.vejo_titulo(:'fc10'), 'forma do cadastro: (teste) a AF não vê o título de PJ');
+select pg_temp.erro_igual(format($$select api.usar_forma_do_cadastro(%L)$$, :'fc10'), 'Título não encontrado',
+  'forma do cadastro: a AF que não vê o título (PJ) não troca a forma dele');
+select pg_temp.sis(); update erp.naturezas set restrita = false where codigo = '05.01.04'; select pg_temp.volta();
+select pg_temp.sis();
+select pg_temp.ok((select p.prosecdef and pg_get_userbyid(p.proowner) = 'erp_conferencia' from pg_proc p where p.oid = 'erp.tg_parcela_ted()'::regprocedure)
+                  and (select p.prosecdef and pg_get_userbyid(p.proowner) = 'erp_situacao' from pg_proc p where p.oid = 'erp.usar_forma_do_cadastro(uuid)'::regprocedure)
+                  and not has_function_privilege('anon', 'erp.usar_forma_do_cadastro(uuid)', 'execute')
+                  and not has_function_privilege('authenticated', 'erp._cadastro_aceita(erp.parcela_pagamentos, uuid)', 'execute')
+                  and not has_table_privilege('authenticated', 'erp.titulo_forma_cadastro', 'insert'),
+  'forma do cadastro: donos das funções definer e nada aberto além da função da tela');
 select pg_temp.volta();
 select pg_temp.como(null);
 rollback;
