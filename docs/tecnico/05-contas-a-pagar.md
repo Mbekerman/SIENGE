@@ -104,7 +104,6 @@ Quem vê (Moises, 23/11/2026): AF, AO, AD, diretor e master veem a caixa inteira
 
 Telas: `api.notas_recebidas(situacao)`, `api.nota_recebida_xml`, `api.notas_recebidas_leituras`, `api.notas_recebidas_acessos`.
 
-<<<<<<< HEAD
 ### 5.3.1.1 Notas blindadas: PJ e emitente não classificado [Banco construído, 24/nov/2026; tela a fazer]
 
 S-144, achado pelo Moises (24/11/2026): a nota de PJ só era escondida com o emitente já marcado `pessoas.restrita`, e sem ninguém marcado tudo caía na caixa. Agora falha fechada (migration `20261124001100_erp_notas_blindadas.sql`, mesmo script em `supabase/dev/`).
@@ -117,8 +116,6 @@ S-144, achado pelo Moises (24/11/2026): a nota de PJ só era escondida com o emi
 - Quem lê a classificação (`api.emitentes_classificacao`): o master, quem vê o PJ e os grupos `pj` e `aprova`; a triagem, só os comuns.
 - No bkm_dev, ao aplicar, todas as NFS-e saem da caixa até a classificação inicial (SQL modelo, fora do repositório, porque leva CNPJs). Falta: o aviso de emitente novo não classificado (com a tela e os avisos da caixa).
 
-=======
->>>>>>> fa863f211c8206e853811394001f9e337af7d98c
 **PDF oficial da nota [Construído, 24/nov/2026; ainda sem tela]** (`apps/web/src/notas/`; escolha do Moises, 24/nov/2026: "layout oficial gerado no ERP"). Não existe PDF oficial para baixar: a SEFAZ nunca entregou o DANFE e o Ambiente de Dados Nacional parou de gerar o DANFSe em 03/08/2026 (NT 008/2026 v1.02). Quem guarda o XML gera o documento auxiliar, e o ERP gera os dois a partir de `api.nota_recebida_xml`, no navegador:
 
 - `danfse.ts`: DANFSe v2.0 no leiaute da NT 008/2026 v1.02 (A4 retrato, uma folha; posições da tabela 2.4.5; logomarca oficial da NFS-e em `logo-nfse.ts`; QR para `https://www.nfse.gov.br/ConsultaPublica/?tpc=1&chave=`). Blocos de tomador, destinatário, intermediário e ISSQN trocados pelas frases da NT quando não se aplicam; linhas sem nenhum dado suprimidas (nota 5); linha do PIS/COFINS só até a competência de 2026 (nota 6); com `tpRetPisCofins` = 1, contribuições retidas = CSLL + PIS + COFINS e débito próprio zero; informações complementares na ordem da NT, com a linha dos totais da Lei 12.741 sempre por último; a descrição do serviço cresce e divide o espaço com as informações complementares, sem o canhoto (opcional). Município do prestador e do tomador pelo código IBGE, com a tabela do Anexo A da NFS-e (`municipios.json`, 5.570 municípios). Interpretações nossas: totais do Simples (`pTotTribSN`) entre parênteses na linha da Lei 12.741; destinatário "próprio tomador" quando `indDest` = 0.
