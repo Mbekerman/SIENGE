@@ -9960,7 +9960,7 @@ insert into erp.documentos_fiscais (id, empresa_id, emitente_id, compromisso_id,
   ('70000000-0000-0000-0000-0000000c0021', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c3', 'nfse', 'R21', '2027-03-05', '2027-03-01', 500);
 insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
   select d.id, :'ne_vm', case when d.numero = 'R21' then :'cc_obra'::uuid else :'cc_mkt'::uuid end,
-         case when d.numero = 'R21' then pg_temp.nat('04.01') else pg_temp.nat('05.01.04') end, 100
+         pg_temp.nat('05.01.04'), 100
     from erp.documentos_fiscais d where d.numero in ('R11','R12','R13','R14','R15','R16','R17','R18','R19','R20','R21')
      and d.compromisso_id::text like '61000000-0000-0000-0000-0000000000c%';
 -- a conta encerrada depois de a nota entrar
@@ -9994,7 +9994,7 @@ select pg_temp.ok((select fases = '{AREA,AF}' and compromisso_id is not null fro
 select pg_temp.ok((select count(*) >= 1 and bool_and(compromisso_id is null) from erp.titulo_alcadas where titulo_id = :'r20'),
   'rito: sem previsão do mês (contrato sem fim e sem calendário), as faixas');
 select pg_temp.ok((select count(*) >= 1 and bool_and(compromisso_id is null) from erp.titulo_alcadas where titulo_id = :'r21'),
-  'rito: nota num centro fora do rateio da conta segue as faixas');
+  'rito: nota num centro fora do rateio da conta (mesma natureza) segue as faixas');
 select pg_temp.volta();
 -- nota de outro fornecedor presa à conta: o gatilho do contrato já recusa (t_contrato_confere), antes do rito
 select pg_temp.como(:'analista');
