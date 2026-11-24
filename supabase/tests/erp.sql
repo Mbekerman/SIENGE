@@ -397,6 +397,65 @@ select pg_temp.erro_igual(format($$insert into erp.documentos_fiscais (empresa_i
   values (%L, '10000000-0000-0000-0000-000000000005', 'nfse', '101', '2026-02-05', '2026-02-01', 10)$$, :'spe'),
   'duplicate key value violates unique constraint "documentos_fiscais_unico"',
   'um título por nota: a mesma nota não entra duas vezes');
+-- número do documento (Moises, 24/11/2026): a trava compara a chave do número (maiúsculas, só letras e dígitos, sem
+-- zeros à esquerda), e repetido é recusado
+select pg_temp.erro_igual(format($$insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+  values (%L, '10000000-0000-0000-0000-000000000005', 'nfse', '00.101', '2026-02-05', '2026-02-01', 10)$$, :'spe'),
+  'duplicate key value violates unique constraint "documentos_fiscais_unico"',
+  'número do documento: zeros à esquerda e pontuação não fazem outro número (00.101 = 101)');
+select pg_temp.ok(erp.numero_documento_chave('1303890-1/') = erp.numero_documento_chave('1303890-1')
+                  and erp.numero_documento_chave('bkm-0001') = 'BKM0001' and erp.numero_documento_chave('000') = '0'
+                  and erp.numero_documento_chave('29') <> erp.numero_documento_chave('290')
+                  and erp.numero_documento_chave('') is null and erp.numero_documento_chave('S/N') is null and erp.numero_documento_chave('-/') is null,
+  'número do documento: a chave tira pontuação e zeros à esquerda, iguala maiúsculas e não junta números diferentes');
+begin;
+insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+  values (:'spe', '10000000-0000-0000-0000-000000000005', 'boleto', 'BKM-0001', '2026-02-05', '2026-02-01', 10) returning id as bol \gset
+select pg_temp.erro_igual(format($$insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+  values (%L, '10000000-0000-0000-0000-000000000005', 'boleto', 'bkm0001', '2026-02-06', '2026-02-01', 10)$$, :'spe'),
+  'duplicate key value violates unique constraint "documentos_fiscais_unico"',
+  'número do documento: o mesmo boleto do mesmo fornecedor não entra duas vezes (maiúsculas e traço não contam)');
+select pg_temp.ok((select count(*) = 1 from (select 1 from erp.documentos_fiscais where emitente_id = '10000000-0000-0000-0000-000000000005'
+                     and erp.numero_documento_chave(numero) = 'BKM0001') x),
+  'número do documento: o repetido não ficou gravado');
+insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+  values (:'spe', '10000000-0000-0000-0000-000000000005', 'fatura', 'BKM-0001', '2026-02-05', '2026-02-01', 10);
+select pg_temp.ok(true, 'número do documento: o mesmo número em outro tipo de documento entra');
+set local role erp_situacao;
+update erp.documentos_fiscais set situacao = 'cancelado' where id = :'bol';
+reset role;
+insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+  values (:'spe', '10000000-0000-0000-0000-000000000005', 'boleto', 'BKM0001', '2026-02-06', '2026-02-01', 10);
+select pg_temp.ok(true, 'número do documento: o documento cancelado libera o número para a versão certa');
+insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, serie, emissao, competencia, valor_bruto)
+  values (:'spe', '10000000-0000-0000-0000-000000000005', 'nfe', '29', '1', '2026-02-05', '2026-02-01', 10);
+select pg_temp.erro_igual(format($$insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, serie, emissao, competencia, valor_bruto)
+  values (%L, '10000000-0000-0000-0000-000000000005', 'nfe', '29', '001', '2026-02-05', '2026-02-01', 10)$$, :'spe'),
+  'duplicate key value violates unique constraint "documentos_fiscais_unico"',
+  'número do documento: a série passa pela mesma chave (série 1 = 001)');
+insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, serie, emissao, competencia, valor_bruto)
+  values (:'spe', '10000000-0000-0000-0000-000000000005', 'nfe', '29', '2', '2026-02-05', '2026-02-01', 10);
+select pg_temp.ok(true, 'número do documento: o mesmo número em outra série entra');
+insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+  values (:'spe', '10000000-0000-0000-0000-000000000005', 'recibo', 's/n', '2026-02-05', '2026-02-01', 10),
+         (:'spe', '10000000-0000-0000-0000-000000000005', 'recibo', 'S/N', '2026-02-06', '2026-02-01', 20),
+         (:'spe', '10000000-0000-0000-0000-000000000005', 'recibo', '-/', '2026-02-07', '2026-02-01', 30);
+select pg_temp.ok(true, 'número do documento: documento sem número (s/n, -/) fica fora da trava (Moises, 24/11)');
+select pg_temp.erro_igual(format($$insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+  values (%L, '10000000-0000-0000-0000-000000000005', 'nfse', 's/n', '2026-02-05', '2026-02-01', 10)$$, :'spe'),
+  'new row for relation "documentos_fiscais" violates check constraint "documentos_fiscais_nota_com_numero"',
+  'número do documento: NFS-e sem número é recusada (a trava não tem porta de saída nas notas)');
+select pg_temp.erro_igual(format($$update erp.documentos_fiscais set numero = '-' where emitente_id = '10000000-0000-0000-0000-000000000005'
+  and tipo = 'nfe' and numero = '29'$$),
+  'new row for relation "documentos_fiscais" violates check constraint "documentos_fiscais_nota_com_numero"',
+  'número do documento: NF-e não troca o número por sem número');
+insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+  values (:'spe', '10000000-0000-0000-0000-000000000005', 'nfe', '30', '2026-02-05', '2026-02-01', 10);
+select pg_temp.erro_igual(format($$insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, serie, emissao, competencia, valor_bruto)
+  values (%L, '10000000-0000-0000-0000-000000000005', 'nfe', '30', '0', '2026-02-05', '2026-02-01', 10)$$, :'spe'),
+  'duplicate key value violates unique constraint "documentos_fiscais_unico"',
+  'número do documento: sem série e série 0 são a mesma série');
+rollback;
 select pg_temp.ok((select pessoa_id = '10000000-0000-0000-0000-000000000006' and valor = 500 from erp.titulos
                    where documento_id = '70000000-0000-0000-0000-000000000001' and tipo = 'imposto'), 'título do ISS contra a prefeitura');
 select pg_temp.ok(erp.caucao_saldo('60000000-0000-0000-0000-000000000002') = 500, 'caução de 5% do contrato no extrato');
@@ -1008,7 +1067,10 @@ select pg_temp.ok(not exists (
        'pedir_sucessao_master','decidir_sucessao_master','vetar_sucessao_master','efetivar_sucessao_master',
        'pedir_mudanca_config','decidir_mudanca_config','cancelar_mudanca_config','marcar_notificacoes_lidas',
        'designar_pj','retirar_pj','vejo_pj','vejo_auditoria','previsao_aprovada_vista','contrato_aprovado_visto','contrato_confere','compromisso_vinculos','pix_conferido','boleto_conferido','completar_recebedor','credor_novo',
-       'criar_orcamento_area','salvar_orcamento_area','enviar_orcamento','descartar_orcamento','decidir_orcamento','minha_vaga_orcamento')),
+       'criar_orcamento_area','salvar_orcamento_area','enviar_orcamento','descartar_orcamento','decidir_orcamento','minha_vaga_orcamento',
+       '_vejo_nota_recebida','_vejo_leitura_notas','buscar_nota_recebida','ignorar_nota_recebida','voltar_nota_recebida',
+       'liberar_notas_recebidas','retirar_notas_recebidas','_libero_notas_recebidas','_lanco_na_empresa',
+       '_no_grupo_notas','_cuido_pj','designar_notas','retirar_notas','classificar_emitente','decidir_pedido_emitente')),
   'catálogo: das funções security definer, authenticated só executa as da lista (RPCs e conferências de quem está logado)');
 select pg_temp.ok(not has_function_privilege('authenticated', 'erp._aplicar_mudanca_acesso(uuid)', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp.gerar_avisos_sucessao()', 'EXECUTE')
@@ -8075,6 +8137,28 @@ select pg_temp.ok((select jsonb_array_length(j->'repetido_em') = 1 and j->'repet
 select pg_temp.ok((select jsonb_array_length(j->'nota_repetida') = 1 and j->'nota_repetida'->0->>'titulo_id' = :'tan'
                      from api.identificar_nota(jsonb_build_object('tomador', :'doc_spe', 'emitente', :'doc_forn', 'tipo', 'nfse', 'numero', '881')) j),
   'identificar: a nota com o mesmo número do mesmo emitente (zeros à esquerda não contam) volta como repetida');
+select pg_temp.ok((select jsonb_array_length(j->'nota_repetida') = 1
+                     from api.identificar_nota(jsonb_build_object('tomador', :'doc_spe', 'emitente', :'doc_forn', 'tipo', 'nfse', 'numero', '0.881')) j),
+  'identificar: o aviso de nota repetida usa a mesma chave da trava (0.881 = 881)');
+select pg_temp.como(null);
+insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+  select empresa_id, emitente_id, 'recibo', 's/n', '2026-11-05', '2026-11-01', 321 from erp.documentos_fiscais
+   where id = (select documento_id from erp.titulos where id = :'tan') returning id as rsn \gset
+select pg_temp.como(:'diretor');
+select pg_temp.ok((select jsonb_array_length(j->'nota_repetida') = 1 and j->'nota_repetida'->0->>'documento_id' = :'rsn'
+                     from api.identificar_nota(jsonb_build_object('tomador', :'doc_spe', 'emitente', :'doc_forn', 'tipo', 'recibo', 'numero', 'S/N',
+                                                                  'valor', 321, 'emissao', '2026-11-05')) j)
+                  and (select jsonb_array_length(j->'nota_repetida') = 0
+                     from api.identificar_nota(jsonb_build_object('tomador', :'doc_spe', 'emitente', :'doc_forn', 'tipo', 'recibo', 'numero', 's/n',
+                                                                  'valor', 322, 'emissao', '2026-11-05')) j),
+  'identificar: sem número, avisa o documento do mesmo emitente e tipo com o mesmo valor e a mesma emissão');
+select pg_temp.como(null);
+delete from erp.documentos_fiscais where id = :'rsn';
+select pg_temp.como(:'diretor');
+select pg_temp.ok((select not p.prosecdef and not exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0)
+                          and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                     from pg_proc p where p.oid = 'api.identificar_nota(jsonb)'::regprocedure),
+  'identificar: depois da troca da chave continua invoker e sem EXECUTE para public');
 select pg_temp.ok((select j->'pagamento'->>'forma' = 'pix' and j->'pagamento'->>'pix_chave' = 'agencia@example.com'
                      from api.identificar_nota(jsonb_build_object('emitente', :'doc_forn')) j),
   'identificar: a última chave PIX usada com o fornecedor vem pré-selecionada');
@@ -9330,6 +9414,860 @@ select pg_temp.ok((select count(*) >= 3 from erp.auditoria where tabela = 'empre
 select pg_temp.como(null);
 rollback;
 select pg_temp.sis();
+
+\echo '# caixa das notas recebidas (Moises, 23/11/2026)'
+-- chaves de acesso fictícias: NF-e (44) e NFS-e nacional (50), com o emitente e o número dentro
+create function pg_temp.chave(p_tipo text, p_doc text, p_num text) returns text language sql as $$
+  select case p_tipo when 'nfe' then '352611' || lpad(p_doc, 14, '0') || '55' || '001' || lpad(p_num, 9, '0') || '1' || '12345678' || '0'
+                     else '3549904' || '1' || '2' || lpad(p_doc, 14, '0') || lpad(p_num, 13, '0') || '2611' || '123456789' || '0' end $$;
+create function pg_temp.nota(p_tipo text, p_doc text, p_num text, p_valor numeric, p_tomador text default '33333333000133') returns jsonb language sql as $$
+  select jsonb_build_object('tipo', p_tipo, 'chave', pg_temp.chave(p_tipo, p_doc, p_num), 'nsu', 10, 'tomador', p_tomador,
+    'emitente_documento', p_doc, 'emitente_nome', 'Emitente ' || p_doc, 'numero', p_num, 'serie', case p_tipo when 'nfe' then '1' else '' end,
+    'emissao', '2026-11-10', 'competencia', case p_tipo when 'nfse' then '2026-10-15' end, 'valor', p_valor, 'municipio', '3549904') $$;
+begin;
+select pg_temp.sis();
+delete from erp.listas_financeiro where user_id in (:'analista2', :'leitor', :'diretor2', :'gestor', :'contador');
+-- a gestora no AD e o contador no AF; a sócia é só diretora (sem lista)
+insert into erp.listas_financeiro (lista, user_id) values ('AD', :'gestor'), ('AF', :'contador');
+-- o serviço da busca grava; a mesma chave não entra duas vezes
+select erp.registrar_nota_recebida(:'spe', pg_temp.nota('nfse', '55555555000155', '500', 1500), '<NFSe>500</NFSe>', true) as nr1 \gset
+select pg_temp.ok(erp.registrar_nota_recebida(:'spe', pg_temp.nota('nfse', '55555555000155', '500', 1500), '<NFSe>outra</NFSe>', true) = :'nr1'
+                  and (select count(*) = 1 from erp.notas_recebidas where chave = pg_temp.chave('nfse', '55555555000155', '500'))
+                  and (select xml = '<NFSe>500</NFSe>' from erp.notas_recebidas_xml where nota_id = :'nr1'),
+  'notas recebidas: a mesma nota não entra duas vezes e o XML não é sobrescrito');
+select pg_temp.ok((select situacao = 'nova' and competencia = '2026-10-01' and numero = '500' and valor = 1500 from erp.notas_recebidas where id = :'nr1'),
+  'notas recebidas: entra nova, com a competência da NFS-e no primeiro dia do mês');
+select pg_temp.erro_igual($$select erp.registrar_nota_recebida('20000000-0000-0000-0000-000000000002', pg_temp.nota('nfse', '55555555000155', '501', 10), '<x/>', true)$$,
+  'A nota não é contra o CNPJ desta empresa', 'notas recebidas: nota de outro CNPJ não entra na caixa da empresa');
+select pg_temp.erro_igual(format($$select erp.registrar_nota_recebida(%L, pg_temp.nota('nfse', '55555555000155', '502', 10) || '{"numero": "503"}', '<x/>', true)$$, :'spe'),
+  'Emitente ou número não batem com a chave da NFS-e', 'notas recebidas: número que não bate com a chave da NFS-e é recusado');
+select pg_temp.erro_igual(format($$select erp.registrar_nota_recebida(%L, pg_temp.nota('nfe', '77777777000177', '9', 10) || '{"emitente_documento": "55555555000155"}', '<x/>', false)$$, :'spe'),
+  'Emitente, número ou série não batem com a chave da NF-e', 'notas recebidas: emitente que não bate com a chave da NF-e é recusado');
+select pg_temp.erro_igual(format($$select erp.registrar_nota_recebida(%L, pg_temp.nota('nfse', '55555555000155', '504', 10), '<x/>', false)$$, :'spe'),
+  'A NFS-e chega sempre completa', 'notas recebidas: NFS-e não tem resumo');
+-- NF-e: o resumo dá lugar ao completo uma vez; o completo não muda
+select erp.registrar_nota_recebida(:'spe', pg_temp.nota('nfe', '77777777000177', '123', 800), '<resNFe/>', false) as nr2 \gset
+select pg_temp.ok((select not completo from erp.notas_recebidas_xml where nota_id = :'nr2'), 'notas recebidas: NF-e entra pelo resumo');
+select erp.registrar_nota_recebida(:'spe', pg_temp.nota('nfe', '77777777000177', '123', 800), '<nfeProc>1</nfeProc>', true);
+select erp.registrar_nota_recebida(:'spe', pg_temp.nota('nfe', '77777777000177', '123', 800), '<nfeProc>2</nfeProc>', true);
+select pg_temp.ok((select completo and xml = '<nfeProc>1</nfeProc>' from erp.notas_recebidas_xml where nota_id = :'nr2'),
+  'notas recebidas: o completo substitui o resumo uma vez e depois não muda');
+select pg_temp.erro_igual(format($$update erp.notas_recebidas_xml set xml = 'x' where nota_id = %L$$, :'nr2'),
+  'O XML completo da nota não muda', 'notas recebidas: nem o sistema troca o XML completo');
+select erp.registrar_ciencia_nota_recebida(pg_temp.chave('nfe', '77777777000177', '123'));
+select pg_temp.ok((select ciencia_em is not null from erp.notas_recebidas where id = :'nr2'), 'notas recebidas: a ciência da NF-e fica registrada');
+-- cancelamento pelo emitente (o repetido não entra)
+select erp.registrar_evento_nota_recebida(:'spe', pg_temp.chave('nfe', '77777777000177', '123'), '110111', true, 11, '<evento/>');
+select erp.registrar_evento_nota_recebida(:'spe', pg_temp.chave('nfe', '77777777000177', '123'), '110111', true, 11, '<evento/>');
+select pg_temp.ok((select cancelada_em is not null from erp.notas_recebidas where id = :'nr2')
+                  and (select count(*) = 1 from erp.notas_recebidas_eventos where chave = pg_temp.chave('nfe', '77777777000177', '123')),
+  'notas recebidas: o cancelamento marca a nota, e o evento repetido não entra');
+-- leitura: o último NSU não volta
+select erp.registrar_leitura_notas(:'spe', 'adn', 950, 950, null, null);
+select pg_temp.erro_igual(format($$select erp.registrar_leitura_notas(%L, 'adn', 900, 950, null, null)$$, :'spe'),
+  'O último NSU lido não volta', 'notas recebidas: o último NSU lido não volta');
+-- nota de PJ: o emitente tem cadastro restrito
+update erp.pessoas set restrita = true where id = '10000000-0000-0000-0000-000000000008';
+select erp.registrar_nota_recebida(:'spe', pg_temp.nota('nfse', '88888888000188', '7', 9000), '<NFSe>PJ</NFSe>', true) as nr_pj \gset
+-- uma NFS-e de outra empresa do grupo, do mesmo emitente
+select em.id as emp_b, p.documento as tom_b from erp.empresas em join erp.pessoas p on p.id = em.pessoa_id
+ where em.id <> :'spe' and p.documento ~ '^[0-9]{14}$' order by p.documento limit 1 \gset
+select erp.registrar_nota_recebida(:'emp_b', pg_temp.nota('nfse', '55555555000155', '900', 700, :'tom_b'), '<NFSe>B</NFSe>', true) as nr_b \gset
+-- o emitente 555 já classificado como comum (a NFS-e de não classificado fica retida; ver as notas blindadas)
+insert into erp.emitentes_classificacao (documento, classe, por) values ('55555555000155', 'comum', :'diretor');
+
+-- só o serviço da busca grava
+select pg_temp.como(:'diretor');
+select pg_temp.falha(format($$select erp.registrar_nota_recebida(%L, pg_temp.nota('nfse', '55555555000155', '600', 10), '<x/>', true)$$, :'spe'),
+  'notas recebidas: nem o master grava nota na caixa');
+select pg_temp.erro_igual(format($$insert into erp.notas_recebidas (empresa_id, tipo, chave, nsu, emitente_documento, numero, emissao, competencia, valor)
+  values (%L, 'nfse', pg_temp.chave('nfse', '55555555000155', '601'), 1, '55555555000155', '601', '2026-11-01', '2026-11-01', 1)$$, :'spe'),
+  'Só o serviço da busca grava a nota recebida', 'notas recebidas: insert direto é recusado');
+select pg_temp.erro_igual(format($$update erp.notas_recebidas set valor = 1 where id = %L$$, :'nr1'),
+  'Os dados da nota recebida não mudam', 'notas recebidas: os dados da nota não mudam');
+select pg_temp.erro_igual(format($$delete from erp.notas_recebidas where id = %L$$, :'nr1'),
+  'A nota recebida não se apaga', 'notas recebidas: a nota não se apaga');
+select pg_temp.erro_igual(format($$select erp.registrar_leitura_notas(%L, 'adn', 1000, 1000, null, null)$$, :'spe'),
+  'Só o serviço da busca grava a leitura das notas', 'notas recebidas: a leitura só o serviço grava');
+
+-- quem vê: master, financeiro e diretor; a de PJ, só o master e os designados
+select pg_temp.ok((select count(*) = 4 from api.notas_recebidas()), 'notas recebidas: o master vê todas, inclusive a de PJ');
+select pg_temp.como(:'analista');
+select pg_temp.ok((select count(*) = 3 from api.notas_recebidas()) and not exists (select 1 from erp.notas_recebidas where id = :'nr_pj'),
+  'notas recebidas: o AO vê a caixa, menos a nota de PJ');
+select pg_temp.ok(api.nota_recebida_xml(:'nr1') = '<NFSe>500</NFSe>' and api.nota_recebida_xml(:'nr_pj') is null,
+  'notas recebidas: o XML segue a nota (o da de PJ não aparece)');
+select pg_temp.ok((select count(*) = 1 from api.notas_recebidas_leituras()), 'notas recebidas: o financeiro vê a última busca');
+select pg_temp.como(:'diretor2');
+select pg_temp.ok(not erp.financeiro() and (select count(*) = 3 from api.notas_recebidas()),
+  'notas recebidas: o diretor (sem lista do financeiro) vê a caixa, menos a de PJ');
+select pg_temp.como(:'analista2');
+select pg_temp.ok(not exists (select 1 from api.notas_recebidas()) and not exists (select 1 from api.notas_recebidas_leituras())
+                  and api.nota_recebida_xml(:'nr1') is null and not exists (select 1 from erp.notas_recebidas_eventos),
+  'notas recebidas: quem lança sem liberação não vê a caixa');
+select pg_temp.como(:'leitor');
+select pg_temp.ok(not exists (select 1 from api.notas_recebidas()), 'notas recebidas: a leitura sem liberação não vê a caixa');
+
+-- liberação por empresa e tipo: o master e o AD; ninguém mais
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format($$select api.liberar_notas_recebidas(%L, %L, 'nfse', 'Lança as notas da obra')$$, :'analista2', :'spe'),
+  'Só o master e o AD liberam quem vê as notas recebidas', 'notas recebidas: o AO não libera');
+select pg_temp.erro_igual(format($$insert into erp.notas_recebidas_acessos (user_id, empresa_id, tipo, motivo, por) values (%L, %L, 'nfse', 'xxx', %L)$$, :'analista2', :'spe', :'analista'),
+  'Só o master e o AD liberam quem vê as notas recebidas', 'notas recebidas: nem por baixo da API o AO libera');
+select pg_temp.como(:'contador');
+select pg_temp.erro_igual(format($$select api.liberar_notas_recebidas(%L, %L, 'nfse', 'Lança as notas da obra')$$, :'analista2', :'spe'),
+  'Só o master e o AD liberam quem vê as notas recebidas', 'notas recebidas: o AF não libera');
+select pg_temp.como(:'diretor2');
+select pg_temp.erro_igual(format($$select api.liberar_notas_recebidas(%L, %L, 'nfse', 'Lança as notas da obra')$$, :'analista2', :'spe'),
+  'Só o master e o AD liberam quem vê as notas recebidas', 'notas recebidas: o diretor sem AD não libera');
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual(format($$select api.liberar_notas_recebidas(%L, %L, 'nfse', '')$$, :'analista2', :'spe'),
+  'Diga o motivo da liberação', 'notas recebidas: liberar pede o motivo');
+select pg_temp.erro_igual(format($$select api.liberar_notas_recebidas(%L, %L, 'material', 'Obra')$$, :'analista2', :'spe'),
+  'Tipo de nota: nfe (material) ou nfse (serviço)', 'notas recebidas: o tipo é material (nfe) ou serviço (nfse)');
+select api.liberar_notas_recebidas(:'analista2', :'spe', 'nfse', 'Lança as notas de serviço da obra');
+select api.liberar_notas_recebidas(:'contador', :'emp_b', 'nfse', 'Confere as notas de serviço da outra empresa');
+select pg_temp.como(:'analista2');
+select pg_temp.ok((select count(*) = 1 and bool_and(id = :'nr1') from api.notas_recebidas()),
+  'notas recebidas: liberada para serviço, a pessoa vê as NFS-e da empresa, não as NF-e, a de PJ nem as de outra empresa');
+select pg_temp.ok((select count(*) = 1 from api.notas_recebidas_leituras())
+                  and (select count(*) = 1 and bool_and(user_id = :'analista2') from api.notas_recebidas_acessos()),
+  'notas recebidas: a pessoa liberada vê a última busca da empresa e só a própria liberação');
+select pg_temp.como(:'gestor');
+select api.liberar_notas_recebidas(:'analista2', :'spe', 'nfe', 'Compra os materiais da obra');
+select pg_temp.ok((select count(*) = 3 from api.notas_recebidas_acessos()), 'notas recebidas: o AD libera e vê as liberações');
+select pg_temp.como(:'analista2');
+select pg_temp.ok((select count(*) = 2 from api.notas_recebidas()), 'notas recebidas: liberada para material também, vê as NF-e');
+select pg_temp.como(:'gestor');
+select api.retirar_notas_recebidas(:'analista2', :'spe', 'nfe');
+select pg_temp.erro_igual(format($$select api.retirar_notas_recebidas(%L, %L, 'nfe')$$, :'analista2', :'spe'),
+  'Esta pessoa não tem essa liberação', 'notas recebidas: tirar o que não existe dá erro');
+select pg_temp.como(:'analista2');
+select pg_temp.ok((select count(*) = 1 from api.notas_recebidas()), 'notas recebidas: o AD tira a liberação e a NF-e some');
+
+-- quem lança acha a nota dele: pela chave, ou CNPJ + número + valor exatos
+select pg_temp.como(:'diretor');
+select api.retirar_notas_recebidas(:'analista2', :'spe', 'nfse');
+select pg_temp.como(:'analista2');
+select pg_temp.ok((select x->>'id' = :'nr1' and x->>'xml' = '<NFSe>500</NFSe>' from api.buscar_nota_recebida(pg_temp.chave('nfse', '55555555000155', '500')) x),
+  'notas recebidas: quem lança acha a nota pela chave, com o XML');
+select pg_temp.ok((select x->>'id' = :'nr1' from api.buscar_nota_recebida(null, '55.555.555/0001-55', '0500', 1500) x),
+  'notas recebidas: e pelo CNPJ, número e valor');
+select pg_temp.ok(api.buscar_nota_recebida(null, '55555555000155', '500', 1500.01) is null,
+  'notas recebidas: valor diferente não acha (não dá para adivinhar notas pela sequência)');
+select pg_temp.erro_igual($$select api.buscar_nota_recebida(null, '55555555000155', '500')$$,
+  'Informe a chave de acesso, ou o CNPJ do emitente com o número e o valor', 'notas recebidas: CNPJ e número sem o valor não buscam');
+select pg_temp.ok(api.buscar_nota_recebida(pg_temp.chave('nfse', '88888888000188', '7')) is null,
+  'notas recebidas: a nota de PJ não aparece na busca de quem não vê o PJ');
+select pg_temp.ok(erp._lanco_na_empresa(:'spe') and not erp._lanco_na_empresa(:'emp_b')
+                  and api.buscar_nota_recebida(null, '55555555000155', '900', 700) is null
+                  and (select x->>'id' = :'nr_b' from api.buscar_nota_recebida(pg_temp.chave('nfse', '55555555000155', '900')) x),
+  'notas recebidas: pelo emitente, só acha nota de empresa em que a pessoa lança (pela chave, acha)');
+select pg_temp.ok((select count(*) = 6 and count(*) filter (where criterio = 'emitente') = 3 and count(nota_id) = 3
+                     and bool_and(user_id = :'analista2') from erp.notas_recebidas_buscas),
+  'notas recebidas: toda busca fica registrada, com o critério e a nota achada');
+-- só ver (leitor) em todos os centros da empresa não basta para achar pelo emitente; pela chave, acha
+select pg_temp.sis();
+insert into erp.excecoes_centro (user_id, nucleo_economico_id, centro_custo_id, nivel)
+select :'analista2', n.id, nc.centro_custo_id, 'leitor' from erp.nucleos_economicos n
+  join erp.nucleo_centros nc on nc.nucleo_economico_id = n.id where n.empresa_id = :'spe'
+on conflict (user_id, nucleo_economico_id, centro_custo_id) do update set nivel = 'leitor', fim = null;
+select pg_temp.como(:'analista2');
+select pg_temp.ok(erp.escrevo() and not erp._lanco_na_empresa(:'spe')
+                  and api.buscar_nota_recebida(null, '55555555000155', '500', 1500) is null
+                  and (select x->>'id' = :'nr1' from api.buscar_nota_recebida(pg_temp.chave('nfse', '55555555000155', '500')) x),
+  'notas recebidas: quem só vê a empresa (sem lançar) não acha pelo emitente');
+select pg_temp.sis();
+delete from erp.excecoes_centro where user_id = :'analista2' and nucleo_economico_id in (select id from erp.nucleos_economicos where empresa_id = :'spe');
+select pg_temp.como(:'analista2');
+select count(api.buscar_nota_recebida(null, '55555555000155', '9' || g, 1)) from generate_series(1, 16) g;
+select pg_temp.erro_igual($$select api.buscar_nota_recebida(null, '55555555000155', '500', 1500)$$,
+  'Limite de buscas pelo emitente nesta hora; busque pela chave de acesso', 'notas recebidas: a busca pelo emitente tem limite por hora');
+select pg_temp.ok((select x->>'id' = :'nr1' from api.buscar_nota_recebida(pg_temp.chave('nfse', '55555555000155', '500')) x),
+  'notas recebidas: a busca pela chave não entra no limite');
+select pg_temp.erro_igual($$update erp.notas_recebidas_buscas set criterio = 'chave'$$,
+  'O registro das buscas não muda nem se apaga', 'notas recebidas: o registro das buscas não muda');
+select pg_temp.como(:'contador');
+select pg_temp.ok(not exists (select 1 from erp.notas_recebidas_buscas), 'notas recebidas: o AF não vê as buscas dos outros');
+select pg_temp.como(:'gestor');
+select pg_temp.ok(exists (select 1 from erp.notas_recebidas_buscas where user_id = :'analista2'), 'notas recebidas: o AD vê as buscas');
+select pg_temp.como(:'leitor');
+select pg_temp.erro_igual(format($$select api.buscar_nota_recebida(%L)$$, pg_temp.chave('nfse', '55555555000155', '500')),
+  'Sem permissão para lançar', 'notas recebidas: a leitura não busca');
+
+-- ignorar e voltar: o financeiro e o master, com o motivo
+select pg_temp.como(:'analista2');
+select pg_temp.erro_igual(format($$select api.ignorar_nota_recebida(%L, 'Nota de teste')$$, :'nr1'),
+  'Só o financeiro (AF, AO, AD) e o master ignoram nota recebida', 'notas recebidas: quem lança não ignora');
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format($$select api.ignorar_nota_recebida(%L, '')$$, :'nr1'),
+  'Diga o motivo de ignorar a nota', 'notas recebidas: ignorar pede o motivo');
+select pg_temp.erro_igual(format($$select api.ignorar_nota_recebida(%L, 'Nota de PJ')$$, :'nr_pj'),
+  'Nota não encontrada', 'notas recebidas: o AO não mexe na nota de PJ que ele não vê');
+select api.ignorar_nota_recebida(:'nr1', 'Serviço cobrado em duplicidade, o fornecedor vai cancelar');
+select pg_temp.ok((select situacao = 'ignorada' and ignorada_por = :'analista' from erp.notas_recebidas where id = :'nr1'),
+  'notas recebidas: o AO ignora com o motivo');
+select pg_temp.erro_igual(format($$select api.ignorar_nota_recebida(%L, 'De novo')$$, :'nr1'),
+  'Só a nota nova se ignora', 'notas recebidas: a ignorada não se ignora de novo');
+select pg_temp.ok(erp._lanco_na_empresa(:'spe') and api.buscar_nota_recebida(null, '55555555000155', '500', 1500) is null,
+  'notas recebidas: pelo emitente, a nota ignorada não aparece');
+select api.voltar_nota_recebida(:'nr1');
+select pg_temp.ok((select situacao = 'nova' and ignorada_motivo is null from erp.notas_recebidas where id = :'nr1'),
+  'notas recebidas: a ignorada volta a nova');
+
+-- a auditoria (do administrador) esconde a nota de PJ
+select pg_temp.como(:'ti');
+select pg_temp.ok(exists (select 1 from erp.auditoria where tabela = 'notas_recebidas' and registro = :'nr1')
+                  and not exists (select 1 from erp.auditoria where tabela = 'notas_recebidas' and registro = :'nr_pj'),
+  'notas recebidas: o administrador vê a auditoria das notas, menos a de PJ');
+select pg_temp.como(null);
+rollback;
+
+-- ligação com a nota lançada no ERP: a nota recebida acha a lançada e a lançada acha a recebida
+begin;
+select pg_temp.sis();
+select d.id as doc_l, d.empresa_id as emp_l, d.tipo as tipo_l, d.numero as num_l, p.documento as emit_l, e.documento as tom_l,
+       d.valor_bruto as val_l
+  from erp.documentos_fiscais d join erp.pessoas p on p.id = d.emitente_id
+  join erp.empresas em on em.id = d.empresa_id join erp.pessoas e on e.id = em.pessoa_id
+ where d.situacao = 'lancado' and d.tipo = 'nfse' and d.numero ~ '^[0-9]+$' and not p.restrita
+ order by d.lancado_em limit 1 \gset
+insert into erp.emitentes_classificacao (documento, classe, por) values (:'emit_l', 'comum', :'diretor');
+select em.id as emp_outra, p.documento as tom_outra from erp.empresas em join erp.pessoas p on p.id = em.pessoa_id
+ where em.id <> :'emp_l' and p.documento ~ '^[0-9]{14}$' order by p.documento limit 1 \gset
+-- outra chave para o mesmo emitente e número (outro município na chave da NFS-e)
+create function pg_temp.chave_b(p_doc text, p_num text) returns text language sql as $$
+  select '3550308' || substr(pg_temp.chave('nfse', p_doc, p_num), 8) $$;
+-- a mesma nota (emitente, número e valor) noutra empresa, com emissão mais nova: não liga ao documento desta
+select erp.registrar_nota_recebida(:'emp_outra', pg_temp.nota('nfse', :'emit_l', ltrim(:'num_l', '0'), :'val_l', :'tom_outra')
+         || jsonb_build_object('chave', pg_temp.chave_b(:'emit_l', ltrim(:'num_l', '0')), 'emissao', '2026-11-20'), '<NFSe/>', true) as nr_outra \gset
+select pg_temp.ok((select situacao = 'nova' and documento_id is null from erp.notas_recebidas where id = :'nr_outra'),
+  'notas recebidas: a nota de outra empresa, com o mesmo emitente e número, não se liga ao documento desta');
+-- com outro valor, não liga: fica nova para o financeiro ver
+select erp.registrar_nota_recebida(:'emp_l', pg_temp.nota('nfse', :'emit_l', ltrim(:'num_l', '0'), :'val_l'::numeric + 1, :'tom_l')
+         || jsonb_build_object('chave', '3304557' || substr(pg_temp.chave('nfse', :'emit_l', ltrim(:'num_l', '0')), 8), 'emissao', '2026-11-21'), '<NFSe/>', true) as nr_valor \gset
+select pg_temp.ok((select situacao = 'nova' from erp.notas_recebidas where id = :'nr_valor'),
+  'notas recebidas: com valor diferente do lançado, a nota não se liga');
+select erp.registrar_nota_recebida(:'emp_l', pg_temp.nota('nfse', :'emit_l', ltrim(:'num_l', '0'), :'val_l', :'tom_l'), '<NFSe/>', true) as nr_l \gset
+select pg_temp.ok((select situacao = 'vinculada' and documento_id = :'doc_l' from erp.notas_recebidas where id = :'nr_l'),
+  'notas recebidas: a nota que chega depois do lançamento se liga sozinha à nota lançada');
+select pg_temp.erro_igual(format($$select erp.registrar_nota_recebida(%L, pg_temp.nota('nfse', %L, %L, 100, %L) || '{"nsu": 99}', '<NFSe/>', true)$$,
+                                 :'emp_outra', :'emit_l', ltrim(:'num_l', '0'), :'tom_outra'),
+  'A nota já está na caixa de outra empresa', 'notas recebidas: a mesma chave não entra em outra empresa');
+-- a nota lançada que é cancelada solta a ligação (o cancelamento vem das operações do banco, como erp_situacao)
+set role erp_situacao;
+update erp.documentos_fiscais set situacao = 'cancelado', cancelamento = 'recusa' where id = :'doc_l';
+reset role;
+select pg_temp.ok((select situacao = 'nova' and documento_id is null from erp.notas_recebidas where id = :'nr_l'),
+  'notas recebidas: a nota lançada cancelada solta a nota recebida, que volta a nova');
+-- e a nota lançada depois acha a nota recebida que já estava na caixa
+-- (gravado em nome do analista sem lista, que passa a ser quem lançou)
+select pg_temp.como_dono(:'analista2');
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+select '70000000-0000-0000-0000-0000000000a7', d.empresa_id, d.emitente_id, 'nfse', '00' || ltrim(:'num_l', '0'), d.emissao, d.competencia, d.valor_bruto
+  from erp.documentos_fiscais d where d.id = :'doc_l';
+select pg_temp.sis();
+select pg_temp.ok((select situacao = 'nova' from erp.notas_recebidas where id = :'nr_l'), 'notas recebidas: a nota em rascunho no ERP ainda não liga');
+set role erp_situacao;
+update erp.documentos_fiscais set situacao = 'lancado', lancado_em = clock_timestamp() where id = '70000000-0000-0000-0000-0000000000a7';
+reset role;
+select pg_temp.ok((select situacao = 'vinculada' and documento_id = '70000000-0000-0000-0000-0000000000a7' from erp.notas_recebidas where id = :'nr_l')
+                  and (select situacao = 'nova' from erp.notas_recebidas where id = :'nr_outra')
+                  and (select situacao = 'nova' from erp.notas_recebidas where id = :'nr_valor'),
+  'notas recebidas: lançada no ERP (com zeros à esquerda no número), a nota se liga à da mesma empresa e valor que já estava na caixa');
+-- quem vê o documento lançado vê a nota ligada a ele; quem não vê, não
+delete from erp.listas_financeiro where user_id in (:'analista2', :'leitor');
+delete from erp.notas_recebidas_acessos where user_id in (:'analista2', :'leitor');
+select pg_temp.como(:'analista2');
+select pg_temp.como(:'analista2');
+select pg_temp.ok(erp.vejo_documento('70000000-0000-0000-0000-0000000000a7')
+                  and (select count(*) = 1 and bool_and(id = :'nr_l') from api.notas_recebidas()),
+  'notas recebidas: quem vê a nota lançada vê a nota recebida ligada a ela, e só ela');
+select pg_temp.como(:'leitor');
+select pg_temp.ok(not erp.vejo_documento('70000000-0000-0000-0000-0000000000a7') and not exists (select 1 from api.notas_recebidas()),
+  'notas recebidas: quem não vê a nota lançada não vê a nota recebida ligada');
+-- NF-e: a série também tem de bater, nos dois caminhos (a nota que chega depois e a lançada depois)
+select pg_temp.sis();
+select emitente_id as emit_id_l from erp.documentos_fiscais where id = :'doc_l' \gset
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, serie, emissao, competencia, valor_bruto) values
+  ('70000000-0000-0000-0000-0000000000b2', :'emp_l', :'emit_id_l', 'nfe', '4242', '2', '2026-11-10', '2026-11-01', 333),
+  ('70000000-0000-0000-0000-0000000000b3', :'emp_l', :'emit_id_l', 'nfe', '4242', '3', '2026-11-10', '2026-11-01', 333),
+  ('70000000-0000-0000-0000-0000000000b1', :'emp_l', :'emit_id_l', 'nfe', '04242', '001', '2026-11-10', '2026-11-01', 333);
+set role erp_situacao;
+update erp.documentos_fiscais set situacao = 'lancado', lancado_em = clock_timestamp() where id = '70000000-0000-0000-0000-0000000000b2';
+reset role;
+select erp.registrar_nota_recebida(:'emp_l', pg_temp.nota('nfe', :'emit_l', '4242', 333, :'tom_l'), '<resNFe/>', false) as nr_s \gset
+select pg_temp.ok((select situacao = 'nova' from erp.notas_recebidas where id = :'nr_s'),
+  'notas recebidas: a NF-e que chega não se liga à lançada de outra série');
+set role erp_situacao;
+update erp.documentos_fiscais set situacao = 'lancado', lancado_em = clock_timestamp() where id = '70000000-0000-0000-0000-0000000000b3';
+reset role;
+select pg_temp.ok((select situacao = 'nova' from erp.notas_recebidas where id = :'nr_s'),
+  'notas recebidas: nem a lançada depois com outra série');
+set role erp_situacao;
+update erp.documentos_fiscais set situacao = 'lancado', lancado_em = clock_timestamp() where id = '70000000-0000-0000-0000-0000000000b1';
+reset role;
+select pg_temp.ok((select situacao = 'vinculada' and documento_id = '70000000-0000-0000-0000-0000000000b1' from erp.notas_recebidas where id = :'nr_s'),
+  'notas recebidas: com a mesma série (zeros à esquerda não contam), a NF-e se liga');
+select pg_temp.como(null);
+rollback;
+
+\echo '# notas blindadas: PJ e emitente não classificado (S-144, Moises, 24/11/2026)'
+begin;
+select pg_temp.sis();
+delete from erp.listas_financeiro where user_id in (:'analista2', :'leitor', :'diretor2', :'gestor', :'contador');
+insert into erp.listas_financeiro (lista, user_id) values ('AD', :'gestor'), ('AF', :'contador');
+update erp.pessoas set restrita = true where id = '10000000-0000-0000-0000-000000000008';
+-- NFS-e de emitente não classificado (444), NF-e de não classificado (666) e NFS-e de PJ (888, pessoa restrita)
+select erp.registrar_nota_recebida(:'spe', pg_temp.nota('nfse', '44444444000144', '10', 300), '<NFSe>T</NFSe>', true) as nb_t \gset
+select erp.registrar_nota_recebida(:'spe', pg_temp.nota('nfe', '66666666000166', '11', 400), '<resNFe/>', false) as nb_m \gset
+select erp.registrar_nota_recebida(:'spe', pg_temp.nota('nfse', '88888888000188', '12', 9000), '<NFSe>PJ</NFSe>', true) as nb_pj \gset
+select erp.registrar_nota_recebida(:'spe', pg_temp.nota('nfse', '22222222000122', '13', 500), '<NFSe>T2</NFSe>', true) as nb_t2 \gset
+select erp.registrar_evento_nota_recebida(:'spe', pg_temp.chave('nfse', '44444444000144', '10'), '101103', false, 12, '<ev/>');
+create temp view minhas with (security_invoker = true) as select id from api.notas_recebidas() where id in (:'nb_t', :'nb_m', :'nb_pj');
+grant select on minhas to authenticated;
+
+-- os grupos: só o master põe e tira, sem motivo
+select pg_temp.como(:'gestor');
+select pg_temp.erro_igual(format($$select api.designar_notas(%L, 'pj')$$, :'diretor2'),
+  'Só o master põe gente nos grupos das notas', 'notas blindadas: o AD não põe gente nos grupos');
+select pg_temp.falha(format($$insert into erp.notas_grupos (user_id, grupo, por) values (%L, 'pj', %L)$$, :'gestor', :'gestor'),
+  'notas blindadas: nem por baixo da API');
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual(format($$select api.designar_notas(%L, 'aprova')$$, :'ti'),
+  'Administrador não aprova nada no ERP', 'notas blindadas: o administrador não entra no grupo de aprovar');
+select pg_temp.erro_igual(format($$select api.designar_notas(%L, 'todos')$$, :'gestor'),
+  'Grupo: pj (vê as notas de PJ), triagem (vê as de emitente não classificado) ou aprova (aprova a lista de PJ)',
+  'notas blindadas: só os três grupos');
+select api.designar_notas(:'diretor2', 'pj');
+select api.designar_notas(:'analista2', 'triagem');
+select api.designar_notas(:'gestor', 'aprova');
+select erp.designar_pj(:'contador', 'Cuida da lista de PJ');
+select erp.designar_pj(:'ti', 'TI que também cuida da lista de PJ');
+select api.liberar_notas_recebidas(:'leitor', :'spe', 'nfse', 'Confere as notas de serviço');
+select pg_temp.erro_igual(format($$select api.designar_notas(%L, 'pj')$$, :'diretor2'),
+  'Esta pessoa já está no grupo', 'notas blindadas: a mesma pessoa não entra duas vezes');
+select pg_temp.ok((select count(*) = 3 from api.notas_grupos()), 'notas blindadas: o master vê os grupos');
+select pg_temp.como(:'analista2');
+select pg_temp.ok((select count(*) = 1 and bool_and(grupo = 'triagem') from api.notas_grupos()), 'notas blindadas: cada um vê só as próprias entradas');
+
+-- quem vê
+select pg_temp.como(:'diretor');
+select pg_temp.ok((select count(*) = 3 from minhas), 'notas blindadas: o master vê as três');
+select pg_temp.como(:'analista');
+select pg_temp.ok((select count(*) = 1 and bool_and(id = :'nb_m') from minhas)
+                  and api.nota_recebida_xml(:'nb_t') is null and api.nota_recebida_xml(:'nb_pj') is null
+                  and not exists (select 1 from erp.notas_recebidas_eventos where chave = pg_temp.chave('nfse', '44444444000144', '10')),
+  'notas blindadas: o financeiro vê a NF-e de não classificado, não a NFS-e retida nem a de PJ (nem XML nem evento)');
+select pg_temp.como(:'contador');
+select pg_temp.ok(erp.vejo_pj() and (select count(*) = 1 and bool_and(id = :'nb_m') from minhas),
+  'notas blindadas: quem vê o PJ (lista do PJ) não vê as notas de PJ: o grupo das notas é outro');
+select pg_temp.como(:'diretor2');
+select pg_temp.ok((select count(*) = 2 and bool_and(id in (:'nb_m', :'nb_pj')) from minhas) and api.nota_recebida_xml(:'nb_pj') = '<NFSe>PJ</NFSe>',
+  'notas blindadas: o grupo pj vê a nota de PJ, não a NFS-e de não classificado');
+select pg_temp.como(:'analista2');
+select pg_temp.ok((select count(*) = 1 and bool_and(id = :'nb_t') from minhas) and api.nota_recebida_xml(:'nb_t') = '<NFSe>T</NFSe>'
+                  and exists (select 1 from erp.notas_recebidas_eventos where chave = pg_temp.chave('nfse', '44444444000144', '10')),
+  'notas blindadas: a triagem vê a NFS-e de não classificado (com XML e evento), não a de PJ');
+select pg_temp.como(:'leitor');
+select pg_temp.ok(not exists (select 1 from minhas), 'notas blindadas: liberado para serviço não vê a retida nem a de PJ');
+-- a busca, pelas duas vias
+select pg_temp.como(:'analista');
+select pg_temp.ok(api.buscar_nota_recebida(pg_temp.chave('nfse', '44444444000144', '10')) is null
+                  and api.buscar_nota_recebida(pg_temp.chave('nfse', '88888888000188', '12')) is null
+                  and api.buscar_nota_recebida(pg_temp.chave('nfe', '66666666000166', '11')) is not null,
+  'notas blindadas: pela chave, quem lança não acha a retida nem a de PJ');
+select pg_temp.como(:'analista2');
+select pg_temp.ok(erp._lanco_na_empresa(:'spe') and api.buscar_nota_recebida(null, '88888888000188', '12', 9000) is null
+                  and api.buscar_nota_recebida(pg_temp.chave('nfse', '88888888000188', '12')) is null
+                  and (api.buscar_nota_recebida(null, '44444444000144', '10', 300) ->> 'id') = :'nb_t',
+  'notas blindadas: pelo emitente e pela chave, a triagem acha a retida e não a de PJ');
+-- a auditoria: o administrador (mesmo vendo o PJ) não vê as linhas da retida nem da de PJ
+select pg_temp.como(:'ti');
+select pg_temp.ok(erp.vejo_pj() and exists (select 1 from erp.auditoria where tabela = 'notas_recebidas' and registro = :'nb_m')
+                  and not exists (select 1 from erp.auditoria where tabela = 'notas_recebidas' and registro in (:'nb_t', :'nb_pj')),
+  'notas blindadas: a auditoria esconde a retida e a de PJ do administrador');
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format($$select api.ignorar_nota_recebida(%L, 'Teste de retida')$$, :'nb_t'),
+  'Nota não encontrada', 'notas blindadas: o financeiro não ignora a nota retida que não vê');
+
+-- quem saiu (inativo ou só da sucessão) deixa de valer no grupo, mesmo sem ser tirado
+select pg_temp.sis();
+update erp.usuarios set ativo = false where id = :'analista2';
+select pg_temp.como(:'analista2');
+select pg_temp.ok(not erp._no_grupo_notas('triagem') and not exists (select 1 from minhas),
+  'notas blindadas: usuário inativo no grupo da triagem não vê a retida');
+select pg_temp.sis();
+update erp.usuarios set ativo = true, so_sucessao = true, papel = 'leitura' where id = :'analista2';
+select pg_temp.como(:'analista2');
+select pg_temp.ok(not erp._no_grupo_notas('triagem') and not exists (select 1 from minhas),
+  'notas blindadas: usuário só da sucessão no grupo da triagem não vê a retida');
+select pg_temp.sis();
+update erp.usuarios set so_sucessao = false, papel = 'analista' where id = :'analista2';
+-- o grupo só muda pelo master, nem gravando como o papel das operações
+select pg_temp.como_dono(:'gestor');
+set role erp_acesso;
+select pg_temp.erro_igual(format($$insert into erp.notas_grupos (user_id, grupo, por) values (%L, 'pj', %L)$$, :'gestor', :'gestor'),
+  'Só o master põe e tira gente dos grupos das notas', 'notas blindadas: nem o papel das operações põe gente no grupo sem o master');
+reset role;
+-- classificar como comum: só o master e a triagem (nem quem vê o PJ, nem o grupo de aprovar)
+select pg_temp.como(:'contador');
+select pg_temp.erro_igual($$select api.classificar_emitente('22222222000122', 'comum')$$,
+  'Só o master e a triagem classificam o emitente como comum', 'notas blindadas: quem vê o PJ não classifica como comum');
+select pg_temp.como(:'gestor');
+select pg_temp.erro_igual($$select api.classificar_emitente('22222222000122', 'comum')$$,
+  'Sem permissão para classificar emitentes', 'notas blindadas: o grupo de aprovar não classifica');
+select pg_temp.como(:'diretor2');
+select pg_temp.erro_igual($$select api.classificar_emitente('22222222000122', 'comum')$$,
+  'Sem permissão para classificar emitentes', 'notas blindadas: o grupo pj não classifica');
+-- classificar: quem pode e o que a triagem alcança
+select pg_temp.erro_igual($$select api.classificar_emitente('44444444000144', 'comum')$$,
+  'Sem permissão para classificar emitentes', 'notas blindadas: o financeiro não classifica');
+select pg_temp.como(:'analista2');
+select pg_temp.erro_igual($$select api.classificar_emitente('12121212000112', 'comum')$$,
+  'Este emitente não está na triagem', 'notas blindadas: a triagem não classifica CNPJ sem nota');
+select pg_temp.erro_igual($$select api.classificar_emitente('88888888000188', 'comum')$$,
+  'Este emitente não está na triagem', 'notas blindadas: nem o PJ (mesmo erro: não revela que é PJ)');
+select pg_temp.erro_igual($$select api.classificar_emitente('88888888000188', 'pj')$$,
+  'Este emitente não está na triagem', 'notas blindadas: pedir o PJ de quem já é PJ dá o mesmo erro');
+select pg_temp.erro_igual($$select api.classificar_emitente('44444444000144', 'outra')$$,
+  'Classe: comum ou pj', 'notas blindadas: só as duas classes');
+select pg_temp.ok(api.classificar_emitente('44.444.444/0001-44', 'comum') = 'feito', 'notas blindadas: a triagem classifica como comum na hora');
+select pg_temp.como(:'analista');
+select pg_temp.ok((select count(*) = 2 from minhas) and api.nota_recebida_xml(:'nb_t') = '<NFSe>T</NFSe>',
+  'notas blindadas: classificada como comum, a NFS-e vai para a caixa do financeiro');
+-- comum → pj pela triagem: pedido, e a nota some na hora
+select pg_temp.como(:'analista2');
+select pg_temp.ok(api.classificar_emitente('44444444000144', 'pj') = 'pedido', 'notas blindadas: a triagem pede o PJ de um comum');
+select pg_temp.erro_igual($$select api.classificar_emitente('44444444000144', 'pj')$$,
+  'Este emitente não está na triagem', 'notas blindadas: com o pedido esperando, a triagem não pede de novo');
+select pg_temp.ok((select count(*) = 1 and bool_and(para = 'pj' and situacao = 'pendente') from api.emitentes_pedidos())
+                  and not exists (select 1 from erp.emitentes_classificacao where classe = 'pj'),
+  'notas blindadas: quem pediu vê o próprio pedido; a triagem não vê classe pj');
+select pg_temp.erro_igual(format($$select api.decidir_pedido_emitente(%L, true)$$, (select id from erp.emitentes_pedidos limit 1)),
+  'Só o master e quem ele designou aprovam a lista de PJ', 'notas blindadas: a triagem não aprova');
+select pg_temp.como(:'analista');
+select pg_temp.ok((select count(*) = 1 and bool_and(id = :'nb_m') from minhas) and not exists (select 1 from api.emitentes_pedidos()),
+  'notas blindadas: o pedido de incluir no PJ tira a nota da caixa na hora; o financeiro não vê os pedidos');
+select pg_temp.como(:'gestor');
+select id as ped1 from api.emitentes_pedidos() where situacao = 'pendente' \gset
+select api.decidir_pedido_emitente(:'ped1', false);
+select pg_temp.erro_igual(format($$select api.decidir_pedido_emitente(%L, true)$$, :'ped1'),
+  'O pedido já foi decidido', 'notas blindadas: o pedido decidido não se decide de novo');
+select pg_temp.como_dono(:'gestor');
+set role erp_situacao;
+select pg_temp.erro_igual(format($$update erp.emitentes_pedidos set situacao = 'aprovado' where id = %L$$, :'ped1'),
+  'O pedido já foi decidido', 'notas blindadas: nem por baixo o pedido decidido muda');
+reset role;
+select pg_temp.como(:'analista');
+select pg_temp.ok((select count(*) = 2 from minhas), 'notas blindadas: recusado, o emitente volta ao que era (comum) e a nota volta');
+-- quem cuida da lista de PJ inclui e tira, sempre com aprovação
+select pg_temp.como(:'contador');
+select pg_temp.ok(api.classificar_emitente('44444444000144', 'pj') = 'pedido', 'notas blindadas: quem vê o PJ pede para incluir');
+select pg_temp.como(:'gestor');
+select api.decidir_pedido_emitente((select id from erp.emitentes_pedidos where situacao = 'pendente'), true);
+select pg_temp.como(:'diretor2');
+select pg_temp.ok((select count(*) = 3 from minhas), 'notas blindadas: aprovado, o grupo pj vê a nota do novo PJ');
+select pg_temp.como(:'analista');
+select pg_temp.ok((select count(*) = 1 from minhas), 'notas blindadas: e o financeiro não');
+select pg_temp.como(:'diretor');
+select api.designar_notas(:'diretor2', 'triagem');
+select pg_temp.como(:'diretor2');
+select pg_temp.erro_igual($$select api.classificar_emitente('44444444000144', 'comum')$$,
+  'Tirar do PJ é com quem cuida da lista de PJ', 'notas blindadas: quem não é master nem vê o PJ não tira do PJ (nem no grupo pj e na triagem)');
+select pg_temp.como(:'analista2');
+select pg_temp.erro_igual($$select api.classificar_emitente('44444444000144', 'comum')$$,
+  'Este emitente não está na triagem', 'notas blindadas: a triagem não tira do PJ');
+select pg_temp.como(:'contador');
+select pg_temp.ok(api.classificar_emitente('44444444000144', 'comum') = 'pedido', 'notas blindadas: quem vê o PJ pede para tirar');
+select pg_temp.como(:'analista');
+select pg_temp.ok((select count(*) = 1 from minhas), 'notas blindadas: o pedido de tirar não solta a nota antes da aprovação');
+select pg_temp.como(:'gestor');
+select api.decidir_pedido_emitente((select id from erp.emitentes_pedidos where situacao = 'pendente'), true);
+select pg_temp.como(:'analista');
+select pg_temp.ok((select count(*) = 2 from minhas), 'notas blindadas: aprovado o tirar, a nota volta para a caixa');
+-- quem pediu não aprova o próprio pedido; a pessoa no cadastro de PJ não sai por aqui
+select pg_temp.como(:'diretor');
+select api.designar_notas(:'contador', 'aprova');
+select pg_temp.como(:'contador');
+select pg_temp.ok(api.classificar_emitente('66666666000166', 'pj') = 'pedido', 'notas blindadas: quem vê o PJ pede o PJ de um não classificado');
+select pg_temp.erro_igual(format($$select api.decidir_pedido_emitente(%L, true)$$, (select id from erp.emitentes_pedidos where situacao = 'pendente')),
+  'Quem pediu não aprova o próprio pedido', 'notas blindadas: quem pediu não aprova');
+select pg_temp.erro_igual($$select api.classificar_emitente('88888888000188', 'comum')$$,
+  'O emitente está no cadastro de PJ: a marca da pessoa só o master muda, pelo cadastro', 'notas blindadas: a pessoa restrita não sai do PJ por aqui');
+select pg_temp.como(:'analista');
+select pg_temp.ok((select count(*) = 1 and bool_and(id = :'nb_t') from minhas), 'notas blindadas: o pedido do PJ esconde também a NF-e na hora');
+-- nada se grava por fora
+select pg_temp.como(:'contador');
+select pg_temp.falha($$update erp.emitentes_classificacao set classe = 'comum'$$, 'notas blindadas: a classificação não se grava direto pela API');
+select pg_temp.falha($$insert into erp.emitentes_classificacao (documento, classe, por) values ('12121212000112', 'comum', '00000000-0000-0000-0000-00000000000c')$$,
+  'notas blindadas: nem se inclui direto');
+-- o master classifica na hora; a auditoria dos pedidos não aparece ao administrador
+select pg_temp.como(:'diretor');
+select pg_temp.ok(api.classificar_emitente('12121212000112', 'pj') = 'feito', 'notas blindadas: o master classifica na hora');
+select pg_temp.como(:'ti');
+select pg_temp.ok(not exists (select 1 from erp.auditoria where tabela in ('emitentes_classificacao', 'emitentes_pedidos')),
+  'notas blindadas: a classificação e os pedidos não aparecem na auditoria do administrador');
+-- retirado do grupo, deixa de ver
+select pg_temp.como(:'diretor');
+select api.retirar_notas(:'diretor2', 'pj');
+select pg_temp.como(:'diretor2');
+select pg_temp.ok(not exists (select 1 from minhas where id = :'nb_pj'), 'notas blindadas: tirado do grupo pj, deixa de ver a nota de PJ');
+select pg_temp.como(null);
+rollback;
+
+-- a NFS-e de não classificado não se liga sozinha; classificada como comum, liga
+begin;
+select pg_temp.sis();
+select d.id as doc_c, d.empresa_id as emp_c, d.numero as num_c, p.documento as emit_c, e.documento as tom_c, d.valor_bruto as val_c
+  from erp.documentos_fiscais d join erp.pessoas p on p.id = d.emitente_id
+  join erp.empresas em on em.id = d.empresa_id join erp.pessoas e on e.id = em.pessoa_id
+ where d.situacao = 'lancado' and d.tipo = 'nfse' and d.numero ~ '^[0-9]+$' and not p.restrita
+ order by d.lancado_em limit 1 \gset
+select erp.registrar_nota_recebida(:'emp_c', pg_temp.nota('nfse', :'emit_c', ltrim(:'num_c', '0'), :'val_c', :'tom_c'), '<NFSe/>', true) as nr_c \gset
+select pg_temp.ok((select situacao = 'nova' and documento_id is null from erp.notas_recebidas where id = :'nr_c'),
+  'notas blindadas: a NFS-e de não classificado não se liga sozinha à nota lançada');
+-- e pelo outro caminho: a nota lançada depois (gatilho do documento) também não a liga
+set role erp_situacao;
+update erp.documentos_fiscais set situacao = 'cancelado', cancelamento = 'recusa' where id = :'doc_c';
+reset role;
+select pg_temp.como_dono(:'analista2');
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+select '70000000-0000-0000-0000-0000000000c8', d.empresa_id, d.emitente_id, 'nfse', d.numero, d.emissao, d.competencia, d.valor_bruto
+  from erp.documentos_fiscais d where d.id = :'doc_c';
+select pg_temp.sis();
+set role erp_situacao;
+update erp.documentos_fiscais set situacao = 'lancado', lancado_em = clock_timestamp() where id = '70000000-0000-0000-0000-0000000000c8';
+reset role;
+select pg_temp.ok((select situacao = 'nova' and documento_id is null from erp.notas_recebidas where id = :'nr_c'),
+  'notas blindadas: lançada a nota depois, o gatilho do documento não liga a NFS-e de não classificado');
+select pg_temp.como(:'diretor');
+select api.classificar_emitente(:'emit_c', 'comum');
+select pg_temp.ok((select situacao = 'vinculada' and documento_id = '70000000-0000-0000-0000-0000000000c8' from erp.notas_recebidas where id = :'nr_c'),
+  'notas blindadas: classificado como comum, a nota se liga');
+select pg_temp.como(null);
+rollback;
+
+-- o login do serviço da busca: só as funções da caixa, e é sistema só dentro delas
+begin;
+select pg_temp.sis();
+select pg_temp.ok(not exists (select 1 from pg_auth_members m join pg_roles r on r.oid = m.member where r.rolname = 'erp_busca_notas')
+                  and not exists (select 1 from pg_auth_members m join pg_roles r on r.oid = m.roleid where r.rolname = 'erp_busca_notas')
+                  and not exists (select 1 from information_schema.role_table_grants where grantee = 'erp_busca_notas')
+                  and (select count(*) = 7 from pg_proc p join pg_namespace s on s.oid = p.pronamespace
+                        where s.nspname not in ('pg_catalog', 'information_schema') and s.nspname !~ '^pg_(temp|toast)'
+                          and has_schema_privilege('erp_busca_notas', s.oid, 'USAGE')
+                          and p.prorettype <> 'trigger'::regtype   -- função de gatilho não se chama direto
+                          and has_function_privilege('erp_busca_notas', p.oid, 'EXECUTE'))
+                  and not has_schema_privilege('erp_busca_notas', 'net', 'USAGE'),
+  'busca: o login do serviço não é membro de nada, não tem tabela e só executa as 7 funções dele (em nenhum esquema; nem o net)');
+set session authorization erp_busca_notas;
+select pg_temp.ok(erp.busca_notas_empresa(:'spe') = '33333333000133', 'busca: o serviço lê o CNPJ da empresa');
+select erp.registrar_nota_recebida(:'spe', pg_temp.nota('nfe', '77777777000177', '321', 450), '<resNFe/>', false) as nb \gset
+select erp.registrar_leitura_notas(:'spe', 'sefaz', 40, 90, null, null);
+select pg_temp.ok((select ultimo_nsu = 40 and lida from erp.busca_notas_leitura(:'spe', 'sefaz'))
+                  and (select not lida and ultimo_nsu = 0 from erp.busca_notas_leitura(:'spe', 'adn'))
+                  and (select array_agg(c) = array[pg_temp.chave('nfe', '77777777000177', '321')]
+                         from erp.busca_notas_sem_ciencia(:'spe', 20) c) is not true,
+  'busca: o serviço grava a nota e a leitura e lê onde parou');
+-- ciência só até 10 dias da autorização (NT 2020.001; a SEFAZ recusa depois com 596): a nota de 10/11 já não entra;
+-- as de dentro do prazo vêm da mais nova para a mais velha
+select erp.registrar_nota_recebida(:'spe', pg_temp.nota('nfe', '77777777000177', '322', 450) || jsonb_build_object('emissao', (current_date - 3)::text), '<resNFe/>', false);
+select erp.registrar_nota_recebida(:'spe', pg_temp.nota('nfe', '77777777000177', '323', 450) || jsonb_build_object('emissao', (current_date - 1)::text), '<resNFe/>', false);
+select erp.registrar_nota_recebida(:'spe', pg_temp.nota('nfe', '77777777000177', '324', 450) || jsonb_build_object('emissao', (current_date - 11)::text), '<resNFe/>', false);
+select pg_temp.ok((select array_agg(c) from erp.busca_notas_sem_ciencia(:'spe', 20) c)
+                  = array[pg_temp.chave('nfe', '77777777000177', '323'), pg_temp.chave('nfe', '77777777000177', '322')],
+  'busca: pede ciência só das NF-e em resumo dos últimos 10 dias, da mais nova para a mais velha');
+select erp.registrar_ciencia_nota_recebida(pg_temp.chave('nfe', '77777777000177', '323'));
+select erp.registrar_ciencia_nota_recebida(pg_temp.chave('nfe', '77777777000177', '322'));
+select erp.registrar_ciencia_nota_recebida(pg_temp.chave('nfe', '77777777000177', '321'));
+select pg_temp.ok(not exists (select 1 from erp.busca_notas_sem_ciencia(:'spe', 20)), 'busca: com a ciência, a nota sai da lista');
+select pg_temp.erro_igual('select count(*) from erp.notas_recebidas', 'permission denied for table notas_recebidas',
+  'busca: o serviço não lê a tabela direto');
+select pg_temp.erro_igual('select count(*) from erp.titulos', 'permission denied for table titulos', 'busca: nem outra tabela do ERP');
+select pg_temp.erro_igual(format($$select erp.ignorar_nota_recebida(%L, 'xxxx')$$, :'nb'), 'permission denied for function ignorar_nota_recebida',
+  'busca: nem outra função');
+-- a mesma consulta do serviço (servicos/busca-notas/banco.ts, SQL_NET_ABERTO), que ele roda no começo de cada rodada
+select pg_temp.ok(not (select exists (select 1 from pg_namespace n where n.nspname = 'net'
+  and (has_schema_privilege(n.oid, 'USAGE')
+       or exists (select 1 from pg_class c where c.relnamespace = n.oid and has_table_privilege(c.oid, 'SELECT'))))),
+  'busca: o serviço confere que não alcança o net, e consegue conferir');
+select pg_temp.erro_igual($$select net.http_post('http://exemplo.invalido')$$, 'permission denied for schema net',
+  'busca: o serviço não chama a rede do banco (pg_net, S-143)');
+select pg_temp.erro_igual('set role erp_sistema', 'permission denied to set role "erp_sistema"', 'busca: o serviço não vira o papel do sistema');
+-- com um login de usuário posto, deixa de ser sistema: não grava em nome de ninguém
+select set_config('request.jwt.claim.sub', :'diretor', false);
+select pg_temp.erro_igual(format($$select erp.registrar_leitura_notas(%L, 'sefaz', 50, 90, null, null)$$, :'spe'),
+  'Só o serviço da busca grava a leitura das notas', 'busca: com login de usuário posto, o serviço não grava');
+select set_config('request.jwt.claim.sub', '', false);
+reset session authorization;
+select pg_temp.sis();
+select pg_temp.ok((select ciencia_em is not null from erp.notas_recebidas where id = :'nb')
+                  and exists (select 1 from erp.auditoria where tabela = 'notas_recebidas' and registro = :'nb' and por is null),
+  'busca: o que o serviço grava fica na auditoria como sistema');
+-- a janela do login (migrations 20261123005000 e 006000): abre, fecha e derruba; com o net aberto, abre e avisa (risco aceito)
+-- (a resposta num comando e o catálogo no seguinte: o mesmo comando ainda vê o catálogo de antes)
+select erp.busca_notas_janela('abrir') as j \gset
+select pg_temp.ok(:'j' = 'aberta' and (select rolcanlogin from pg_roles where rolname = 'erp_busca_notas'), 'janela da busca: abre o login');
+select erp.busca_notas_janela('fechar') as j \gset
+select pg_temp.ok(:'j' = 'fechada' and not (select rolcanlogin from pg_roles where rolname = 'erp_busca_notas'), 'janela da busca: fecha o login');
+select erp.busca_notas_janela('abrir');
+select erp.busca_notas_janela('encerrar') as j \gset
+select pg_temp.ok(:'j' like 'fechada; 0 %' and not (select rolcanlogin from pg_roles where rolname = 'erp_busca_notas'), 'janela da busca: encerrar fecha e derruba as sessões');
+grant usage on schema net to public;
+select erp.busca_notas_janela('abrir') as j \gset
+select pg_temp.ok(:'j' = 'aberta (net aberto)' and (select rolcanlogin from pg_roles where rolname = 'erp_busca_notas'), 'janela da busca: com o net aberto ao login, abre e avisa (S-143, risco aceito)');
+select erp.busca_notas_janela('fechar');
+revoke usage on schema net from public;
+select pg_temp.erro_igual($$select erp.busca_notas_janela('ligar')$$, 'Ação da janela: abrir, fechar ou encerrar', 'janela da busca: só as três ações');
+select pg_temp.ok(not has_function_privilege('erp_busca_notas', 'erp.busca_notas_janela(text)', 'EXECUTE')
+                  and not has_function_privilege('authenticated', 'erp.busca_notas_janela(text)', 'EXECUTE')
+                  and not has_function_privilege('service_role', 'erp.busca_notas_janela(text)', 'EXECUTE'),
+  'janela da busca: só o dono das migrations chama');
+rollback;
+
+-- ---------------------------------------------------------------------
+\echo '# CNPJ alfanumérico (Receita, desde julho/2026)'
+begin;
+select pg_temp.como(null);
+select pg_temp.ok(erp.cnpj_valido('12ABC34501DE35') and erp.cnpj_valido('29732041000154')
+                  and not erp.cnpj_valido('12ABC34501DE53') and not erp.cnpj_valido('12abc34501de35')
+                  and not erp.cnpj_valido('11111111111111') and not erp.cnpj_valido('12ABC34501DE3') and not erp.cnpj_valido(null),
+  'cnpj: o DV confere nos dois formatos (letra vale ASCII − 48), só em maiúsculas');
+select pg_temp.ok(erp.cnpj_aceito('12ABC34501DE35') and erp.cnpj_aceito('29732041000154') and erp.cnpj_aceito('29732041000199')
+                  and not erp.cnpj_aceito('12ABC34501DE53') and not erp.cnpj_aceito('12abc34501de35'),
+  'cnpj: o só de dígitos continua como estava; o com letra só com o DV certo');
+insert into erp.pessoas (id, tipo, nome, documento) values ('5a000000-0000-0000-0000-000000000001', 'juridica', 'Alfa Teste Ltda', '12ABC34501DE35');
+insert into erp.pessoa_papeis (pessoa_id, papel) values ('5a000000-0000-0000-0000-000000000001', 'fornecedor');
+select pg_temp.ok(true, 'cnpj: credor com CNPJ alfanumérico válido entra');
+select pg_temp.falha($q$insert into erp.pessoas (tipo, nome, documento) values ('juridica', 'Erro', '12ABC34501DE53')$q$, 'cnpj: alfanumérico com DV errado é recusado');
+select pg_temp.falha($q$insert into erp.pessoas (tipo, nome, documento) values ('juridica', 'Erro', '12abc34501de35')$q$, 'cnpj: minúsculas são recusadas');
+select pg_temp.falha($q$insert into erp.pessoas (tipo, nome, documento) values ('fisica', 'Erro', '5299822472A')$q$, 'cnpj: CPF continua só com dígitos');
+select pg_temp.ok(erp.chave_pix_valida('cpf_cnpj', '12ABC34501DE35') and not erp.chave_pix_valida('cpf_cnpj', '12ABC34501DE53')
+                  and erp.chave_pix_valida('cpf_cnpj', '52998224725'),
+  'cnpj: chave PIX CPF/CNPJ aceita o alfanumérico com o DV certo');
+select pg_temp.ok((select bool_and(pg_get_constraintdef(oid) like '%A-Z%') from pg_constraint
+                    where conrelid in ('erp.pix_conferencias'::regclass, 'erp.boleto_conferencias'::regclass) and contype = 'c'
+                      and pg_get_constraintdef(oid) like '%cpf_cnpj ~%'),
+  'cnpj: a conferência de quem recebe guarda o documento com letras');
+select pg_temp.ok(exists (select 1 from api.fornecedores('12.ABC.345/01DE') where id = '5a000000-0000-0000-0000-000000000001')
+                  and exists (select 1 from api.fornecedores('12abc') where id = '5a000000-0000-0000-0000-000000000001'),
+  'cnpj: a busca do fornecedor pelo documento não joga fora as letras');
+-- revisão do patch: as mutações que sobreviviam
+select pg_temp.ok(not erp.cnpj_valido('12ABC34501DE36') and not erp.cnpj_aceito('12ABC34501DE36'), 'cnpj: o 2º DV também é conferido');
+select pg_temp.falha($q$insert into erp.pessoas (tipo, nome, documento) values ('juridica', 'Erro', '12abc34501de35')$q$, 'cnpj: credor com letras minúsculas é recusado (evita credor duplicado)');
+insert into erp.compromisso_pagamentos (compromisso_id, modo, banco, agencia, conta, conta_digito, conta_tipo, titular_documento, excecao)
+  select c.id, 'ted', '341', '1234', '56789', '0', 'corrente', '12ABC34501DE35', 'teste do titular alfanumérico'
+    from erp.compromissos c where not exists (select 1 from erp.compromisso_pagamentos g where g.compromisso_id = c.id) limit 1;
+select pg_temp.ok(exists (select 1 from erp.compromisso_pagamentos where titular_documento = '12ABC34501DE35'), 'cnpj: titular da TED com CNPJ alfanumérico válido entra');
+select pg_temp.falha($q$update erp.compromisso_pagamentos set titular_documento = '12ABC34501DE53' where modo = 'ted'$q$, 'cnpj: titular da TED com DV errado é recusado');
+select pg_temp.ok((select bool_and(erp._credor_confere(jsonb_build_object('cpf_cnpj', p.documento, 'nome', p.nome), t.id)
+                                   and not erp._credor_confere(jsonb_build_object('cpf_cnpj', 'CPF' || left(p.documento, 11), 'nome', p.nome), t.id))
+                     from (select * from erp.titulos limit 5) t join erp.pessoas p on p.id = t.pessoa_id where p.documento is not null)
+                  and not erp._credor_confere('{"cpf_cnpj": "CPF12345678901"}'::jsonb, null),
+  'cnpj: documento da conferência com letras soltas (CPF12345678901) não casa com o credor');
+select pg_temp.como(:'diretor');
+select pg_temp.ok((api.identificar_nota('{"emitente": "12.ABC.345/01DE-35"}'::jsonb)->'fornecedor'->>'id') = '5a000000-0000-0000-0000-000000000001',
+  'cnpj: a nota de emitente com CNPJ alfanumérico acha o fornecedor');
+select pg_temp.como(null);
+rollback;
+
+-- ---------------------------------------------------------------------
+\echo '# nota do mês da conta recorrente aprovada: só o rito da conta (Moises, 23/11/2026)'
+begin;
+select pg_temp.sis();
+insert into erp.centro_aprovadores values (:'cc_mkt', :'gestor') on conflict do nothing;
+insert into erp.listas_financeiro (lista, user_id) values ('AF', :'contador'), ('AO', :'analista2') on conflict do nothing;
+select pg_temp.volta();
+select pg_temp.ok(erp.rotulo_vaga('AF_AO') = 'AF, AO ou AD' and erp.rotulo_vaga('AO_CENTRO') = 'AO do centro', 'rito: os rótulos das vagas');
+select pg_temp.ok(erp._ocupa_vaga('AF_AO', null, :'analista2') and erp._ocupa_vaga('AF_AO', null, :'contador')
+                  and not erp._ocupa_vaga('AF_AO', null, :'gestor') and not erp._ocupa_vaga('AF_AO', null, :'leitor'),
+  'rito: a vaga AF_AO é da AF, da AO ou da AD');
+select pg_temp.como(:'analista');
+insert into erp.compromissos (id, empresa_id, tipo, pessoa_id, descricao, inicio, periodicidade, dia_vencimento, instalacao, faixa_mensal, teto_anual) values
+  ('61000000-0000-0000-0000-0000000000c1', :'spe', 'consumo', '10000000-0000-0000-0000-000000000007', 'Luz do rito', '2027-01-01', 'mensal', 6, 'RITO-1', 1000, 5000),
+  ('61000000-0000-0000-0000-0000000000c2', :'spe', 'consumo', '10000000-0000-0000-0000-000000000007', 'Água sem aprovação', '2027-01-01', 'mensal', 6, 'RITO-2', 1000, 5000);
+insert into erp.compromissos (id, empresa_id, tipo, pessoa_id, descricao, inicio, periodicidade, valor_periodo, dia_vencimento) values
+  ('61000000-0000-0000-0000-0000000000c3', :'spe', 'assinatura', '10000000-0000-0000-0000-000000000007', 'Software do rito', '2027-01-01', 'mensal', 500, 10);
+insert into erp.compromisso_rateios (compromisso_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+  select x::uuid, :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100
+    from unnest(array['61000000-0000-0000-0000-0000000000c1', '61000000-0000-0000-0000-0000000000c2', '61000000-0000-0000-0000-0000000000c3']) x;
+select pg_temp.como(:'gestor');
+select erp.decidir_compromisso('61000000-0000-0000-0000-0000000000c1', true), erp.decidir_compromisso('61000000-0000-0000-0000-0000000000c3', true);
+select pg_temp.como(:'contador');
+select pg_temp.ok(erp.decidir_compromisso('61000000-0000-0000-0000-0000000000c1', true) = 'aprovado'
+                  and erp.decidir_compromisso('61000000-0000-0000-0000-0000000000c3', true) = 'aprovado', 'rito: as duas contas aprovadas');
+-- as notas (o número diz o caso)
+select pg_temp.como(:'analista');
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, compromisso_id, tipo, numero, emissao, competencia, valor_bruto) values
+  ('70000000-0000-0000-0000-0000000c0001', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c1', 'fatura', 'R1', '2027-01-05', '2027-01-01', 1300),
+  ('70000000-0000-0000-0000-0000000c0002', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c1', 'fatura', 'R2', '2027-02-05', '2027-02-01', 1300.01),
+  ('70000000-0000-0000-0000-0000000c0003', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c1', 'fatura', 'R3', '2027-03-05', '2027-03-01', 1150),
+  ('70000000-0000-0000-0000-0000000c0004', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c1', 'fatura', 'R4', '2027-04-05', '2027-04-01', 1250),
+  ('70000000-0000-0000-0000-0000000c0005', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c2', 'fatura', 'R5', '2027-01-05', '2027-01-01', 900),
+  ('70000000-0000-0000-0000-0000000c0006', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c3', 'nfse', 'R6', '2027-01-05', '2027-01-01', 500),
+  ('70000000-0000-0000-0000-0000000c0007', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c3', 'nfse', 'R7', '2027-02-05', '2027-02-01', 500.01),
+  ('70000000-0000-0000-0000-0000000c0008', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c1', 'fatura', 'R8', '2027-05-05', '2027-05-01', 500);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+  select d.id, :'ne_vm', :'cc_mkt', case when d.numero = 'R8' then pg_temp.nat('04.01') else pg_temp.nat('05.01.04') end, 100
+    from erp.documentos_fiscais d where d.id::text like '70000000-0000-0000-0000-0000000c000%';
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0001', array['2027-01-20']::date[]) as r1 \gset
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0002', array['2027-02-20']::date[]) as r2 \gset
+select pg_temp.sis(); update erp.regra_alcada_pagamento set recorrente_tolerancia_pct = 10; select pg_temp.volta();
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0003', array['2027-03-20']::date[]) as r3 \gset
+select pg_temp.sis(); update erp.regra_alcada_pagamento set recorrente_tolerancia_pct = 30; select pg_temp.volta();
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0004', array['2027-04-20']::date[]) as r4 \gset
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0005', array['2027-01-20']::date[]) as r5 \gset
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0006', array['2027-01-20']::date[]) as r6 \gset
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0007', array['2027-02-20']::date[]) as r7 \gset
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0008', array['2027-05-20']::date[]) as r8 \gset
+select pg_temp.sis();
+select pg_temp.ok((select count(*) = 1 and bool_and(fases = '{AF_AO}' and alcada_id is null and compromisso_id = '61000000-0000-0000-0000-0000000000c1'
+                                                    and centro_custo_id = :'cc_mkt' and valor_no_centro = 1300)
+                     from erp.titulo_alcadas where titulo_id = :'r1'),
+  'rito: consumo até 30% acima da previsão do mês vai direto à AF, AO ou AD, sem as faixas');
+select pg_temp.ok((select count(*) = 1 and bool_and(fases = '{AREA,AF_AO}' and not paralelo and compromisso_id is not null)
+                     from erp.titulo_alcadas where titulo_id = :'r2'),
+  'rito: consumo acima da tolerância passa antes pelo gestor do centro');
+select pg_temp.ok((select fases = '{AREA,AF_AO}' from erp.titulo_alcadas where titulo_id = :'r3'), 'rito: a tolerância é configurável (10%: 1.150 passa dela)');
+select pg_temp.ok((select fases = '{AREA,AF_AO}' from erp.titulo_alcadas where titulo_id = :'r4'),
+  'rito: dentro da tolerância, mas o ano passaria do teto: o gestor primeiro');
+select pg_temp.ok((select count(*) >= 1 and bool_and(compromisso_id is null and alcada_id is not null) from erp.titulo_alcadas where titulo_id = :'r5'),
+  'rito: conta ainda não aprovada segue as faixas do centro');
+select pg_temp.ok((select count(*) = 1 and bool_and(fases = '{AREA,AF}' and not paralelo and compromisso_id = '61000000-0000-0000-0000-0000000000c3')
+                     from erp.titulo_alcadas where titulo_id = :'r6'),
+  'rito: assinatura dentro da previsão do mês: gestor, depois AF (ou AD)');
+select pg_temp.ok((select count(*) >= 1 and bool_and(compromisso_id is null and alcada_id is not null) from erp.titulo_alcadas where titulo_id = :'r7'),
+  'rito: assinatura acima da previsão do mês segue as faixas do centro');
+select pg_temp.ok((select count(*) >= 1 and bool_and(compromisso_id is null and alcada_id is not null) from erp.titulo_alcadas where titulo_id = :'r8'),
+  'rito: nota com natureza fora do rateio aprovado da conta segue as faixas');
+select pg_temp.falha($$update erp.regra_alcada_pagamento set recorrente_tolerancia_pct = 150$$, 'rito: tolerância acima de 100% é recusada');
+select pg_temp.volta();
+-- a nota soma no acumulado do mês do centro para os outros títulos
+select pg_temp.como(:'analista');
+insert into erp.titulos (id, empresa_id, tipo, pessoa_id, emissao, competencia, valor) values
+  ('82000000-0000-0000-0000-0000000c0001', :'spe', 'avulso', '10000000-0000-0000-0000-000000000007', '2027-01-06', '2027-01-01', 100);
+insert into erp.parcelas (titulo_id, numero, vencimento, valor) values ('82000000-0000-0000-0000-0000000c0001', 1, '2027-01-25', 100);
+insert into erp.titulo_rateios (titulo_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('82000000-0000-0000-0000-0000000c0001', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select erp.confirmar_titulo('82000000-0000-0000-0000-0000000c0001');
+select pg_temp.sis();
+select pg_temp.ok((select acumulado >= 100 + 1300 + 900 + 500 and :'r1'::uuid = any(titulos) and :'r6'::uuid = any(titulos)
+                     from erp.titulo_alcadas where titulo_id = '82000000-0000-0000-0000-0000000c0001' and divisao_id is null),
+  'rito: as notas da conta continuam no acumulado do mês do centro');
+select pg_temp.volta();
+-- quem aprova: na fatura dentro da tolerância, a AO sozinha; acima, a AO espera o gestor
+select pg_temp.como(:'gestor');
+select pg_temp.falha(format('select erp.decidir_titulo(%L, true)', :'r1'), 'rito: o gestor não ocupa a vaga AF, AO ou AD');
+select pg_temp.como(:'analista2');
+select pg_temp.ok(erp.decidir_titulo(:'r1', true) = 'aprovado', 'rito: a AO aprova sozinha a fatura dentro da tolerância');
+select pg_temp.falha(format('select erp.decidir_titulo(%L, true)', :'r2'), 'rito: acima da tolerância, a AO espera o gestor');
+select pg_temp.como(:'gestor');
+select erp.decidir_titulo(:'r2', true);
+select pg_temp.como(:'analista2');
+select pg_temp.ok(erp.decidir_titulo(:'r2', true) = 'aprovado', 'rito: depois do gestor, a AO completa');
+select pg_temp.como(:'analista2');
+select pg_temp.falha(format('select erp.decidir_titulo(%L, true)', :'r6'), 'rito: na assinatura a AO não aprova (é o gestor, depois a AF)');
+-- revisão de segurança (24/11): a previsão é do mês (soma das notas), só na vigência, e os caminhos que voltam às faixas
+select pg_temp.como(:'analista');
+insert into erp.compromissos (id, empresa_id, tipo, pessoa_id, descricao, inicio, periodicidade, dia_vencimento, instalacao, faixa_mensal, teto_anual) values
+  ('61000000-0000-0000-0000-0000000000c5', :'spe', 'consumo', '10000000-0000-0000-0000-000000000007', 'Luz de duas faturas', '2027-01-01', 'mensal', 6, 'RITO-5', 1000, 50000);
+insert into erp.compromissos (id, empresa_id, tipo, pessoa_id, descricao, inicio, fim, periodicidade, valor_periodo, valor_total, dia_vencimento) values
+  ('61000000-0000-0000-0000-0000000000c6', :'spe', 'assinatura', '10000000-0000-0000-0000-000000000007', 'Software até março', '2027-01-01', '2027-03-31', 'mensal', 500, null, 10),
+  ('61000000-0000-0000-0000-0000000000c7', :'spe', 'assinatura', '10000000-0000-0000-0000-000000000007', 'Software encerrado', '2027-01-01', null, 'mensal', 500, null, 10),
+  ('61000000-0000-0000-0000-0000000000c8', :'spe', 'assinatura', '10000000-0000-0000-0000-000000000007', 'Software até 700', '2027-01-01', null, 'mensal', 500, 700, 10);
+insert into erp.compromissos (id, empresa_id, tipo, pessoa_id, descricao, inicio, valor_total) values
+  ('61000000-0000-0000-0000-0000000000c9', :'spe', 'contrato', '10000000-0000-0000-0000-000000000007', 'Contrato sem fim', '2027-01-01', 10000);
+insert into erp.compromisso_rateios (compromisso_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+  select ('61000000-0000-0000-0000-0000000000c' || x)::uuid, :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100 from unnest(array['5','6','7','8','9']) x;
+select pg_temp.como(:'gestor');
+select erp.decidir_compromisso(('61000000-0000-0000-0000-0000000000c' || x)::uuid, true) from unnest(array['5','6','7','8','9']) x;
+select pg_temp.como(:'contador');
+select pg_temp.ok((select bool_and(erp.decidir_compromisso(('61000000-0000-0000-0000-0000000000c' || x)::uuid, true) = 'aprovado')
+                     from unnest(array['5','6','7','8','9']) x), 'rito: as contas da revisão aprovadas');
+select pg_temp.como(:'analista');
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, compromisso_id, tipo, numero, emissao, competencia, valor_bruto) values
+  ('70000000-0000-0000-0000-0000000c0011', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c5', 'fatura', 'R11', '2027-01-05', '2027-01-01', 800),
+  ('70000000-0000-0000-0000-0000000c0012', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c5', 'fatura', 'R12', '2027-01-06', '2027-01-01', 800),
+  ('70000000-0000-0000-0000-0000000c0013', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c3', 'nfse', 'R13', '2027-01-06', '2027-01-01', 1),
+  ('70000000-0000-0000-0000-0000000c0014', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c6', 'nfse', 'R14', '2027-04-05', '2027-04-01', 500),
+  ('70000000-0000-0000-0000-0000000c0015', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c6', 'nfse', 'R15', '2026-12-05', '2026-12-01', 500),
+  ('70000000-0000-0000-0000-0000000c0016', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c6', 'nfse', 'R16', '2027-03-05', '2027-03-01', 500),
+  ('70000000-0000-0000-0000-0000000c0017', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c7', 'nfse', 'R17', '2027-01-05', '2027-01-01', 500),
+  ('70000000-0000-0000-0000-0000000c0018', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c8', 'nfse', 'R18', '2027-01-05', '2027-01-01', 500),
+  ('70000000-0000-0000-0000-0000000c0019', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c8', 'nfse', 'R19', '2027-02-05', '2027-02-01', 500),
+  ('70000000-0000-0000-0000-0000000c0020', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c9', 'nfse', 'R20', '2027-01-05', '2027-01-01', 100),
+  ('70000000-0000-0000-0000-0000000c0021', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c3', 'nfse', 'R21', '2027-03-05', '2027-03-01', 500);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+  select d.id, :'ne_vm', case when d.numero = 'R21' then :'cc_obra'::uuid else :'cc_mkt'::uuid end,
+         pg_temp.nat('05.01.04'), 100
+    from erp.documentos_fiscais d where d.numero in ('R11','R12','R13','R14','R15','R16','R17','R18','R19','R20','R21')
+     and d.compromisso_id::text like '61000000-0000-0000-0000-0000000000c%';
+-- a conta encerrada depois de a nota entrar
+select pg_temp.sis(); update erp.compromissos set situacao = 'encerrado' where id = '61000000-0000-0000-0000-0000000000c7'; select pg_temp.volta();
+select pg_temp.como(:'analista');
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0011', array['2027-01-20']::date[]) as r11 \gset
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0012', array['2027-01-21']::date[]) as r12 \gset
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0013', array['2027-01-21']::date[]) as r13 \gset
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0014', array['2027-04-20']::date[]) as r14 \gset
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0015', array['2026-12-20']::date[]) as r15 \gset
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0016', array['2027-03-20']::date[]) as r16 \gset
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0017', array['2027-01-20']::date[]) as r17 \gset
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0018', array['2027-01-20']::date[]) as r18 \gset
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0019', array['2027-02-20']::date[]) as r19 \gset
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0020', array['2027-01-20']::date[]) as r20 \gset
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0021', array['2027-03-20']::date[]) as r21 \gset
+select pg_temp.sis();
+select pg_temp.ok((select fases = '{AF_AO}' from erp.titulo_alcadas where titulo_id = :'r11')
+                  and (select fases = '{AREA,AF_AO}' and compromisso_id is not null from erp.titulo_alcadas where titulo_id = :'r12'),
+  'rito: duas faturas de consumo no mesmo mês somam contra a previsão (a segunda passa da tolerância e vai ao gestor)');
+select pg_temp.ok((select count(*) >= 1 and bool_and(compromisso_id is null and alcada_id is not null) from erp.titulo_alcadas where titulo_id = :'r13'),
+  'rito: segunda nota da assinatura no mês, que passa da previsão somada, segue as faixas');
+select pg_temp.ok((select bool_and(compromisso_id is null) from erp.titulo_alcadas where titulo_id in (:'r14', :'r15'))
+                  and (select fases = '{AREA,AF}' and compromisso_id is not null from erp.titulo_alcadas where titulo_id = :'r16'),
+  'rito: só na vigência (antes do início e depois do fim, as faixas; o último mês, o rito)');
+select pg_temp.ok((select count(*) >= 1 and bool_and(compromisso_id is null) from erp.titulo_alcadas where titulo_id = :'r17'),
+  'rito: conta encerrada segue as faixas');
+select pg_temp.ok((select fases = '{AREA,AF}' and compromisso_id is not null from erp.titulo_alcadas where titulo_id = :'r18')
+                  and (select count(*) >= 1 and bool_and(compromisso_id is null) from erp.titulo_alcadas where titulo_id = :'r19'),
+  'rito: a nota que passaria do valor total da conta segue as faixas');
+select pg_temp.ok((select count(*) >= 1 and bool_and(compromisso_id is null) from erp.titulo_alcadas where titulo_id = :'r20'),
+  'rito: sem previsão do mês (contrato sem fim e sem calendário), as faixas');
+select pg_temp.ok((select count(*) >= 1 and bool_and(compromisso_id is null) from erp.titulo_alcadas where titulo_id = :'r21'),
+  'rito: nota num centro fora do rateio da conta (mesma natureza) segue as faixas');
+select pg_temp.volta();
+-- nota de outro fornecedor presa à conta: o gatilho do contrato já recusa (t_contrato_confere), antes do rito
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual($$insert into erp.documentos_fiscais (empresa_id, emitente_id, compromisso_id, tipo, numero, emissao, competencia, valor_bruto)
+  values ('20000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000005', '61000000-0000-0000-0000-0000000000c3', 'nfse', 'R99', '2027-01-05', '2027-01-01', 500)$$,
+  'O contrato é de outro fornecedor', 'rito: nota de outro fornecedor não se prende à conta');
+-- sem gente na vaga: o gestor que lança não aprova a própria nota, e a vaga vai ao master
+select pg_temp.como(:'gestor');
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, compromisso_id, tipo, numero, emissao, competencia, valor_bruto) values
+  ('70000000-0000-0000-0000-0000000c0022', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c3', 'nfse', 'R22', '2027-04-05', '2027-04-01', 500);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('70000000-0000-0000-0000-0000000c0022', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0022', array['2027-04-20']::date[]) as r22 \gset
+select pg_temp.sis();
+select pg_temp.ok((select fases = '{AREA,AF}' and compromisso_id is not null and falta_aprovadores and vagas_sem_gente = '{AREA}'
+                     from erp.titulo_alcadas where titulo_id = :'r22')
+                  and exists (select 1 from erp.eventos where tipo = 'alcada_falta_aprovadores' and registro = :'r22'),
+  'rito: sem gestor que possa aprovar (o único lançou), a vaga vai ao master com o aviso');
+select pg_temp.volta();
+-- divisão fora do rateio da conta
+select pg_temp.sis(); insert into erp.divisoes (id, centro_custo_id, nome) values ('8d000000-0000-0000-0000-0000000000c1', :'cc_mkt', 'Divisão do rito'); select pg_temp.volta();
+select pg_temp.como(:'analista');
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, compromisso_id, tipo, numero, emissao, competencia, valor_bruto) values
+  ('70000000-0000-0000-0000-0000000c0023', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c3', 'nfse', 'R23', '2027-05-05', '2027-05-01', 500);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, percentual) values
+  ('70000000-0000-0000-0000-0000000c0023', :'ne_vm', :'cc_mkt', '8d000000-0000-0000-0000-0000000000c1', pg_temp.nat('05.01.04'), 100);
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0023', array['2027-05-20']::date[]) as r23 \gset
+select pg_temp.sis();
+select pg_temp.ok((select count(*) >= 1 and bool_and(compromisso_id is null) from erp.titulo_alcadas where titulo_id = :'r23'),
+  'rito: nota numa divisão fora do rateio da conta segue as faixas');
+select pg_temp.volta();
+select pg_temp.como(null);
+rollback;
 
 \echo '# fim'
 do $$ begin raise notice 'TODOS OS TESTES PASSARAM'; end $$;

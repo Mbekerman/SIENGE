@@ -1,0 +1,7 @@
+{
+  // Só os testes (node --test): os mesmos módulos, com os tipos do Node no lugar dos do navegador.
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "types": ["node"], "lib": ["ES2022", "DOM"] },
+  "include": ["src/**/*.test.ts"],
+  "exclude": []
+}

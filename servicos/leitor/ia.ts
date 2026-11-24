@@ -138,13 +138,16 @@ export async function lerComIaDetalhe(cliente: Anthropic, e: Entrada, hoje = new
 // Da resposta da IA para a Leitura, normalizando e conferindo o que dá para conferir.
 export function converter(j: Record<string, any>, modelo: string, hoje = new Date()): Leitura {
   const tipos: TipoDocumento[] = ['nfe', 'nfse', 'fatura', 'boleto', 'iptu', 'itbi', 'darf', 'darm', 'dare', 'recibo', 'outro'];
-  const p = (x: any) => {
+  const avisos: string[] = (Array.isArray(j.observacoes) ? j.observacoes : []).filter((s: unknown) => typeof s === 'string' && s.trim());
+  const p = (x: any, quem: string) => {
+    // com X, vale a máscara mesmo que feche como CNPJ alfanumérico: o X vale 40 na conta e uma máscara de verdade fecha
+    // o DV por acaso (cerca de 1 em 100); perder um alfanumérico com X custa menos que inventar um documento
     const m = mascara(x?.documento);
-    return { documento: m ? undefined : soDigitos(x?.documento) || undefined, documento_mascara: m, nome: str(x?.nome) };
+    if (m && cnpjValido(normalDocumento(x.documento))) avisos.push(`Documento ${quem} com X: pode ser máscara ou CNPJ alfanumérico; confira no documento`);
+    return { documento: m ? undefined : documentoConferido(x?.documento, quem, avisos), documento_mascara: m, nome: str(x?.nome) };
   };
   const emissao = data(j.emissao);
   const ref = emissao ? new Date(`${emissao}T12:00:00Z`) : hoje;
-  const avisos: string[] = (Array.isArray(j.observacoes) ? j.observacoes : []).filter((s: unknown) => typeof s === 'string' && s.trim());
   const boletos = (Array.isArray(j.linhas_digitaveis) ? j.linhas_digitaveis : [])
     .map((l: unknown) => conferirLinha(String(l ?? ''), ref)).filter((b): b is Boleto => b !== null);
   for (const b of boletos) if (!b.valida) avisos.push(`Linha do boleto com dígito verificador errado: ${b.linha}`);
@@ -154,7 +157,7 @@ export function converter(j: Record<string, any>, modelo: string, hoje = new Dat
   return limpar({
     origem: 'ia', modelo,
     tipo: tipos.includes(j.tipo) ? j.tipo : 'outro',
-    emitente: p(j.emitente), tomador: p(j.tomador),
+    emitente: p(j.emitente, 'do emitente'), tomador: p(j.tomador, 'do tomador'),
     numero: str(j.numero), serie: str(j.serie), chave_acesso: chave,
     emissao, competencia: comp,
     valor: pos(j.valor) ?? somaParcelas(j.parcelas), valor_liquido: pos(j.valor_liquido),
@@ -167,6 +170,41 @@ export function converter(j: Record<string, any>, modelo: string, hoje = new Dat
     consumo: { instalacao: str(j.consumo?.instalacao), referencia: refConsumo, vencimento: data(j.consumo?.vencimento) },
     avisos,
   });
+}
+// CPF (11 dígitos) e CNPJ (14 posições, as 12 primeiras podendo ter letras no CNPJ alfanumérico) lidos passam pelo
+// dígito verificador (lote de 23/11/2026: quase todo CNPJ lido errado, pelo Opus ou pelo Haiku, tinha dígito trocado
+// e falhava nessa conta). Errado, de outro tamanho ou com outras letras sai vazio, com aviso, como a chave: um
+// documento errado é pior que nenhum, porque a conferência do recebedor e a busca do credor usam ele.
+export function cpfValido(d: string): boolean {
+  if (!/^\d{11}$/.test(d) || /^(\d)\1{10}$/.test(d)) return false;
+  const dv = (n: number) => { let s = 0; for (let i = 0; i < n; i++) s += Number(d[i]) * (n + 1 - i); return (s * 10) % 11 % 10; };
+  return dv(9) === Number(d[9]) && dv(10) === Number(d[10]);
+}
+// CNPJ numérico ou alfanumérico (Receita, IN 2.229/2024): cada posição vale o código ASCII menos 48, com os pesos de sempre.
+export function cnpjValido(d: string): boolean {
+  if (!/^[0-9A-Z]{12}\d{2}$/.test(d) || /^(\d)\1{13}$/.test(d)) return false;
+  const dv = (n: number) => {
+    let s = 0;
+    for (let i = n - 1, peso = 2; i >= 0; i--, peso = peso === 9 ? 2 : peso + 1) s += (d.charCodeAt(i) - 48) * peso;
+    const r = s % 11; return r < 2 ? 0 : 11 - r;
+  };
+  return dv(12) === Number(d[12]) && dv(13) === Number(d[13]);
+}
+const normalDocumento = (x: string) => x.normalize('NFKD').toUpperCase().replace(/\b(CNPJ|CPF|MF|N[O]?)\b|N[º°]/g, ' ').replace(/[^0-9A-Z]/g, '');
+function documentoConferido(x: unknown, quem: string, avisos: string[]): string | undefined {
+  if (typeof x !== 'string') return undefined;
+  // sem os rótulos (CNPJ, CPF, MF, nº) e a pontuação; o que sobra tem de ser um CPF ou um CNPJ que confere
+  const d = normalDocumento(x);
+  if (!d) return undefined;
+  if (/^\d{11}$/.test(d)) {
+    if (cpfValido(d)) return d;
+    avisos.push(`CPF ${quem} lido com dígito verificador errado: confira no documento`);
+    return undefined;
+  }
+  if (cnpjValido(d)) return d;
+  avisos.push(/^[0-9A-Z]{12}\d{2}$/.test(d) ? `CNPJ ${quem} lido com dígito verificador errado (${d}): confira no documento`
+    : `Documento ${quem} lido não é um CPF nem um CNPJ: confira no documento`);
+  return undefined;
 }
 // Lista [{tributo, valor}] (o esquema atual) ou objeto {iss: 10} (aceito também); tributo repetido soma.
 function retencoes(r: unknown): Record<string, number | undefined> {

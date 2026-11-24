@@ -251,6 +251,15 @@ reset role;
 set local role authenticated;
 select pg_temp.falha('select count(*) from sienge.pagar_parcelas', 'segurança: o usuário logado não lê o espelho');
 reset role;
+-- ritmo das rotinas (20261123006100): a segunda chamada antes do prazo é recusada; passado o prazo, roda de novo
+select pg_temp.ok(sienge.ritmo('teste', 50), 'ritmo: a primeira rodada roda');
+select pg_temp.ok(not sienge.ritmo('teste', 50), 'ritmo: a segunda antes de 50 s é recusada');
+select pg_temp.ok(sienge.ritmo('outra', 50), 'ritmo: cada rotina tem o seu prazo');
+update sienge.ritmo_rotinas set ultima = clock_timestamp() - interval '51 seconds' where rotina = 'teste';
+select pg_temp.ok(sienge.ritmo('teste', 50), 'ritmo: passado o prazo, roda de novo');
+set local role authenticated;
+select pg_temp.falha($$select sienge.ritmo('teste', 0)$$, 'ritmo: o usuário logado não chama');
+reset role;
 rollback;
 
 \echo '# fim do espelho'

@@ -9,6 +9,7 @@ import { data, dividir, documento, hojeISO, lerReais, reais } from '../lib/forma
 import { recebedorPix, type Conferido } from '../lib/pix';
 import { mensagemErro, rpc, supabase } from '../lib/supabase';
 import { abrirComSenha, leitorLigado, subirArquivo, TIPOS_ACEITOS } from '../lib/leitor';
+import { casarBoletos, conferirValores, juntarLeituras } from '../lib/conjunto';
 import type { FornecedorBusca, Identificacao, Leitura, NaturezaLancavel, OpcoesLancamento, PrevisaoParaNota, ResultadoLeitor } from '../lib/tipos';
 
 type Forma = 'pix' | 'boleto';
@@ -25,10 +26,10 @@ const novaParcela = (base?: Parcela, doc?: string | null): Parcela => ({
   pix_chave: base?.pix_chave ?? (doc ?? ''), boleto: '', excecao: base?.excecao ?? '', pix_cc: '', cc_exc: '', bol_exc: '',
 });
 
-/** A chave como o banco aceita: CPF/CNPJ só dígitos, e-mail minúsculo, telefone com +55. */
+/** A chave como o banco aceita: CPF/CNPJ sem pontuação, e-mail minúsculo, telefone com +55. */
 export function chave(t: PixTipo, v: string): string {
   const s = v.trim();
-  if (t === 'cpf_cnpj') return s.replace(/\D/g, '');
+  if (t === 'cpf_cnpj') return s.toUpperCase().replace(/[^0-9A-Z]/g, '');   // também o CNPJ alfanumérico
   if (t === 'telefone') { const d = s.replace(/\D/g, ''); return d.startsWith('55') && d.length >= 12 ? `+${d}` : `+55${d}`; }
   return s.toLowerCase();
 }
@@ -56,7 +57,9 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   const [prevs, setPrevs] = useState<string[]>([]);
   const [etq, setEtq] = useState<string[]>([]);
   const [tentou, setTentou] = useState(false);
-  const [arq, setArq] = useState<ResultadoLeitor | null>(null);
+  // os arquivos do título (nota, boleto, anexos): lidos um a um e juntos numa leitura só (lib/conjunto.ts)
+  const [arquivos, setArquivos] = useState<ResultadoLeitor[]>([]);
+  const arq = useMemo(() => juntarLeituras(arquivos), [arquivos]);
   const [cand, setCand] = useState<string | null>(null);
   const [semRet, setSemRet] = useState(false);
   const [buscaForn, setBuscaForn] = useState('');
@@ -83,9 +86,26 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   useEffect(() => { setPrevs(p => p.filter(id => previsoes.some(x => x.id === id))); }, [pq.data]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // o arquivo: sobe ao leitor, que guarda, lê e diz o que casa; a tela se preenche e tudo continua editável
-  const subir = useMutation({ mutationFn: subirArquivo, onSuccess: r => { setArq(r); setSemRet(false); preencher(r); } });
-  const senha = useMutation({ mutationFn: (x: { id: string; s: string }) => abrirComSenha(x.id, x.s), onSuccess: r => { setArq(r); preencher(r); } });
-  const comRet = Boolean(arq?.leitura && temRetencao(arq.leitura));
+  // cada arquivo novo entra no conjunto e a tela se preenche de novo pelo conjunto (o que foi mudado à mão é refeito);
+  // vários de uma vez sobem um depois do outro, e o erro de um não perde os que já subiram
+  const subir = useMutation({ mutationFn: async (fs: File[]) => {
+    for (const f of fs) { const r = await subirArquivo(f); setArquivos(a => [...a.filter(x => x.anexo.id !== r.anexo.id), r]); }
+  }, onSuccess: () => setSemRet(false) });
+  const senha = useMutation({ mutationFn: (x: { id: string; s: string }) => abrirComSenha(x.id, x.s), onSuccess: r => setArquivos(a => a.map(x => (x.anexo.id === r.anexo.id ? r : x))) });
+  // com a mesma base (só entrou boleto ou anexo), só as parcelas se refazem: o que foi corrigido à mão no resto fica;
+  // com base nova (a nota chegou depois do boleto), a tela inteira se preenche pela nota
+  const base = useRef<string | null>(null);
+  const [refeitas, setRefeitas] = useState(false);
+  useEffect(() => {
+    if (!arq) { base.current = null; return; }
+    if (base.current === arq.anexo.id && arq.leitura) {
+      setParcelas(parcelasLidas(arq.leitura, arq.identificacao?.pagamento ?? null, forn?.documento ?? null));
+      setRefeitas(true);
+    } else { preencher(arq); setRefeitas(false); }
+    base.current = arq.anexo.id;
+  }, [arq]); // eslint-disable-line react-hooks/exhaustive-deps
+  const valores = arq?.leitura ? conferirValores(arq.leitura) : null;
+  const comRet = Boolean(arq?.leitura && (temRetencao(arq.leitura) || valores?.retencaoSuspeita));
   // CNPJ do tomador mascarado no documento: sugere as empresas que fecham com o que aparece; quem lança confirma
   const mascaraTom = arq?.leitura?.tomador?.documento_mascara;
   const sugeridas = o && mascaraTom && !arq?.identificacao?.empresa && !empresa ? empresasPelaMascara(mascaraTom, o.empresas) : [];
@@ -143,7 +163,7 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
       parcelas: parcelas.map(p => p.forma === 'pix'
         ? { vencimento: p.vencimento, ...(comValor ? { valor: lerReais(p.valor) } : {}), forma: 'pix', pix_tipo: p.pix_tipo, pix_chave: chave(p.pix_tipo, p.pix_chave), pix_excecao: p.excecao.trim() || null, pix_copia_cola: p.pix_cc.trim() || null, pix_copia_cola_excecao: (p.pix_cc.trim() && p.cc_exc.trim()) || null }
         : { vencimento: p.vencimento, ...(comValor ? { valor: lerReais(p.valor) } : {}), forma: 'boleto', boleto_linha: p.boleto.replace(/\D/g, ''), boleto_excecao: p.bol_exc.trim() || null, pix_copia_cola: p.pix_cc.trim() || null, pix_copia_cola_excecao: (p.pix_cc.trim() && p.cc_exc.trim()) || null }),
-      previsoes: prevs, etiquetas: etq, anexos: arq ? [arq.anexo.id] : [],
+      previsoes: prevs, etiquetas: etq, anexos: arquivos.map(a => a.anexo.id),
     } }),
     onSuccess: id => { qc.invalidateQueries({ queryKey: ['titulos'] }); qc.invalidateQueries({ queryKey: ['previsoes'] }); lancado(id); },
   });
@@ -160,13 +180,15 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
       {op.isLoading ? <Carregando /> : op.error ? <Alerta c="cr" t={mensagemErro(op.error)} /> : !o ? <Alerta c="at" t="Seu papel só permite consulta: você não lança títulos." /> : <>
         <p className="sec lt-intro">A nota vira um título que vai para a aprovação. Aprovado, ele segue sozinho para o Sienge com a forma de pagamento de cada parcela.</p>
 
-        {leitorLigado && <ArquivoNota r={arq} subindo={subir.isPending} erro={subir.error ? mensagemErro(subir.error) : null}
-          escolher={f => { senha.reset(); subir.mutate(f); }} valor={valor} cand={cand} usar={usarCandidato}
-          abrir={x => arq && senha.mutate({ id: arq.anexo.id, s: x })} abrindo={senha.isPending} erroSenha={senha.error ? mensagemErro(senha.error) : null}
+        {leitorLigado && <ArquivoNota r={arq} arquivos={arquivos} tirar={id => setArquivos(a => a.filter(x => x.anexo.id !== id))}
+          subindo={subir.isPending} erro={subir.error ? mensagemErro(subir.error) : null}
+          escolher={fs => { senha.reset(); subir.mutate(fs); }} valor={valor} cand={cand} usar={usarCandidato}
+          abrir={(id, x) => senha.mutate({ id, s: x })} abrindo={senha.isPending} erroSenha={senha.error ? mensagemErro(senha.error) : null}
           sugeridas={sugeridas} mascara={mascaraTom} usarEmpresa={id => { setEmpresa(id); setLinhas([novaLinha()]); }} />}
+        {refeitas && <span className="nt inf">As parcelas foram preenchidas de novo com os arquivos novos; o resto da tela ficou como estava.</span>}
         {comRet && arq?.leitura && (
           <div className="lt-sec">
-            <span className="nt cr">A leitura achou retenção de imposto ({descRetencao(arq.leitura)}). Nota com retenção ainda não se lança: o título sairia pelo valor bruto e a BKM pagaria ao fornecedor o imposto que ela mesma tem de recolher. Espere a tela de retenções.</span>
+            <span className="nt cr">{temRetencao(arq.leitura) ? `A leitura achou retenção de imposto (${descRetencao(arq.leitura)}).` : 'As parcelas somam menos que o valor da nota, o que costuma ser retenção.'} Nota com retenção ainda não se lança: o título sairia pelo valor bruto e a BKM pagaria ao fornecedor o imposto que ela mesma tem de recolher. Espere a tela de retenções.</span>
             <label className="ab-l"><input type="checkbox" checked={semRet} onChange={e => setSemRet(e.target.checked)} />
               <span>Conferi o documento: a nota não tem retenção (a leitura errou)</span></label>
           </div>
@@ -363,15 +385,17 @@ export function BuscaFornecedor({ v, mudar, erro, inicial = '' }: { v: Fornecedo
 }
 
 /** As parcelas pelo que o leitor achou: os vencimentos da nota, senão os dos boletos (o do Asaas primeiro), senão o da
- *  fatura; a linha de cada boleto válido vai na parcela da mesma ordem; sem boleto, a última chave PIX usada com o
+ *  fatura; a linha de cada boleto válido vai na parcela dele (pelo valor e pelo vencimento, não pela ordem); sem boleto, a última chave PIX usada com o
  *  fornecedor ou o documento dele. */
 export function parcelasLidas(l: NonNullable<ResultadoLeitor['leitura']>, pag: Identificacao['pagamento'], doc: string | null): Parcela[] {
   const venc = (l.parcelas ?? []).filter(p => p.vencimento);
-  const bol = (l.boletos ?? []).filter(b => b.valida);
+  // cada boleto na parcela dele, pelo valor e pelo vencimento (lib/conjunto.ts); os que não casam com nenhuma ficam fora
+  const validos = (l.boletos ?? []).filter(b => b.valida);
+  const bol = venc.length ? casarBoletos(venc, validos) : validos;
   const n = Math.max(venc.length, bol.length, 1);
   // o valor de cada parcela como está no documento, quando todas têm (os das parcelas, senão os dos boletos)
   const vs = (n > 1 && (l.parcelas ?? []).length === n && (l.parcelas ?? []).every(p => p.valor && p.valor > 0)) ? (l.parcelas ?? []).map(p => p.valor!)
-    : (n > 1 && bol.length === n && bol.every(b => b.valor && b.valor > 0)) ? bol.map(b => b.valor!) : null;
+    : (n > 1 && bol.length === n && bol.every(b => b?.valor && b.valor > 0)) ? bol.map(b => b!.valor!) : null;
   const igual = vs && l.valor ? dividir(l.valor, n) : null;
   const valores = vs && !(igual && vs.every((v, i) => Math.round(v * 100) === Math.round(igual[i] * 100))) ? vs.map(v => reais(v)) : null;
   return Array.from({ length: n }, (_, i) => {
@@ -408,46 +432,59 @@ function avisosLidos(r: ResultadoLeitor, valor: number | null): { c: 'cr' | 'at'
     if (a.ok && a.beneficiario_documento && l.emitente?.documento && a.beneficiario_documento !== l.emitente.documento)
       out.push({ c: 'at', t: `O beneficiário do boleto no banco é ${a.beneficiario ?? documento(a.beneficiario_documento)}, não o emitente da nota.` });
   }
+  for (const x of conferirValores(l).avisos) out.push({ c: 'at', t: x });
   for (const x of l.avisos ?? []) out.push({ c: 'at', t: x });
+  const casados = new Set(casarBoletos((l.parcelas ?? []).filter(p => p.vencimento), (l.boletos ?? []).filter(b => b.valida)).filter(Boolean).map(b => b!.linha));
+  const soltos = (l.parcelas ?? []).some(p => p.vencimento) ? (l.boletos ?? []).filter(b => b.valida && !casados.has(b.linha)) : [];
+  if (soltos.length) out.push({ c: 'at', t: `${soltos.length === 1 ? 'Um boleto não casa' : `${soltos.length} boletos não casam`} com nenhuma parcela da nota pelo valor e pelo vencimento e ficou de fora: confira.` });
   return out;
 }
 
-function ArquivoNota({ r, subindo, erro, escolher, valor, cand, usar, abrir, abrindo, erroSenha, sugeridas, mascara, usarEmpresa }: {
-  r: ResultadoLeitor | null; subindo: boolean; erro: string | null; escolher: (f: File) => void; valor: number | null;
+function ArquivoNota({ r, arquivos, tirar, subindo, erro, escolher, valor, cand, usar, abrir, abrindo, erroSenha, sugeridas, mascara, usarEmpresa }: {
+  r: ResultadoLeitor | null; arquivos: ResultadoLeitor[]; tirar: (id: string) => void;
+  subindo: boolean; erro: string | null; escolher: (fs: File[]) => void; valor: number | null;
   cand: string | null; usar: (c: Identificacao['candidatos'][number] | null) => void;
-  abrir: (senha: string) => void; abrindo: boolean; erroSenha: string | null;
+  abrir: (id: string, senha: string) => void; abrindo: boolean; erroSenha: string | null;
   sugeridas: OpcoesLancamento['empresas']; mascara?: string; usarEmpresa: (id: string) => void;
 }) {
   const inp = useRef<HTMLInputElement>(null);
   const [sobre, setSobre] = useState(false);
   const [pwd, setPwd] = useState('');
   useEffect(() => { setPwd(''); }, [r]);
-  const pegar = (f?: File | null) => { if (f && !subindo) escolher(f); };
+  const pegar = (fs?: FileList | null) => { if (fs?.length && !subindo) escolher(Array.from(fs)); };
+  // o PDF com senha que falta abrir (um de cada vez)
+  const comSenha = arquivos.find(a => a.pede_senha);
   const avisos = r ? avisosLidos(r, valor) : [];
   const cands = r?.identificacao?.candidatos ?? [];
   return (
-    <section className="lt-sec"><h3>Arquivo da nota</h3>
-      <input ref={inp} type="file" accept={TIPOS_ACEITOS} hidden onChange={e => { pegar(e.target.files?.[0]); e.target.value = ''; }} />
-      {subindo ? <div className="lt-arq"><Carregando /><span className="sec">Guardando e lendo o arquivo…</span></div>
-        : r ? (
-          <div className="lt-arq ok">
-            <Ic n="anexo" s={22} />
-            <span style={{ flex: 1, minWidth: 0 }}><b className="lt-arqn" title={r.anexo.nome}>{r.anexo.nome}</b>
-              <span className="sec peq" style={{ display: 'block' }}>{r.leitura ? (r.leitura.origem === 'xml' ? `Lido do XML${r.leitura.formato ? ` (${r.leitura.formato})` : ''}` : 'Lido pela IA') : 'Guardado, sem leitura'}</span></span>
-            <button className="btn t sm" onClick={() => inp.current?.click()}>Trocar</button>
-          </div>
-        ) : (
+    <section className="lt-sec"><h3>Arquivos do título</h3>
+      <input ref={inp} type="file" accept={TIPOS_ACEITOS} multiple hidden onChange={e => { pegar(e.target.files); e.target.value = ''; }} />
+      {arquivos.length > 0 ? <>
+          {arquivos.map(a => (
+            <div key={a.anexo.id} className="lt-arq ok">
+              <Ic n="anexo" s={22} />
+              <span style={{ flex: 1, minWidth: 0 }}><b className="lt-arqn" title={a.anexo.nome}>{a.anexo.nome}</b>
+                <span className="sec peq" style={{ display: 'block' }}>{[a.leitura ? (a.leitura.origem === 'xml' ? `Lido do XML${a.leitura.formato ? ` (${a.leitura.formato})` : ''}` : 'Lido pela IA') : a.pede_senha ? 'Com senha' : 'Guardado, sem leitura',
+                  a.leitura?.tipo ? NOME_TIPO[a.leitura.tipo] : null, arquivos.length > 1 && r?.anexo.id === a.anexo.id ? 'preenche a tela' : null].filter(Boolean).join(' · ')}</span></span>
+              <button className="btn t sm" onClick={() => tirar(a.anexo.id)} disabled={subindo}>Tirar</button>
+            </div>
+          ))}
+          {subindo ? <div className="lt-arq"><Carregando /><span className="sec">Guardando e lendo o arquivo…</span></div>
+            : <button className="btn t sm" style={{ alignSelf: 'flex-start' }} onClick={() => inp.current?.click()}>Adicionar arquivo (boleto, anexo…)</button>}
+        </>
+        : subindo ? <div className="lt-arq"><Carregando /><span className="sec">Guardando e lendo o arquivo…</span></div>
+        : (
           <button className={`lt-arq lt-solta ${sobre ? 'on' : ''}`} onClick={() => inp.current?.click()}
             onDragOver={e => { e.preventDefault(); setSobre(true); }} onDragLeave={() => setSobre(false)}
-            onDrop={e => { e.preventDefault(); setSobre(false); pegar(e.dataTransfer.files?.[0]); }}>
+            onDrop={e => { e.preventDefault(); setSobre(false); pegar(e.dataTransfer.files); }}>
             <Ic n="upload" s={28} />
-            <span><b>Comece pelo arquivo</b><span className="sec peq" style={{ display: 'block' }}>Arraste ou escolha o PDF, o XML ou a foto da nota, fatura ou boleto (até 20 MB). A tela se preenche e você confere. Ou preencha à mão abaixo.</span></span>
+            <span><b>Comece pelos arquivos</b><span className="sec peq" style={{ display: 'block' }}>Arraste ou escolha o PDF, o XML ou a foto da nota, fatura ou boleto (até 20 MB cada). Os arquivos do mesmo título são lidos juntos: a nota preenche a tela e o boleto entra na parcela dele. Você confere tudo. Ou preencha à mão abaixo.</span></span>
           </button>
         )}
       {erro && <span className="lt-erro"><Ic n="warn" s={18} />{erro}</span>}
-      {r?.pede_senha && !abrindo && (
-        <form className="lt-senha" onSubmit={e => { e.preventDefault(); if (pwd) abrir(pwd); }}>
-          <span className="nt at">{r.erro_leitura === 'A senha não abriu o PDF' ? 'A senha não abriu o PDF. Confira e tente de novo.' : 'O PDF tem senha e nenhum CNPJ das empresas abriu. Digite a senha para a tela se preencher, ou preencha à mão.'}</span>
+      {comSenha && !abrindo && (
+        <form className="lt-senha" onSubmit={e => { e.preventDefault(); if (pwd) abrir(comSenha.anexo.id, pwd); }}>
+          <span className="nt at">{arquivos.length > 1 ? `${comSenha.anexo.nome}: ` : ''}{comSenha.erro_leitura === 'A senha não abriu o PDF' ? 'A senha não abriu o PDF. Confira e tente de novo.' : 'O PDF tem senha e nenhum CNPJ das empresas abriu. Digite a senha para a tela se preencher, ou preencha à mão.'}</span>
           <div className="lt-lin">
             <input type="password" className="lt-in" aria-label="Senha do PDF" placeholder="Senha do PDF" autoComplete="off" maxLength={100}
               value={pwd} onChange={e => setPwd(e.target.value)} />
