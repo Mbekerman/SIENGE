@@ -55,6 +55,8 @@ O botão **Lançar título** fica na página Títulos e abre uma janela com esta
 4. **Pagamento:** a nota se divide em parcelas iguais, e cada parcela é PIX ou boleto. A chave PIX sugerida é o CNPJ do fornecedor; outra chave de CPF ou CNPJ pede justificativa. O centavo que sobra vai na primeira parcela, como no Sienge (por exemplo, R$ 900,01 em 2 parcelas fica R$ 450,01 + R$ 450,00). 🟡 No PR #102 (ainda não juntado), cada parcela ganha o seu campo de valor. Ou se preenchem todas, ou nenhuma: sem valor, as parcelas saem iguais. A soma tem de dar o valor da nota; se não der, a tela avisa "As parcelas somam X; o valor é Y". O leitor já preenche o valor de cada parcela ou boleto quando o encontra.
 5. **Etiquetas.**
 
+✅ **Número do título** (Moises, 24/nov/2026): quando o arquivo não é uma nota fiscal (boleto, fatura, guia, IPTU, DARF), o número do título é o número do documento impresso nele. Não vale um rótulo nosso, como os que se usam hoje no Sienge ("LOTE6 3/10" no IPTU, o período no DARF). É por esse número que se confere o papel e se acha um documento lançado duas vezes. O leitor já preenche assim.
+
 Ao clicar em **Lançar**, o título vai para a aprovação e abre na gaveta. Se faltar alguma coisa, o pé da janela diz o quê.
 
 🟡 **Ler a nota pelo arquivo, no PR #98** (ainda não juntado). O Lançar título ganha no topo o bloco **Arquivo da nota**:
