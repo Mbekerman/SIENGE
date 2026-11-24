@@ -33,7 +33,7 @@ end $$;
 --   - alguma linha do rateio da nota não está no rateio aprovado da conta (núcleo, centro, divisão, subnível e natureza),
 --     ou a nota tem linha sem centro;
 --   - contrato e assinatura: a nota passa da previsão do mês, ou o contrato passa do valor total; sem previsão do mês
---     (contrato sem fim e sem calendário), também. Leitura minha, a confirmar com o Moises: a tolerância é só do consumo.
+--     (contrato sem fim e sem calendário), também. A tolerância é só do consumo (Moises, 24/nov/2026, cartão: "Volta às faixas do centro").
 -- O que vale é o bruto da nota (antes de retenções e caução), que é o que a previsão do mês e o teto medem.
 --
 -- Vaga nova "AF_AO" (a AF, a AO ou a AD), só para o rito; não entra nas faixas da alçada. O rótulo da vaga AO_CENTRO
