@@ -57,7 +57,7 @@ Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depo
 
 #### Forma de pagamento e envio ao Sienge (PR #71)
 
-🟡 Código pronto no PR #71, ainda não juntado. As regras de boleto e PIX foram aprovadas pelo Moises em 17/nov/2026.
+✅ Código no PR #71, juntado. As regras de boleto e PIX foram aprovadas pelo Moises em 17/nov/2026.
 
 - **Forma de pagamento de cada parcela:** quem lança a nota diz como cada parcela vai ser paga, por PIX (com o tipo e a chave) ou por boleto (com a linha digitável). O sistema confere a chave e os dígitos do boleto.
 - **Trava:** depois do primeiro voto da alçada, ou com o título já na fila do Sienge, ninguém muda mais a forma de pagamento, nem quem lançou. Ela só volta a mudar na revisão do título.
@@ -106,7 +106,7 @@ Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depo
 
 #### Contratos recorrentes e previsões no código (PR #72)
 
-🟡 Código pronto no PR #72, ainda não juntado:
+✅ Código no PR #72, juntado:
 
 - **Aprovação do contrato recorrente e da assinatura:** aprovam o gestor do centro e alguém da AF ou da AO. Quem criou ou alterou o contrato não aprova. Mudar valores, datas, credor ou rateio pede aprovação de novo.
 - **Previsões do contrato** nascem aprovadas quando o contrato é aprovado. A previsão lançada à mão passa pela alçada do título.
@@ -135,7 +135,7 @@ Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depo
 
 #### Consultar títulos, previsões e contas recorrentes (PR #85)
 
-🟡 **Primeira tela de verdade, no PR #85, que espera o ok do Moises.** Ela só consulta; as telas de lançar vêm nos próximos PRs. O pedido do Moises, de 18/nov/2026, foi começar pelas telas de lançar título, previsões e contratos recorrentes, e pela de consultar.
+✅ **Primeira tela de verdade, no PR #85, juntado.** Ela só consulta; as telas de lançar vêm nos próximos PRs. O pedido do Moises, de 18/nov/2026, foi começar pelas telas de lançar título, previsões e contratos recorrentes, e pela de consultar.
 
 **Entrada:** pela conta Google @bkm.com.br. Quem não tem cadastro no ERP vê "Sem acesso ao ERP".
 
@@ -159,7 +159,7 @@ Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depo
 - O link copiado abre a mesma tela, com o filtro aplicado.
 - Título e previsão de PJ só aparecem para o master e para quem ele designou.
 
-🟡 **Revisão visual no PR #90, que espera o ok do Moises.** As regras não mudam; muda o visual:
+✅ **Revisão visual no PR #90, juntado.** As regras não mudam; muda o visual:
 - as abas ficam no lugar do título da página;
 - os contadores mostram o total em R$;
 - o cabeçalho das colunas fica fixo;
@@ -178,7 +178,7 @@ O #90 também traz a navegação nova (Moises, 18/nov/2026):
 
   Embaixo vem um cartão por seção, que explica o que se encontra nela e o que dá para fazer.
 
-🟡 **Rastro do título, no PR #91** (ainda não juntado). A gaveta do título ganha uma barra com 7 botões, e cada um abre uma janela:
+✅ **Rastro do título, no PR #91** (juntado). A gaveta do título ganha uma barra com 7 botões, e cada um abre uma janela:
 - **Origem:** o documento que veio antes do título e o título que ele substituiu.
 - **Aprovações:** todas as rodadas de aprovação.
 - **Alterações:** os pedidos de revisão com a resposta, e o antes e depois de cada ajuste.
@@ -239,14 +239,14 @@ Conta recorrente é a que se repete todo mês. Ela fica cadastrada uma vez e gan
 
 ### Tarefa: cadastrar uma conta recorrente
 
-> 🟡 **Tela no PR #96**, ainda não juntado. Os passos numerados mais abaixo seguem o protótipo (linha F).
+> ✅ **Tela no PR #96**, juntado. Os passos numerados mais abaixo seguem o protótipo (linha F).
 
 **Como fica no PR #96:**
 
 1. Em Financeiro › Contas a pagar › Contas recorrentes, clique em **Nova conta** e escolha um de três tipos:
    - **Assinatura:** valor por mês ou por período;
    - **Contrato de serviço:** valor total;
-   - **Conta de consumo:** concessionária, número da instalação (como está na fatura), **média esperada por mês** (o valor médio da fatura, não um máximo; Moises, 20/nov/2026), teto no ano e dia do vencimento. No PR #97 (ainda não juntado), o dia passa a ser opcional, com o aviso "Na conta de consumo, a fatura que chega preenche e atualiza o dia"; mudar o dia não abre versão nova da conta.
+   - **Conta de consumo:** concessionária, número da instalação (como está na fatura), **média esperada por mês** (o valor médio da fatura, não um máximo; Moises, 20/nov/2026), teto no ano e dia do vencimento. No PR #97 (juntado), o dia passa a ser opcional, com o aviso "Na conta de consumo, a fatura que chega preenche e atualiza o dia"; mudar o dia não abre versão nova da conta.
 2. Preencha empresa, fornecedor, descrição, vigência, vencimento e o rateio, como no Lançar título.
 3. Clique em **Enviar para aprovação**. Aprovam o gestor de cada área e alguém da AF ou da AO.
 
@@ -399,8 +399,8 @@ Sem os dados de pagamento, o **Enviar** fica travado: o campo Pagamento fica em 
 1. No menu, abra **Aprovar**. Comece pelos grupos **Vencidos** e **Vencem esta semana**.
 2. Clique no pedido. Ele abre numa gaveta à direita, com o valor, os avisos (por exemplo, "Vencido, R$ 25,69 de multa, pede a AD"), as camadas de aprovação (quem já aprovou, de quem é a vez e quem vem depois), a nota, o centro de custo, o pagamento e o vencimento.
 3. Para decidir, desça pelo que está **por trás deste título**, só com cliques (ver abaixo).
-   - 🟡 **Selo "Recebedor não confere"** (PR #108, ainda não juntado). Quando quem recebe pelo PIX, pelo PIX copia e cola ou pelo boleto não é o fornecedor conferido, o título só entrou com a justificativa de quem lançou. O selo aparece na lista e em Aprovar, e a gaveta mostra "Quem recebe não é o fornecedor conferido. Fica marcado até o pagamento". Leia a justificativa antes de aprovar.
-   - 🟡 **Selo amarelo "Credor novo"** (PR #115, ainda não juntado). Aparece quando o fornecedor nunca teve outro título enviado ao Sienge ou pago, e mostra o dia do cadastro. Confira o cadastro antes de aprovar.
+   - ✅ **Selo "Recebedor não confere"** (PR #108, juntado). Quando quem recebe pelo PIX, pelo PIX copia e cola ou pelo boleto não é o fornecedor conferido, o título só entrou com a justificativa de quem lançou. O selo aparece na lista e em Aprovar, e a gaveta mostra "Quem recebe não é o fornecedor conferido. Fica marcado até o pagamento". Leia a justificativa antes de aprovar.
+   - ✅ **Selo amarelo "Credor novo"** (PR #115, juntado). Aparece quando o fornecedor nunca teve outro título enviado ao Sienge ou pago, e mostra o dia do cadastro. Confira o cadastro antes de aprovar.
 4. Clique em **Aprovar** ou em **Recusar**. Os dois botões ficam embaixo da gaveta em qualquer nível.
 
 #### Ver o que está por trás do título

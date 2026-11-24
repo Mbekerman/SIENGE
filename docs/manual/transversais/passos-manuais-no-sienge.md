@@ -31,6 +31,7 @@ Estes passos **não** podem ser feitos pelo ERP BKM, porque a API do Sienge não
 | **Dar ciência do título a pagar** | Antes do pagamento, se o tipo de documento exigir | Avisa quem precisa dar a ciência e acompanha pelo aviso do Sienge | Documentação da API |
 | **Autorizar o pagamento da parcela** | Último passo do financeiro antes de pagar | Mostra o que já foi aprovado no ERP BKM esperando esse clique | Documentação da API |
 | **Criar contrato e aditivo** | Antes de qualquer medição; quando o saldo acaba | Avisa quando a nota passa do saldo do contrato | Documentação da API |
+| 🟡 **Pôr a chave PIX de CNPJ com letras** (PR #133, ainda não juntado) | No envio do título ao Sienge, quando o PIX é um CNPJ com letras | O título vai ao Sienge sem essa parcela preenchida e fica marcado para pôr à mão | Teste da API |
 | **Criar pedido de compra** | Compras não regulares | ⏳ A definir no módulo de suprimentos | Documentação da API |
 | **Criar empresa e obra** | Ao abrir uma SPE e um empreendimento | Liga o cadastro do ERP BKM ao do Sienge, uma vez | Documentação da API |
 | **Corrigir ou apagar título criado pela API** | Depois de criado, a API só muda o vencimento e os dados de pagamento (PIX); tipo, número, valor, empresa, fornecedor, emissão, parcelas e impostos só se corrigem à mão | Só cria o título com tudo preenchido e aprovado, para ele nascer certo | Testes de 6 e 8/nov/2026 (título 8422) |
