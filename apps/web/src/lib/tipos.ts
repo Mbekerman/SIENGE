@@ -15,7 +15,10 @@ export interface Titulo {
 }
 
 export interface ParcelaDetalhe {
-  numero: number; vencimento: string; valor: number; saldo: number | null; forma: 'pix' | 'boleto' | null;
+  numero: number; vencimento: string; valor: number; saldo: number | null; forma: 'pix' | 'boleto' | 'ted' | null;
+  ted?: { banco: string; agencia: string; agencia_digito: string | null; conta: string; conta_digito: string; conta_tipo: 'corrente' | 'poupanca'; titular_documento: string; excecao: string | null } | null;
+  /** os avisos da forma de pagamento desta parcela (erp.avisos_forma_pagamento) */
+  avisos?: string[] | null;
   pix_tipo: string | null; pix_chave: string | null; boleto_linha: string | null; pix_excecao: string | null; pix_copia_cola?: string | null;
   pix_copia_cola_recebedor?: { chave: string | null; url: string | null; nome: string | null } | null; pix_copia_cola_excecao?: string | null;
   pix_copia_cola_conferido?: { cpf_cnpj: string | null; nome: string | null; banco: string | null; valor: number | null; em: string } | null;

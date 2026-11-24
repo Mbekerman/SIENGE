@@ -5,6 +5,7 @@ import { Alerta, COR, Cab, Carregando, Chip, Colunas, Gaveta, Grupo, Ic, Kv, Li,
 import { data, dataCurta, dataHora, documento, hojeISO, mes, reais } from '../lib/format';
 import { acha, usePagina } from '../lib/navegar';
 import { mensagemErro, rpc } from '../lib/supabase';
+import { AvisosForma, textoTed } from '../lib/forma';
 import type { EtapaTitulo, Titulo, TituloDetalhe } from '../lib/tipos';
 import { RastroBotoes } from '../components/Rastro';
 import { LancarTitulo } from './Lancar';
@@ -99,6 +100,7 @@ function GavetaTitulo({ id, fechar }: { id: string; fechar: () => void }) {
       {t.etiquetas.length > 0 && <div className="etq-w">{t.etiquetas.map(x => <span key={x} className="etq">{x}</span>)}</div>}
       <AlertaRecebedor motivos={t.recebedor_divergente} />
       <AlertaCredorNovo desde={t.credor_novo} />
+      <AvisosForma t={t} podeEscolher />
       {recusa && <Alerta c="cr" t={`Recusado por ${recusa.por ?? '—'}${recusa.justificativa ? `: ${recusa.justificativa}` : ''}`} />}
       {t.etapa === 'erro_sienge' && <Alerta c="cr" t={`Não chegou ao Sienge${t.sienge_erro ? `: ${t.sienge_erro}` : ''}`} />}
       {t.etapa === 'aprovacao' && t.aprovacao_pendente && <Alerta c="at" t={`Esperando ${t.aprovacao_pendente}`} />}
@@ -116,6 +118,7 @@ function GavetaTitulo({ id, fechar }: { id: string; fechar: () => void }) {
         {t.parcelas.map(p => (
           <Li key={p.numero} a={`${t.parcelas.length > 1 ? `${p.numero}ª · ` : ''}vence ${data(p.vencimento)}`} b={reais(p.valor)}
             c={<>{p.forma === 'pix' ? `PIX ${p.pix_tipo ?? ''} ${p.pix_chave ?? ''}${p.pix_excecao ? ` · exceção: ${p.pix_excecao}` : ''}`
+              : p.forma === 'ted' && p.ted ? `${textoTed(p.ted)}${p.ted.excecao ? ` · exceção: ${p.ted.excecao}` : ''}`
               : p.forma === 'boleto' ? <span className="mono">Boleto {p.boleto_linha}</span> : 'Forma de pagamento não informada'}{p.pix_copia_cola && <>
                 <span className="mono lt-cc">PIX copia e cola {p.pix_copia_cola}</span>
                 <span className="lt-cc">Recebe pelo código: {p.pix_copia_cola_recebedor?.nome ?? 'sem nome'} · {p.pix_copia_cola_recebedor?.chave ? `chave ${p.pix_copia_cola_recebedor.chave}` : 'QR dinâmico'} · credor: {t.fornecedor}</span>
