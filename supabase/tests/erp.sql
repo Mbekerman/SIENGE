@@ -9928,6 +9928,104 @@ select pg_temp.como(:'analista2');
 select pg_temp.ok(erp.decidir_titulo(:'r2', true) = 'aprovado', 'rito: depois do gestor, a AO completa');
 select pg_temp.como(:'analista2');
 select pg_temp.falha(format('select erp.decidir_titulo(%L, true)', :'r6'), 'rito: na assinatura a AO não aprova (é o gestor, depois a AF)');
+-- revisão de segurança (24/11): a previsão é do mês (soma das notas), só na vigência, e os caminhos que voltam às faixas
+select pg_temp.como(:'analista');
+insert into erp.compromissos (id, empresa_id, tipo, pessoa_id, descricao, inicio, periodicidade, dia_vencimento, instalacao, faixa_mensal, teto_anual) values
+  ('61000000-0000-0000-0000-0000000000c5', :'spe', 'consumo', '10000000-0000-0000-0000-000000000007', 'Luz de duas faturas', '2027-01-01', 'mensal', 6, 'RITO-5', 1000, 50000);
+insert into erp.compromissos (id, empresa_id, tipo, pessoa_id, descricao, inicio, fim, periodicidade, valor_periodo, valor_total, dia_vencimento) values
+  ('61000000-0000-0000-0000-0000000000c6', :'spe', 'assinatura', '10000000-0000-0000-0000-000000000007', 'Software até março', '2027-01-01', '2027-03-31', 'mensal', 500, null, 10),
+  ('61000000-0000-0000-0000-0000000000c7', :'spe', 'assinatura', '10000000-0000-0000-0000-000000000007', 'Software encerrado', '2027-01-01', null, 'mensal', 500, null, 10),
+  ('61000000-0000-0000-0000-0000000000c8', :'spe', 'assinatura', '10000000-0000-0000-0000-000000000007', 'Software até 700', '2027-01-01', null, 'mensal', 500, 700, 10);
+insert into erp.compromissos (id, empresa_id, tipo, pessoa_id, descricao, inicio, valor_total) values
+  ('61000000-0000-0000-0000-0000000000c9', :'spe', 'contrato', '10000000-0000-0000-0000-000000000007', 'Contrato sem fim', '2027-01-01', 10000);
+insert into erp.compromisso_rateios (compromisso_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+  select ('61000000-0000-0000-0000-0000000000c' || x)::uuid, :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100 from unnest(array['5','6','7','8','9']) x;
+select pg_temp.como(:'gestor');
+select erp.decidir_compromisso(('61000000-0000-0000-0000-0000000000c' || x)::uuid, true) from unnest(array['5','6','7','8','9']) x;
+select pg_temp.como(:'contador');
+select pg_temp.ok((select bool_and(erp.decidir_compromisso(('61000000-0000-0000-0000-0000000000c' || x)::uuid, true) = 'aprovado')
+                     from unnest(array['5','6','7','8','9']) x), 'rito: as contas da revisão aprovadas');
+select pg_temp.como(:'analista');
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, compromisso_id, tipo, numero, emissao, competencia, valor_bruto) values
+  ('70000000-0000-0000-0000-0000000c0011', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c5', 'fatura', 'R11', '2027-01-05', '2027-01-01', 800),
+  ('70000000-0000-0000-0000-0000000c0012', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c5', 'fatura', 'R12', '2027-01-06', '2027-01-01', 800),
+  ('70000000-0000-0000-0000-0000000c0013', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c3', 'nfse', 'R13', '2027-01-06', '2027-01-01', 1),
+  ('70000000-0000-0000-0000-0000000c0014', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c6', 'nfse', 'R14', '2027-04-05', '2027-04-01', 500),
+  ('70000000-0000-0000-0000-0000000c0015', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c6', 'nfse', 'R15', '2026-12-05', '2026-12-01', 500),
+  ('70000000-0000-0000-0000-0000000c0016', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c6', 'nfse', 'R16', '2027-03-05', '2027-03-01', 500),
+  ('70000000-0000-0000-0000-0000000c0017', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c7', 'nfse', 'R17', '2027-01-05', '2027-01-01', 500),
+  ('70000000-0000-0000-0000-0000000c0018', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c8', 'nfse', 'R18', '2027-01-05', '2027-01-01', 500),
+  ('70000000-0000-0000-0000-0000000c0019', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c8', 'nfse', 'R19', '2027-02-05', '2027-02-01', 500),
+  ('70000000-0000-0000-0000-0000000c0020', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c9', 'nfse', 'R20', '2027-01-05', '2027-01-01', 100),
+  ('70000000-0000-0000-0000-0000000c0021', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c3', 'nfse', 'R21', '2027-03-05', '2027-03-01', 500);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual)
+  select d.id, :'ne_vm', case when d.numero = 'R21' then :'cc_obra'::uuid else :'cc_mkt'::uuid end,
+         case when d.numero = 'R21' then pg_temp.nat('04.01') else pg_temp.nat('05.01.04') end, 100
+    from erp.documentos_fiscais d where d.numero in ('R11','R12','R13','R14','R15','R16','R17','R18','R19','R20','R21')
+     and d.compromisso_id::text like '61000000-0000-0000-0000-0000000000c%';
+-- a conta encerrada depois de a nota entrar
+select pg_temp.sis(); update erp.compromissos set situacao = 'encerrado' where id = '61000000-0000-0000-0000-0000000000c7'; select pg_temp.volta();
+select pg_temp.como(:'analista');
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0011', array['2027-01-20']::date[]) as r11 \gset
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0012', array['2027-01-21']::date[]) as r12 \gset
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0013', array['2027-01-21']::date[]) as r13 \gset
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0014', array['2027-04-20']::date[]) as r14 \gset
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0015', array['2026-12-20']::date[]) as r15 \gset
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0016', array['2027-03-20']::date[]) as r16 \gset
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0017', array['2027-01-20']::date[]) as r17 \gset
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0018', array['2027-01-20']::date[]) as r18 \gset
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0019', array['2027-02-20']::date[]) as r19 \gset
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0020', array['2027-01-20']::date[]) as r20 \gset
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0021', array['2027-03-20']::date[]) as r21 \gset
+select pg_temp.sis();
+select pg_temp.ok((select fases = '{AF_AO}' from erp.titulo_alcadas where titulo_id = :'r11')
+                  and (select fases = '{AREA,AF_AO}' and compromisso_id is not null from erp.titulo_alcadas where titulo_id = :'r12'),
+  'rito: duas faturas de consumo no mesmo mês somam contra a previsão (a segunda passa da tolerância e vai ao gestor)');
+select pg_temp.ok((select count(*) >= 1 and bool_and(compromisso_id is null and alcada_id is not null) from erp.titulo_alcadas where titulo_id = :'r13'),
+  'rito: segunda nota da assinatura no mês, que passa da previsão somada, segue as faixas');
+select pg_temp.ok((select bool_and(compromisso_id is null) from erp.titulo_alcadas where titulo_id in (:'r14', :'r15'))
+                  and (select fases = '{AREA,AF}' and compromisso_id is not null from erp.titulo_alcadas where titulo_id = :'r16'),
+  'rito: só na vigência (antes do início e depois do fim, as faixas; o último mês, o rito)');
+select pg_temp.ok((select count(*) >= 1 and bool_and(compromisso_id is null) from erp.titulo_alcadas where titulo_id = :'r17'),
+  'rito: conta encerrada segue as faixas');
+select pg_temp.ok((select fases = '{AREA,AF}' and compromisso_id is not null from erp.titulo_alcadas where titulo_id = :'r18')
+                  and (select count(*) >= 1 and bool_and(compromisso_id is null) from erp.titulo_alcadas where titulo_id = :'r19'),
+  'rito: a nota que passaria do valor total da conta segue as faixas');
+select pg_temp.ok((select count(*) >= 1 and bool_and(compromisso_id is null) from erp.titulo_alcadas where titulo_id = :'r20'),
+  'rito: sem previsão do mês (contrato sem fim e sem calendário), as faixas');
+select pg_temp.ok((select count(*) >= 1 and bool_and(compromisso_id is null) from erp.titulo_alcadas where titulo_id = :'r21'),
+  'rito: nota num centro fora do rateio da conta segue as faixas');
+select pg_temp.volta();
+-- nota de outro fornecedor presa à conta: o gatilho do contrato já recusa (t_contrato_confere), antes do rito
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual($$insert into erp.documentos_fiscais (empresa_id, emitente_id, compromisso_id, tipo, numero, emissao, competencia, valor_bruto)
+  values ('20000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000005', '61000000-0000-0000-0000-0000000000c3', 'nfse', 'R99', '2027-01-05', '2027-01-01', 500)$$,
+  'O contrato é de outro fornecedor', 'rito: nota de outro fornecedor não se prende à conta');
+-- sem gente na vaga: o gestor que lança não aprova a própria nota, e a vaga vai ao master
+select pg_temp.como(:'gestor');
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, compromisso_id, tipo, numero, emissao, competencia, valor_bruto) values
+  ('70000000-0000-0000-0000-0000000c0022', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c3', 'nfse', 'R22', '2027-04-05', '2027-04-01', 500);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, natureza_id, percentual) values
+  ('70000000-0000-0000-0000-0000000c0022', :'ne_vm', :'cc_mkt', pg_temp.nat('05.01.04'), 100);
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0022', array['2027-04-20']::date[]) as r22 \gset
+select pg_temp.sis();
+select pg_temp.ok((select fases = '{AREA,AF}' and compromisso_id is not null and falta_aprovadores and vagas_sem_gente = '{AREA}'
+                     from erp.titulo_alcadas where titulo_id = :'r22')
+                  and exists (select 1 from erp.eventos where tipo = 'alcada_falta_aprovadores' and registro = :'r22'),
+  'rito: sem gestor que possa aprovar (o único lançou), a vaga vai ao master com o aviso');
+select pg_temp.volta();
+-- divisão fora do rateio da conta
+select pg_temp.sis(); insert into erp.divisoes (id, centro_custo_id, nome) values ('8d000000-0000-0000-0000-0000000000c1', :'cc_mkt', 'Divisão do rito'); select pg_temp.volta();
+select pg_temp.como(:'analista');
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, compromisso_id, tipo, numero, emissao, competencia, valor_bruto) values
+  ('70000000-0000-0000-0000-0000000c0023', :'spe', '10000000-0000-0000-0000-000000000007', '61000000-0000-0000-0000-0000000000c3', 'nfse', 'R23', '2027-05-05', '2027-05-01', 500);
+insert into erp.documento_rateios (documento_id, nucleo_economico_id, centro_custo_id, divisao_id, natureza_id, percentual) values
+  ('70000000-0000-0000-0000-0000000c0023', :'ne_vm', :'cc_mkt', '8d000000-0000-0000-0000-0000000000c1', pg_temp.nat('05.01.04'), 100);
+select erp.lancar_documento('70000000-0000-0000-0000-0000000c0023', array['2027-05-20']::date[]) as r23 \gset
+select pg_temp.sis();
+select pg_temp.ok((select count(*) >= 1 and bool_and(compromisso_id is null) from erp.titulo_alcadas where titulo_id = :'r23'),
+  'rito: nota numa divisão fora do rateio da conta segue as faixas');
+select pg_temp.volta();
 select pg_temp.como(null);
 rollback;
 

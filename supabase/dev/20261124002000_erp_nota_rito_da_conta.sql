@@ -88,7 +88,7 @@ create or replace function erp.rotulo_vaga(p_vaga text) returns text language sq
 -- ---------------------------------------------------------------------------------------------
 -- Fixa a alçada do título pelo rito da conta, quando ele vale; devolve false (e não grava nada) quando não vale.
 create function erp._rito_da_conta(t erp.titulos) returns boolean language plpgsql as $$
-declare c erp.compromissos; v_bruto numeric; v_prev numeric; v_tol numeric; v_outras numeric;
+declare c erp.compromissos; v_bruto numeric; v_prev numeric; v_tol numeric; v_outras numeric; v_mes numeric;
         v_fases text[]; cc record; v_valor numeric; v_falta text[];
 begin
   if t.compromisso_id is null or t.tipo <> 'fornecedor' then return false; end if;
@@ -110,19 +110,28 @@ begin
                                      and cr.natureza_id = tr.natureza_id))) then
     return false;
   end if;
+  -- só dentro da vigência (depois do fim, a previsão do mês repetiria o último mês)
+  if erp.mes(t.competencia) < erp.mes(c.inicio) or (c.fim is not null and erp.mes(t.competencia) > erp.mes(c.fim)) then
+    return false;
+  end if;
   v_bruto := coalesce((select d.valor_bruto from erp.documentos_fiscais d where d.id = t.documento_id), t.valor);
   v_prev := erp.valor_do_mes(c.id, t.competencia);
   if v_prev is null then return false; end if;
+  -- a previsão é do mês: conta a soma das notas lançadas da conta na mesma competência, mais esta (duas notas no mesmo
+  -- mês, cada uma dentro da previsão, não passam as duas pelo rito)
+  select coalesce(sum(d.valor_bruto), 0) into v_mes from erp.documentos_fiscais d
+   where d.compromisso_id = c.id and d.situacao = 'lancado' and d.id is distinct from t.documento_id
+     and erp.mes(d.competencia) = erp.mes(t.competencia);
   if c.tipo = 'consumo' then
     v_tol := (select recorrente_tolerancia_pct from erp.regra_alcada_pagamento);
     -- as outras notas da conta no mesmo ano (lançadas, não canceladas)
     select coalesce(sum(d.valor_bruto), 0) into v_outras from erp.documentos_fiscais d
      where d.compromisso_id = c.id and d.situacao = 'lancado' and d.id is distinct from t.documento_id
        and extract(year from d.competencia) = extract(year from t.competencia);
-    v_fases := case when v_bruto <= round(v_prev * (1 + v_tol / 100), 2) and v_outras + v_bruto <= c.teto_anual
+    v_fases := case when v_mes + v_bruto <= round(v_prev * (1 + v_tol / 100), 2) and v_outras + v_bruto <= c.teto_anual
                     then array['AF_AO'] else array['AREA','AF_AO'] end;
   else
-    if v_bruto > v_prev then return false; end if;
+    if v_mes + v_bruto > v_prev then return false; end if;
     if c.valor_total is not null then
       select coalesce(sum(d.valor_bruto), 0) into v_outras from erp.documentos_fiscais d
        where d.compromisso_id = c.id and d.situacao = 'lancado' and d.id is distinct from t.documento_id;
