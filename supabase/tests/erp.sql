@@ -10314,14 +10314,45 @@ select pg_temp.ok((:'imp2'::jsonb)->>'ja_ligados' = '2' and (:'imp2'::jsonb)->>'
                   and (select nome = 'Fornecedor Novo' from erp.pessoas p join erp.codigos_externos e on e.registro_id = p.id and e.codigo = '9001' and e.tabela = 'pessoas')
                   and (:'imp2'::jsonb)->'avisos' @> '[{"id": 9003, "motivo": "o documento no Sienge mudou; o ERP ficou como estava"}]',
   'credores: importar de novo não duplica nem muda o cadastro; documento mudado no Sienge vira aviso');
--- emitente já classificado como PJ: o credor entra restrito
-insert into erp.emitentes_classificacao (documento, classe, por) values ('06990590000123', 'pj', :'diretor');
+-- PJ falha fechado (Moises, 24/11/2026, "Escondidos até classificar"): só o classificado como comum entra visível
+insert into erp.emitentes_classificacao (documento, classe, por) values ('06990590000123', 'pj', :'diretor'), ('11444777000161', 'comum', :'diretor');
 set local role erp_sistema;
-select erp.sienge_importar_credores('[{"id": 9010, "name": "PJ do Sienge", "cnpj": "06.990.590/0001-23"}, {"id": 9011, "name": "Comum", "cnpj": "33000167000101"}]'::jsonb) as imp3 \gset
+select erp.sienge_importar_credores('[{"id": 9010, "name": "PJ do Sienge", "cnpj": "06.990.590/0001-23"}, {"id": 9011, "name": "Sem classe", "cnpj": "33000167000101"},
+                                      {"id": 9012, "name": "Comum classificado", "cnpj": "11444777000161"}]'::jsonb) as imp3 \gset
 reset role;
-select pg_temp.ok((select p.restrita from erp.pessoas p join erp.codigos_externos e on e.registro_id = p.id and e.codigo = '9010' and e.tabela = 'pessoas')
-                  and (select not p.restrita from erp.pessoas p join erp.codigos_externos e on e.registro_id = p.id and e.codigo = '9011' and e.tabela = 'pessoas'),
-  'credores: emitente classificado como PJ entra restrito; o sem classificação entra comum');
+select pg_temp.ok((select p.restrita and not p.sem_classe from erp.pessoas p join erp.codigos_externos e on e.registro_id = p.id and e.codigo = '9010' and e.tabela = 'pessoas')
+                  and (select p.restrita and p.sem_classe from erp.pessoas p join erp.codigos_externos e on e.registro_id = p.id and e.codigo = '9011' and e.tabela = 'pessoas')
+                  and (select not p.restrita and not p.sem_classe from erp.pessoas p join erp.codigos_externos e on e.registro_id = p.id and e.codigo = '9012' and e.tabela = 'pessoas')
+                  and (select p.restrita and p.sem_classe from erp.pessoas p join erp.codigos_externos e on e.registro_id = p.id and e.codigo = '9001' and e.tabela = 'pessoas'),
+  'credores: o classificado PJ entra restrito, o sem classe entra escondido (sem_classe) e só o classificado comum entra visível');
+select pg_temp.ok(erp._classe_emitente('33000167000101') is null and erp._classe_emitente('06990590000123') = 'pj',
+  'credores: a pessoa escondida só por falta de classe não conta como PJ (a NFS-e dela vai à triagem)');
+select pg_temp.como(:'analista');
+select pg_temp.ok(not exists (select 1 from api.fornecedores('33000167')) and not exists (select 1 from api.fornecedores('Sem classe'))
+                  and exists (select 1 from api.fornecedores('11444777')),
+  'credores: quem não vê o PJ não acha o credor sem classe, nem pelo CNPJ nem pelo nome');
+select pg_temp.falha($$update erp.pessoas set restrita = false, sem_classe = false where documento = '33000167000101'$$,
+  'credores: ninguém solta à mão a pessoa sem classe');
+select pg_temp.ok(pg_temp.erro_como_dono($$update erp.pessoas set restrita = false, sem_classe = false where documento = '45997418000153'$$)
+                    = 'A marca de PJ da pessoa só o master muda',
+  'credores: nem por baixo do RLS a pessoa sem classe se solta sem a classificação comum');
+select pg_temp.erro_igual($$select erp.classificar_comuns(array['33000167000101'])$$, 'Só o master classifica em lote',
+  'credores: só o master classifica em lote');
+-- o master classifica como comum: a pessoa se solta; como PJ: fica restrita, sem a marca
+select pg_temp.como(:'diretor');
+select pg_temp.ok(erp.classificar_comuns(array['33.000.167/0001-01', '06990590000123', 'lixo']) = 1,
+  'credores: o lote só conta o documento sem classe');
+select pg_temp.ok(erp.classificar_emitente('52998224725', 'pj') = 'feito', 'credores: o master classifica o CPF como PJ');
+select pg_temp.como(null);
+select pg_temp.ok((select not restrita and not sem_classe from erp.pessoas where documento = '33000167000101')
+                  and (select restrita and not sem_classe from erp.pessoas where documento = '52998224725'),
+  'credores: classificado comum, a pessoa se solta; classificado PJ, fica restrita como PJ de verdade');
+select pg_temp.como(:'analista');
+select pg_temp.ok(exists (select 1 from api.fornecedores('33000167')),
+  'credores: solta, o financeiro acha o fornecedor');
+select pg_temp.como(:'diretor');
+select pg_temp.falha($$update erp.pessoas set sem_classe = true where documento = '33000167000101'$$,
+  'credores: a marca sem classe só o sistema põe (nem o master)');
 -- só o sistema
 select pg_temp.como(:'diretor');
 select pg_temp.erro_igual($$select erp.sienge_importar_credores('[]'::jsonb)$$, 'permission denied for function sienge_importar_credores',
