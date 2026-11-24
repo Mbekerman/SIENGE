@@ -19,11 +19,15 @@ export type Parcela = {
   numero: number;
   vencimento: string; // yyyy-mm-dd
   valor: number;
-  forma?: 'pix' | 'boleto'; // sem forma: título PRV da previsão (não tem passo de pagamento)
+  forma?: 'pix' | 'boleto' | 'ted'; // sem forma: título PRV da previsão (não tem passo de pagamento)
   pix_tipo?: 'cpf_cnpj' | 'email' | 'telefone' | 'aleatoria';
   pix_chave?: string;
   boleto_linha?: string;
   boleto_tipo?: 1 | 2; // 1 = próprio banco, 2 = outros bancos (formas de pagamento do Sienge)
+  ted?: {
+    banco: string; agencia: string; agencia_digito?: string | null; conta: string; conta_digito: string;
+    conta_tipo: 'corrente' | 'poupanca'; titular_documento: string; titular_nome?: string | null;
+  };
 };
 
 export type PedidoTitulo = {
@@ -72,6 +76,7 @@ export function segundosRetryAfter(valor: string | null, agora: Date): number | 
 }
 
 export const PIX_SIENGE = 14; // forma de pagamento PIX no Sienge (lida no título 8547, 17/11/2026)
+export const TED_SIENGE = 6; // forma de pagamento TED no Sienge (lida nos títulos 8471 e 8459, 24/11/2026)
 
 export function marcador(tituloId: string): string {
   return `ERP ${tituloId}`;
@@ -135,6 +140,15 @@ export function chavePix(tipo: Parcela['pix_tipo'], chave: string): { keyPixType
   }
 }
 
+// O CPF ou o CNPJ do titular da TED, com máscara, no campo de cada um. CNPJ alfanumérico não vai (como na chave PIX).
+export function titularTed(doc: string): { beneficiaryCPFNumber: string } | { beneficiaryCNPJNumber: string } {
+  const d = doc.toUpperCase().replace(/[^0-9A-Z]/g, '');
+  if (/[A-Z]/.test(d)) throw new Divergencia('o Sienge ainda não aceita CNPJ alfanumérico: ponha a forma de pagamento à mão no Sienge');
+  if (d.length === 11) return { beneficiaryCPFNumber: `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}` };
+  if (d.length === 14) return { beneficiaryCNPJNumber: `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}` };
+  throw new Error('CPF ou CNPJ do titular da TED com tamanho errado');
+}
+
 // O PATCH da forma de pagamento de uma parcela: caminho (sem a base) e corpo.
 // isUsingCreditorData sempre "N": o PIX do cadastro do credor nunca é usado (regra de 8/11/2026).
 export function pagamentoDaParcela(siengeId: number, p: Parcela, tituloId: string): { caminho: string; corpo: Record<string, unknown> } {
@@ -149,6 +163,25 @@ export function pagamentoDaParcela(siengeId: number, p: Parcela, tituloId: strin
     return {
       caminho: `${base}/boleto-bancario`,
       corpo: { paymentTypeId: p.boleto_tipo, notes, boletoBancarioBarCodeNumber: barrasDaLinha(p.boleto_linha), boletoBancarioManualBarCodeNumber: p.boleto_linha },
+    };
+  }
+  if (p.forma === 'ted') {
+    const t = p.ted;
+    if (!t || !/^\d{3}$/.test(t.banco) || !/^\d{1,6}$/.test(t.agencia) || !/^\d{1,14}$/.test(t.conta) || !/^[0-9X]$/.test(t.conta_digito)
+        || (t.agencia_digito != null && !/^[0-9X]$/.test(t.agencia_digito))) {
+      throw new Error(`parcela ${p.numero} sem a conta da TED`);
+    }
+    return {
+      caminho: `${base}/bank-transfer`,
+      corpo: {
+        paymentTypeId: TED_SIENGE, notes,
+        beneficiaryBankCode: t.banco, beneficiaryBankBranchNumber: t.agencia,
+        ...(t.agencia_digito ? { beneficiaryBankBranchDigit: t.agencia_digito } : {}),
+        beneficiaryAccountNumber: t.conta, beneficiaryAccountDigit: t.conta_digito,
+        beneficiaryAccountType: t.conta_tipo === 'poupanca' ? 'P' : 'C',
+        ...(t.titular_nome ? { beneficiaryName: t.titular_nome } : {}),
+        ...titularTed(t.titular_documento),
+      },
     };
   }
   throw new Error(`forma de pagamento desconhecida na parcela ${p.numero}`);
