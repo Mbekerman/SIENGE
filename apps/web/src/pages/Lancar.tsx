@@ -10,21 +10,32 @@ import { recebedorPix, type Conferido } from '../lib/pix';
 import { mensagemErro, rpc, supabase } from '../lib/supabase';
 import { abrirComSenha, leitorLigado, subirArquivo, TIPOS_ACEITOS } from '../lib/leitor';
 import { casarBoletos, conferirValores, juntarLeituras } from '../lib/conjunto';
-import type { FornecedorBusca, Identificacao, Leitura, NaturezaLancavel, OpcoesLancamento, PrevisaoParaNota, ResultadoLeitor } from '../lib/tipos';
+import { pagDoBanco, textoPag } from './ComoPaga';
+import type { ContaCadastro, Contrato, FornecedorBusca, Identificacao, Leitura, NaturezaLancavel, OpcoesLancamento, PrevisaoParaNota, ResultadoLeitor } from '../lib/tipos';
 
-type Forma = 'pix' | 'boleto';
+type Forma = 'pix' | 'boleto' | 'ted' | 'cadastro';
 export type PixTipo = 'cpf_cnpj' | 'email' | 'telefone' | 'aleatoria';
 export interface Linha { k: number; nucleo: string; centro: string; divisao: string; natureza: string; pct: string }
-interface Parcela { k: number; vencimento: string; valor: string; forma: Forma; pix_tipo: PixTipo; pix_chave: string; boleto: string; excecao: string; pix_cc: string; cc_exc: string; bol_exc: string }
+interface Ted { banco: string; agencia: string; agencia_digito: string; conta: string; conta_digito: string; conta_tipo: 'corrente' | 'poupanca'; titular: string; excecao: string }
+interface Parcela { k: number; vencimento: string; valor: string; forma: Forma; pix_tipo: PixTipo; pix_chave: string; boleto: string; excecao: string; pix_cc: string; cc_exc: string; bol_exc: string; ted: Ted }
 
 const TIPOS: [string, string][] = [['nfse', 'NFS-e'], ['nfe', 'NF-e'], ['fatura', 'Fatura'], ['boleto', 'Boleto'], ['iptu', 'IPTU'], ['itbi', 'ITBI'], ['darf', 'DARF'], ['darm', 'DARM'], ['dare', 'DARE'], ['recibo', 'Recibo'], ['outro', 'Outro']];
+const FORMA: Record<Forma, string> = { pix: 'PIX', boleto: 'Boleto', ted: 'TED', cadastro: 'Do cadastro' };
 const PIX: [PixTipo, string][] = [['cpf_cnpj', 'CPF ou CNPJ'], ['email', 'E-mail'], ['telefone', 'Telefone'], ['aleatoria', 'Chave aleatória']];
 let seq = 1;
 export const novaLinha = (pct = '100'): Linha => ({ k: seq++, nucleo: '', centro: '', divisao: '', natureza: '', pct });
 const novaParcela = (base?: Parcela, doc?: string | null): Parcela => ({
   k: seq++, vencimento: '', valor: '', forma: base?.forma ?? 'pix', pix_tipo: base?.pix_tipo ?? 'cpf_cnpj',
   pix_chave: base?.pix_chave ?? (doc ?? ''), boleto: '', excecao: base?.excecao ?? '', pix_cc: '', cc_exc: '', bol_exc: '',
+  ted: base?.ted ?? { banco: '', agencia: '', agencia_digito: '', conta: '', conta_digito: '', conta_tipo: 'corrente', titular: doc ?? '', excecao: '' },
 });
+const so = (s: string) => s.replace(/\D/g, '');
+const docSo = (s: string) => s.toUpperCase().replace(/[^0-9A-Z]/g, '');
+/** O que falta na TED da parcela (vazio = completa). */
+function faltaTed(t: Ted, docForn: string | null | undefined): boolean {
+  return so(t.banco).length !== 3 || !so(t.agencia) || !so(t.conta) || !/^[0-9X]$/i.test(t.conta_digito.trim())
+    || ![11, 14].includes(docSo(t.titular).length) || Boolean(docForn && docSo(t.titular) !== docForn && !t.excecao.trim());
+}
 
 /** A chave como o banco aceita: CPF/CNPJ sem pontuação, e-mail minúsculo, telefone com +55. */
 export function chave(t: PixTipo, v: string): string {
@@ -139,6 +150,17 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   const muda = (k: number, m: Partial<Linha>) => setLinhas(ls => ls.map(l => (l.k === k ? { ...l, ...m } : l)));
   const mudaP = (k: number, m: Partial<Parcela>) => setParcelas(ps => ps.map(p => (p.k === k ? { ...p, ...m } : p)));
 
+  // a conta recorrente da nota (as previsões marcadas de um contrato só): com PIX fixo ou TED aprovados no cadastro, a
+  // parcela pode usar a forma do cadastro (api.lancar_titulo, forma 'cadastro'; o banco confere de novo)
+  const contratos = [...new Set(previsoes.filter(p => prevs.includes(p.id)).map(p => p.compromisso_id))];
+  const contrato = contratos.length === 1 ? contratos[0] : null;
+  const cq = useQuery({ queryKey: ['conta', contrato], queryFn: () => rpc<ContaCadastro | null>('conta', { p_id: contrato }), enabled: Boolean(contrato) });
+  const lq = useQuery({ queryKey: ['contratos'], queryFn: () => rpc<Contrato[]>('contratos'), enabled: Boolean(contrato) });
+  const pagCad = contrato ? pagDoBanco(cq.data?.pagamento) : null;
+  const cadastroUsavel = Boolean(pagCad && pagCad.modo !== 'cobranca' && lq.data?.find(c => c.id === contrato)?.aprovado);
+  const cadastroPendente = Boolean(pagCad && pagCad.modo !== 'cobranca' && lq.data && !lq.data.find(c => c.id === contrato)?.aprovado);
+  useEffect(() => { if (!cadastroUsavel) setParcelas(ps => (ps.some(p => p.forma === 'cadastro') ? ps.map(p => (p.forma === 'cadastro' ? { ...p, forma: 'pix' } : p)) : ps)); }, [cadastroUsavel]);
+
   const falta: string[] = [];
   if (comRet && !semRet) falta.push('confirmar que a nota não tem retenção (nota com retenção ainda não se lança)');
   if (!empresa) falta.push('a empresa');
@@ -152,15 +174,19 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   if (parcelas.some(p => !p.vencimento)) falta.push('o vencimento de cada parcela');
   if (comValor && digitados.some(v => v == null || v <= 0)) falta.push('o valor de cada parcela (ou de nenhuma, para saírem iguais)');
   else if (comValor && valor && Math.round(somaParc * 100) !== Math.round(valor * 100)) falta.push(`as parcelas somando o valor (estão em ${reais(somaParc)})`);
-  if (parcelas.some(p => (p.forma === 'pix' ? !p.pix_chave.trim() : !p.boleto.replace(/\D/g, '')))) falta.push('a forma de pagamento de cada parcela');
+  if (parcelas.some(p => (p.forma === 'pix' ? !p.pix_chave.trim() : p.forma === 'boleto' ? !p.boleto.replace(/\D/g, '') : p.forma === 'ted' ? faltaTed(p.ted, forn?.documento) : !cadastroUsavel)))
+    falta.push('a forma de pagamento de cada parcela');
 
-  const contratos = [...new Set(previsoes.filter(p => prevs.includes(p.id)).map(p => p.compromisso_id))];
   const enviar = useMutation({
     mutationFn: () => rpc<string>('lancar_titulo', { p: {
       empresa, fornecedor: forn!.id, tipo, numero: numero.trim(), serie: serie.trim(), emissao, competencia: `${comp}-01`, valor,
-      compromisso: contratos.length === 1 ? contratos[0] : null,
+      compromisso: contrato,
       rateio: linhas.map(l => ({ nucleo: l.nucleo, centro: l.centro, divisao: l.divisao || null, natureza: l.natureza, percentual: Number(l.pct.replace(',', '.')) })),
-      parcelas: parcelas.map(p => p.forma === 'pix'
+      parcelas: parcelas.map(p => p.forma === 'cadastro' ? { vencimento: p.vencimento, ...(comValor ? { valor: lerReais(p.valor) } : {}), forma: 'cadastro' }
+        : p.forma === 'ted' ? { vencimento: p.vencimento, ...(comValor ? { valor: lerReais(p.valor) } : {}), forma: 'ted', ted_banco: so(p.ted.banco), ted_agencia: so(p.ted.agencia),
+            ted_agencia_digito: p.ted.agencia_digito.trim().toUpperCase() || null, ted_conta: so(p.ted.conta), ted_conta_digito: p.ted.conta_digito.trim().toUpperCase(),
+            ted_conta_tipo: p.ted.conta_tipo, ted_titular_documento: docSo(p.ted.titular), ted_excecao: p.ted.excecao.trim() || null }
+        : p.forma === 'pix'
         ? { vencimento: p.vencimento, ...(comValor ? { valor: lerReais(p.valor) } : {}), forma: 'pix', pix_tipo: p.pix_tipo, pix_chave: chave(p.pix_tipo, p.pix_chave), pix_excecao: p.excecao.trim() || null, pix_copia_cola: p.pix_cc.trim() || null, pix_copia_cola_excecao: (p.pix_cc.trim() && p.cc_exc.trim()) || null }
         : { vencimento: p.vencimento, ...(comValor ? { valor: lerReais(p.valor) } : {}), forma: 'boleto', boleto_linha: p.boleto.replace(/\D/g, ''), boleto_excecao: p.bol_exc.trim() || null, pix_copia_cola: p.pix_cc.trim() || null, pix_copia_cola_excecao: (p.pix_cc.trim() && p.cc_exc.trim()) || null }),
       previsoes: prevs, etiquetas: etq, anexos: arquivos.map(a => a.anexo.id),
@@ -262,10 +288,13 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
                       placeholder={iguais[i] != null ? reais(iguais[i]) : 'R$ 0,00'} value={p.valor}
                       onChange={e => mudaP(p.k, { valor: e.target.value })} onBlur={() => { const v = lerReais(p.valor); if (v != null) mudaP(p.k, { valor: reais(v) }); }} />
                   : <span className="num lt-pv">{iguais[0] != null ? reais(iguais[0]) : ''}</span>}
-                <div className="f-seg"><button className={p.forma === 'pix' ? 'on' : ''} onClick={() => mudaP(p.k, { forma: 'pix' })}>PIX</button><button className={p.forma === 'boleto' ? 'on' : ''} onClick={() => mudaP(p.k, { forma: 'boleto' })}>Boleto</button></div>
+                <div className="f-seg">{(['pix', 'boleto', 'ted', ...(cadastroUsavel ? ['cadastro'] as const : [])] as Forma[]).map(f => (
+                  <button key={f} className={p.forma === f ? 'on' : ''} onClick={() => mudaP(p.k, { forma: f })}>{FORMA[f]}</button>))}</div>
                 {parcelas.length > 1 && <button className="icb" title="Tirar a parcela" onClick={() => setParcelas(ps => ps.filter(x => x.k !== p.k))}><Ic n="lixo" s={18} /></button>}
               </div>
-              {p.forma === 'pix' ? <>
+              {p.forma === 'cadastro' && pagCad ? <span className="nt ok">Forma do cadastro da conta: {textoPag(pagCad)}</span>
+              : p.forma === 'ted' ? <TedParcela t={p.ted} docForn={forn?.documento ?? null} tentou={tentou} mudar={m => mudaP(p.k, { ted: { ...p.ted, ...m } })} />
+              : p.forma === 'pix' ? <>
                 <div className="lt-lin">
                   <select className="lt-in lt-tipo" value={p.pix_tipo} onChange={e => mudaP(p.k, { pix_tipo: e.target.value as PixTipo })}>{PIX.map(([k, r]) => <option key={k} value={k}>{r}</option>)}</select>
                   <input className={`lt-in ${tentou && !p.pix_chave.trim() ? 'err' : ''}`} placeholder="Chave PIX" value={p.pix_chave} onChange={e => mudaP(p.k, { pix_chave: e.target.value })} />
@@ -279,12 +308,13 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
                 {[47, 48].includes(p.boleto.replace(/\D/g, '').length) && <RecebedorBoleto linha={p.boleto.replace(/\D/g, '')} docForn={forn?.documento ?? null}
                   valor={(comValor ? digitados[i] : iguais[i]) ?? null} exc={p.bol_exc} mudaExc={v => mudaP(p.k, { bol_exc: v })} tentou={tentou} />}
               </>}
-              <input className="lt-in mono" aria-label="PIX copia e cola" placeholder={p.forma === 'boleto' ? 'PIX copia e cola do boleto (opcional)' : 'PIX copia e cola (opcional)'}
+              {(p.forma === 'pix' || p.forma === 'boleto') && <><input className="lt-in mono" aria-label="PIX copia e cola" placeholder={p.forma === 'boleto' ? 'PIX copia e cola do boleto (opcional)' : 'PIX copia e cola (opcional)'}
                 value={p.pix_cc} onChange={e => mudaP(p.k, { pix_cc: e.target.value.replace(/[\r\n]+/g, '') })} />
               {p.pix_cc.trim() && <RecebedorPix codigo={p.pix_cc} forma={p.forma} chaveParcela={p.forma === 'pix' ? chave(p.pix_tipo, p.pix_chave) : null}
-                docForn={forn?.documento ?? null} valor={(comValor ? digitados[i] : iguais[i]) ?? null} exc={p.cc_exc} mudaExc={v => mudaP(p.k, { cc_exc: v })} tentou={tentou} />}
+                docForn={forn?.documento ?? null} valor={(comValor ? digitados[i] : iguais[i]) ?? null} exc={p.cc_exc} mudaExc={v => mudaP(p.k, { cc_exc: v })} tentou={tentou} />}</>}
             </div>
           ))}
+          {cadastroPendente && <span className="sec peq">A forma de pagamento cadastrada na conta está esperando aprovação: até lá, informe a forma desta cobrança.</span>}
           <button className="btn t sm" style={{ alignSelf: 'flex-start' }} onClick={() => setParcelas(ps => [...ps, novaParcela(ps[ps.length - 1])])}><Ic n="add" s={18} />Adicionar parcela</button>
           {parcelas.length > 1 && <span className="sec peq">{comValor
             ? (valor && Math.round(somaParc * 100) !== Math.round(valor * 100) ? `As parcelas somam ${reais(somaParc)}; o valor é ${reais(valor)}.` : 'Cada parcela fica com o valor digitado, como no documento.')
@@ -603,4 +633,26 @@ function RecebedorBoleto({ linha, docForn, valor, exc, mudaExc, tentou }: {
       </>}
     </div>
   );
+}
+
+/** A conta da TED da parcela: banco, agência, conta e o titular; conta de outra pessoa só com a justificativa. */
+function TedParcela({ t, docForn, tentou, mudar }: { t: Ted; docForn: string | null; tentou: boolean; mudar: (m: Partial<Ted>) => void }) {
+  const err = (x: boolean) => (tentou && x ? 'err' : '');
+  const outro = Boolean(docForn && docSo(t.titular) && docSo(t.titular) !== docForn);
+  return <>
+    <div className="lt-lin">
+      <input className={`lt-in num nc-dia ${err(so(t.banco).length !== 3)}`} inputMode="numeric" placeholder="Banco" title="O código do banco, com 3 dígitos (ex.: 001, 341)" value={t.banco} onChange={e => mudar({ banco: so(e.target.value).slice(0, 3) })} aria-label="Banco" />
+      <input className={`lt-in num ${err(!so(t.agencia))}`} inputMode="numeric" placeholder="Agência" value={t.agencia} onChange={e => mudar({ agencia: so(e.target.value).slice(0, 6) })} aria-label="Agência" />
+      <input className="lt-in num nc-dia" placeholder="Díg." value={t.agencia_digito} onChange={e => mudar({ agencia_digito: e.target.value.replace(/[^0-9xX]/g, '').slice(0, 1) })} aria-label="Dígito da agência" />
+    </div>
+    <div className="lt-lin">
+      <input className={`lt-in num ${err(!so(t.conta))}`} inputMode="numeric" placeholder="Conta" value={t.conta} onChange={e => mudar({ conta: so(e.target.value).slice(0, 14) })} aria-label="Conta" />
+      <input className={`lt-in num nc-dia ${err(!/^[0-9X]$/i.test(t.conta_digito.trim()))}`} placeholder="Díg." value={t.conta_digito} onChange={e => mudar({ conta_digito: e.target.value.replace(/[^0-9xX]/g, '').slice(0, 1) })} aria-label="Dígito da conta" />
+      <select className="lt-in lt-tipo" value={t.conta_tipo} onChange={e => mudar({ conta_tipo: e.target.value as Ted['conta_tipo'] })} aria-label="Tipo da conta">
+        <option value="corrente">Corrente</option><option value="poupanca">Poupança</option></select>
+    </div>
+    <input className={`lt-in num ${err(![11, 14].includes(docSo(t.titular).length))}`} placeholder="CPF ou CNPJ do titular" value={t.titular} onChange={e => mudar({ titular: e.target.value })} aria-label="CPF ou CNPJ do titular" />
+    {outro && <div className="lt-exc"><span className="nt at">A conta não é do fornecedor. Só entra com a justificativa, que quem aprova vê.</span>
+      <input className={`lt-in ${err(!t.excecao.trim())}`} placeholder="Por que pagar em outra conta?" value={t.excecao} onChange={e => mudar({ excecao: e.target.value })} /></div>}
+  </>;
 }

@@ -401,3 +401,8 @@ button.lt-o:hover{background:#f1f4f9}
 .nc-pronto li{display:flex;gap:8px;align-items:flex-start;font-size:14px;line-height:20px}
 .nc-pronto li.ok .ic{color:#146c2e}
 .nc-pronto li.falta .ic{color:#7a5900}
+
+/* Forma de pagamento: avisos e a escolha da AF (lib/forma.tsx) */
+.fp-av { display: flex; flex-direction: column; gap: 8px; }
+.fp-esc { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.fp-esc .btn { flex: none; }

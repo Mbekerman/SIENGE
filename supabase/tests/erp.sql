@@ -10349,6 +10349,12 @@ select pg_temp.ok((select array_to_string(avisos, '|') like '%Diferente da forma
                   and (select array_to_string(avisos, '|') like '%Diferente da forma cadastrada na conta recorrente: vem com cada cobrança%'
                          from erp.avisos_forma_pagamento(:'fc5') where numero = 1),
   'forma do cadastro: a forma diferente da cadastrada aparece para quem aprova');
+select pg_temp.ok((select x->'avisos' ? 'Diferente da forma cadastrada na conta recorrente: PIX fixo (77777777000177). A AF escolhe qual vale'
+                     from jsonb_array_elements(api.titulo(:'fc4')->'parcelas') x)
+                  and (select x->>'forma' = 'ted' and x->'ted'->>'banco' = '341' and x->'ted'->>'conta' = '56789'
+                          and x->'ted'->>'titular_documento' = '77777777000177'
+                     from jsonb_array_elements(api.titulo(:'fc2')->'parcelas') x),
+  'tela do título: mostra a TED da parcela e os avisos da forma de pagamento');
 select pg_temp.erro_igual(format($$select api.usar_forma_do_cadastro(%L)$$, :'fc4'), 'A escolha da forma de pagamento é da AF',
   'forma do cadastro: quem lançou (e não é AF) não troca');
 select pg_temp.como(:'gestor');
