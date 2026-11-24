@@ -65,6 +65,9 @@ Regra do Moises (8/nov/2026): controles, segurança da informação e SLA são a
 
 | Id | Gravidade | Onde | Desde |
 | --- | --- | --- | --- |
+| S-145 | Média (dependência) | `apps/web`: `react-router` com 2 avisos moderados do `npm audit` | 24/nov/2026 |
+| S-144 | Alta (o banco foi corrigido no PR #134; resto aceito pelo Moises) | Página provisória das notas recebidas | 24/nov/2026 |
+| S-143 | Média (risco aceito pelo Moises) | Banco: esquema `net` (pg_net) do Supabase | 23/nov/2026 |
 | S-142 | Baixa (configuração) | Projeto `bkm-erp`: agente do Developer Connect com acesso a todos os segredos | 23/nov/2026 |
 | S-141 | Alta (dados reais fora do ambiente) | Resultado do teste em escala do leitor | 20/nov/2026 |
 | S-140 | Baixa (resto; o principal fechado no PR #115) | Conferência do nome do recebedor e selo de credor novo | 20/nov/2026 |
