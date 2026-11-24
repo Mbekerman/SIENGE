@@ -30,6 +30,8 @@ test('linha digitável vira código de barras e recusa dígito errado', () => {
 test('chave PIX com a máscara do Sienge', () => {
   assert.deepEqual(chavePix('cpf_cnpj', '29732041000154'), { keyPixType: 'C', keyPix: '29.732.041/0001-54' });
   assert.deepEqual(chavePix('cpf_cnpj', '12345678901'), { keyPixType: 'C', keyPix: '123.456.789-01' });
+  // CNPJ alfanumérico: o Sienge não aceita letras; vira divergência (fila manual), não erro que se repete
+  assert.throws(() => chavePix('cpf_cnpj', '12ABC34501DE35'), (e) => e instanceof Divergencia);
   assert.deepEqual(chavePix('email', 'a@b.com'), { keyPixType: 'E', keyPix: 'a@b.com' });
   assert.equal(chavePix('aleatoria', 'x').keyPixType, 'A');
   assert.throws(() => chavePix('cpf_cnpj', '123'));

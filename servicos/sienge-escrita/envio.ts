@@ -117,11 +117,13 @@ export function barrasDaLinha(linha: string): string {
   return barras;
 }
 
-// O Sienge pede a chave "com máscara" (CPF e CNPJ formatados).
+// O Sienge pede a chave "com máscara" (CPF e CNPJ formatados). O CNPJ alfanumérico (com letras) não vai: o Sienge
+// recusa letras no CNPJ (GET /creditors, 400 em 23/nov/2026); a parcela fica para pôr à mão no Sienge.
 export function chavePix(tipo: Parcela['pix_tipo'], chave: string): { keyPixType: string; keyPix: string } {
   switch (tipo) {
     case 'cpf_cnpj': {
-      const d = chave.replace(/\D/g, '');
+      const d = chave.toUpperCase().replace(/[^0-9A-Z]/g, '');
+      if (/[A-Z]/.test(d)) throw new Divergencia('o Sienge ainda não aceita chave PIX com CNPJ alfanumérico: ponha a forma de pagamento à mão no Sienge');
       if (d.length === 11) return { keyPixType: 'C', keyPix: `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}` };
       if (d.length === 14) return { keyPixType: 'C', keyPix: `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}` };
       throw new Error('CPF ou CNPJ da chave PIX com tamanho errado');
