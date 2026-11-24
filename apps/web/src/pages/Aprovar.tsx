@@ -9,7 +9,8 @@ import { RastroBotoes } from '../components/Rastro';
 import { data, dataCurta, dataHora, hojeISO, reais } from '../lib/format';
 import { acha, usePagina } from '../lib/navegar';
 import { mensagemErro, rpc } from '../lib/supabase';
-import type { Aprovacao, TipoAprovacao } from '../lib/tipos';
+import { AvisosForma } from '../lib/forma';
+import type { Aprovacao, TipoAprovacao, TituloDetalhe } from '../lib/tipos';
 
 type F = 'vez' | 'sem' | 'venc' | 'out';
 const TIPO: Record<TipoAprovacao, [string, CorChip]> = { titulo: ['Título', 'az'], previsao: ['Previsão', 'ro'], contrato: ['Conta recorrente', 'ci'] };
@@ -149,6 +150,8 @@ function GavetaAprovar({ a, motivos, novo, fechar, feito }: { a: Aprovacao; moti
       feito(RES[r] ?? 'Decisão registrada.');
     },
   });
+  // o título inteiro, para os avisos da forma de pagamento e a escolha da AF (mesma chave da gaveta de Títulos)
+  const tq = useQuery({ queryKey: ['titulo', a.id], queryFn: () => rpc<TituloDetalhe | null>('titulo', { p_id: a.id }), enabled: a.tipo === 'titulo' });
   const confirmar = () => { setTentou(true); if (modo && just.trim()) decidir.mutate(modo); };
   const parte = a.area ? `a parte de ${a.area.split(' › ')[0]}` : 'esta parte';
   const pe = !a.vez ? undefined : modo ? <>
@@ -173,6 +176,7 @@ function GavetaAprovar({ a, motivos, novo, fechar, feito }: { a: Aprovacao; moti
       {a.tipo === 'titulo' && <RastroBotoes id={a.id} />}
       <AlertaRecebedor motivos={motivos} />
       <AlertaCredorNovo desde={novo} />
+      {tq.data && <AvisosForma t={tq.data} podeEscolher={a.vez} />}
       {!a.vez && a.motivo && <Alerta c="at" t={a.motivo} />}
       {modo && (
         <label className="apr-just">
