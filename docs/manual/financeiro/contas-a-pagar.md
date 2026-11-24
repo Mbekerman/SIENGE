@@ -189,6 +189,13 @@ O que não bate vira **exceção**: o pedido só segue com justificativa. Na tel
 
 **Quem não pode aprovar esse pedido:** quem arrastou a nota e quem mexeu por último no cadastro da conta.
 
+✅ **Quem aprova a nota do mês** (Moises, 23/nov/2026): com a conta aprovada, a nota segue só o rito dela, não as faixas do centro. 🟡 PR #135, ainda não juntado: o sistema ainda não faz isto.
+
+- **Contrato de serviço e assinatura:** o gestor do centro (confere que o serviço foi prestado) e depois a AF ou a AD.
+- **Conta de consumo:** se as faturas do mês (esta mais as que já entraram no mesmo mês) ficam até 30% acima da previsão daquele mês e o ano continua dentro do teto, vai direto a alguém da AF, da AO ou da AD. Acima disso, o gestor do centro aprova primeiro. O percentual muda nas configurações.
+- ✅ A nota segue as faixas normais do centro quando a conta ainda não foi aprovada, quando a nota entra num centro, divisão ou natureza fora do cadastro, quando o contrato ou a assinatura vem acima do valor previsto para o mês (somando as notas do mesmo mês), ou quando a nota é de um mês fora da vigência da conta (Moises, 24/nov/2026: acima da previsão do mês volta às faixas; a tolerância é só do consumo).
+- A nota continua contando no total do mês do centro, que decide a aprovação das outras despesas.
+
 ### Tarefa: enviar várias notas do mês de uma vez
 
 > 🧪 Telas em protótipo (linha F), ainda sem código. Pedido do Moises, 8/nov/2026.
