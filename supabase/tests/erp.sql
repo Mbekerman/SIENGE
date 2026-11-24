@@ -9646,8 +9646,19 @@ select erp.registrar_nota_recebida(:'spe', pg_temp.nota('nfe', '77777777000177',
 select erp.registrar_leitura_notas(:'spe', 'sefaz', 40, 90, null, null);
 select pg_temp.ok((select ultimo_nsu = 40 and lida from erp.busca_notas_leitura(:'spe', 'sefaz'))
                   and (select not lida and ultimo_nsu = 0 from erp.busca_notas_leitura(:'spe', 'adn'))
-                  and (select array_agg(c) = array[pg_temp.chave('nfe', '77777777000177', '321')] from erp.busca_notas_sem_ciencia(:'spe', 20) c),
-  'busca: o serviço grava a nota e a leitura e lê onde parou e o que pede ciência');
+                  and (select array_agg(c) = array[pg_temp.chave('nfe', '77777777000177', '321')]
+                         from erp.busca_notas_sem_ciencia(:'spe', 20) c) is not true,
+  'busca: o serviço grava a nota e a leitura e lê onde parou');
+-- ciência só até 10 dias da autorização (NT 2020.001; a SEFAZ recusa depois com 596): a nota de 10/11 já não entra;
+-- as de dentro do prazo vêm da mais nova para a mais velha
+select erp.registrar_nota_recebida(:'spe', pg_temp.nota('nfe', '77777777000177', '322', 450) || jsonb_build_object('emissao', (current_date - 3)::text), '<resNFe/>', false);
+select erp.registrar_nota_recebida(:'spe', pg_temp.nota('nfe', '77777777000177', '323', 450) || jsonb_build_object('emissao', (current_date - 1)::text), '<resNFe/>', false);
+select erp.registrar_nota_recebida(:'spe', pg_temp.nota('nfe', '77777777000177', '324', 450) || jsonb_build_object('emissao', (current_date - 11)::text), '<resNFe/>', false);
+select pg_temp.ok((select array_agg(c) from erp.busca_notas_sem_ciencia(:'spe', 20) c)
+                  = array[pg_temp.chave('nfe', '77777777000177', '323'), pg_temp.chave('nfe', '77777777000177', '322')],
+  'busca: pede ciência só das NF-e em resumo dos últimos 10 dias, da mais nova para a mais velha');
+select erp.registrar_ciencia_nota_recebida(pg_temp.chave('nfe', '77777777000177', '323'));
+select erp.registrar_ciencia_nota_recebida(pg_temp.chave('nfe', '77777777000177', '322'));
 select erp.registrar_ciencia_nota_recebida(pg_temp.chave('nfe', '77777777000177', '321'));
 select pg_temp.ok(not exists (select 1 from erp.busca_notas_sem_ciencia(:'spe', 20)), 'busca: com a ciência, a nota sai da lista');
 select pg_temp.erro_igual('select count(*) from erp.notas_recebidas', 'permission denied for table notas_recebidas',
