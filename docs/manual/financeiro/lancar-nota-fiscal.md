@@ -63,7 +63,7 @@ O botão **Lançar título** fica na página Títulos e abre uma janela com esta
 - O sistema recusa lançar de novo o mesmo fornecedor com o mesmo tipo de documento e o mesmo número. A recusa é direta, sem pedido de aprovação; essa escolha foi da equipe e falta o Moises confirmar.
 - Zeros à esquerda, pontos, traços, barras e maiúsculas não contam: "00.101" é o mesmo que "101", e "BKM-0001" é o mesmo que "bkm0001".
 - Na série da nota também não contam os zeros à esquerda: a série "1" e a "001" são a mesma.
-- ⏳ Documento sem número ("s/n" ou "-"): por ora, o segundo do mesmo fornecedor e do mesmo tipo é recusado. O Moises ainda vai decidir como tratar.
+- ✅ Documento sem número ("s/n", "-", "sem número" ou em branco) fica fora da trava (Moises, 24/nov/2026): um segundo recibo sem número do mesmo fornecedor entra, e o aviso de nota repetida não aparece para ele. Por isso, confira valor e data antes de lançar um recibo sem número. Sem série e série "0" contam como a mesma série.
 - A tela diz: "Este fornecedor já tem um documento desse tipo com esse número (zeros à esquerda e pontuação não contam). Confira se não é o mesmo documento lançado de novo; se o primeiro estava errado, cancele-o antes."
 - O mesmo número num tipo de documento diferente entra. Um documento cancelado libera o número.
 - O aviso de nota já lançada, que aparece ao subir o arquivo, segue a mesma regra.
