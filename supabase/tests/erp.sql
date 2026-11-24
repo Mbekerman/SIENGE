@@ -10353,6 +10353,42 @@ select pg_temp.ok(exists (select 1 from api.fornecedores('33000167')),
 select pg_temp.como(:'diretor');
 select pg_temp.falha($$update erp.pessoas set sem_classe = true where documento = '33000167000101'$$,
   'credores: a marca sem classe só o sistema põe (nem o master)');
+-- o gatilho é a única barreira para quem vê o PJ (passa pelo RLS da pessoa restrita): cada ramo, por baixo do RLS,
+-- com o login de quem não é o master
+select pg_temp.como(null);
+set local role erp_sistema;
+select erp.sienge_importar_credores('[{"id": 9013, "name": "A", "cnpj": "20000000000001"}, {"id": 9014, "name": "B", "cnpj": "20000000000002"},
+                                      {"id": 9015, "name": "C", "cnpj": "20000000000003"}, {"id": 9016, "name": "D", "cnpj": "20000000000004"}]'::jsonb) \gset imp4_
+reset role;
+-- A ganha classe PJ sem passar pela gravação (que firmaria a pessoa); B fica com pedido de PJ esperando
+insert into erp.emitentes_classificacao (documento, classe, por) values ('20000000000001', 'pj', :'diretor');
+insert into erp.emitentes_pedidos (documento, para, de, pedido_por) values ('20000000000002', 'pj', null, :'analista');
+select pg_temp.como(:'analista');
+select pg_temp.ok(pg_temp.erro_como_dono($$update erp.pessoas set sem_classe = false where documento = '20000000000004'$$)
+                    = 'A marca de PJ da pessoa só o master muda',
+  'credores: sem classificação gravada, a marca não sai (nem mantendo a pessoa restrita)');
+select pg_temp.ok(pg_temp.erro_como_dono($$update erp.pessoas set sem_classe = false, restrita = false where documento = '20000000000001'$$)
+                    = 'A marca de PJ da pessoa só o master muda',
+  'credores: classificada como PJ, a pessoa sem classe não se solta');
+select pg_temp.ok(pg_temp.erro_como_dono($$update erp.pessoas set sem_classe = false where documento = '20000000000001'$$) is null,
+  'credores: classificada como PJ, a marca sai com a pessoa restrita (o que a gravação da classe faz)');
+select pg_temp.ok(pg_temp.erro_como_dono($$update erp.pessoas set sem_classe = true where documento = '52998224725'$$)
+                    = 'A marca de sem classificação só o sistema põe',
+  'credores: a marca não se põe numa pessoa restrita que não a tinha');
+select pg_temp.ok(pg_temp.erro_como_dono($$insert into erp.pessoas (tipo, nome, documento, restrita, sem_classe) values ('juridica', 'X', '20000000000009', true, true)$$)
+                    = 'A marca de sem classificação só o sistema põe',
+  'credores: ninguém inclui pessoa com a marca, só o sistema');
+-- o lote pula o classificado e o que tem pedido esperando, e solta os outros
+select pg_temp.como(:'diretor');
+select pg_temp.ok(erp.classificar_comuns(array['20000000000001', '20000000000002', '20000000000003']) = 1, 'credores: o lote pula o classificado e o pedido esperando');
+select pg_temp.como(null);
+select pg_temp.ok((select not restrita and not sem_classe from erp.pessoas where documento = '20000000000003')
+                  and (select restrita and sem_classe from erp.pessoas where documento = '20000000000002')
+                  and (select restrita from erp.pessoas where documento = '20000000000001'),
+  'credores: só o sem classe e sem pedido se solta no lote');
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual($$select erp.classificar_comuns(array_fill('20000000000004'::text, array[1001]))$$, 'No máximo 1000 de cada vez',
+  'credores: o lote tem no máximo 1000');
 -- só o sistema
 select pg_temp.como(:'diretor');
 select pg_temp.erro_igual($$select erp.sienge_importar_credores('[]'::jsonb)$$, 'permission denied for function sienge_importar_credores',
