@@ -57,6 +57,15 @@ O botão **Lançar título** fica na página Títulos e abre uma janela com esta
 
 ✅ **Número do título** (Moises, 24/nov/2026): quando o arquivo não é uma nota fiscal (boleto, fatura, guia, IPTU, DARF), o número do título é o número do documento impresso nele. Não vale um rótulo nosso, como os que se usam hoje no Sienge ("LOTE6 3/10" no IPTU, o período no DARF). É por esse número que se confere o papel e se acha um documento lançado duas vezes. O leitor já preenche assim.
 
+✅ Sem prefixo do fornecedor no número (Moises, 24/nov/2026, descartando o formato "fornecedor.número"): fornecedor, tipo de documento e número ficam em campos separados.
+
+🟡 **Documento repetido** (PR das melhorias do leitor, ainda não aberto):
+- O sistema recusa lançar de novo o mesmo fornecedor com o mesmo tipo de documento e o mesmo número. A recusa é direta, sem pedido de aprovação; essa escolha foi da equipe e falta o Moises confirmar.
+- Zeros à esquerda, pontos, traços, barras e maiúsculas não contam: "00.101" é o mesmo que "101", e "BKM-0001" é o mesmo que "bkm0001".
+- A tela diz: "Este fornecedor já tem um documento desse tipo com esse número (zeros à esquerda e pontuação não contam). Confira se não é o mesmo documento lançado de novo; se o primeiro estava errado, cancele-o antes."
+- O mesmo número num tipo de documento diferente entra. Um documento cancelado libera o número.
+- O aviso de nota já lançada, que aparece ao subir o arquivo, segue a mesma regra.
+
 Ao clicar em **Lançar**, o título vai para a aprovação e abre na gaveta. Se faltar alguma coisa, o pé da janela diz o quê.
 
 🟡 **Ler a nota pelo arquivo, no PR #98** (ainda não juntado). O Lançar título ganha no topo o bloco **Arquivo da nota**:
