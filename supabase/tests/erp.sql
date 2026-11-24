@@ -1069,7 +1069,8 @@ select pg_temp.ok(not exists (
        'designar_pj','retirar_pj','vejo_pj','vejo_auditoria','previsao_aprovada_vista','contrato_aprovado_visto','contrato_confere','compromisso_vinculos','pix_conferido','boleto_conferido','completar_recebedor','credor_novo',
        'criar_orcamento_area','salvar_orcamento_area','enviar_orcamento','descartar_orcamento','decidir_orcamento','minha_vaga_orcamento',
        '_vejo_nota_recebida','_vejo_leitura_notas','buscar_nota_recebida','ignorar_nota_recebida','voltar_nota_recebida',
-       'liberar_notas_recebidas','retirar_notas_recebidas','_libero_notas_recebidas','_lanco_na_empresa')),
+       'liberar_notas_recebidas','retirar_notas_recebidas','_libero_notas_recebidas','_lanco_na_empresa',
+       '_no_grupo_notas','_cuido_pj','designar_notas','retirar_notas','classificar_emitente','decidir_pedido_emitente')),
   'catálogo: das funções security definer, authenticated só executa as da lista (RPCs e conferências de quem está logado)');
 select pg_temp.ok(not has_function_privilege('authenticated', 'erp._aplicar_mudanca_acesso(uuid)', 'EXECUTE')
                   and not has_function_privilege('authenticated', 'erp.gerar_avisos_sucessao()', 'EXECUTE')
@@ -9472,6 +9473,8 @@ select erp.registrar_nota_recebida(:'spe', pg_temp.nota('nfse', '88888888000188'
 select em.id as emp_b, p.documento as tom_b from erp.empresas em join erp.pessoas p on p.id = em.pessoa_id
  where em.id <> :'spe' and p.documento ~ '^[0-9]{14}$' order by p.documento limit 1 \gset
 select erp.registrar_nota_recebida(:'emp_b', pg_temp.nota('nfse', '55555555000155', '900', 700, :'tom_b'), '<NFSe>B</NFSe>', true) as nr_b \gset
+-- o emitente 555 já classificado como comum (a NFS-e de não classificado fica retida; ver as notas blindadas)
+insert into erp.emitentes_classificacao (documento, classe, por) values ('55555555000155', 'comum', :'diretor');
 
 -- só o serviço da busca grava
 select pg_temp.como(:'diretor');
@@ -9629,6 +9632,7 @@ select d.id as doc_l, d.empresa_id as emp_l, d.tipo as tipo_l, d.numero as num_l
   join erp.empresas em on em.id = d.empresa_id join erp.pessoas e on e.id = em.pessoa_id
  where d.situacao = 'lancado' and d.tipo = 'nfse' and d.numero ~ '^[0-9]+$' and not p.restrita
  order by d.lancado_em limit 1 \gset
+insert into erp.emitentes_classificacao (documento, classe, por) values (:'emit_l', 'comum', :'diretor');
 select em.id as emp_outra, p.documento as tom_outra from erp.empresas em join erp.pessoas p on p.id = em.pessoa_id
  where em.id <> :'emp_l' and p.documento ~ '^[0-9]{14}$' order by p.documento limit 1 \gset
 -- outra chave para o mesmo emitente e número (outro município na chave da NFS-e)
@@ -9705,6 +9709,242 @@ update erp.documentos_fiscais set situacao = 'lancado', lancado_em = clock_times
 reset role;
 select pg_temp.ok((select situacao = 'vinculada' and documento_id = '70000000-0000-0000-0000-0000000000b1' from erp.notas_recebidas where id = :'nr_s'),
   'notas recebidas: com a mesma série (zeros à esquerda não contam), a NF-e se liga');
+select pg_temp.como(null);
+rollback;
+
+\echo '# notas blindadas: PJ e emitente não classificado (S-144, Moises, 24/11/2026)'
+begin;
+select pg_temp.sis();
+delete from erp.listas_financeiro where user_id in (:'analista2', :'leitor', :'diretor2', :'gestor', :'contador');
+insert into erp.listas_financeiro (lista, user_id) values ('AD', :'gestor'), ('AF', :'contador');
+update erp.pessoas set restrita = true where id = '10000000-0000-0000-0000-000000000008';
+-- NFS-e de emitente não classificado (444), NF-e de não classificado (666) e NFS-e de PJ (888, pessoa restrita)
+select erp.registrar_nota_recebida(:'spe', pg_temp.nota('nfse', '44444444000144', '10', 300), '<NFSe>T</NFSe>', true) as nb_t \gset
+select erp.registrar_nota_recebida(:'spe', pg_temp.nota('nfe', '66666666000166', '11', 400), '<resNFe/>', false) as nb_m \gset
+select erp.registrar_nota_recebida(:'spe', pg_temp.nota('nfse', '88888888000188', '12', 9000), '<NFSe>PJ</NFSe>', true) as nb_pj \gset
+select erp.registrar_nota_recebida(:'spe', pg_temp.nota('nfse', '22222222000122', '13', 500), '<NFSe>T2</NFSe>', true) as nb_t2 \gset
+select erp.registrar_evento_nota_recebida(:'spe', pg_temp.chave('nfse', '44444444000144', '10'), '101103', false, 12, '<ev/>');
+create temp view minhas with (security_invoker = true) as select id from api.notas_recebidas() where id in (:'nb_t', :'nb_m', :'nb_pj');
+grant select on minhas to authenticated;
+
+-- os grupos: só o master põe e tira, sem motivo
+select pg_temp.como(:'gestor');
+select pg_temp.erro_igual(format($$select api.designar_notas(%L, 'pj')$$, :'diretor2'),
+  'Só o master põe gente nos grupos das notas', 'notas blindadas: o AD não põe gente nos grupos');
+select pg_temp.falha(format($$insert into erp.notas_grupos (user_id, grupo, por) values (%L, 'pj', %L)$$, :'gestor', :'gestor'),
+  'notas blindadas: nem por baixo da API');
+select pg_temp.como(:'diretor');
+select pg_temp.erro_igual(format($$select api.designar_notas(%L, 'aprova')$$, :'ti'),
+  'Administrador não aprova nada no ERP', 'notas blindadas: o administrador não entra no grupo de aprovar');
+select pg_temp.erro_igual(format($$select api.designar_notas(%L, 'todos')$$, :'gestor'),
+  'Grupo: pj (vê as notas de PJ), triagem (vê as de emitente não classificado) ou aprova (aprova a lista de PJ)',
+  'notas blindadas: só os três grupos');
+select api.designar_notas(:'diretor2', 'pj');
+select api.designar_notas(:'analista2', 'triagem');
+select api.designar_notas(:'gestor', 'aprova');
+select erp.designar_pj(:'contador', 'Cuida da lista de PJ');
+select erp.designar_pj(:'ti', 'TI que também cuida da lista de PJ');
+select api.liberar_notas_recebidas(:'leitor', :'spe', 'nfse', 'Confere as notas de serviço');
+select pg_temp.erro_igual(format($$select api.designar_notas(%L, 'pj')$$, :'diretor2'),
+  'Esta pessoa já está no grupo', 'notas blindadas: a mesma pessoa não entra duas vezes');
+select pg_temp.ok((select count(*) = 3 from api.notas_grupos()), 'notas blindadas: o master vê os grupos');
+select pg_temp.como(:'analista2');
+select pg_temp.ok((select count(*) = 1 and bool_and(grupo = 'triagem') from api.notas_grupos()), 'notas blindadas: cada um vê só as próprias entradas');
+
+-- quem vê
+select pg_temp.como(:'diretor');
+select pg_temp.ok((select count(*) = 3 from minhas), 'notas blindadas: o master vê as três');
+select pg_temp.como(:'analista');
+select pg_temp.ok((select count(*) = 1 and bool_and(id = :'nb_m') from minhas)
+                  and api.nota_recebida_xml(:'nb_t') is null and api.nota_recebida_xml(:'nb_pj') is null
+                  and not exists (select 1 from erp.notas_recebidas_eventos where chave = pg_temp.chave('nfse', '44444444000144', '10')),
+  'notas blindadas: o financeiro vê a NF-e de não classificado, não a NFS-e retida nem a de PJ (nem XML nem evento)');
+select pg_temp.como(:'contador');
+select pg_temp.ok(erp.vejo_pj() and (select count(*) = 1 and bool_and(id = :'nb_m') from minhas),
+  'notas blindadas: quem vê o PJ (lista do PJ) não vê as notas de PJ: o grupo das notas é outro');
+select pg_temp.como(:'diretor2');
+select pg_temp.ok((select count(*) = 2 and bool_and(id in (:'nb_m', :'nb_pj')) from minhas) and api.nota_recebida_xml(:'nb_pj') = '<NFSe>PJ</NFSe>',
+  'notas blindadas: o grupo pj vê a nota de PJ, não a NFS-e de não classificado');
+select pg_temp.como(:'analista2');
+select pg_temp.ok((select count(*) = 1 and bool_and(id = :'nb_t') from minhas) and api.nota_recebida_xml(:'nb_t') = '<NFSe>T</NFSe>'
+                  and exists (select 1 from erp.notas_recebidas_eventos where chave = pg_temp.chave('nfse', '44444444000144', '10')),
+  'notas blindadas: a triagem vê a NFS-e de não classificado (com XML e evento), não a de PJ');
+select pg_temp.como(:'leitor');
+select pg_temp.ok(not exists (select 1 from minhas), 'notas blindadas: liberado para serviço não vê a retida nem a de PJ');
+-- a busca, pelas duas vias
+select pg_temp.como(:'analista');
+select pg_temp.ok(api.buscar_nota_recebida(pg_temp.chave('nfse', '44444444000144', '10')) is null
+                  and api.buscar_nota_recebida(pg_temp.chave('nfse', '88888888000188', '12')) is null
+                  and api.buscar_nota_recebida(pg_temp.chave('nfe', '66666666000166', '11')) is not null,
+  'notas blindadas: pela chave, quem lança não acha a retida nem a de PJ');
+select pg_temp.como(:'analista2');
+select pg_temp.ok(erp._lanco_na_empresa(:'spe') and api.buscar_nota_recebida(null, '88888888000188', '12', 9000) is null
+                  and api.buscar_nota_recebida(pg_temp.chave('nfse', '88888888000188', '12')) is null
+                  and (api.buscar_nota_recebida(null, '44444444000144', '10', 300) ->> 'id') = :'nb_t',
+  'notas blindadas: pelo emitente e pela chave, a triagem acha a retida e não a de PJ');
+-- a auditoria: o administrador (mesmo vendo o PJ) não vê as linhas da retida nem da de PJ
+select pg_temp.como(:'ti');
+select pg_temp.ok(erp.vejo_pj() and exists (select 1 from erp.auditoria where tabela = 'notas_recebidas' and registro = :'nb_m')
+                  and not exists (select 1 from erp.auditoria where tabela = 'notas_recebidas' and registro in (:'nb_t', :'nb_pj')),
+  'notas blindadas: a auditoria esconde a retida e a de PJ do administrador');
+select pg_temp.como(:'analista');
+select pg_temp.erro_igual(format($$select api.ignorar_nota_recebida(%L, 'Teste de retida')$$, :'nb_t'),
+  'Nota não encontrada', 'notas blindadas: o financeiro não ignora a nota retida que não vê');
+
+-- quem saiu (inativo ou só da sucessão) deixa de valer no grupo, mesmo sem ser tirado
+select pg_temp.sis();
+update erp.usuarios set ativo = false where id = :'analista2';
+select pg_temp.como(:'analista2');
+select pg_temp.ok(not erp._no_grupo_notas('triagem') and not exists (select 1 from minhas),
+  'notas blindadas: usuário inativo no grupo da triagem não vê a retida');
+select pg_temp.sis();
+update erp.usuarios set ativo = true, so_sucessao = true, papel = 'leitura' where id = :'analista2';
+select pg_temp.como(:'analista2');
+select pg_temp.ok(not erp._no_grupo_notas('triagem') and not exists (select 1 from minhas),
+  'notas blindadas: usuário só da sucessão no grupo da triagem não vê a retida');
+select pg_temp.sis();
+update erp.usuarios set so_sucessao = false, papel = 'analista' where id = :'analista2';
+-- o grupo só muda pelo master, nem gravando como o papel das operações
+select pg_temp.como_dono(:'gestor');
+set role erp_acesso;
+select pg_temp.erro_igual(format($$insert into erp.notas_grupos (user_id, grupo, por) values (%L, 'pj', %L)$$, :'gestor', :'gestor'),
+  'Só o master põe e tira gente dos grupos das notas', 'notas blindadas: nem o papel das operações põe gente no grupo sem o master');
+reset role;
+-- classificar como comum: só o master e a triagem (nem quem vê o PJ, nem o grupo de aprovar)
+select pg_temp.como(:'contador');
+select pg_temp.erro_igual($$select api.classificar_emitente('22222222000122', 'comum')$$,
+  'Só o master e a triagem classificam o emitente como comum', 'notas blindadas: quem vê o PJ não classifica como comum');
+select pg_temp.como(:'gestor');
+select pg_temp.erro_igual($$select api.classificar_emitente('22222222000122', 'comum')$$,
+  'Sem permissão para classificar emitentes', 'notas blindadas: o grupo de aprovar não classifica');
+select pg_temp.como(:'diretor2');
+select pg_temp.erro_igual($$select api.classificar_emitente('22222222000122', 'comum')$$,
+  'Sem permissão para classificar emitentes', 'notas blindadas: o grupo pj não classifica');
+-- classificar: quem pode e o que a triagem alcança
+select pg_temp.erro_igual($$select api.classificar_emitente('44444444000144', 'comum')$$,
+  'Sem permissão para classificar emitentes', 'notas blindadas: o financeiro não classifica');
+select pg_temp.como(:'analista2');
+select pg_temp.erro_igual($$select api.classificar_emitente('12121212000112', 'comum')$$,
+  'Este emitente não está na triagem', 'notas blindadas: a triagem não classifica CNPJ sem nota');
+select pg_temp.erro_igual($$select api.classificar_emitente('88888888000188', 'comum')$$,
+  'Este emitente não está na triagem', 'notas blindadas: nem o PJ (mesmo erro: não revela que é PJ)');
+select pg_temp.erro_igual($$select api.classificar_emitente('88888888000188', 'pj')$$,
+  'Este emitente não está na triagem', 'notas blindadas: pedir o PJ de quem já é PJ dá o mesmo erro');
+select pg_temp.erro_igual($$select api.classificar_emitente('44444444000144', 'outra')$$,
+  'Classe: comum ou pj', 'notas blindadas: só as duas classes');
+select pg_temp.ok(api.classificar_emitente('44.444.444/0001-44', 'comum') = 'feito', 'notas blindadas: a triagem classifica como comum na hora');
+select pg_temp.como(:'analista');
+select pg_temp.ok((select count(*) = 2 from minhas) and api.nota_recebida_xml(:'nb_t') = '<NFSe>T</NFSe>',
+  'notas blindadas: classificada como comum, a NFS-e vai para a caixa do financeiro');
+-- comum → pj pela triagem: pedido, e a nota some na hora
+select pg_temp.como(:'analista2');
+select pg_temp.ok(api.classificar_emitente('44444444000144', 'pj') = 'pedido', 'notas blindadas: a triagem pede o PJ de um comum');
+select pg_temp.erro_igual($$select api.classificar_emitente('44444444000144', 'pj')$$,
+  'Este emitente não está na triagem', 'notas blindadas: com o pedido esperando, a triagem não pede de novo');
+select pg_temp.ok((select count(*) = 1 and bool_and(para = 'pj' and situacao = 'pendente') from api.emitentes_pedidos())
+                  and not exists (select 1 from erp.emitentes_classificacao where classe = 'pj'),
+  'notas blindadas: quem pediu vê o próprio pedido; a triagem não vê classe pj');
+select pg_temp.erro_igual(format($$select api.decidir_pedido_emitente(%L, true)$$, (select id from erp.emitentes_pedidos limit 1)),
+  'Só o master e quem ele designou aprovam a lista de PJ', 'notas blindadas: a triagem não aprova');
+select pg_temp.como(:'analista');
+select pg_temp.ok((select count(*) = 1 and bool_and(id = :'nb_m') from minhas) and not exists (select 1 from api.emitentes_pedidos()),
+  'notas blindadas: o pedido de incluir no PJ tira a nota da caixa na hora; o financeiro não vê os pedidos');
+select pg_temp.como(:'gestor');
+select id as ped1 from api.emitentes_pedidos() where situacao = 'pendente' \gset
+select api.decidir_pedido_emitente(:'ped1', false);
+select pg_temp.erro_igual(format($$select api.decidir_pedido_emitente(%L, true)$$, :'ped1'),
+  'O pedido já foi decidido', 'notas blindadas: o pedido decidido não se decide de novo');
+select pg_temp.como_dono(:'gestor');
+set role erp_situacao;
+select pg_temp.erro_igual(format($$update erp.emitentes_pedidos set situacao = 'aprovado' where id = %L$$, :'ped1'),
+  'O pedido já foi decidido', 'notas blindadas: nem por baixo o pedido decidido muda');
+reset role;
+select pg_temp.como(:'analista');
+select pg_temp.ok((select count(*) = 2 from minhas), 'notas blindadas: recusado, o emitente volta ao que era (comum) e a nota volta');
+-- quem cuida da lista de PJ inclui e tira, sempre com aprovação
+select pg_temp.como(:'contador');
+select pg_temp.ok(api.classificar_emitente('44444444000144', 'pj') = 'pedido', 'notas blindadas: quem vê o PJ pede para incluir');
+select pg_temp.como(:'gestor');
+select api.decidir_pedido_emitente((select id from erp.emitentes_pedidos where situacao = 'pendente'), true);
+select pg_temp.como(:'diretor2');
+select pg_temp.ok((select count(*) = 3 from minhas), 'notas blindadas: aprovado, o grupo pj vê a nota do novo PJ');
+select pg_temp.como(:'analista');
+select pg_temp.ok((select count(*) = 1 from minhas), 'notas blindadas: e o financeiro não');
+select pg_temp.como(:'diretor');
+select api.designar_notas(:'diretor2', 'triagem');
+select pg_temp.como(:'diretor2');
+select pg_temp.erro_igual($$select api.classificar_emitente('44444444000144', 'comum')$$,
+  'Tirar do PJ é com quem cuida da lista de PJ', 'notas blindadas: quem não é master nem vê o PJ não tira do PJ (nem no grupo pj e na triagem)');
+select pg_temp.como(:'analista2');
+select pg_temp.erro_igual($$select api.classificar_emitente('44444444000144', 'comum')$$,
+  'Este emitente não está na triagem', 'notas blindadas: a triagem não tira do PJ');
+select pg_temp.como(:'contador');
+select pg_temp.ok(api.classificar_emitente('44444444000144', 'comum') = 'pedido', 'notas blindadas: quem vê o PJ pede para tirar');
+select pg_temp.como(:'analista');
+select pg_temp.ok((select count(*) = 1 from minhas), 'notas blindadas: o pedido de tirar não solta a nota antes da aprovação');
+select pg_temp.como(:'gestor');
+select api.decidir_pedido_emitente((select id from erp.emitentes_pedidos where situacao = 'pendente'), true);
+select pg_temp.como(:'analista');
+select pg_temp.ok((select count(*) = 2 from minhas), 'notas blindadas: aprovado o tirar, a nota volta para a caixa');
+-- quem pediu não aprova o próprio pedido; a pessoa no cadastro de PJ não sai por aqui
+select pg_temp.como(:'diretor');
+select api.designar_notas(:'contador', 'aprova');
+select pg_temp.como(:'contador');
+select pg_temp.ok(api.classificar_emitente('66666666000166', 'pj') = 'pedido', 'notas blindadas: quem vê o PJ pede o PJ de um não classificado');
+select pg_temp.erro_igual(format($$select api.decidir_pedido_emitente(%L, true)$$, (select id from erp.emitentes_pedidos where situacao = 'pendente')),
+  'Quem pediu não aprova o próprio pedido', 'notas blindadas: quem pediu não aprova');
+select pg_temp.erro_igual($$select api.classificar_emitente('88888888000188', 'comum')$$,
+  'O emitente está no cadastro de PJ: a marca da pessoa só o master muda, pelo cadastro', 'notas blindadas: a pessoa restrita não sai do PJ por aqui');
+select pg_temp.como(:'analista');
+select pg_temp.ok((select count(*) = 1 and bool_and(id = :'nb_t') from minhas), 'notas blindadas: o pedido do PJ esconde também a NF-e na hora');
+-- nada se grava por fora
+select pg_temp.como(:'contador');
+select pg_temp.falha($$update erp.emitentes_classificacao set classe = 'comum'$$, 'notas blindadas: a classificação não se grava direto pela API');
+select pg_temp.falha($$insert into erp.emitentes_classificacao (documento, classe, por) values ('12121212000112', 'comum', '00000000-0000-0000-0000-00000000000c')$$,
+  'notas blindadas: nem se inclui direto');
+-- o master classifica na hora; a auditoria dos pedidos não aparece ao administrador
+select pg_temp.como(:'diretor');
+select pg_temp.ok(api.classificar_emitente('12121212000112', 'pj') = 'feito', 'notas blindadas: o master classifica na hora');
+select pg_temp.como(:'ti');
+select pg_temp.ok(not exists (select 1 from erp.auditoria where tabela in ('emitentes_classificacao', 'emitentes_pedidos')),
+  'notas blindadas: a classificação e os pedidos não aparecem na auditoria do administrador');
+-- retirado do grupo, deixa de ver
+select pg_temp.como(:'diretor');
+select api.retirar_notas(:'diretor2', 'pj');
+select pg_temp.como(:'diretor2');
+select pg_temp.ok(not exists (select 1 from minhas where id = :'nb_pj'), 'notas blindadas: tirado do grupo pj, deixa de ver a nota de PJ');
+select pg_temp.como(null);
+rollback;
+
+-- a NFS-e de não classificado não se liga sozinha; classificada como comum, liga
+begin;
+select pg_temp.sis();
+select d.id as doc_c, d.empresa_id as emp_c, d.numero as num_c, p.documento as emit_c, e.documento as tom_c, d.valor_bruto as val_c
+  from erp.documentos_fiscais d join erp.pessoas p on p.id = d.emitente_id
+  join erp.empresas em on em.id = d.empresa_id join erp.pessoas e on e.id = em.pessoa_id
+ where d.situacao = 'lancado' and d.tipo = 'nfse' and d.numero ~ '^[0-9]+$' and not p.restrita
+ order by d.lancado_em limit 1 \gset
+select erp.registrar_nota_recebida(:'emp_c', pg_temp.nota('nfse', :'emit_c', ltrim(:'num_c', '0'), :'val_c', :'tom_c'), '<NFSe/>', true) as nr_c \gset
+select pg_temp.ok((select situacao = 'nova' and documento_id is null from erp.notas_recebidas where id = :'nr_c'),
+  'notas blindadas: a NFS-e de não classificado não se liga sozinha à nota lançada');
+-- e pelo outro caminho: a nota lançada depois (gatilho do documento) também não a liga
+set role erp_situacao;
+update erp.documentos_fiscais set situacao = 'cancelado', cancelamento = 'recusa' where id = :'doc_c';
+reset role;
+select pg_temp.como_dono(:'analista2');
+insert into erp.documentos_fiscais (id, empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+select '70000000-0000-0000-0000-0000000000c8', d.empresa_id, d.emitente_id, 'nfse', d.numero, d.emissao, d.competencia, d.valor_bruto
+  from erp.documentos_fiscais d where d.id = :'doc_c';
+select pg_temp.sis();
+set role erp_situacao;
+update erp.documentos_fiscais set situacao = 'lancado', lancado_em = clock_timestamp() where id = '70000000-0000-0000-0000-0000000000c8';
+reset role;
+select pg_temp.ok((select situacao = 'nova' and documento_id is null from erp.notas_recebidas where id = :'nr_c'),
+  'notas blindadas: lançada a nota depois, o gatilho do documento não liga a NFS-e de não classificado');
+select pg_temp.como(:'diretor');
+select api.classificar_emitente(:'emit_c', 'comum');
+select pg_temp.ok((select situacao = 'vinculada' and documento_id = '70000000-0000-0000-0000-0000000000c8' from erp.notas_recebidas where id = :'nr_c'),
+  'notas blindadas: classificado como comum, a nota se liga');
 select pg_temp.como(null);
 rollback;
 
