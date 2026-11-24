@@ -52,14 +52,16 @@ do $$
 declare v_def text; v_novo text;
 begin
   v_def := pg_get_functiondef('api.identificar_nota(jsonb)'::regprocedure);
-  -- com número, pela chave; sem número (só recibo, fatura, boleto...), o mesmo valor e a mesma emissão (só aviso)
-  v_novo := replace(v_def, $r$and ltrim(d.numero, '0') = ltrim(trim(coalesce(p->>'numero', '')), '0')
-                                  and length(trim(coalesce(p->>'numero', ''))) > 0$r$,
-                           $r$and (erp.numero_documento_chave(d.numero) = erp.numero_documento_chave(p->>'numero')
-                                       or (erp.numero_documento_chave(p->>'numero') is null and erp.numero_documento_chave(d.numero) is null
-                                           and v_valor is not null and v_emissao is not null
-                                           and d.valor_bruto = v_valor and d.emissao = v_emissao))$r$);
-  if v_novo = v_def then raise exception 'api.identificar_nota: ponto de troca não achado'; end if;
+  -- com número, pela chave; sem número (só recibo, fatura, boleto...), o mesmo valor e a mesma emissão (só aviso).
+  -- Cada troca é de uma linha só: colado no SQL Editor pelo Windows, o texto vem com CRLF e um trecho de duas linhas
+  -- não casaria com o corpo da função (24/nov/2026).
+  if (length(v_def) - length(replace(v_def, $r$ltrim(d.numero, '0') = ltrim(trim(coalesce(p->>'numero', '')), '0')$r$, ''))) <> length($r$ltrim(d.numero, '0') = ltrim(trim(coalesce(p->>'numero', '')), '0')$r$)
+     or (length(v_def) - length(replace(v_def, $r$and length(trim(coalesce(p->>'numero', ''))) > 0$r$, ''))) <> length($r$and length(trim(coalesce(p->>'numero', ''))) > 0$r$) then
+    raise exception 'api.identificar_nota: ponto de troca não achado (ou achado mais de uma vez)';
+  end if;
+  v_novo := replace(v_def, $r$ltrim(d.numero, '0') = ltrim(trim(coalesce(p->>'numero', '')), '0')$r$,
+    $r$(erp.numero_documento_chave(d.numero) = erp.numero_documento_chave(p->>'numero') or (erp.numero_documento_chave(p->>'numero') is null and erp.numero_documento_chave(d.numero) is null and v_valor is not null and v_emissao is not null and d.valor_bruto = v_valor and d.emissao = v_emissao))$r$);
+  v_novo := replace(v_novo, $r$and length(trim(coalesce(p->>'numero', ''))) > 0$r$, $r$and true$r$);
   execute v_novo;
 end $$;
 
