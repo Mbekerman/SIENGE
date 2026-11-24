@@ -119,7 +119,7 @@ Alguns pontos dependem de decisões em aberto, indicadas abaixo.
 
 > ✅ O banco e o serviço da busca estão no sistema (PR #126, juntado em 23/nov/2026). A busca já pode ser ligada (Moises aceitou o risco que faltava, 23/nov/2026). ⏳ A tela ainda não existe.
 
-- **Como as notas chegam:** o sistema busca sozinho, várias vezes ao dia, as NF-e (material) na SEFAZ e as NFS-e (serviço) no ambiente nacional da nota de serviço. ✅ Toda NF-e recebe a ciência da operação automaticamente, para o sistema baixar a nota completa.
+- **Como as notas chegam:** o sistema busca sozinho, várias vezes ao dia, as NF-e (material) na SEFAZ e as NFS-e (serviço) no ambiente nacional da nota de serviço. ✅ A NF-e recebe a ciência da operação automaticamente, para o sistema baixar a nota completa. A SEFAZ só aceita a ciência até 10 dias depois da emissão, então ela é pedida só para as notas desse prazo, das mais novas para as mais antigas (PR #131). Nota mais antiga fica só com o resumo, sem o arquivo completo.
 - ✅ **Agrupada por empresa**, não por núcleo, porque a nota só traz o CNPJ da empresa.
 - ✅ **Quem vê:** AF, AO, AD, diretor e master veem a caixa inteira. O master e o AD liberam outras pessoas por empresa e por tipo (material ou serviço), sempre com o motivo, e podem tirar a liberação.
 - ✅ **Quem lança sem acesso à caixa** acha a própria nota pela chave de acesso ou pelo CNPJ do emitente e o número. 🟡 Sem a chave, o sistema pede também o valor exato da nota, para ninguém percorrer a sequência de números de um fornecedor. Falta o Moises confirmar.
