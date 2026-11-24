@@ -22,6 +22,8 @@ O cadastro guarda: CPF ou CNPJ, nome, contatos, dados bancários e Pix.
 
 **O que o sistema confere:** CPF ou CNPJ válido e não repetido. ✅ O CNPJ com letras, o novo formato da Receita, também é aceito (PR #133, juntado).
 
+🟡 **Credores do Sienge** (PR #139, ainda não juntado): todo dia às 3h, a lista inteira de credores do Sienge entra no cadastro de pessoas do ERP como fornecedores. Nenhuma conta bancária nem PIX vem junto: esses dados se cadastram e se aprovam no ERP.
+
 **Bom saber:** no teste de 6/nov/2026, o título gerado no Sienge já veio com o Pix do fornecedor puxado do cadastro dele.
 
 ## Quem muda o cadastro

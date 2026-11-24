@@ -76,7 +76,7 @@ Ao clicar em **Lançar**, o título vai para a aprovação e abre na gaveta. Se 
   - nota já lançada;
   - nota lida pela IA, que precisa de conferência;
   - tomador que não é empresa da pessoa;
-  - emitente sem cadastro;
+  - emitente sem cadastro. 🟡 Com o PR #139 (ainda não juntado), a tela procura o CPF ou CNPJ lido nos credores do Sienge. Se achar, o fornecedor entra no ERP e se preenche sozinho, com o aviso "veio do cadastro de credores do Sienge e já está no fornecedor. Confira"; se você já tinha escolhido outro fornecedor, fica a sua escolha. Se não achar, o aviso diz "não está cadastrado no ERP nem nos credores do Sienge. Procure pelo nome ou peça o cadastro";
   - boleto que o banco não confirmou;
   - valor ou beneficiário diferentes do boleto.
   - ✅ CPF ou CNPJ lido com dígito verificador errado, do emitente ou do tomador (PR #127, juntado): o campo vem vazio, com o aviso "CNPJ do emitente lido com dígito verificador errado: confira no documento", e a pessoa digita o número olhando a nota. É o mesmo que já acontece com a chave de acesso.
