@@ -640,18 +640,18 @@ function TedParcela({ t, docForn, tentou, mudar }: { t: Ted; docForn: string | n
   const err = (x: boolean) => (tentou && x ? 'err' : '');
   const outro = Boolean(docForn && docSo(t.titular) && docSo(t.titular) !== docForn);
   return <>
-    <div className="lt-lin">
-      <input className={`lt-in num nc-dia ${err(so(t.banco).length !== 3)}`} inputMode="numeric" placeholder="Banco" title="O código do banco, com 3 dígitos (ex.: 001, 341)" value={t.banco} onChange={e => mudar({ banco: so(e.target.value).slice(0, 3) })} aria-label="Banco" />
-      <input className={`lt-in num ${err(!so(t.agencia))}`} inputMode="numeric" placeholder="Agência" value={t.agencia} onChange={e => mudar({ agencia: so(e.target.value).slice(0, 6) })} aria-label="Agência" />
-      <input className="lt-in num nc-dia" placeholder="Díg." value={t.agencia_digito} onChange={e => mudar({ agencia_digito: e.target.value.replace(/[^0-9xX]/g, '').slice(0, 1) })} aria-label="Dígito da agência" />
+    <div className="lt-lin lt-ted">
+      <label className="nc-dia"><span>Banco</span><input className={`lt-in num ${err(so(t.banco).length !== 3)}`} inputMode="numeric" placeholder="341" title="O código do banco, com 3 dígitos (ex.: 001, 341)" value={t.banco} onChange={e => mudar({ banco: so(e.target.value).slice(0, 3) })} /></label>
+      <label><span>Agência</span><input className={`lt-in num ${err(!so(t.agencia))}`} inputMode="numeric" value={t.agencia} onChange={e => mudar({ agencia: so(e.target.value).slice(0, 6) })} /></label>
+      <label className="nc-dia"><span>Díg.</span><input className="lt-in num" value={t.agencia_digito} onChange={e => mudar({ agencia_digito: e.target.value.replace(/[^0-9xX]/g, '').slice(0, 1) })} aria-label="Dígito da agência" /></label>
     </div>
-    <div className="lt-lin">
-      <input className={`lt-in num ${err(!so(t.conta))}`} inputMode="numeric" placeholder="Conta" value={t.conta} onChange={e => mudar({ conta: so(e.target.value).slice(0, 14) })} aria-label="Conta" />
-      <input className={`lt-in num nc-dia ${err(!/^[0-9X]$/i.test(t.conta_digito.trim()))}`} placeholder="Díg." value={t.conta_digito} onChange={e => mudar({ conta_digito: e.target.value.replace(/[^0-9xX]/g, '').slice(0, 1) })} aria-label="Dígito da conta" />
-      <select className="lt-in lt-tipo" value={t.conta_tipo} onChange={e => mudar({ conta_tipo: e.target.value as Ted['conta_tipo'] })} aria-label="Tipo da conta">
-        <option value="corrente">Corrente</option><option value="poupanca">Poupança</option></select>
+    <div className="lt-lin lt-ted">
+      <label><span>Conta</span><input className={`lt-in num ${err(!so(t.conta))}`} inputMode="numeric" value={t.conta} onChange={e => mudar({ conta: so(e.target.value).slice(0, 14) })} /></label>
+      <label className="nc-dia"><span>Díg.</span><input className={`lt-in num ${err(!/^[0-9X]$/i.test(t.conta_digito.trim()))}`} value={t.conta_digito} onChange={e => mudar({ conta_digito: e.target.value.replace(/[^0-9xX]/g, '').slice(0, 1) })} aria-label="Dígito da conta" /></label>
+      <label><span>Tipo</span><select className="lt-in" value={t.conta_tipo} onChange={e => mudar({ conta_tipo: e.target.value as Ted['conta_tipo'] })} aria-label="Tipo da conta">
+        <option value="corrente">Corrente</option><option value="poupanca">Poupança</option></select></label>
     </div>
-    <input className={`lt-in num ${err(![11, 14].includes(docSo(t.titular).length))}`} placeholder="CPF ou CNPJ do titular" value={t.titular} onChange={e => mudar({ titular: e.target.value })} aria-label="CPF ou CNPJ do titular" />
+    <label className="lt-ted"><span>CPF ou CNPJ do titular</span><input className={`lt-in num ${err(![11, 14].includes(docSo(t.titular).length))}`} value={t.titular} onChange={e => mudar({ titular: e.target.value })} /></label>
     {outro && <div className="lt-exc"><span className="nt at">A conta não é do fornecedor. Só entra com a justificativa, que quem aprova vê.</span>
       <input className={`lt-in ${err(!t.excecao.trim())}`} placeholder="Por que pagar em outra conta?" value={t.excecao} onChange={e => mudar({ excecao: e.target.value })} /></div>}
   </>;

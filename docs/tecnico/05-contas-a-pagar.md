@@ -129,3 +129,7 @@ Serviço da busca (`servicos/busca-notas`, Cloud Run Job `erp-busca-notas`, de h
 ## 5.4 Depois da autorização [Desenhado]
 
 Seleção para pagamento, remessa, pagamento e baixa continuam no Sienge e no banco. O sistema só acompanha pelos avisos (autorização, envio ao banco, baixa, estorno, movimento bancário) e avisa quem lançou a nota. Como a BKM paga hoje (remessa, integração bancária ou internet banking) ainda não foi respondido [A decidir].
+
+### Tela da forma de pagamento (24/nov/2026, migration 20261124004000)
+
+`api.titulo` passou a devolver em cada parcela a TED (`ted`) e os avisos da forma de pagamento (`avisos`, de `erp.avisos_forma_pagamento`, que já confere `vejo_titulo`). O front (`apps/web/src/lib/forma.tsx`) mostra os avisos nas gavetas de Títulos e de Para aprovar e, para AF, AD e master com o título em aprovação, o botão que chama `api.usar_forma_do_cadastro`; quem decide é o banco. O botão aparece quando um aviso começa por "Diferente da forma cadastrada na conta recorrente: " e não é a forma "vem com cada cobrança". Em Lançar título (`pages/Lancar.tsx`) a parcela ganhou TED e "Do cadastro" (forma `cadastro` de `api.lancar_titulo`), esta só com a conta aprovada (`api.contratos`).

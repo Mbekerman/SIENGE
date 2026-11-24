@@ -406,3 +406,7 @@ button.lt-o:hover{background:#f1f4f9}
 .fp-av { display: flex; flex-direction: column; gap: 8px; }
 .fp-esc { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .fp-esc .btn { flex: none; }
+/* TED da parcela no Lançar: cada campo com o rótulo em cima */
+.lt-ted label, label.lt-ted { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.lt-ted label.nc-dia { flex: 0 0 88px; }
+.lt-ted span, label.lt-ted > span { font-size: 12px; color: var(--m-on-var, #444746); }
