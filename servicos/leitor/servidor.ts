@@ -112,7 +112,7 @@ const asaas: Deps['asaas'] = ASAAS_URL && ASAAS_CHAVE ? async (linha) => {
   const b = j?.bankSlipInfo ?? {};
   return { ok: true, valor: typeof b.value === 'number' ? b.value : undefined, vencimento: b.dueDate ?? undefined,
            beneficiario: b.beneficiaryName ?? b.companyName ?? undefined,
-           beneficiario_documento: typeof b.beneficiaryCpfCnpj === 'string' ? b.beneficiaryCpfCnpj.replace(/\D/g, '') : undefined };
+           beneficiario_documento: typeof b.beneficiaryCpfCnpj === 'string' ? b.beneficiaryCpfCnpj.toUpperCase().replace(/[^0-9A-Z]/g, '') : undefined };
 } : null;
 
 const cliente = await clienteFederado();

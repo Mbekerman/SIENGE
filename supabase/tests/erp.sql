@@ -397,6 +397,65 @@ select pg_temp.erro_igual(format($$insert into erp.documentos_fiscais (empresa_i
   values (%L, '10000000-0000-0000-0000-000000000005', 'nfse', '101', '2026-02-05', '2026-02-01', 10)$$, :'spe'),
   'duplicate key value violates unique constraint "documentos_fiscais_unico"',
   'um título por nota: a mesma nota não entra duas vezes');
+-- número do documento (Moises, 24/11/2026): a trava compara a chave do número (maiúsculas, só letras e dígitos, sem
+-- zeros à esquerda), e repetido é recusado
+select pg_temp.erro_igual(format($$insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+  values (%L, '10000000-0000-0000-0000-000000000005', 'nfse', '00.101', '2026-02-05', '2026-02-01', 10)$$, :'spe'),
+  'duplicate key value violates unique constraint "documentos_fiscais_unico"',
+  'número do documento: zeros à esquerda e pontuação não fazem outro número (00.101 = 101)');
+select pg_temp.ok(erp.numero_documento_chave('1303890-1/') = erp.numero_documento_chave('1303890-1')
+                  and erp.numero_documento_chave('bkm-0001') = 'BKM0001' and erp.numero_documento_chave('000') = '0'
+                  and erp.numero_documento_chave('29') <> erp.numero_documento_chave('290')
+                  and erp.numero_documento_chave('') is null and erp.numero_documento_chave('S/N') is null and erp.numero_documento_chave('-/') is null,
+  'número do documento: a chave tira pontuação e zeros à esquerda, iguala maiúsculas e não junta números diferentes');
+begin;
+insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+  values (:'spe', '10000000-0000-0000-0000-000000000005', 'boleto', 'BKM-0001', '2026-02-05', '2026-02-01', 10) returning id as bol \gset
+select pg_temp.erro_igual(format($$insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+  values (%L, '10000000-0000-0000-0000-000000000005', 'boleto', 'bkm0001', '2026-02-06', '2026-02-01', 10)$$, :'spe'),
+  'duplicate key value violates unique constraint "documentos_fiscais_unico"',
+  'número do documento: o mesmo boleto do mesmo fornecedor não entra duas vezes (maiúsculas e traço não contam)');
+select pg_temp.ok((select count(*) = 1 from (select 1 from erp.documentos_fiscais where emitente_id = '10000000-0000-0000-0000-000000000005'
+                     and erp.numero_documento_chave(numero) = 'BKM0001') x),
+  'número do documento: o repetido não ficou gravado');
+insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+  values (:'spe', '10000000-0000-0000-0000-000000000005', 'fatura', 'BKM-0001', '2026-02-05', '2026-02-01', 10);
+select pg_temp.ok(true, 'número do documento: o mesmo número em outro tipo de documento entra');
+set local role erp_situacao;
+update erp.documentos_fiscais set situacao = 'cancelado' where id = :'bol';
+reset role;
+insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+  values (:'spe', '10000000-0000-0000-0000-000000000005', 'boleto', 'BKM0001', '2026-02-06', '2026-02-01', 10);
+select pg_temp.ok(true, 'número do documento: o documento cancelado libera o número para a versão certa');
+insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, serie, emissao, competencia, valor_bruto)
+  values (:'spe', '10000000-0000-0000-0000-000000000005', 'nfe', '29', '1', '2026-02-05', '2026-02-01', 10);
+select pg_temp.erro_igual(format($$insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, serie, emissao, competencia, valor_bruto)
+  values (%L, '10000000-0000-0000-0000-000000000005', 'nfe', '29', '001', '2026-02-05', '2026-02-01', 10)$$, :'spe'),
+  'duplicate key value violates unique constraint "documentos_fiscais_unico"',
+  'número do documento: a série passa pela mesma chave (série 1 = 001)');
+insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, serie, emissao, competencia, valor_bruto)
+  values (:'spe', '10000000-0000-0000-0000-000000000005', 'nfe', '29', '2', '2026-02-05', '2026-02-01', 10);
+select pg_temp.ok(true, 'número do documento: o mesmo número em outra série entra');
+insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+  values (:'spe', '10000000-0000-0000-0000-000000000005', 'recibo', 's/n', '2026-02-05', '2026-02-01', 10),
+         (:'spe', '10000000-0000-0000-0000-000000000005', 'recibo', 'S/N', '2026-02-06', '2026-02-01', 20),
+         (:'spe', '10000000-0000-0000-0000-000000000005', 'recibo', '-/', '2026-02-07', '2026-02-01', 30);
+select pg_temp.ok(true, 'número do documento: documento sem número (s/n, -/) fica fora da trava (Moises, 24/11)');
+select pg_temp.erro_igual(format($$insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+  values (%L, '10000000-0000-0000-0000-000000000005', 'nfse', 's/n', '2026-02-05', '2026-02-01', 10)$$, :'spe'),
+  'new row for relation "documentos_fiscais" violates check constraint "documentos_fiscais_nota_com_numero"',
+  'número do documento: NFS-e sem número é recusada (a trava não tem porta de saída nas notas)');
+select pg_temp.erro_igual(format($$update erp.documentos_fiscais set numero = '-' where emitente_id = '10000000-0000-0000-0000-000000000005'
+  and tipo = 'nfe' and numero = '29'$$),
+  'new row for relation "documentos_fiscais" violates check constraint "documentos_fiscais_nota_com_numero"',
+  'número do documento: NF-e não troca o número por sem número');
+insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+  values (:'spe', '10000000-0000-0000-0000-000000000005', 'nfe', '30', '2026-02-05', '2026-02-01', 10);
+select pg_temp.erro_igual(format($$insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, serie, emissao, competencia, valor_bruto)
+  values (%L, '10000000-0000-0000-0000-000000000005', 'nfe', '30', '0', '2026-02-05', '2026-02-01', 10)$$, :'spe'),
+  'duplicate key value violates unique constraint "documentos_fiscais_unico"',
+  'número do documento: sem série e série 0 são a mesma série');
+rollback;
 select pg_temp.ok((select pessoa_id = '10000000-0000-0000-0000-000000000006' and valor = 500 from erp.titulos
                    where documento_id = '70000000-0000-0000-0000-000000000001' and tipo = 'imposto'), 'título do ISS contra a prefeitura');
 select pg_temp.ok(erp.caucao_saldo('60000000-0000-0000-0000-000000000002') = 500, 'caução de 5% do contrato no extrato');
@@ -8077,6 +8136,28 @@ select pg_temp.ok((select jsonb_array_length(j->'repetido_em') = 1 and j->'repet
 select pg_temp.ok((select jsonb_array_length(j->'nota_repetida') = 1 and j->'nota_repetida'->0->>'titulo_id' = :'tan'
                      from api.identificar_nota(jsonb_build_object('tomador', :'doc_spe', 'emitente', :'doc_forn', 'tipo', 'nfse', 'numero', '881')) j),
   'identificar: a nota com o mesmo número do mesmo emitente (zeros à esquerda não contam) volta como repetida');
+select pg_temp.ok((select jsonb_array_length(j->'nota_repetida') = 1
+                     from api.identificar_nota(jsonb_build_object('tomador', :'doc_spe', 'emitente', :'doc_forn', 'tipo', 'nfse', 'numero', '0.881')) j),
+  'identificar: o aviso de nota repetida usa a mesma chave da trava (0.881 = 881)');
+select pg_temp.como(null);
+insert into erp.documentos_fiscais (empresa_id, emitente_id, tipo, numero, emissao, competencia, valor_bruto)
+  select empresa_id, emitente_id, 'recibo', 's/n', '2026-11-05', '2026-11-01', 321 from erp.documentos_fiscais
+   where id = (select documento_id from erp.titulos where id = :'tan') returning id as rsn \gset
+select pg_temp.como(:'diretor');
+select pg_temp.ok((select jsonb_array_length(j->'nota_repetida') = 1 and j->'nota_repetida'->0->>'documento_id' = :'rsn'
+                     from api.identificar_nota(jsonb_build_object('tomador', :'doc_spe', 'emitente', :'doc_forn', 'tipo', 'recibo', 'numero', 'S/N',
+                                                                  'valor', 321, 'emissao', '2026-11-05')) j)
+                  and (select jsonb_array_length(j->'nota_repetida') = 0
+                     from api.identificar_nota(jsonb_build_object('tomador', :'doc_spe', 'emitente', :'doc_forn', 'tipo', 'recibo', 'numero', 's/n',
+                                                                  'valor', 322, 'emissao', '2026-11-05')) j),
+  'identificar: sem número, avisa o documento do mesmo emitente e tipo com o mesmo valor e a mesma emissão');
+select pg_temp.como(null);
+delete from erp.documentos_fiscais where id = :'rsn';
+select pg_temp.como(:'diretor');
+select pg_temp.ok((select not p.prosecdef and not exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0)
+                          and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                     from pg_proc p where p.oid = 'api.identificar_nota(jsonb)'::regprocedure),
+  'identificar: depois da troca da chave continua invoker e sem EXECUTE para public');
 select pg_temp.ok((select j->'pagamento'->>'forma' = 'pix' and j->'pagamento'->>'pix_chave' = 'agencia@example.com'
                      from api.identificar_nota(jsonb_build_object('emitente', :'doc_forn')) j),
   'identificar: a última chave PIX usada com o fornecedor vem pré-selecionada');
@@ -9703,6 +9784,52 @@ select pg_temp.ok(not has_function_privilege('erp_busca_notas', 'erp.busca_notas
                   and not has_function_privilege('authenticated', 'erp.busca_notas_janela(text)', 'EXECUTE')
                   and not has_function_privilege('service_role', 'erp.busca_notas_janela(text)', 'EXECUTE'),
   'janela da busca: só o dono das migrations chama');
+rollback;
+
+-- ---------------------------------------------------------------------
+\echo '# CNPJ alfanumérico (Receita, desde julho/2026)'
+begin;
+select pg_temp.como(null);
+select pg_temp.ok(erp.cnpj_valido('12ABC34501DE35') and erp.cnpj_valido('29732041000154')
+                  and not erp.cnpj_valido('12ABC34501DE53') and not erp.cnpj_valido('12abc34501de35')
+                  and not erp.cnpj_valido('11111111111111') and not erp.cnpj_valido('12ABC34501DE3') and not erp.cnpj_valido(null),
+  'cnpj: o DV confere nos dois formatos (letra vale ASCII − 48), só em maiúsculas');
+select pg_temp.ok(erp.cnpj_aceito('12ABC34501DE35') and erp.cnpj_aceito('29732041000154') and erp.cnpj_aceito('29732041000199')
+                  and not erp.cnpj_aceito('12ABC34501DE53') and not erp.cnpj_aceito('12abc34501de35'),
+  'cnpj: o só de dígitos continua como estava; o com letra só com o DV certo');
+insert into erp.pessoas (id, tipo, nome, documento) values ('5a000000-0000-0000-0000-000000000001', 'juridica', 'Alfa Teste Ltda', '12ABC34501DE35');
+insert into erp.pessoa_papeis (pessoa_id, papel) values ('5a000000-0000-0000-0000-000000000001', 'fornecedor');
+select pg_temp.ok(true, 'cnpj: credor com CNPJ alfanumérico válido entra');
+select pg_temp.falha($q$insert into erp.pessoas (tipo, nome, documento) values ('juridica', 'Erro', '12ABC34501DE53')$q$, 'cnpj: alfanumérico com DV errado é recusado');
+select pg_temp.falha($q$insert into erp.pessoas (tipo, nome, documento) values ('juridica', 'Erro', '12abc34501de35')$q$, 'cnpj: minúsculas são recusadas');
+select pg_temp.falha($q$insert into erp.pessoas (tipo, nome, documento) values ('fisica', 'Erro', '5299822472A')$q$, 'cnpj: CPF continua só com dígitos');
+select pg_temp.ok(erp.chave_pix_valida('cpf_cnpj', '12ABC34501DE35') and not erp.chave_pix_valida('cpf_cnpj', '12ABC34501DE53')
+                  and erp.chave_pix_valida('cpf_cnpj', '52998224725'),
+  'cnpj: chave PIX CPF/CNPJ aceita o alfanumérico com o DV certo');
+select pg_temp.ok((select bool_and(pg_get_constraintdef(oid) like '%A-Z%') from pg_constraint
+                    where conrelid in ('erp.pix_conferencias'::regclass, 'erp.boleto_conferencias'::regclass) and contype = 'c'
+                      and pg_get_constraintdef(oid) like '%cpf_cnpj ~%'),
+  'cnpj: a conferência de quem recebe guarda o documento com letras');
+select pg_temp.ok(exists (select 1 from api.fornecedores('12.ABC.345/01DE') where id = '5a000000-0000-0000-0000-000000000001')
+                  and exists (select 1 from api.fornecedores('12abc') where id = '5a000000-0000-0000-0000-000000000001'),
+  'cnpj: a busca do fornecedor pelo documento não joga fora as letras');
+-- revisão do patch: as mutações que sobreviviam
+select pg_temp.ok(not erp.cnpj_valido('12ABC34501DE36') and not erp.cnpj_aceito('12ABC34501DE36'), 'cnpj: o 2º DV também é conferido');
+select pg_temp.falha($q$insert into erp.pessoas (tipo, nome, documento) values ('juridica', 'Erro', '12abc34501de35')$q$, 'cnpj: credor com letras minúsculas é recusado (evita credor duplicado)');
+insert into erp.compromisso_pagamentos (compromisso_id, modo, banco, agencia, conta, conta_digito, conta_tipo, titular_documento, excecao)
+  select c.id, 'ted', '341', '1234', '56789', '0', 'corrente', '12ABC34501DE35', 'teste do titular alfanumérico'
+    from erp.compromissos c where not exists (select 1 from erp.compromisso_pagamentos g where g.compromisso_id = c.id) limit 1;
+select pg_temp.ok(exists (select 1 from erp.compromisso_pagamentos where titular_documento = '12ABC34501DE35'), 'cnpj: titular da TED com CNPJ alfanumérico válido entra');
+select pg_temp.falha($q$update erp.compromisso_pagamentos set titular_documento = '12ABC34501DE53' where modo = 'ted'$q$, 'cnpj: titular da TED com DV errado é recusado');
+select pg_temp.ok((select bool_and(erp._credor_confere(jsonb_build_object('cpf_cnpj', p.documento, 'nome', p.nome), t.id)
+                                   and not erp._credor_confere(jsonb_build_object('cpf_cnpj', 'CPF' || left(p.documento, 11), 'nome', p.nome), t.id))
+                     from (select * from erp.titulos limit 5) t join erp.pessoas p on p.id = t.pessoa_id where p.documento is not null)
+                  and not erp._credor_confere('{"cpf_cnpj": "CPF12345678901"}'::jsonb, null),
+  'cnpj: documento da conferência com letras soltas (CPF12345678901) não casa com o credor');
+select pg_temp.como(:'diretor');
+select pg_temp.ok((api.identificar_nota('{"emitente": "12.ABC.345/01DE-35"}'::jsonb)->'fornecedor'->>'id') = '5a000000-0000-0000-0000-000000000001',
+  'cnpj: a nota de emitente com CNPJ alfanumérico acha o fornecedor');
+select pg_temp.como(null);
 rollback;
 
 \echo '# fim'

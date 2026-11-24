@@ -34,20 +34,20 @@ export function cors(origem: string | null, origens: string[]): Record<string, s
 export function beneficiarioAsaas(j: any): Recebedor {
   const b = j?.bankSlipInfo ?? {};
   const s = (x: unknown) => (typeof x === 'string' && x.trim() ? x.trim() : null);
-  const doc = s(b.beneficiaryCpfCnpj)?.replace(/[^0-9*]/g, '') || null;
+  const doc = s(b.beneficiaryCpfCnpj)?.toUpperCase().replace(/[^0-9A-Z*]/g, '') || null;
   const venc = s(b.dueDate);
-  return { cpf_cnpj: doc && /^[0-9*]{11,14}$/.test(doc) ? doc : null, nome: s(b.beneficiaryName) ?? s(b.companyName), banco: s(b.bank) ?? null,
+  return { cpf_cnpj: doc && /^[0-9A-Z*]{11,14}$/.test(doc) ? doc : null, nome: s(b.beneficiaryName) ?? s(b.companyName), banco: s(b.bank) ?? null,
            chave: null, valor: typeof b.value === 'number' && Number.isFinite(b.value) && b.value > 0 ? Math.round(b.value * 100) / 100 : null,
            vencimento: venc && /^\d{4}-\d{2}-\d{2}$/.test(venc) ? venc : null };
 }
 
-/** O que o Asaas devolve vira o recebedor; o documento fica só com dígitos e * (pode vir mascarado). */
+/** O que o Asaas devolve vira o recebedor; o documento fica só com dígitos, letras (CNPJ alfanumérico) e * (pode vir mascarado). */
 // deno-lint-ignore no-explicit-any
 export function recebedorAsaas(j: any): Recebedor {
   const r = j?.receiver ?? {};
   const s = (x: unknown) => (typeof x === 'string' && x.trim() ? x.trim() : null);
-  const doc = s(r.cpfCnpj)?.replace(/[^0-9*]/g, '') || null;
-  return { cpf_cnpj: doc && /^[0-9*]{11,14}$/.test(doc) ? doc : null, nome: s(r.name) ?? s(r.tradingName),
+  const doc = s(r.cpfCnpj)?.toUpperCase().replace(/[^0-9A-Z*]/g, '') || null;
+  return { cpf_cnpj: doc && /^[0-9A-Z*]{11,14}$/.test(doc) ? doc : null, nome: s(r.name) ?? s(r.tradingName),
            banco: s(r.ispbName), chave: s(j?.pixKey),
            valor: typeof j?.value === 'number' && Number.isFinite(j.value) && j.value > 0 ? Math.round(j.value * 100) / 100 : null };
 }

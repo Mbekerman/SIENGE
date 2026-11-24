@@ -18,6 +18,9 @@ export function mensagemErro(e: unknown): string {
     const m = String((e as { message: string }).message);
     if (m.includes('Failed to fetch')) return 'Sem conexão com o servidor. Verifique a internet e tente de novo.';
     if (m.includes('row-level security')) return 'Você não tem permissão para esta ação.';
+    // trava de duplicidade (migration 20261124001000): mesmo fornecedor, tipo e número do documento
+    if (m.includes('documentos_fiscais_unico'))
+      return 'Este fornecedor já tem um documento desse tipo com esse número (zeros à esquerda e pontuação não contam). Confira se não é o mesmo documento lançado de novo; se o primeiro estava errado, cancele-o antes.';
     return m;
   }
   return String(e);
