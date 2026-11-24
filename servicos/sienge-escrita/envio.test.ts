@@ -51,6 +51,29 @@ test('pagamento da parcela: PIX sem dados do credor e boleto com as duas linhas'
   assert.throws(() => pagamentoDaParcela(10, { numero: 3, vencimento: '', valor: 1, forma: 'boleto', boleto_linha: LINHA }, 'u1'), /boleto/);
 });
 
+test('pagamento da parcela: TED pela forma 6, com a conta e o titular com máscara', () => {
+  const conta = { banco: '341', agencia: '1234', conta: '56789', conta_digito: '0', conta_tipo: 'corrente' as const,
+                  titular_documento: '77777777000177', titular_nome: 'Fornecedor Exemplo' };
+  const ted = pagamentoDaParcela(10, { numero: 1, vencimento: '2026-12-01', valor: 1, forma: 'ted', ted: conta }, 'u1');
+  assert.equal(ted.caminho, '/bills/10/installments/1/payment-information/bank-transfer');
+  assert.deepEqual(ted.corpo, {
+    paymentTypeId: 6, notes: 'ERP u1 parcela 1', beneficiaryBankCode: '341', beneficiaryBankBranchNumber: '1234',
+    beneficiaryAccountNumber: '56789', beneficiaryAccountDigit: '0', beneficiaryAccountType: 'C',
+    beneficiaryName: 'Fornecedor Exemplo', beneficiaryCNPJNumber: '77.777.777/0001-77',
+  });
+  const pou = pagamentoDaParcela(10, { numero: 2, vencimento: '2026-12-01', valor: 1, forma: 'ted',
+    ted: { ...conta, agencia_digito: 'X', conta_tipo: 'poupanca', titular_documento: '12345678909', titular_nome: null } }, 'u1');
+  assert.equal(pou.corpo.beneficiaryAccountType, 'P');
+  assert.equal(pou.corpo.beneficiaryBankBranchDigit, 'X');
+  assert.equal(pou.corpo.beneficiaryCPFNumber, '123.456.789-09');
+  assert.equal('beneficiaryName' in pou.corpo, false);
+  assert.equal('beneficiaryCNPJNumber' in pou.corpo, false);
+  assert.throws(() => pagamentoDaParcela(10, { numero: 3, vencimento: '', valor: 1, forma: 'ted' }, 'u1'), /TED/);
+  assert.throws(() => pagamentoDaParcela(10, { numero: 3, vencimento: '', valor: 1, forma: 'ted', ted: { ...conta, banco: '34' } }, 'u1'), /TED/);
+  assert.throws(() => pagamentoDaParcela(10, { numero: 3, vencimento: '', valor: 1, forma: 'ted', ted: { ...conta, titular_documento: '12ABC34501DE35' } }, 'u1'),
+    (e) => e instanceof Divergencia);
+});
+
 const p = (numero: number, vencimento: string, valor: number): Parcela => ({ numero, vencimento, valor, forma: 'pix', pix_tipo: 'email', pix_chave: 'a@b.com' });
 
 test('conferir parcelas: vencimento e valor corrigem, quantidade ou total diferente para', () => {
