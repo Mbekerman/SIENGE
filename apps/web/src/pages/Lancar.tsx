@@ -120,8 +120,7 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
     let vivo = true;
     setSienge({ doc: docEmit, estado: 'buscando' });
     buscarCredorSienge(docEmit)
-      .then(async n => {
-        if (!n) return 'nao' as const;
+      .then(async () => {
         const l = await rpc<FornecedorBusca[]>('fornecedores', { p_busca: docEmit });
         const f = l.find(x => x.documento === docEmit);
         if (!f) return 'nao' as const;
@@ -455,7 +454,7 @@ function avisosLidos(r: ResultadoLeitor, valor: number | null, sienge: BuscaSien
   if (l.emitente?.documento && !id?.fornecedor) out.push(
     sienge === 'buscando' ? { c: 'inf', t: `${emit} não está no cadastro do ERP. Procurando nos credores do Sienge…` }
     : sienge === 'achado' ? { c: 'inf', t: `${emit} veio do cadastro de credores do Sienge e já está no fornecedor. Confira.` }
-    : sienge === 'nao' ? { c: 'at', t: `${emit} não está cadastrado no ERP nem nos credores do Sienge. Procure pelo nome ou peça o cadastro.` }
+    : sienge === 'nao' ? { c: 'at', t: `${emit} não está no cadastro, nem depois da consulta aos credores do Sienge. Procure pelo nome ou peça o cadastro.` }
     : sienge === 'erro' ? { c: 'at', t: `${emit} não está cadastrado, e não consegui consultar o Sienge agora. Procure pelo nome ou peça o cadastro.` }
     : { c: 'at', t: `${emit} não está cadastrado. Procure pelo nome ou peça o cadastro.` });
   else if (id?.fornecedor && !id.fornecedor.fornecedor) out.push({ c: 'at', t: `${id.fornecedor.nome} está cadastrado, mas não como fornecedor.` });
@@ -612,11 +611,10 @@ function RecebedorPix({ codigo, forma, chaveParcela, docForn, valor, exc, mudaEx
 type BuscaSienge = { doc: string; estado: 'buscando' | 'achado' | 'nao' | 'erro' };
 
 /** Pergunta ao cadastro de credores do Sienge pelo CPF ou CNPJ (função sienge-credores, que traz o credor para o ERP como
- *  sistema); devolve quantos credores vieram. */
-async function buscarCredorSienge(doc: string): Promise<number> {
-  const { data, error } = await supabase.functions.invoke<{ credores?: number }>('sienge-credores', { body: { documento: doc } });
+ *  sistema). A resposta não diz se achou: quem decide o que a pessoa vê é a busca no ERP, depois, pelo RLS. */
+async function buscarCredorSienge(doc: string): Promise<void> {
+  const { error } = await supabase.functions.invoke('sienge-credores', { body: { documento: doc } });
   if (error) throw error;
-  return Number(data?.credores ?? 0);
 }
 
 /** Pede a conferência de quem recebe (função conferir-pagamento, que grava como sistema; o banco é quem decide). */

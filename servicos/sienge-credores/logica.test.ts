@@ -83,11 +83,12 @@ test('busca: sem login, login forjado ou fora do ERP não chama o Sienge', async
   assert.equal(d.chamadas.length, 0);
 });
 
-test('busca: pergunta só pelo documento, importa e devolve só a contagem', async () => {
+test('busca: pergunta só pelo documento, importa e responde só ok', async () => {
   const d = deps({}, 1);
   const r = await atender(pedido({ documento: '45.997.418/0001-53' }), d);
   assert.equal(r.status, 200);
-  assert.deepEqual(await r.json(), { credores: 1 });
+  assert.deepEqual(await r.json(), { ok: true });
+  assert.equal(d.importados.length, 1);
   assert.deepEqual(d.chamadas, ['/creditors?cnpj=45997418000153&limit=200']);
   assert.equal(r.headers.get('access-control-allow-origin'), 'https://front.example.com');
 });
@@ -95,7 +96,7 @@ test('busca: pergunta só pelo documento, importa e devolve só a contagem', asy
 test('busca: CPF vai no parâmetro cpf; nada achado (404) não importa', async () => {
   const d = deps({ sienge: async (c) => { d.chamadas.push(c); throw Object.assign(new Error('404'), { status: 404 }); } });
   const r = await atender(pedido({ documento: '529.982.247-25' }), d);
-  assert.deepEqual(await r.json(), { credores: 0 });
+  assert.deepEqual(await r.json(), { ok: true });   // a mesma resposta de quando acha: não diz se é credor
   assert.deepEqual(d.chamadas, ['/creditors?cpf=52998224725&limit=200']);
   assert.equal(d.importados.length, 0);
 });
@@ -112,6 +113,12 @@ test('busca: documento torto não chama o Sienge; erro do Sienge não vaza detal
 
 test('busca: acima do limite por pessoa é 429', async () => {
   const d = deps({ tentativa: async () => LIMITE + 1 }, 1);
+  assert.equal((await atender(pedido({ documento: '45997418000153' }), d)).status, 429);
+  assert.equal(d.chamadas.length, 0);
+});
+
+test('busca: teto global (ritmo) recusa sem chamar o Sienge', async () => {
+  const d = deps({ ritmo: async (r: string) => r !== 'credores-busca' }, 1);
   assert.equal((await atender(pedido({ documento: '45997418000153' }), d)).status, 429);
   assert.equal(d.chamadas.length, 0);
 });

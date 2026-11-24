@@ -5,7 +5,8 @@
 //   - carga (pg_cron, com a chave do Vault no cabeçalho x-credores-chave): lê todas as páginas de 200 e importa. Em
 //     24/11/2026 eram 825 credores, 5 chamadas. Resposta só {ok} (o pg_net guarda as respostas, S-143).
 //   - busca (a tela Lançar, com o login): {documento} = CPF ou CNPJ do emitente que o ERP não achou; pergunta ao Sienge só
-//     por ele e importa o que vier. Devolve só quantos credores vieram, nunca os dados do Sienge.
+//     por ele e importa o que vier. Responde sempre {ok: true}, achando ou não (revisão do #139: a resposta não pode dizer
+//     se o documento é credor no Sienge); a tela busca de novo no ERP, pelo RLS, e só vê a pessoa se puder.
 // Do credor só seguem para o banco código, nome, nome fantasia, CPF/CNPJ e ativo: endereço, telefones, contatos e conta
 // do Sienge ficam fora (o banco também não os grava).
 
@@ -26,6 +27,7 @@ export const LIMITE = 60;          // pedidos por pessoa a cada 10 minutos, soma
 export const PAGINA = 200;         // máximo do Sienge
 export const MAX_PAGINAS = 50;     // 10 mil credores; acima disso algo mudou e a carga para
 export const RITMO_CARGA = 3000;   // segundos entre duas cargas (a agenda é diária)
+export const RITMO_BUSCA = 1;      // segundos entre duas buscas de qualquer pessoa: teto global, a cota do Sienge é dividida com o CRM
 
 const FRONT = /^https:\/\/erp-web-[a-z0-9-]+(\.[a-z0-9-]+)*\.run\.app$/;
 export function cors(origem: string | null, origens: string[]): Record<string, string> {
@@ -112,13 +114,14 @@ export async function atender(req: Request, d: Deps): Promise<Response> {
   try { corpo = JSON.parse(txt); } catch { return resp(400, { erro: 'Corpo inválido' }); }
   const doc = documento(corpo?.documento);
   if (!doc) return resp(400, { erro: 'Informe um CPF ou CNPJ' });
+  try { if (!(await d.ritmo('credores-busca', RITMO_BUSCA))) return resp(429, { erro: 'Muitas buscas agora; tente de novo em instantes' }); }
+  catch { return resp(500, { erro: 'Erro na busca' }); }
   try {
     let lista: unknown[];
     try { lista = resultados(await d.sienge(`/creditors?${doc.tipo}=${doc.valor}&limit=${PAGINA}`)); }
     catch (e) { if ((e as { status?: number })?.status === 404) lista = []; else throw e; }
-    if (!lista.length) return resp(200, { credores: 0 });
-    await d.importar(lista.map(enxugar));
-    return resp(200, { credores: lista.length });
+    if (lista.length) await d.importar(lista.map(enxugar));
+    return resp(200, { ok: true });
   } catch (e) {
     d.log({ erro: String((e as Error)?.message ?? e).slice(0, 500) });
     return resp(502, { erro: 'O Sienge não respondeu; tente de novo' });
