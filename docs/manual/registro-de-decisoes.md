@@ -6,7 +6,7 @@ Decisões do Moises que valem como regra do sistema, da mais recente para a mais
 
 | Data | Decisão | Página |
 | --- | --- | --- |
-| 25/nov/2026 | A previsão também se lança à mão, pelo botão **Nova previsão** na aba Previsões (PR #142, ainda não juntado) | [Contas a pagar](financeiro/contas-a-pagar.md#consultar-títulos-previsões-e-contas-recorrentes-pr-85) |
+| 25/nov/2026 | A previsão também se lança à mão, pelo botão **Nova previsão** na aba Previsões (PR #142, juntado em 25/nov) | [Contas a pagar](financeiro/contas-a-pagar.md#consultar-títulos-previsões-e-contas-recorrentes-pr-85) |
 | 24/nov/2026 | Nota do mês de contrato ou assinatura acima da previsão do mês volta às faixas do centro; a tolerância de 30% é só da conta de consumo (PR #135) | [Contas a pagar](financeiro/contas-a-pagar.md#tarefa-cadastrar-uma-conta-recorrente) |
 | 23/nov/2026 | Com a conta recorrente aprovada, a nota do mês segue só o rito da conta (contrato e assinatura: gestor e AF ou AD; consumo dentro da tolerância: direto a AF, AO ou AD), não as faixas do centro, e continua contando no total do mês do centro (PR #135) | [Contas a pagar](financeiro/contas-a-pagar.md#tarefa-cadastrar-uma-conta-recorrente) |
 | 24/nov/2026 | O número do título não leva prefixo do fornecedor (fornecedor, tipo e número ficam em campos separados); o documento sem número ("s/n", "-" ou em branco) fica fora da trava de documento repetido | [Lançar nota](financeiro/lancar-nota-fiscal.md#o-que-a-tela-do-pr-93-já-faz) |
