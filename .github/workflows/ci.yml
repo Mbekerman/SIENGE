@@ -69,7 +69,7 @@ jobs:
           cache-dependency-path: servicos/leitor/package-lock.json
       - run: npm ci
       - run: npx tsc --noEmit
-      - run: node --test --experimental-strip-types leitor.test.ts
+      - run: node --test --experimental-strip-types leitor.test.ts extrair.test.ts
 
   busca-notas:
     name: Busca das notas recebidas (tipos e regras)
