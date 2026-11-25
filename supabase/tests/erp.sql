@@ -10702,6 +10702,19 @@ select pg_temp.ok((select jsonb_agg(distinct n->>'id') = jsonb_build_array(:'ne_
                      from api.lancamento_opcoes() j, jsonb_array_elements(j->'empresas') e, jsonb_array_elements(e->'nucleos') n,
                           jsonb_array_elements_text(n->'centros') c),
   'opções: só o núcleo e o centro do perfil dele (sem a Obra da Vila Maria nem o Corporativo)');
+-- só uma divisão: a lista "divisoes" do núcleo traz só ela (revisão de segurança do #143)
+select pg_temp.sis();
+insert into erp.divisoes (id, centro_custo_id, nome) values
+  ('46000000-0000-0000-0000-0000000000f1', :'cc_mkt', 'Opções A'), ('46000000-0000-0000-0000-0000000000f2', :'cc_mkt', 'Opções B');
+update erp.perfil_centros set divisoes = 'lista' where perfil_id = 'a0000000-0000-0000-0000-0000000000f1';
+insert into erp.perfil_centro_divisoes (perfil_id, centro_custo_id, divisao_id, incluir, nivel)
+values ('a0000000-0000-0000-0000-0000000000f1', :'cc_mkt', '46000000-0000-0000-0000-0000000000f1', true, 'lancador');
+select pg_temp.volta();
+select pg_temp.ok((select n->'divisoes' ? '46000000-0000-0000-0000-0000000000f1' and not n->'divisoes' ? '46000000-0000-0000-0000-0000000000f2'
+                          and n->'centros' ? :'cc_mkt'
+                     from api.lancamento_opcoes() j, jsonb_array_elements(j->'empresas') e, jsonb_array_elements(e->'nucleos') n
+                    where (n->>'id')::uuid = :'ne_vm'),
+  'opções: liberado só numa divisão, o núcleo traz só ela (a outra divisão do mesmo centro não vem)');
 select pg_temp.como(:'diretor');
 select pg_temp.ok((select count(*) from api.lancamento_opcoes() j, jsonb_array_elements(j->'empresas') e, jsonb_array_elements(e->'nucleos') n)
                     = (select count(*) from erp.nucleos_economicos n where n.ativo
