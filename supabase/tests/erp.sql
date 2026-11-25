@@ -9396,9 +9396,13 @@ select pg_temp.ok((select apelido = 'BKM 03' and razao_social = (select nome fro
 select pg_temp.ok((select e->>'nome' = 'BKM 03' and e->>'razao_social' = (select nome from erp.pessoas where id = '10000000-0000-0000-0000-000000000003')
                      from jsonb_array_elements(api.lancamento_opcoes()->'empresas') e where e->>'id' = :'spe'),
   'apelido: Lançar título mostra o apelido, com a razão social ao lado');
-select pg_temp.ok((select e->>'nome' = (select nome from erp.pessoas where id = '10000000-0000-0000-0000-000000000001')
-                     from jsonb_array_elements(api.lancamento_opcoes()->'empresas') e where e->>'id' = :'holding'),
-  'apelido: sem apelido, a razão social');
+-- (a holding não tem núcleo, e empresa sem núcleo liberado não entra nas opções desde 25/11/2026: confere na incorporadora)
+select pg_temp.ok(api.salvar_apelido_empresa(:'incorp', '   ') is null, 'apelido: (preparo) a incorporadora fica sem apelido');
+select pg_temp.ok((select e->>'nome' = (select p.nome from erp.empresas x join erp.pessoas p on p.id = x.pessoa_id where x.id = :'incorp')
+                     from jsonb_array_elements(api.lancamento_opcoes()->'empresas') e where e->>'id' = :'incorp')
+                  and (select apelido is null from erp.empresas where id = :'incorp')
+                  and not exists (select 1 from jsonb_array_elements(api.lancamento_opcoes()->'empresas') e where e->>'id' = :'holding'),
+  'apelido: sem apelido, a razão social (e a empresa sem núcleo não aparece para lançar)');
 select pg_temp.ok(not exists (select 1 from api.titulos() t join erp.titulos x on x.id = t.id
                                where x.empresa_id = :'spe' and t.empresa is distinct from 'BKM 03')
                   and exists (select 1 from api.titulos() t join erp.titulos x on x.id = t.id where x.empresa_id = :'spe'),
@@ -10661,6 +10665,63 @@ select pg_temp.ok((select count(*) = 1 and bool_and(fases = '{PJ}') from erp.pre
 select pg_temp.volta();
 select pg_temp.como(:'gestor');
 select pg_temp.ok(not exists (select 1 from api.previsoes() x where x.id = :'pvpj'), 'nova previsão: a previsão PJ não aparece para quem não vê o PJ');
+select pg_temp.como(null);
+rollback;
+
+\echo '# opções de lançamento pela liberação de quem lança (Moises, 25/11/2026)'
+begin;
+select pg_temp.sis();
+-- o analista só com um perfil de lançador no Marketing, na Vila Maria
+delete from erp.excecoes_centro where user_id = :'analista'; delete from erp.excecoes_divisao where user_id = :'analista';
+delete from erp.atribuicao_nucleos where atribuicao_id in (select id from erp.atribuicoes where user_id = :'analista');
+delete from erp.atribuicao_tipos where atribuicao_id in (select id from erp.atribuicoes where user_id = :'analista');
+delete from erp.atribuicoes where user_id = :'analista';
+insert into erp.perfis_modelo (id, nome) values ('a0000000-0000-0000-0000-0000000000f1', 'Lança Marketing (opções)');
+insert into erp.perfil_centros (perfil_id, centro_custo_id, nivel) values ('a0000000-0000-0000-0000-0000000000f1', :'cc_mkt', 'lancador');
+insert into erp.atribuicoes (id, user_id, perfil_id, escopo) values ('a1000000-0000-0000-0000-0000000000f1', :'analista', 'a0000000-0000-0000-0000-0000000000f1', 'lista');
+insert into erp.atribuicao_nucleos values ('a1000000-0000-0000-0000-0000000000f1', :'ne_vm', true);
+select pg_temp.volta();
+select pg_temp.como(:'analista');
+select pg_temp.ok((select bool_and(erp.lanco((n->>'id')::uuid, c::uuid, null, erp.eu())
+                                   or exists (select 1 from jsonb_array_elements_text(n->'divisoes') d
+                                               where erp.lanco((n->>'id')::uuid, c::uuid, null, erp.eu(),
+                                                               (select coalesce(x.raiz_id, x.id) from erp.divisoes x where x.id = d::uuid))))
+                     from api.lancamento_opcoes() j, jsonb_array_elements(j->'empresas') e, jsonb_array_elements(e->'nucleos') n,
+                          jsonb_array_elements_text(n->'centros') c),
+  'opções: cada núcleo e centro que a lista mostra é um em que a pessoa lança');
+select pg_temp.ok(exists (select 1 from api.lancamento_opcoes() j, jsonb_array_elements(j->'empresas') e, jsonb_array_elements(e->'nucleos') n
+                           where (n->>'id')::uuid = :'ne_vm' and n->'centros' ? :'cc_mkt')
+                  and not exists (select 1 from api.lancamento_opcoes() j, jsonb_array_elements(j->'empresas') e, jsonb_array_elements(e->'nucleos') n,
+                                         jsonb_array_elements_text(n->'centros') c
+                                   where not erp.lanco((n->>'id')::uuid, c::uuid, null, erp.eu())
+                                     and jsonb_array_length(n->'divisoes') = 0)
+                  and (select count(*) from api.lancamento_opcoes() j, jsonb_array_elements(j->'empresas') e, jsonb_array_elements(e->'nucleos') n)
+                    < (select count(*) from erp.nucleos_economicos where ativo),
+  'opções: o analista vê o Marketing da Vila Maria e não vê os núcleos em que não lança');
+select pg_temp.ok((select jsonb_agg(distinct n->>'id') = jsonb_build_array(:'ne_vm') and jsonb_agg(distinct c) = jsonb_build_array(:'cc_mkt')
+                     from api.lancamento_opcoes() j, jsonb_array_elements(j->'empresas') e, jsonb_array_elements(e->'nucleos') n,
+                          jsonb_array_elements_text(n->'centros') c),
+  'opções: só o núcleo e o centro do perfil dele (sem a Obra da Vila Maria nem o Corporativo)');
+-- só uma divisão: a lista "divisoes" do núcleo traz só ela (revisão de segurança do #143)
+select pg_temp.sis();
+insert into erp.divisoes (id, centro_custo_id, nome) values
+  ('46000000-0000-0000-0000-0000000000f1', :'cc_mkt', 'Opções A'), ('46000000-0000-0000-0000-0000000000f2', :'cc_mkt', 'Opções B');
+update erp.perfil_centros set divisoes = 'lista' where perfil_id = 'a0000000-0000-0000-0000-0000000000f1';
+insert into erp.perfil_centro_divisoes (perfil_id, centro_custo_id, divisao_id, incluir, nivel)
+values ('a0000000-0000-0000-0000-0000000000f1', :'cc_mkt', '46000000-0000-0000-0000-0000000000f1', true, 'lancador');
+select pg_temp.volta();
+select pg_temp.ok((select n->'divisoes' ? '46000000-0000-0000-0000-0000000000f1' and not n->'divisoes' ? '46000000-0000-0000-0000-0000000000f2'
+                          and n->'centros' ? :'cc_mkt'
+                     from api.lancamento_opcoes() j, jsonb_array_elements(j->'empresas') e, jsonb_array_elements(e->'nucleos') n
+                    where (n->>'id')::uuid = :'ne_vm'),
+  'opções: liberado só numa divisão, o núcleo traz só ela (a outra divisão do mesmo centro não vem)');
+select pg_temp.como(:'diretor');
+select pg_temp.ok((select count(*) from api.lancamento_opcoes() j, jsonb_array_elements(j->'empresas') e, jsonb_array_elements(e->'nucleos') n)
+                    = (select count(*) from erp.nucleos_economicos n where n.ativo
+                         and exists (select 1 from erp.nucleo_centros nc join erp.centros_custo c on c.id = nc.centro_custo_id
+                                      where nc.nucleo_economico_id = n.id and nc.ligado and c.ativo)
+                         and exists (select 1 from erp.empresas e where e.id = n.empresa_id and e.ativa)),
+  'opções: o master vê todo núcleo ativo com centro ligado');
 select pg_temp.como(null);
 rollback;
 

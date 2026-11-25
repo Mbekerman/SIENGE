@@ -375,7 +375,11 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   );
 }
 
-export const divisoesDe = (o: OpcoesLancamento | null | undefined, centro: string) => o?.centros.find(c => c.id === centro)?.divisoes ?? [];
+/** As divisões (último nível) do centro; com o núcleo, só as em que a pessoa lança nele (Moises, 25/11/2026). */
+export const divisoesDe = (o: OpcoesLancamento | null | undefined, centro: string, nucleo?: OpcoesLancamento['empresas'][number]['nucleos'][number]) => {
+  const ds = o?.centros.find(c => c.id === centro)?.divisoes ?? [];
+  return nucleo?.divisoes ? ds.filter(d => nucleo.divisoes!.includes(d.id)) : ds;
+};
 export const juntar = (l: string[]) => (l.length < 2 ? l.join('') : `${l.slice(0, -1).join(', ')} e ${l[l.length - 1]}`);
 
 export function LinhaRateio({ l, o, emp, varias, valor, tentou, mudar, tirar }: {
@@ -384,7 +388,7 @@ export function LinhaRateio({ l, o, emp, varias, valor, tentou, mudar, tirar }: 
 }) {
   const nucleo = emp.nucleos.find(n => n.id === l.nucleo);
   const centros = o.centros.filter(c => nucleo?.centros.includes(c.id));
-  const divs = divisoesDe(o, l.centro);
+  const divs = divisoesDe(o, l.centro, nucleo);
   const pronta = Boolean(l.nucleo && l.centro && (!divs.length || l.divisao));
   const nq = useQuery({
     queryKey: ['naturezas_lancaveis', l.nucleo, l.centro, l.divisao],
@@ -398,7 +402,7 @@ export function LinhaRateio({ l, o, emp, varias, valor, tentou, mudar, tirar }: 
   return (
     <div className="lt-rat">
       <div className="lt-grid">
-        <select className={`lt-in ${err(l.nucleo)}`} value={l.nucleo} onChange={e => mudar({ nucleo: e.target.value, centro: '', divisao: '', natureza: '' })} aria-label="Núcleo">
+        <select className={`lt-in ${err(l.nucleo)}`} value={l.nucleo} onChange={e => mudar({ nucleo: e.target.value, centro: '', divisao: '', natureza: '' })} disabled={!emp.nucleos.length} aria-label="Núcleo">
           <option value="">Núcleo</option>{emp.nucleos.map(n => <option key={n.id} value={n.id}>{n.nome}</option>)}
         </select>
         <select className={`lt-in ${err(l.centro)}`} value={l.centro} onChange={e => mudar({ centro: e.target.value, divisao: '', natureza: '' })} disabled={!nucleo} aria-label="Centro de custo">
