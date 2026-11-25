@@ -8,7 +8,7 @@ import { Popup } from '../components/Rastro';
 import { data, dividir, documento, hojeISO, lerReais, reais } from '../lib/format';
 import { recebedorPix, type Conferido } from '../lib/pix';
 import { mensagemErro, rpc, supabase } from '../lib/supabase';
-import { abrirComSenha, leitorLigado, subirArquivo, TIPOS_ACEITOS } from '../lib/leitor';
+import { abrirComSenha, acordarLeitor, leitorLigado, subirArquivo, TIPOS_ACEITOS } from '../lib/leitor';
 import { casarBoletos, conferirValores, juntarLeituras } from '../lib/conjunto';
 import { pagDoBanco, textoPag } from './ComoPaga';
 import type { ContaCadastro, Contrato, FornecedorBusca, Identificacao, Leitura, NaturezaLancavel, OpcoesLancamento, PrevisaoParaNota, ResultadoLeitor } from '../lib/tipos';
@@ -108,9 +108,18 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   // o arquivo: sobe ao leitor, que guarda, lê e diz o que casa; a tela se preenche e tudo continua editável
   // cada arquivo novo entra no conjunto e a tela se preenche de novo pelo conjunto (o que foi mudado à mão é refeito);
   // vários de uma vez sobem um depois do outro, e o erro de um não perde os que já subiram
+  // enquanto o leitor lê, a pessoa já pode preencher: o que ela mexer nesse tempo a leitura não troca (Moises,
+  // 25/11/2026: a tela não espera a leitura)
+  const lendo = useRef(false);
+  const mexidos = useRef(new Set<string>());
+  const mao = (k: string) => { if (lendo.current) mexidos.current.add(k); };
   const subir = useMutation({ mutationFn: async (fs: File[]) => {
-    for (const f of fs) { const r = await subirArquivo(f); setArquivos(a => [...a.filter(x => x.anexo.id !== r.anexo.id), r]); }
+    lendo.current = true; mexidos.current.clear();
+    try { for (const f of fs) { const r = await subirArquivo(f); setArquivos(a => [...a.filter(x => x.anexo.id !== r.anexo.id), r]); } }
+    finally { lendo.current = false; }
   }, onSuccess: () => setSemRet(false) });
+  // acorda o leitor ao abrir a tela, para a primeira leitura não esperar o servidor subir
+  useEffect(() => { acordarLeitor(); }, []);
   const senha = useMutation({ mutationFn: (x: { id: string; s: string }) => abrirComSenha(x.id, x.s), onSuccess: r => setArquivos(a => a.map(x => (x.anexo.id === r.anexo.id ? r : x))) });
   // com a mesma base (só entrou boleto ou anexo), só as parcelas se refazem: o que foi corrigido à mão no resto fica;
   // com base nova (a nota chegou depois do boleto), a tela inteira se preenche pela nota
@@ -157,18 +166,21 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   function preencher(r: ResultadoLeitor) {
     const l = r.leitura, id = r.identificacao;
     if (!l) return;
-    if (id?.empresa) { setEmpresa(id.empresa.id); setLinhas([novaLinha()]); }
+    const livre = (k: string) => !mexidos.current.has(k);
+    if (id?.empresa && livre('empresa')) { setEmpresa(id.empresa.id); setLinhas([novaLinha()]); }
     const f = id?.fornecedor;
     const fb: FornecedorBusca | null = f ? { id: f.id, nome: f.nome, nome_fantasia: null, documento: f.documento, tipo: (f.documento ?? '').length === 11 ? 'fisica' : 'juridica' } : null;
-    setForn(fb);
-    setBuscaForn(fb ? '' : l.emitente?.documento ?? l.emitente?.nome ?? '');
-    if (l.tipo && TIPOS.some(([k]) => k === l.tipo)) setTipo(l.tipo);
-    if (l.numero) setNumero(l.numero);
-    setSerie(l.serie ?? '');
-    if (l.emissao) setEmissao(l.emissao);
+    if (livre('forn')) {
+      setForn(fb);
+      setBuscaForn(fb ? '' : l.emitente?.documento ?? l.emitente?.nome ?? '');
+    }
+    if (l.tipo && TIPOS.some(([k]) => k === l.tipo) && livre('tipo')) setTipo(l.tipo);
+    if (l.numero && livre('numero')) setNumero(l.numero);
+    if (livre('serie')) setSerie(l.serie ?? '');
+    if (l.emissao && livre('emissao')) setEmissao(l.emissao);
     const c = l.competencia ?? l.consumo?.referencia ?? l.emissao?.slice(0, 7);
-    if (c) setComp(c);
-    if (l.valor) setValorTxt(reais(l.valor));
+    if (c && livre('comp')) setComp(c);
+    if (l.valor && livre('valor')) setValorTxt(reais(l.valor));
     setParcelas(parcelasLidas(l, id?.pagamento ?? null, fb?.documento ?? null));
     const melhor = id?.candidatos.find(x => !id.empresa || x.empresa_id === id.empresa.id) ?? null;
     usarCandidato(melhor);
@@ -250,28 +262,28 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
 
         <section className="lt-sec"><h3>Documento</h3><div className="kv lt-kv">
           <Campo r="Empresa">
-            <select className={`lt-in ${tentou && !empresa ? 'err' : ''}`} value={empresa} onChange={e => { setEmpresa(e.target.value); setLinhas([novaLinha()]); }}>
+            <select className={`lt-in ${tentou && !empresa ? 'err' : ''}`} value={empresa} onChange={e => { mao('empresa'); setEmpresa(e.target.value); setLinhas([novaLinha()]); }}>
               <option value="">Escolha quem recebe a nota</option>
               {o.empresas.map(e => <option key={e.id} value={e.id} title={e.razao_social}>{e.nome}{e.documento ? ` · ${documento(e.documento)}` : ''}</option>)}
             </select>
           </Campo>
-          <Campo r="Fornecedor"><BuscaFornecedor key={buscaForn} inicial={buscaForn} v={forn} erro={tentou && !forn} mudar={escolherForn} /></Campo>
+          <Campo r="Fornecedor"><BuscaFornecedor key={buscaForn} inicial={buscaForn} v={forn} erro={tentou && !forn} mudar={f => { mao('forn'); escolherForn(f); }} /></Campo>
           <Campo r="Documento">
             <div className="lt-lin">
-              <select className="lt-in lt-tipo" value={tipo} onChange={e => setTipo(e.target.value)}>{TIPOS.map(([k, r]) => <option key={k} value={k}>{r}</option>)}</select>
-              <input className={`lt-in ${tentou && !numero.trim() ? 'err' : ''}`} placeholder="Número" value={numero} onChange={e => setNumero(e.target.value)} />
-              <input className="lt-in lt-serie" placeholder="Série" value={serie} onChange={e => setSerie(e.target.value)} />
+              <select className="lt-in lt-tipo" value={tipo} onChange={e => { mao('tipo'); setTipo(e.target.value); }}>{TIPOS.map(([k, r]) => <option key={k} value={k}>{r}</option>)}</select>
+              <input className={`lt-in ${tentou && !numero.trim() ? 'err' : ''}`} placeholder="Número" value={numero} onChange={e => { mao('numero'); setNumero(e.target.value); }} />
+              <input className="lt-in lt-serie" placeholder="Série" value={serie} onChange={e => { mao('serie'); setSerie(e.target.value); }} />
             </div>
           </Campo>
           <Campo r="Emissão e competência">
             <div className="lt-lin">
-              <input type="date" className="lt-in" value={emissao} onChange={e => setEmissao(e.target.value)} aria-label="Emissão" />
-              <input type="month" className="lt-in" value={comp} onChange={e => setComp(e.target.value)} aria-label="Competência" />
+              <input type="date" className="lt-in" value={emissao} onChange={e => { mao('emissao'); setEmissao(e.target.value); }} aria-label="Emissão" />
+              <input type="month" className="lt-in" value={comp} onChange={e => { mao('comp'); setComp(e.target.value); }} aria-label="Competência" />
             </div>
           </Campo>
           <Campo r="Valor da nota" msg="Sem retenção nem caução nesta versão: o título sai pelo valor da nota.">
             <input className={`lt-in num lt-valor ${tentou && !valor ? 'err' : ''}`} inputMode="decimal" placeholder="R$ 0,00" value={valorTxt}
-              onChange={e => setValorTxt(e.target.value)} onBlur={() => valor && setValorTxt(reais(valor))} />
+              onChange={e => { mao('valor'); setValorTxt(e.target.value); }} onBlur={() => valor && setValorTxt(reais(valor))} />
           </Campo>
         </div></section>
 
@@ -534,10 +546,10 @@ function ArquivoNota({ r, arquivos, tirar, subindo, erro, escolher, valor, cand,
               <button className="btn t sm" onClick={() => tirar(a.anexo.id)} disabled={subindo}>Tirar</button>
             </div>
           ))}
-          {subindo ? <div className="lt-arq"><Carregando /><span className="sec">Guardando e lendo o arquivo…</span></div>
+          {subindo ? <div className="lt-arq"><Carregando /><span className="sec">Lendo o arquivo… Pode ir preenchendo: o que você digitar agora a leitura não troca.</span></div>
             : <button className="btn t sm" style={{ alignSelf: 'flex-start' }} onClick={() => inp.current?.click()}>Adicionar arquivo (boleto, anexo…)</button>}
         </>
-        : subindo ? <div className="lt-arq"><Carregando /><span className="sec">Guardando e lendo o arquivo…</span></div>
+        : subindo ? <div className="lt-arq"><Carregando /><span className="sec">Lendo o arquivo… Pode ir preenchendo: o que você digitar agora a leitura não troca.</span></div>
         : (
           <button className={`lt-arq lt-solta ${sobre ? 'on' : ''}`} onClick={() => inp.current?.click()}
             onDragOver={e => { e.preventDefault(); setSobre(true); }} onDragLeave={() => setSobre(false)}

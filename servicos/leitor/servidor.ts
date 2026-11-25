@@ -99,6 +99,19 @@ function abrirPdf(pdf: Buffer, senhas: string[]): Promise<Buffer | null> {
   })();
 }
 
+// Texto do PDF (poppler, sem shell): até 5 páginas, 5 s e 2 MB; o texto não vai a log.
+function textoPdf(pdf: Buffer): Promise<string | null> {
+  return (async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'txt-'));
+    try {
+      const e = join(dir, 'e.pdf');
+      await writeFile(e, pdf);
+      return await new Promise<string | null>((res) => execFile('pdftotext', ['-q', '-layout', '-enc', 'UTF-8', '-l', '5', e, '-'],
+        { timeout: 5_000, maxBuffer: 2 * 1024 * 1024, encoding: 'utf8' }, (err, out) => res(err ? null : out)));
+    } catch { return null; } finally { await rm(dir, { recursive: true, force: true }); }
+  })();
+}
+
 // Asaas: simula o pagamento da conta para saber o valor, o vencimento e o beneficiário que o banco registrou.
 const ASAAS_URL = process.env.ASAAS_URL?.replace(/\/$/, '');
 const ASAAS_CHAVE = process.env.ASAAS_CHAVE;
@@ -116,7 +129,7 @@ const asaas: Deps['asaas'] = ASAAS_URL && ASAAS_CHAVE ? async (linha) => {
 } : null;
 
 const cliente = await clienteFederado();
-const deps: Deps = { banco, bucket, ia: (e) => lerComIa(cliente, e), asaas, abrirPdf, log };
+const deps: Deps = { banco, bucket, ia: (e) => lerComIa(cliente, e), asaas, abrirPdf, textoPdf, log };
 const limite = new Limite(30, 10 * 60_000);   // 30 arquivos por pessoa a cada 10 minutos, ou o limite da pessoa no ERP
 
 // Confere o login no Supabase (GET /auth/v1/user) e devolve o id da pessoa e o limite dela (api.eu(), que lê
