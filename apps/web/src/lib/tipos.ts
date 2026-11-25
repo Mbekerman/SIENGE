@@ -94,7 +94,7 @@ export interface Rastro {
 
 // Lançar título (migration 20261119000200_api_lancar_titulo.sql)
 export interface OpcoesLancamento {
-  empresas: { id: string; nome: string; razao_social: string; documento: string | null; nucleos: { id: string; nome: string; centros: string[] }[] }[];
+  empresas: { id: string; nome: string; razao_social: string; documento: string | null; nucleos: { id: string; nome: string; centros: string[]; /** últimos níveis em que a pessoa lança (api.lancamento_opcoes, 25/11/2026) */ divisoes?: string[] }[] }[];
   centros: { id: string; nome: string; divisoes: { id: string; caminho: string }[] }[];
   etiquetas: { id: string; nome: string }[];
 }

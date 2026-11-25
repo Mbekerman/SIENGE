@@ -11,6 +11,8 @@ import { mensagemErro, rpc } from '../lib/supabase';
 import { BuscaFornecedor, Campo, LinhaRateio, divisoesDe, juntar, novaLinha, type Linha } from './Lancar';
 import type { FornecedorBusca, NaturezaLancavel, OpcoesLancamento } from '../lib/tipos';
 
+const SEM_EMPRESA: OpcoesLancamento['empresas'][number] = { id: '', nome: '', razao_social: '', documento: null, nucleos: [] };
+
 export function NovaPrevisao({ fechar, lancada }: { fechar: () => void; lancada: (id: string) => void }) {
   const qc = useQueryClient();
   const op = useQuery({ queryKey: ['lancamento_opcoes'], queryFn: () => rpc<OpcoesLancamento | null>('lancamento_opcoes') });
@@ -28,7 +30,7 @@ export function NovaPrevisao({ fechar, lancada }: { fechar: () => void; lancada:
   useEffect(() => { if (o && !empresa && o.empresas.length === 1) setEmpresa(o.empresas[0].id); }, [o, empresa]);
   const valor = lerReais(valorTxt);
   // a mesma consulta da linha (fica no cache): diz se a natureza escolhida é a restrita do PJ
-  const divs = divisoesDe(o, linha.centro);
+  const divs = divisoesDe(o, linha.centro, emp?.nucleos.find(n => n.id === linha.nucleo));
   const pronta = Boolean(linha.nucleo && linha.centro && (!divs.length || linha.divisao));
   const nq = useQuery({
     queryKey: ['naturezas_lancaveis', linha.nucleo, linha.centro, linha.divisao],
@@ -91,8 +93,11 @@ export function NovaPrevisao({ fechar, lancada }: { fechar: () => void; lancada:
         </div></section>
 
         <section className="lt-sec"><h3>Onde entra</h3>
-          {!emp ? <p className="sec peq">Escolha a empresa para ver os núcleos.</p>
-            : <LinhaRateio l={linha} o={o} emp={emp} varias={false} valor={valor} tentou={tentou} mudar={m => setLinha(l => ({ ...l, ...m }))} tirar={() => undefined} />}
+          {/* sempre à vista (Moises, 25/11/2026); sem empresa, os campos ficam vazios até ela ser escolhida. Núcleos, centros,
+              divisões e naturezas vêm só os liberados para quem lança (api.lancamento_opcoes e api.naturezas_lancaveis). */}
+          <LinhaRateio l={linha} o={o} emp={emp ?? SEM_EMPRESA} varias={false} valor={valor} tentou={tentou} mudar={m => setLinha(l => ({ ...l, ...m }))} tirar={() => undefined} />
+          {!emp ? <span className="sec peq">Escolha a empresa para ver os núcleos em que você lança.</span>
+            : !emp.nucleos.length && <span className="nt at">Você não tem núcleo liberado para lançar nesta empresa.</span>}
           {pj && <span className="nt at">Natureza PJ: a previsão fica só com o master e quem ele designou, é aprovada pelo master e não vai ao Sienge como PRV.</span>}
         </section>
       </>}
