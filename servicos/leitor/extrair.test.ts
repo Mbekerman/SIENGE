@@ -124,3 +124,8 @@ test('lote no modo texto: só o que sai do texto, sem IA e sem guardar o texto',
   const f = await lerArquivo('a.png', Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0]), ia as never, async () => null, async () => 'x');
   assert.equal(f.texto?.tem, false);
 });
+
+test('texto: só os primeiros 200 mil caracteres são procurados', () => {
+  assert.deepEqual(extrair('x'.repeat(200_000) + ` ${CHAVE}`).chaves, []);
+  assert.deepEqual(extrair('000201'.repeat(300_000)).pix, []);
+});

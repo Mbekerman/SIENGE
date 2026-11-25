@@ -31,8 +31,12 @@ const unicos = <T>(xs: T[], chave: (x: T) => string = String) => {
   return xs.filter((x) => { const k = chave(x); if (vistos.has(k)) return false; vistos.add(k); return true; });
 };
 
+// 200 mil caracteres cobrem as 5 páginas lidas com folga e limitam o custo das buscas num texto feito para atrasar
+// (revisão de segurança do #141).
+export const LIMITE_TEXTO = 200_000;
+
 export function extrair(texto: string, referencia = new Date()): Extraido {
-  const t = texto.normalize('NFKC');
+  const t = texto.slice(0, LIMITE_TEXTO).normalize('NFKC');
 
   // Só os desenhos conhecidos, cada um cercado por não dígitos: a chave inteira (44 ou 50) ou em 11 grupos de 4 (a
   // DANFE), e a linha digitável inteira ou nos campos impressos. Nada de procurar pedaços dentro de números maiores,
