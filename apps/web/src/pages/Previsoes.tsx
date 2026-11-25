@@ -1,10 +1,14 @@
-// Previsões: agrupadas pela situação, com os contadores que filtram e a gaveta (mesmo desenho dos títulos, linha F).
+// Previsões: agrupadas pela situação, com os contadores que filtram e a gaveta (mesmo desenho dos títulos, linha F),
+// e o botão Nova previsão (Moises, 25/11/2026), que abre a janela no endereço (?novo=1), como o Lançar título.
 import { useQuery } from '@tanstack/react-query';
-import { Alerta, COR, Cab, Carregando, Chip, Colunas, Gaveta, Grupo, Kv, Tiles, Vazio, type Cor, type CorChip, type Linha } from '../components/Comum';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Alerta, COR, Cab, Carregando, Chip, Colunas, Gaveta, Grupo, Ic, Kv, Tiles, Vazio, type Cor, type CorChip, type Linha } from '../components/Comum';
 import { data, dataCurta, mes, reais } from '../lib/format';
 import { acha, usePagina } from '../lib/navegar';
 import { mensagemErro, rpc } from '../lib/supabase';
+import { useSessao } from '../lib/sessao';
 import type { Previsao } from '../lib/tipos';
+import { NovaPrevisao } from './NovaPrevisao';
 
 type F = 'esperando' | 'abertas' | 'consumidas' | 'encerradas';
 const G: [F, string, Cor, (p: Previsao) => boolean][] = [
@@ -25,6 +29,12 @@ const quanto = (p: Previsao) => (p.situacao === 'aberta' && p.saldo != null ? Nu
 export function Previsoes() {
   const pg = usePagina<F>('/previsoes');
   const q = useQuery({ queryKey: ['previsoes'], queryFn: () => rpc<Previsao[]>('previsoes') });
+  const { eu } = useSessao();
+  const [sp, setSp] = useSearchParams();
+  const novo = sp.get('novo') === '1';
+  const nav = useNavigate();
+  const semNovo = () => { const n = new URLSearchParams(sp); n.delete('novo'); const s = n.toString(); return s ? `?${s}` : ''; };
+  const abrirNovo = (v: boolean) => { const n = new URLSearchParams(sp); if (v) n.set('novo', '1'); else n.delete('novo'); setSp(n); };
   const todas = (q.data ?? []).filter(p => acha(pg.busca, p.fornecedor, p.descricao, p.natureza, p.area, p.contrato, p.sienge_id));
   const linha = (p: Previsao): Linha => {
     return {
@@ -45,7 +55,10 @@ export function Previsoes() {
   return (
     <>
       <div className="f-pag">
-        <Cab t="Previsões">{(pg.filtro || pg.busca) && <button className="btn t" onClick={pg.limpar}>Limpar filtro</button>}</Cab>
+        <Cab t="Previsões">
+          {(pg.filtro || pg.busca) && <button className="btn t" onClick={pg.limpar}>Limpar filtro</button>}
+          {eu?.escreve && <button className="btn p" onClick={() => abrirNovo(true)}><Ic n="add" s={18} />Nova previsão</button>}
+        </Cab>
         <Tiles itens={G.map(([k, r, cor]) => { const it = todas.filter(p => grupoDe(p) === k); return { k, r, cor, n: it.length, v: it.length ? reais(soma(it)) : undefined }; })} on={pg.filtro} mudar={pg.mudarFiltro} />
         {q.isLoading ? <Carregando /> : q.error ? <Vazio t={mensagemErro(q.error)} />
           : !todas.some(p => !pg.filtro || grupoDe(p) === pg.filtro) ? <Vazio t={pg.busca || pg.filtro ? 'Nada encontrado.' : 'Nenhuma previsão.'} limpar={pg.busca || pg.filtro ? pg.limpar : undefined} />
@@ -81,6 +94,7 @@ export function Previsoes() {
           <Gaveta titulo="Previsão" fechar={pg.fechar}>{q.isLoading ? <Carregando /> : <Vazio t="Previsão não encontrada ou sem acesso." />}</Gaveta>
         )
       )}
+      {novo && <NovaPrevisao fechar={() => abrirNovo(false)} lancada={id => nav(`/previsoes/${id}${semNovo()}`)} />}
     </>
   );
 }

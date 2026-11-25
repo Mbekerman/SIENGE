@@ -10613,5 +10613,56 @@ select pg_temp.erro_igual($$select erp.sienge_importar_credores('[]'::jsonb)$$, 
 select pg_temp.como(null);
 rollback;
 
+\echo '# nova previsão pela tela (api.lancar_previsao, 25/11/2026)'
+select pg_temp.como(null);
+begin;
+select pg_temp.sis();
+insert into erp.pessoa_papeis values ('10000000-0000-0000-0000-000000000007', 'fornecedor') on conflict do nothing;
+update erp.naturezas set restrita = true where codigo = '05.01.03';
+select pg_temp.volta();
+select pg_temp.como(:'leitor');
+select pg_temp.falha(format($$select api.lancar_previsao(%L)$$, jsonb_build_object(
+  'empresa', :'spe', 'nucleo', :'ne_vm', 'centro', :'cc_mkt', 'natureza', pg_temp.nat('05.01.04'),
+  'competencia', '2026-12-01', 'data_prevista', '2026-12-10', 'valor', 100, 'descricao', 'x')),
+  'nova previsão: quem só consulta não lança');
+select pg_temp.como(:'diretor');
+create temp table prev_base as select jsonb_build_object(
+  'empresa', :'spe', 'nucleo', :'ne_vm', 'centro', :'cc_mkt', 'natureza', pg_temp.nat('05.01.04'),
+  'competencia', '2026-12-01', 'data_prevista', '2026-12-10', 'valor', 1234.56) j;
+grant select on prev_base to public;
+select pg_temp.erro_igual(format($$select api.lancar_previsao(%L)$$, (select j from prev_base)),
+  'Previsão sem fornecedor precisa da descrição', 'nova previsão: sem fornecedor, a descrição é obrigatória');
+select pg_temp.erro_igual(format($$select api.lancar_previsao(%L)$$, (select j || '{"descricao": "Mídia", "valor": 0}'::jsonb from prev_base)),
+  'O valor é maior que zero, com até 2 casas', 'nova previsão: valor zero não entra');
+select pg_temp.erro_igual(format($$select api.lancar_previsao(%L)$$, (select j || '{"descricao": "Mídia", "valor": 10.005}'::jsonb from prev_base)),
+  'O valor é maior que zero, com até 2 casas', 'nova previsão: mais de 2 casas não entra');
+select pg_temp.erro_igual(format($$select api.lancar_previsao(%L)$$, (select j || '{"descricao": "Mídia", "competencia": "2026-12-15"}'::jsonb from prev_base)),
+  'A competência é o primeiro dia do mês', 'nova previsão: competência é o mês');
+select pg_temp.falha(format($$select api.lancar_previsao(%L)$$, (select j || jsonb_build_object('descricao', 'Mídia', 'natureza', pg_temp.nat('05.01')) from prev_base)),
+  'nova previsão: natureza que não é do último nível é recusada pelo banco');
+select api.lancar_previsao((select j || jsonb_build_object('fornecedor', '10000000-0000-0000-0000-000000000007', 'descricao', '  Campanha de dezembro  ') from prev_base)) as pv1 \gset
+select pg_temp.ok((select p.origem = 'manual' and p.situacao = 'aberta' and p.criada_por = :'diretor' and p.valor = 1234.56
+                          and p.pessoa_id = '10000000-0000-0000-0000-000000000007' and p.descricao = 'Campanha de dezembro'
+                          and p.competencia = '2026-12-01' and p.data_prevista = '2026-12-10'
+                     from erp.previsoes p where p.id = :'pv1')
+                  and exists (select 1 from erp.previsao_alcadas where previsao_id = :'pv1')
+                  and exists (select 1 from api.previsoes() x where x.id = :'pv1' and x.meu and x.origem = 'manual'),
+  'nova previsão: nasce manual e aberta, com quem lançou, a descrição sem espaços nas pontas, a alçada fixada e na lista da tela');
+-- PJ: só o designado lança, e a alçada é só a vaga PJ
+select erp.designar_pj(:'analista', 'Lança a folha PJ');
+select pg_temp.como(:'gestor');
+select pg_temp.falha(format($$select api.lancar_previsao(%L)$$, (select j || jsonb_build_object('descricao', 'Folha PJ', 'natureza', pg_temp.nat('05.01.03')) from prev_base)),
+  'nova previsão: quem não vê o PJ não lança previsão PJ');
+select pg_temp.como(:'analista');
+select api.lancar_previsao((select j || jsonb_build_object('descricao', 'Folha PJ', 'natureza', pg_temp.nat('05.01.03')) from prev_base)) as pvpj \gset
+select pg_temp.sis();
+select pg_temp.ok((select count(*) = 1 and bool_and(fases = '{PJ}') from erp.previsao_alcadas where previsao_id = :'pvpj'),
+  'nova previsão: a previsão PJ do designado vai só à vaga PJ (o master)');
+select pg_temp.volta();
+select pg_temp.como(:'gestor');
+select pg_temp.ok(not exists (select 1 from api.previsoes() x where x.id = :'pvpj'), 'nova previsão: a previsão PJ não aparece para quem não vê o PJ');
+select pg_temp.como(null);
+rollback;
+
 \echo '# fim'
 do $$ begin raise notice 'TODOS OS TESTES PASSARAM'; end $$;
