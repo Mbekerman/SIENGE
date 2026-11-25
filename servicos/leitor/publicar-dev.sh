@@ -50,9 +50,10 @@ DIR=$(mktemp -d); git clone --depth 1 --branch develop https://github.com/Mbeker
 
 # O navegador chama o serviço direto (o serviço confere o login em cada pedido), por isso sem checagem de IAM. A política
 # da organização bloqueia allUsers, então é --no-invoker-iam-check, como no erp-web-dev, e não --allow-unauthenticated.
+# Uma instância sempre de pé (Moises, 25/11/2026): a primeira leitura não espera o servidor subir (3 a 4 s).
 gcloud run deploy erp-leitor-dev --source "$DIR/SIENGE/servicos/leitor" --region "$R" \
   --service-account "$SA" --no-invoker-iam-check \
-  --min-instances 0 --max-instances 2 --memory 1Gi --cpu 1 --timeout 300 --concurrency 10 \
+  --min-instances 1 --max-instances 2 --memory 1Gi --cpu 1 --timeout 300 --concurrency 10 \
   --set-env-vars "^|^SUPABASE_URL=$SUPABASE_URL|SUPABASE_KEY=$SUPABASE_KEY|BUCKET=$B|ORIGENS=$ORIGENS$ASAAS_ENV|ANTHROPIC_FEDERATION_RULE_ID=$FEDERACAO|ANTHROPIC_ORGANIZATION_ID=$ORGANIZACAO|ANTHROPIC_SERVICE_ACCOUNT_ID=$CONTA_ANTHROPIC|ANTHROPIC_WORKSPACE_ID=$WORKSPACE" \
   "${ASAAS_SEGREDO[@]}"
 

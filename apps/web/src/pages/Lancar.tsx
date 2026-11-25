@@ -8,7 +8,7 @@ import { Popup } from '../components/Rastro';
 import { data, dividir, documento, hojeISO, lerReais, reais } from '../lib/format';
 import { recebedorPix, type Conferido } from '../lib/pix';
 import { mensagemErro, rpc, supabase } from '../lib/supabase';
-import { abrirComSenha, leitorLigado, subirArquivo, TIPOS_ACEITOS } from '../lib/leitor';
+import { abrirComSenha, acordarLeitor, leitorLigado, subirArquivo, TIPOS_ACEITOS } from '../lib/leitor';
 import { casarBoletos, conferirValores, juntarLeituras } from '../lib/conjunto';
 import { pagDoBanco, textoPag } from './ComoPaga';
 import type { ContaCadastro, Contrato, FornecedorBusca, Identificacao, Leitura, NaturezaLancavel, OpcoesLancamento, PrevisaoParaNota, ResultadoLeitor } from '../lib/tipos';
@@ -74,6 +74,15 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   const [cand, setCand] = useState<string | null>(null);
   const [semRet, setSemRet] = useState(false);
   const [buscaForn, setBuscaForn] = useState('');
+  // emitente que o ERP não achou: a tela pergunta ao cadastro de credores do Sienge (função sienge-credores), que traz o
+  // credor para o ERP; achado, o fornecedor se preenche (Moises, 24/11/2026)
+  const [sienge, setSienge] = useState<BuscaSienge | null>(null);
+  const fornAgora = useRef<FornecedorBusca | null>(null);
+  fornAgora.current = forn;
+  const escolherForn = (f: FornecedorBusca | null) => {
+    setForn(f);
+    setParcelas(ps => ps.map((p, i) => (i === 0 && !p.pix_chave && f?.documento ? { ...p, pix_tipo: 'cpf_cnpj', pix_chave: f.documento } : p)));
+  };
 
   const o = op.data;
   const emp = o?.empresas.find(e => e.id === empresa);
@@ -99,9 +108,18 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   // o arquivo: sobe ao leitor, que guarda, lê e diz o que casa; a tela se preenche e tudo continua editável
   // cada arquivo novo entra no conjunto e a tela se preenche de novo pelo conjunto (o que foi mudado à mão é refeito);
   // vários de uma vez sobem um depois do outro, e o erro de um não perde os que já subiram
+  // enquanto o leitor lê, a pessoa já pode preencher: o que ela mexer nesse tempo a leitura não troca (Moises,
+  // 25/11/2026: a tela não espera a leitura)
+  const lendo = useRef(false);
+  const mexidos = useRef(new Set<string>());
+  const mao = (k: string) => { if (lendo.current) mexidos.current.add(k); };
   const subir = useMutation({ mutationFn: async (fs: File[]) => {
-    for (const f of fs) { const r = await subirArquivo(f); setArquivos(a => [...a.filter(x => x.anexo.id !== r.anexo.id), r]); }
+    lendo.current = true; mexidos.current.clear();
+    try { for (const f of fs) { const r = await subirArquivo(f); setArquivos(a => [...a.filter(x => x.anexo.id !== r.anexo.id), r]); } }
+    finally { lendo.current = false; }
   }, onSuccess: () => setSemRet(false) });
+  // acorda o leitor ao abrir a tela, para a primeira leitura não esperar o servidor subir
+  useEffect(() => { acordarLeitor(); }, []);
   const senha = useMutation({ mutationFn: (x: { id: string; s: string }) => abrirComSenha(x.id, x.s), onSuccess: r => setArquivos(a => a.map(x => (x.anexo.id === r.anexo.id ? r : x))) });
   // com a mesma base (só entrou boleto ou anexo), só as parcelas se refazem: o que foi corrigido à mão no resto fica;
   // com base nova (a nota chegou depois do boleto), a tela inteira se preenche pela nota
@@ -115,6 +133,24 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
     } else { preencher(arq); setRefeitas(false); }
     base.current = arq.anexo.id;
   }, [arq]); // eslint-disable-line react-hooks/exhaustive-deps
+  const docEmit = arq?.leitura?.emitente?.documento?.toUpperCase().replace(/[^0-9A-Z]/g, '') ?? '';
+  const procurarSienge = Boolean(arq && docEmit && !arq.identificacao?.fornecedor && /^([0-9]{11}|[0-9A-Z]{12}[0-9]{2})$/.test(docEmit));
+  useEffect(() => {
+    if (!procurarSienge || sienge?.doc === docEmit) return;
+    let vivo = true;
+    setSienge({ doc: docEmit, estado: 'buscando' });
+    buscarCredorSienge(docEmit)
+      .then(async () => {
+        const l = await rpc<FornecedorBusca[]>('fornecedores', { p_busca: docEmit });
+        const f = l.find(x => x.documento === docEmit);
+        if (!f) return 'nao' as const;
+        if (vivo && !fornAgora.current) { setBuscaForn(''); escolherForn(f); }   // quem já escolheu à mão fica
+        return 'achado' as const;
+      })
+      .catch(() => 'erro' as const)
+      .then(estado => { if (vivo) setSienge({ doc: docEmit, estado }); });
+    return () => { vivo = false; };
+  }, [procurarSienge, docEmit]); // eslint-disable-line react-hooks/exhaustive-deps
   const valores = arq?.leitura ? conferirValores(arq.leitura) : null;
   const comRet = Boolean(arq?.leitura && (temRetencao(arq.leitura) || valores?.retencaoSuspeita));
   // CNPJ do tomador mascarado no documento: sugere as empresas que fecham com o que aparece; quem lança confirma
@@ -130,18 +166,21 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   function preencher(r: ResultadoLeitor) {
     const l = r.leitura, id = r.identificacao;
     if (!l) return;
-    if (id?.empresa) { setEmpresa(id.empresa.id); setLinhas([novaLinha()]); }
+    const livre = (k: string) => !mexidos.current.has(k);
+    if (id?.empresa && livre('empresa')) { setEmpresa(id.empresa.id); setLinhas([novaLinha()]); }
     const f = id?.fornecedor;
     const fb: FornecedorBusca | null = f ? { id: f.id, nome: f.nome, nome_fantasia: null, documento: f.documento, tipo: (f.documento ?? '').length === 11 ? 'fisica' : 'juridica' } : null;
-    setForn(fb);
-    setBuscaForn(fb ? '' : l.emitente?.documento ?? l.emitente?.nome ?? '');
-    if (l.tipo && TIPOS.some(([k]) => k === l.tipo)) setTipo(l.tipo);
-    if (l.numero) setNumero(l.numero);
-    setSerie(l.serie ?? '');
-    if (l.emissao) setEmissao(l.emissao);
+    if (livre('forn')) {
+      setForn(fb);
+      setBuscaForn(fb ? '' : l.emitente?.documento ?? l.emitente?.nome ?? '');
+    }
+    if (l.tipo && TIPOS.some(([k]) => k === l.tipo) && livre('tipo')) setTipo(l.tipo);
+    if (l.numero && livre('numero')) setNumero(l.numero);
+    if (livre('serie')) setSerie(l.serie ?? '');
+    if (l.emissao && livre('emissao')) setEmissao(l.emissao);
     const c = l.competencia ?? l.consumo?.referencia ?? l.emissao?.slice(0, 7);
-    if (c) setComp(c);
-    if (l.valor) setValorTxt(reais(l.valor));
+    if (c && livre('comp')) setComp(c);
+    if (l.valor && livre('valor')) setValorTxt(reais(l.valor));
     setParcelas(parcelasLidas(l, id?.pagamento ?? null, fb?.documento ?? null));
     const melhor = id?.candidatos.find(x => !id.empresa || x.empresa_id === id.empresa.id) ?? null;
     usarCandidato(melhor);
@@ -210,7 +249,8 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
           subindo={subir.isPending} erro={subir.error ? mensagemErro(subir.error) : null}
           escolher={fs => { senha.reset(); subir.mutate(fs); }} valor={valor} cand={cand} usar={usarCandidato}
           abrir={(id, x) => senha.mutate({ id, s: x })} abrindo={senha.isPending} erroSenha={senha.error ? mensagemErro(senha.error) : null}
-          sugeridas={sugeridas} mascara={mascaraTom} usarEmpresa={id => { setEmpresa(id); setLinhas([novaLinha()]); }} />}
+          sugeridas={sugeridas} mascara={mascaraTom} usarEmpresa={id => { setEmpresa(id); setLinhas([novaLinha()]); }}
+          sienge={sienge?.doc === docEmit ? sienge.estado : null} />}
         {refeitas && <span className="nt inf">As parcelas foram preenchidas de novo com os arquivos novos; o resto da tela ficou como estava.</span>}
         {comRet && arq?.leitura && (
           <div className="lt-sec">
@@ -222,28 +262,28 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
 
         <section className="lt-sec"><h3>Documento</h3><div className="kv lt-kv">
           <Campo r="Empresa">
-            <select className={`lt-in ${tentou && !empresa ? 'err' : ''}`} value={empresa} onChange={e => { setEmpresa(e.target.value); setLinhas([novaLinha()]); }}>
+            <select className={`lt-in ${tentou && !empresa ? 'err' : ''}`} value={empresa} onChange={e => { mao('empresa'); setEmpresa(e.target.value); setLinhas([novaLinha()]); }}>
               <option value="">Escolha quem recebe a nota</option>
               {o.empresas.map(e => <option key={e.id} value={e.id} title={e.razao_social}>{e.nome}{e.documento ? ` · ${documento(e.documento)}` : ''}</option>)}
             </select>
           </Campo>
-          <Campo r="Fornecedor"><BuscaFornecedor key={buscaForn} inicial={buscaForn} v={forn} erro={tentou && !forn} mudar={f => { setForn(f); setParcelas(ps => ps.map((p, i) => (i === 0 && !p.pix_chave && f?.documento ? { ...p, pix_tipo: 'cpf_cnpj', pix_chave: f.documento } : p))); }} /></Campo>
+          <Campo r="Fornecedor"><BuscaFornecedor key={buscaForn} inicial={buscaForn} v={forn} erro={tentou && !forn} mudar={f => { mao('forn'); escolherForn(f); }} /></Campo>
           <Campo r="Documento">
             <div className="lt-lin">
-              <select className="lt-in lt-tipo" value={tipo} onChange={e => setTipo(e.target.value)}>{TIPOS.map(([k, r]) => <option key={k} value={k}>{r}</option>)}</select>
-              <input className={`lt-in ${tentou && !numero.trim() ? 'err' : ''}`} placeholder="Número" value={numero} onChange={e => setNumero(e.target.value)} />
-              <input className="lt-in lt-serie" placeholder="Série" value={serie} onChange={e => setSerie(e.target.value)} />
+              <select className="lt-in lt-tipo" value={tipo} onChange={e => { mao('tipo'); setTipo(e.target.value); }}>{TIPOS.map(([k, r]) => <option key={k} value={k}>{r}</option>)}</select>
+              <input className={`lt-in ${tentou && !numero.trim() ? 'err' : ''}`} placeholder="Número" value={numero} onChange={e => { mao('numero'); setNumero(e.target.value); }} />
+              <input className="lt-in lt-serie" placeholder="Série" value={serie} onChange={e => { mao('serie'); setSerie(e.target.value); }} />
             </div>
           </Campo>
           <Campo r="Emissão e competência">
             <div className="lt-lin">
-              <input type="date" className="lt-in" value={emissao} onChange={e => setEmissao(e.target.value)} aria-label="Emissão" />
-              <input type="month" className="lt-in" value={comp} onChange={e => setComp(e.target.value)} aria-label="Competência" />
+              <input type="date" className="lt-in" value={emissao} onChange={e => { mao('emissao'); setEmissao(e.target.value); }} aria-label="Emissão" />
+              <input type="month" className="lt-in" value={comp} onChange={e => { mao('comp'); setComp(e.target.value); }} aria-label="Competência" />
             </div>
           </Campo>
           <Campo r="Valor da nota" msg="Sem retenção nem caução nesta versão: o título sai pelo valor da nota.">
             <input className={`lt-in num lt-valor ${tentou && !valor ? 'err' : ''}`} inputMode="decimal" placeholder="R$ 0,00" value={valorTxt}
-              onChange={e => setValorTxt(e.target.value)} onBlur={() => valor && setValorTxt(reais(valor))} />
+              onChange={e => { mao('valor'); setValorTxt(e.target.value); }} onBlur={() => valor && setValorTxt(reais(valor))} />
           </Campo>
         </div></section>
 
@@ -444,7 +484,7 @@ const NOME_TIPO: Record<string, string> = Object.fromEntries(TIPOS);
 const COMP: Record<string, string> = { contrato: 'Contrato', assinatura: 'Assinatura', consumo: 'Conta de consumo', pedido: 'Pedido de compra' };
 
 /** O que o leitor achou: os avisos dele, a nota repetida e os processos que podem ter gerado o título. */
-function avisosLidos(r: ResultadoLeitor, valor: number | null): { c: 'cr' | 'at' | 'inf'; t: ReactNode }[] {
+function avisosLidos(r: ResultadoLeitor, valor: number | null, sienge: BuscaSienge['estado'] | null): { c: 'cr' | 'at' | 'inf'; t: ReactNode }[] {
   const l = r.leitura, id = r.identificacao, out: { c: 'cr' | 'at' | 'inf'; t: ReactNode }[] = [];
   if (r.erro_leitura && !r.pede_senha) out.push({ c: 'at', t: `${r.erro_leitura}. O arquivo ficou guardado; preencha à mão.` });
   for (const d of [...r.repetido_em, ...(id?.nota_repetida ?? [])].filter((x, i, a) => a.findIndex(y => y.documento_id === x.documento_id) === i))
@@ -452,7 +492,13 @@ function avisosLidos(r: ResultadoLeitor, valor: number | null): { c: 'cr' | 'at'
   if (!l) return out;
   if (l.origem === 'ia') out.push({ c: 'inf', t: 'Lido pela IA a partir da imagem do documento: confira cada campo antes de lançar.' });
   if (l.tomador?.documento && !id?.empresa) out.push({ c: 'at', t: `O tomador da nota (${documento(l.tomador.documento)}) não é uma empresa em que você lança.` });
-  if (l.emitente?.documento && !id?.fornecedor) out.push({ c: 'at', t: `O emitente ${l.emitente.nome ?? ''} (${documento(l.emitente.documento)}) não está cadastrado. Procure pelo nome ou peça o cadastro.` });
+  const emit = `O emitente ${l.emitente?.nome ?? ''} (${documento(l.emitente?.documento ?? '')})`;
+  if (l.emitente?.documento && !id?.fornecedor) out.push(
+    sienge === 'buscando' ? { c: 'inf', t: `${emit} não está no cadastro do ERP. Procurando nos credores do Sienge…` }
+    : sienge === 'achado' ? { c: 'inf', t: `${emit} veio do cadastro de credores do Sienge e já está no fornecedor. Confira.` }
+    : sienge === 'nao' ? { c: 'at', t: `${emit} não está no cadastro, nem depois da consulta aos credores do Sienge. Procure pelo nome ou peça o cadastro.` }
+    : sienge === 'erro' ? { c: 'at', t: `${emit} não está cadastrado, e não consegui consultar o Sienge agora. Procure pelo nome ou peça o cadastro.` }
+    : { c: 'at', t: `${emit} não está cadastrado. Procure pelo nome ou peça o cadastro.` });
   else if (id?.fornecedor && !id.fornecedor.fornecedor) out.push({ c: 'at', t: `${id.fornecedor.nome} está cadastrado, mas não como fornecedor.` });
   for (const b of l.boletos ?? []) {
     const a = b.conferido_asaas;
@@ -470,12 +516,13 @@ function avisosLidos(r: ResultadoLeitor, valor: number | null): { c: 'cr' | 'at'
   return out;
 }
 
-function ArquivoNota({ r, arquivos, tirar, subindo, erro, escolher, valor, cand, usar, abrir, abrindo, erroSenha, sugeridas, mascara, usarEmpresa }: {
+function ArquivoNota({ r, arquivos, tirar, subindo, erro, escolher, valor, cand, usar, abrir, abrindo, erroSenha, sugeridas, mascara, usarEmpresa, sienge }: {
   r: ResultadoLeitor | null; arquivos: ResultadoLeitor[]; tirar: (id: string) => void;
   subindo: boolean; erro: string | null; escolher: (fs: File[]) => void; valor: number | null;
   cand: string | null; usar: (c: Identificacao['candidatos'][number] | null) => void;
   abrir: (id: string, senha: string) => void; abrindo: boolean; erroSenha: string | null;
   sugeridas: OpcoesLancamento['empresas']; mascara?: string; usarEmpresa: (id: string) => void;
+  sienge: BuscaSienge['estado'] | null;
 }) {
   const inp = useRef<HTMLInputElement>(null);
   const [sobre, setSobre] = useState(false);
@@ -484,7 +531,7 @@ function ArquivoNota({ r, arquivos, tirar, subindo, erro, escolher, valor, cand,
   const pegar = (fs?: FileList | null) => { if (fs?.length && !subindo) escolher(Array.from(fs)); };
   // o PDF com senha que falta abrir (um de cada vez)
   const comSenha = arquivos.find(a => a.pede_senha);
-  const avisos = r ? avisosLidos(r, valor) : [];
+  const avisos = r ? avisosLidos(r, valor, sienge) : [];
   const cands = r?.identificacao?.candidatos ?? [];
   return (
     <section className="lt-sec"><h3>Arquivos do título</h3>
@@ -499,10 +546,10 @@ function ArquivoNota({ r, arquivos, tirar, subindo, erro, escolher, valor, cand,
               <button className="btn t sm" onClick={() => tirar(a.anexo.id)} disabled={subindo}>Tirar</button>
             </div>
           ))}
-          {subindo ? <div className="lt-arq"><Carregando /><span className="sec">Guardando e lendo o arquivo…</span></div>
+          {subindo ? <div className="lt-arq"><Carregando /><span className="sec">Lendo o arquivo… Pode ir preenchendo: o que você digitar agora a leitura não troca.</span></div>
             : <button className="btn t sm" style={{ alignSelf: 'flex-start' }} onClick={() => inp.current?.click()}>Adicionar arquivo (boleto, anexo…)</button>}
         </>
-        : subindo ? <div className="lt-arq"><Carregando /><span className="sec">Guardando e lendo o arquivo…</span></div>
+        : subindo ? <div className="lt-arq"><Carregando /><span className="sec">Lendo o arquivo… Pode ir preenchendo: o que você digitar agora a leitura não troca.</span></div>
         : (
           <button className={`lt-arq lt-solta ${sobre ? 'on' : ''}`} onClick={() => inp.current?.click()}
             onDragOver={e => { e.preventDefault(); setSobre(true); }} onDragLeave={() => setSobre(false)}
@@ -601,6 +648,15 @@ function RecebedorPix({ codigo, forma, chaveParcela, docForn, valor, exc, mudaEx
       </>}
     </div>
   );
+}
+
+type BuscaSienge = { doc: string; estado: 'buscando' | 'achado' | 'nao' | 'erro' };
+
+/** Pergunta ao cadastro de credores do Sienge pelo CPF ou CNPJ (função sienge-credores, que traz o credor para o ERP como
+ *  sistema). A resposta não diz se achou: quem decide o que a pessoa vê é a busca no ERP, depois, pelo RLS. */
+async function buscarCredorSienge(doc: string): Promise<void> {
+  const { error } = await supabase.functions.invoke('sienge-credores', { body: { documento: doc } });
+  if (error) throw error;
 }
 
 /** Pede a conferência de quem recebe (função conferir-pagamento, que grava como sistema; o banco é quem decide). */

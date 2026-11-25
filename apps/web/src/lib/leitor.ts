@@ -19,6 +19,12 @@ async function erro(r: Response): Promise<Error> {
   return new Error(j?.erro ?? (r.status === 429 ? 'Muitos arquivos em pouco tempo; espere alguns minutos' : `O leitor respondeu ${r.status}`));
 }
 
+/** Acorda o leitor (o Cloud Run desliga sem uso e leva alguns segundos para subir): um GET /saude ao abrir a tela de
+ *  lançar, sem login e sem esperar a resposta. */
+export function acordarLeitor(): void {
+  if (LEITOR_URL) fetch(`${LEITOR_URL}/saude`, { mode: 'no-cors', cache: 'no-store' }).catch(() => {});
+}
+
 export async function subirArquivo(f: File): Promise<ResultadoLeitor> {
   if (!LEITOR_URL) throw new Error('O leitor de notas não está ligado neste ambiente');
   if (f.size > LIMITE) throw new Error('O arquivo passa de 20 MB');

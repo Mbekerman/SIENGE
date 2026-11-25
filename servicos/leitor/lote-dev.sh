@@ -9,6 +9,7 @@
 #   LOTE_LIMITE=5000 bash ~/SIENGE/servicos/leitor/lote-dev.sh      (o resto; continua de onde parou)
 # Sempre com LOTE_CNPJS (os CNPJs das empresas, separados por vírgula): sem ele, PDF com senha só é tentado sem senha.
 # Outro modelo, para comparar, numa pasta própria: LOTE_MODELO=claude-haiku-5-5 LOTE_SAIDA=lote/saida-haiku/
+# Só o texto do PDF, sem IA e sem custo (quanto a leitura sem IA cobre): LOTE_MODO=texto LOTE_SAIDA=lote/saida-texto/
 # O script confere antes que o bucket não é público e liga a regra que apaga lote/ em 7 dias.
 # Os resultados ficam em gs://bkm-erp-515119-anexos-dev/lote/saida/ (um .json por arquivo). Para trazê-los:
 #   gcloud storage cp -r gs://bkm-erp-515119-anexos-dev/lote/saida ./saida && zip -qr saida.zip saida
@@ -25,6 +26,7 @@ LOTE_LIMITE=${LOTE_LIMITE:-20}
 LOTE_PARALELO=${LOTE_PARALELO:-4}
 LOTE_MODELO=${LOTE_MODELO:-}
 LOTE_SAIDA=${LOTE_SAIDA:-lote/saida/}
+LOTE_MODO=${LOTE_MODO:-}
 [[ "$LOTE_SAIDA" =~ ^lote/[a-z0-9-]+/$ ]] || { echo "LOTE_SAIDA tem de ser lote/<nome>/" >&2; exit 1; }
 gcloud config set project "$P"
 
@@ -59,5 +61,5 @@ gcloud run jobs deploy erp-leitor-lote --source "$DIR/SIENGE/servicos/leitor" --
   --service-account "$SA" --tasks 1 --max-retries 0 --task-timeout 24h --memory 1Gi --cpu 1 \
   --command node --args=--experimental-strip-types,--disable-warning=ExperimentalWarning,lote.ts \
   --set-env-vars "^|^BUCKET=$B|LOTE_PARALELO=$LOTE_PARALELO|LOTE_CNPJS=$LOTE_CNPJS|ANTHROPIC_FEDERATION_RULE_ID=$FED|ANTHROPIC_ORGANIZATION_ID=$ORG|ANTHROPIC_SERVICE_ACCOUNT_ID=$CONTA|ANTHROPIC_WORKSPACE_ID=$WS"
-gcloud run jobs execute erp-leitor-lote --region "$R" --update-env-vars "^|^LOTE_LIMITE=$LOTE_LIMITE|LOTE_MODELO=$LOTE_MODELO|LOTE_SAIDA=$LOTE_SAIDA" --wait
+gcloud run jobs execute erp-leitor-lote --region "$R" --update-env-vars "^|^LOTE_LIMITE=$LOTE_LIMITE|LOTE_MODELO=$LOTE_MODELO|LOTE_SAIDA=$LOTE_SAIDA|LOTE_MODO=$LOTE_MODO" --wait
 echo "Resultados: gcloud storage ls gs://$B/$LOTE_SAIDA | wc -l"

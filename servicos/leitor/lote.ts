@@ -6,7 +6,8 @@
 // Variáveis: BUCKET, as ANTHROPIC_* do leitor (federação, sem chave guardada), LOTE_LIMITE (quantos arquivos ainda sem
 // resultado ler nesta rodada; padrão 20), LOTE_PARALELO (padrão 4) e LOTE_CNPJS (CNPJs das empresas, separados por
 // vírgula, para abrir PDF com senha como o leitor faz; opcional), LOTE_MODELO (outro modelo, para comparar; padrão o
-// do leitor) e LOTE_SAIDA (pasta da rodada, lote/<nome>/; padrão lote/saida/). Rodar de novo continua de onde parou.
+// do leitor), LOTE_SAIDA (pasta da rodada, lote/<nome>/; padrão lote/saida/) e LOTE_MODO=texto (sem IA: só o que sai
+// do texto do PDF, para medir quanto a leitura sem IA cobre). Rodar de novo continua de onde parou.
 import { execFile } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -14,6 +15,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { LIMITE, pdfCriptografado, senhasCandidatas, tentarSenhas, textoUtf8, tipoPelosBytes } from './arquivo.ts';
 import { type Entrada, MODELO, clienteFederado, lerComIaDetalhe } from './ia.ts';
+import { extrair, temTexto } from './extrair.ts';
 import { lerXml } from './xml.ts';
 import type { Leitura } from './leitura.ts';
 
@@ -31,6 +33,9 @@ export interface Resultado {
   erro?: string;
   erro_ia?: boolean;   // falha da chamada à IA: não grava, para a rodada seguinte tentar de novo
   erro_tipo?: string;  // só o tipo do erro vai ao log (a mensagem pode trazer trecho do documento; revisão do #110)
+  // LOTE_MODO=texto: só o que sai do texto do PDF, sem IA (quantos documentos a leitura sem IA cobre; o texto em si
+  // não é guardado)
+  texto?: { tem: boolean; chaves: string[]; boletos: string[]; documentos: string[]; pix: number };
 }
 
 // O nome do resultado: o do arquivo, sem a pasta de entrada, na pasta de saída da rodada (LOTE_SAIDA separa a rodada
@@ -44,7 +49,8 @@ export function pendentes(entrada: string[], saidas: Set<string>, limite: number
 
 // Lê um arquivo como o leitor lê (XML de nota sem IA; PDF, foto e XML desconhecido pela IA), sem banco.
 export async function lerArquivo(nome: string, dados: Buffer, ia: (e: Entrada) => ReturnType<typeof lerComIaDetalhe>,
-                                 abrir: (pdf: Buffer) => Promise<Buffer | null>): Promise<Resultado> {
+                                 abrir: (pdf: Buffer) => Promise<Buffer | null>,
+                                 texto?: (pdf: Buffer) => Promise<string | null>): Promise<Resultado> {
   const t0 = Date.now();
   const r: Resultado = { arquivo: nome, bytes: dados.length, ms: 0 };
   try {
@@ -65,8 +71,15 @@ export async function lerArquivo(nome: string, dados: Buffer, ia: (e: Entrada) =
         if (!aberto) throw new Error('PDF com senha que os CNPJs não abriram');
         pdf = aberto;
       }
+      if (texto) {
+        const t = await texto(pdf);
+        const e = temTexto(t) ? extrair(t) : null;
+        r.texto = { tem: !!e, chaves: e?.chaves ?? [], boletos: e?.boletos.map((b) => b.linha) ?? [], documentos: e?.documentos ?? [], pix: e?.pix.length ?? 0 };
+        return r;
+      }
       entrada = { tipo: 'pdf', dados: pdf };
     } else {
+      if (texto) { r.texto = { tem: false, chaves: [], boletos: [], documentos: [], pix: 0 }; return r; }
       entrada = { tipo: 'imagem', mime, dados };
     }
     const x = await ia(entrada).catch((e) => { r.erro_ia = true; throw e; });
@@ -142,6 +155,17 @@ async function abrirPdf(pdf: Buffer, senhas: string[]): Promise<Buffer | null> {
   } catch { return null; } finally { await rm(dir, { recursive: true, force: true }); }
 }
 
+// O texto do PDF, como o leitor tira (servidor.ts): poppler, até 5 páginas, 5 s.
+async function textoPdf(pdf: Buffer): Promise<string | null> {
+  const dir = await mkdtemp(join(tmpdir(), 'txt-'));
+  try {
+    const e = join(dir, 'e.pdf');
+    await writeFile(e, pdf);
+    return await new Promise<string | null>((res) => execFile('pdftotext', ['-q', '-layout', '-enc', 'UTF-8', '-l', '5', e, '-'],
+      { timeout: 5_000, maxBuffer: 2 * 1024 * 1024, encoding: 'utf8' }, (err, out) => res(err ? null : out)));
+  } catch { return null; } finally { await rm(dir, { recursive: true, force: true }); }
+}
+
 const log = (msg: string, extra: Record<string, unknown> = {}) => console.log(JSON.stringify({ severity: 'INFO', msg, ...extra }));
 
 async function main() {
@@ -153,15 +177,16 @@ async function main() {
   const modelo = process.env.LOTE_MODELO || MODELO;
   const pasta = process.env.LOTE_SAIDA || SAIDA;
   if (!/^lote\/[a-z0-9-]+\/$/.test(pasta) || pasta === ENTRADA) throw new Error('LOTE_SAIDA tem de ser lote/<nome>/');
-  const cliente = await clienteFederado();
+  const soTexto = process.env.LOTE_MODO === 'texto';
+  const cliente = soTexto ? null : await clienteFederado();
 
   const fila = pendentes(await listar(bucket, ENTRADA), new Set(await listar(bucket, pasta)), limite, pasta);
   log('lote começou', { arquivos: fila.length, paralelo, modelo, saida: pasta });
   let feitos = 0, erros = 0, entrada = 0, saida = 0;
   const trabalhar = async () => {
     for (let o = fila.shift(); o; o = fila.shift()) {
-      const r = await lerArquivo(o.slice(ENTRADA.length), await baixar(bucket, o), (e) => lerComIaDetalhe(cliente, e, new Date(), modelo),
-        (pdf) => abrirPdf(pdf, senhas));
+      const r = await lerArquivo(o.slice(ENTRADA.length), await baixar(bucket, o), (e) => lerComIaDetalhe(cliente!, e, new Date(), modelo),
+        (pdf) => abrirPdf(pdf, senhas), soTexto ? textoPdf : undefined);
       feitos++; if (r.erro) erros++;
       if (r.erro_ia) { log('a IA falhou; fica para a próxima rodada', { arquivo: r.arquivo, erro: r.erro_tipo }); continue; }
       await gravar(bucket, nomeSaida(o, pasta), JSON.stringify(r));

@@ -3,6 +3,7 @@
 import { LIMITE, type Mime, nomeLimpo, pdfCriptografado, senhasCandidatas, sha256, textoUtf8, tipoPelosBytes } from './arquivo.ts';
 import type { Entrada } from './ia.ts';
 import type { Boleto, Leitura } from './leitura.ts';
+import { type Extraido, extrair, temTexto } from './extrair.ts';
 import { lerXml } from './xml.ts';
 
 // Uma NF-e tem dezenas de KB; acima disso o XML não é lido (nem pelo analisador, nem pela IA).
@@ -26,6 +27,7 @@ export interface Deps {
   ia: ((e: Entrada) => Promise<Leitura>) | null;
   asaas: ((linha: string) => Promise<NonNullable<Boleto['conferido_asaas']>>) | null;
   abrirPdf: ((pdf: Buffer, senhas: string[]) => Promise<Buffer | null>) | null;  // a primeira que abre; null = nenhuma
+  textoPdf?: ((pdf: Buffer) => Promise<string | null>) | null;                  // pdftotext; null = sem texto
   log: (msg: string, extra?: Record<string, unknown>) => void;
 }
 
@@ -93,7 +95,7 @@ export async function abrirComSenha(d: Deps, jwt: string, id: string, senha: str
   return concluir(d, jwt, { id, nome: a.nome, tipo_mime: 'application/pdf', tamanho: a.dados.length }, [], async () => {
     const aberto = d.abrirPdf ? await d.abrirPdf(a.dados, [senha]) : null;
     if (!aberto) throw new SemSenha('A senha não abriu o PDF');
-    return d.ia!({ tipo: 'pdf', dados: aberto });
+    return lerPdf(d, jwt, aberto);
   });
 }
 
@@ -106,7 +108,6 @@ async function ler(d: Deps, jwt: string, mime: Mime, dados: Buffer): Promise<Lei
     if (!d.ia) throw new Recusa(503, 'XML de formato desconhecido e leitura por IA indisponível');
     return d.ia({ tipo: 'texto', dados: texto.slice(0, 400_000) });
   }
-  if (!d.ia) throw new Recusa(503, 'Leitura por IA indisponível');
   if (mime === 'application/pdf') {
     let pdf = dados;
     if (pdfCriptografado(dados)) {
@@ -114,9 +115,73 @@ async function ler(d: Deps, jwt: string, mime: Mime, dados: Buffer): Promise<Lei
       if (!aberto) throw new SemSenha('O PDF tem senha e nenhum CNPJ das empresas abriu; digite a senha');
       pdf = aberto;
     }
-    return d.ia({ tipo: 'pdf', dados: pdf });
+    return lerPdf(d, jwt, pdf);
   }
+  if (!d.ia) throw new Recusa(503, 'Leitura por IA indisponível');
   return d.ia({ tipo: 'imagem', mime, dados });
+}
+
+// PDF: primeiro o texto, sem IA (pedido do Moises, 25/11/2026: ler em cerca de 1 s quando dá). Com a chave de uma
+// nota que já chegou pela busca automática e que a pessoa vê (o banco decide, com o login dela; a de PJ não volta para
+// quem não cuida de PJ), a leitura é a do XML. Senão a IA lê o PDF, e o que o texto traz conferido pelos dígitos
+// (linha do boleto, chave, PIX) completa o que ela não achou.
+async function lerPdf(d: Deps, jwt: string, pdf: Buffer): Promise<Leitura> {
+  let texto: string | null = null;
+  if (d.textoPdf) {
+    try { texto = await d.textoPdf(pdf); } catch (e) { d.log('texto do PDF falhou', { erro: String(e).slice(0, 200) }); }
+  }
+  const ext = temTexto(texto) ? extrair(texto) : null;
+  if (ext) {
+    const x = await pelaNotaRecebida(d, jwt, ext);
+    if (x) return juntar(x, ext);
+  }
+  if (!d.ia) throw new Recusa(503, 'Leitura por IA indisponível');
+  const l = await d.ia({ tipo: 'pdf', dados: pdf });
+  return ext ? juntar(l, ext) : l;
+}
+
+const UFS = new Set(['11', '12', '13', '14', '15', '16', '17', '21', '22', '23', '24', '25', '26', '27', '28', '29', '31', '32',
+                     '33', '35', '41', '42', '43', '50', '51', '52', '53']);
+// A chave que pode ser de uma nota recebida: NF-e (44 dígitos, UF válida, modelo 55) ou NFS-e nacional (50, começando
+// pelo código IBGE do município). O código de barras do boleto também tem 44 dígitos, mas não passa nessa conferência.
+export function chaveDeNota(c: string): boolean {
+  if (c.length === 44) return UFS.has(c.slice(0, 2)) && c.slice(20, 22) === '55';
+  return c.length === 50 && UFS.has(c.slice(0, 2));
+}
+// O CNPJ do emitente dentro da chave (posição fixa no leiaute).
+const cnpjDaChave = (c: string) => (c.length === 44 ? c.slice(6, 20) : c.slice(9, 23));
+
+// Uma chave só (mais de uma, como a nota que cita outra, é ambíguo e fica com a IA), e o emitente dela tem de aparecer
+// no texto. Qualquer erro do banco deixa a leitura com a IA: o arquivo nunca deixa de subir por causa disso.
+async function pelaNotaRecebida(d: Deps, jwt: string, ext: Extraido): Promise<Leitura | null> {
+  const chaves = ext.chaves.filter(chaveDeNota);
+  if (chaves.length !== 1 || !ext.documentos.includes(cnpjDaChave(chaves[0]))) return null;
+  try {
+    const n = await d.banco.rpc<{ xml?: string | null } | null>(jwt, 'buscar_nota_recebida', { p_chave: chaves[0] });
+    const l = typeof n?.xml === 'string' && n.xml.length <= LIMITE_XML ? lerXml(n.xml) : null;
+    if (!l || l.chave_acesso !== chaves[0]) return null;
+    return { ...l, avisos: [...(l.avisos ?? []), 'Lida pelo XML da nota, que já tinha chegado pela busca automática'] };
+  } catch (e) {
+    d.log('busca da nota pela chave falhou', { erro: String(e).slice(0, 200) });
+    return null;
+  }
+}
+
+// O que o texto trouxe conferido entra onde a leitura não tem: as linhas de boleto que faltam, a chave (se só há uma)
+// e o PIX copia e cola (se só há um).
+export function juntar(l: Leitura, ext: Extraido): Leitura {
+  const tem = new Set((l.boletos ?? []).filter((b) => b.valida).map((b) => b.linha));
+  const novos = ext.boletos.filter((b) => !tem.has(b.linha));
+  const chaves = ext.chaves.filter(chaveDeNota);
+  const r: Leitura = { ...l };
+  if (novos.length) {
+    // uma linha que a leitura trouxe com o dígito errado e o texto trouxe certa sai, para não ficar repetida
+    r.boletos = [...(l.boletos ?? []).filter((b) => b.valida), ...novos];
+    r.avisos = [...(l.avisos ?? []), `${novos.length === 1 ? 'Linha do boleto conferida' : `${novos.length} linhas de boleto conferidas`} pelo texto do PDF`];
+  }
+  if (!r.chave_acesso && chaves.length === 1) r.chave_acesso = chaves[0];
+  if (!r.pix?.copia_e_cola && ext.pix.length === 1) r.pix = { ...(r.pix ?? {}), copia_e_cola: ext.pix[0] };
+  return r;
 }
 
 // PDF com senha: tenta os primeiros dígitos do CNPJ das empresas que a pessoa vê (a sem senha de usuário abre direto).
