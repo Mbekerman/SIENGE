@@ -27,11 +27,11 @@ Compromisso  →  Previsão  →  Documento  →  Título (parcelas)  →  Pagam
 
 ### Previsão não é título
 
-✅ **Decidido** (6 e 7/nov/2026): as previsões ficam **só no ERP BKM** e não são lançadas no Sienge. Motivo, comprovado em teste no Sienge em 6/nov/2026: um título criado pela API não pode ter tipo, número nem valor alterados depois, então uma previsão no Sienge nunca vira título real e teria de ser apagada à mão todo mês.
+✅ **Decidido** (Moises, 14/nov/2026, trocando a decisão de 6 e 7/nov): a previsão nasce no ERP BKM e, **aprovada, vai ao Sienge como título de previsão (PRV)**, sem forma de pagamento, para abastecer o fluxo de caixa de lá. Ela nunca vira o título de verdade: um título criado pela API não pode ter tipo, número nem valor alterados depois (teste no Sienge em 6/nov/2026). Por isso, quando a nota chega, o título definitivo é criado à parte e o PRV vai para a lista de títulos a apagar à mão no Sienge (ver [Previsões de despesa na transição](#previsões-de-despesa-na-transição)). A previsão de natureza PJ não vai ao Sienge.
 
 Quando a nota chega e o título nasce, ele **consome** a previsão correspondente, e a diferença entre o previsto e o realizado fica registrada. Uma previsão pode ser editada (volta para aprovação) ou cancelada e substituída por outra (Moises, 14/nov/2026).
 
-✅ A nota só consome a previsão que casa com ela: **mesma empresa, mesmo fornecedor, mesmo núcleo econômico, mesmo centro de custo e mesma natureza** (trava autorizada pelo Moises, 14/nov/2026).
+✅ A nota só consome a previsão que casa com ela: **mesma empresa, mesmo fornecedor, mesmo núcleo econômico, mesmo centro de custo e mesma natureza** (trava autorizada pelo Moises, 14/nov/2026). A previsão **sem fornecedor** (a do orçamento de área, ou a lançada à mão sem fornecedor) pode ser consumida por nota de qualquer fornecedor, desde que empresa, núcleo, centro e natureza casem.
 
 ## Primeira etapa da implantação: o pedido de pagamento
 
@@ -150,6 +150,11 @@ Teste de 8/nov/2026 (título 8422): o título criado pela API aceitou o PIX depo
    - **Contadores:** Esperando aprovação, Abertas, Consumidas e Encerradas ou canceladas.
    - **Saldo:** a previsão aberta mostra quanto ainda resta.
    - **Gaveta:** data, competência, fornecedor ("Sem fornecedor" quando falta), onde entra, natureza, núcleo, origem, contrato e número no Sienge.
+   - 🟡 **Nova previsão** (pedido do Moises, 25/nov/2026; PR #142, ainda não juntado): o botão no alto da aba, só para quem lança, abre uma janela que pede empresa, fornecedor (opcional), competência e data prevista, valor, descrição e onde entra (núcleo, centro, divisão do último nível e natureza). A previsão nasce **Esperando aprovação**; aprovada, vai ao Sienge como PRV e espera a nota que vai consumi-la. Natureza PJ: só o master e os designados lançam, o master aprova e ela não vai ao Sienge (a janela avisa). 🟡 Proposta da equipe, ainda não confirmada pelo Moises: **previsão sem fornecedor exige descrição**, que vira o nome dela na lista e no Sienge (sem ela, apareceria só "Sem fornecedor").
+
+     ![Nova previsão no computador](../imagens/financeiro/nova-previsao-desk.png)
+
+     ![Nova previsão no celular](../imagens/financeiro/nova-previsao-cel.png)
 3. **Contas recorrentes**
    - **Contadores:** Ativas, Em aprovação, Vencem em 60 dias e Encerradas.
    - **Grupos:** Contratos de serviço e Assinaturas, com o total por mês. A conta de consumo ainda não existe no banco.
