@@ -4,7 +4,9 @@ import { test } from 'node:test';
 import { pdfCriptografado, senhasCandidatas, tentarSenhas, tipoPelosBytes } from './arquivo.ts';
 import { conferirLinha } from './boleto.ts';
 import { type Bucket, type Deps, Recusa, abrirComSenha, baixar, pedidoIdentificar, subir } from './fluxo.ts';
-import { chaveValida, cnpjValido, converter, copiaColaValido, cpfValido, ESQUEMA, mascara } from './ia.ts';
+import Anthropic from '@anthropic-ai/sdk';
+import { chaveValida, cnpjValido, converter, copiaColaValido, cpfValido, ESQUEMA, lerComIaDetalhe, mascara, MODELO, RESERVA,
+  vaiParaReserva, ErroLeitura } from './ia.ts';
 import { Limite } from './limite.ts';
 import { ENTRADA, SAIDA, lerArquivo, nomeSaida, pendentes } from './lote.ts';
 import { lerXml } from './xml.ts';
@@ -490,4 +492,41 @@ test('CPF e CNPJ lidos com dígito verificador errado saem vazios, com aviso', (
   assert.equal(converter({ tipo: 'nfse', tomador: { documento: '11.222.XXX/0001-81' } }, 'm').tomador?.documento_mascara, '11222***000181');
   // documento mascarado segue pelo caminho da máscara
   assert.equal(converter({ tipo: 'nfse', tomador: { documento: '***.982.247-**' } }, 'm').tomador?.documento_mascara !== undefined, true);
+});
+
+test('leitor: Sonnet primeiro e Opus de reserva só quando outro modelo pode resolver', async () => {
+  assert.equal(MODELO, 'claude-sonnet-5-5'); assert.equal(RESERVA, 'claude-opus-5-5');
+  const ok = (model: string) => ({ model, stop_reason: 'end_turn', usage: {}, content: [{ type: 'text', text: '{"tipo":"boleto"}' }] });
+  const falso = (falhas: unknown[]) => {
+    const pedidos: string[] = []; const opcoes: unknown[] = [];
+    const cliente = { beta: { messages: { create: async (b: { model: string }, o?: unknown) => {
+      pedidos.push(b.model); opcoes.push(o); const f = falhas.shift();
+      if (f === 'recusa') return { ...ok(b.model), stop_reason: 'refusal', content: [] };
+      if (f === 'lixo') return { ...ok(b.model), content: [{ type: 'text', text: 'não é json' }] };
+      if (f) throw f; return ok(b.model);
+    } } } } as unknown as Anthropic;
+    return { cliente, pedidos, opcoes };
+  };
+  const e = { tipo: 'texto' as const, dados: 'x' };
+  let c = falso([]);
+  assert.equal((await lerComIaDetalhe(c.cliente, e)).modelo, MODELO); assert.deepEqual(c.pedidos, [MODELO]);
+  c = falso([new Anthropic.InternalServerError(529, undefined, 'sobrecarregado', new Headers())]);
+  assert.equal((await lerComIaDetalhe(c.cliente, e)).modelo, RESERVA); assert.deepEqual(c.pedidos, [MODELO, RESERVA]);
+  c = falso([new Anthropic.BadRequestError(400, undefined, 'sem crédito', new Headers())]);
+  await assert.rejects(lerComIaDetalhe(c.cliente, e)); assert.deepEqual(c.pedidos, [MODELO]);
+  // O pior tempo cabe nos 300 s do Cloud Run: principal com 1 nova tentativa, reserva sem nenhuma.
+  assert.deepEqual(c.opcoes, [{ timeout: 90_000, maxRetries: 1 }]);
+  c = falso(['recusa']);
+  assert.equal((await lerComIaDetalhe(c.cliente, e)).modelo, RESERVA); assert.deepEqual(c.pedidos, [MODELO, RESERVA]);
+  assert.deepEqual(c.opcoes, [{ timeout: 90_000, maxRetries: 1 }, { timeout: 90_000, maxRetries: 0 }]);
+  c = falso(['lixo', 'lixo']);
+  await assert.rejects(lerComIaDetalhe(c.cliente, e), ErroLeitura); assert.deepEqual(c.pedidos, [MODELO, RESERVA]);
+  // Erro do nosso código não troca de modelo.
+  c = falso([new TypeError('bug')]);
+  await assert.rejects(lerComIaDetalhe(c.cliente, e), TypeError); assert.deepEqual(c.pedidos, [MODELO]);
+  c = falso([new Error('x')]);
+  await assert.rejects(lerComIaDetalhe(c.cliente, e, new Date(), 'claude-haiku-5-5'), /x/); assert.deepEqual(c.pedidos, ['claude-haiku-5-5']);
+  assert.equal(vaiParaReserva(new Anthropic.RateLimitError(429, undefined, 'limite', new Headers())), true);
+  assert.equal(vaiParaReserva(new Anthropic.APIConnectionError({ message: 'sem rede' })), true);
+  assert.equal(vaiParaReserva(new Anthropic.AuthenticationError(401, undefined, 'chave', new Headers())), false);
 });

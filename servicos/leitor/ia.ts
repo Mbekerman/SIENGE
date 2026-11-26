@@ -5,7 +5,10 @@ import Anthropic from '@anthropic-ai/sdk';
 import { conferirLinha } from './boleto.ts';
 import { type Boleto, type Leitura, type TipoDocumento, data, limpar, numero, soDigitos } from './leitura.ts';
 
-export const MODELO = 'claude-opus-5-5';
+// Sonnet desde 26/11/2026 (escolha do Moises depois do lote de 2.032 arquivos: o mesmo acerto de valor do Opus, menos
+// CNPJ errado, metade do tempo e menos da metade do custo). O Opus fica de reserva quando o Sonnet falha.
+export const MODELO = 'claude-sonnet-5-5';
+export const RESERVA = 'claude-opus-5-5';
 
 // A API aceita no máximo 16 campos com union (type: [t, 'null']) por esquema. Texto ausente vem como "" (vazio); só os
 // números aceitam null, porque zero seria um valor. O teste conta e falha acima de 16.
@@ -118,8 +121,37 @@ export async function lerComIa(cliente: Anthropic, e: Entrada, hoje = new Date()
 
 // A mesma leitura, com o uso de tokens da chamada (o teste em escala, lote.ts, mede o custo por arquivo).
 // O modelo só muda no teste em escala (LOTE_MODELO, para comparar com outro modelo); o leitor usa sempre o MODELO. A
-// troca de modelo do servidor quando o principal está sobrecarregado (fallbacks) fica só no MODELO.
+// troca de modelo do servidor quando o principal recusa (fallbacks) fica só no MODELO. Se a leitura com o MODELO
+// falha (servidor sobrecarregado, fora do ar, recusa, resposta incompleta ou fora do formato), tenta uma vez com a
+// RESERVA; erro de pedido (crédito, chave, arquivo recusado) não muda de modelo, porque falharia igual.
 export async function lerComIaDetalhe(cliente: Anthropic, e: Entrada, hoje = new Date(), modelo = MODELO):
+  Promise<{ leitura: Leitura; modelo: string; uso: Anthropic.Beta.Messages.BetaUsage }> {
+  if (modelo !== MODELO) return lerUmaVez(cliente, e, hoje, modelo);
+  try {
+    return await lerUmaVez(cliente, e, hoje, modelo, PRINCIPAL_PEDIDO);
+  } catch (err) {
+    if (!vaiParaReserva(err)) throw err;
+    return lerUmaVez(cliente, e, hoje, RESERVA, RESERVA_PEDIDO);
+  }
+}
+
+// Tempo de cada pedido: o pior caso (principal com 1 nova tentativa + reserva sem nova tentativa = 3 x 90 s = 270 s)
+// cabe nos 300 s do Cloud Run (publicar-dev.sh).
+const PRINCIPAL_PEDIDO = { timeout: 90_000, maxRetries: 1 };
+const RESERVA_PEDIDO = { timeout: 90_000, maxRetries: 0 };
+
+// Falha da própria leitura (recusa, resposta incompleta ou fora do formato), que outro modelo pode resolver.
+export class ErroLeitura extends Error {}
+
+// Vai para a reserva só o que outro modelo pode resolver: o servidor (429, 5xx, sem resposta, tempo esgotado) e a
+// própria leitura (ErroLeitura). Erro 4xx do pedido e erro do nosso código (TypeError etc.) sobem sem trocar de modelo.
+export function vaiParaReserva(err: unknown): boolean {
+  if (err instanceof Anthropic.APIError) return err.status === undefined || err.status === 429 || err.status >= 500;
+  return err instanceof ErroLeitura;
+}
+
+async function lerUmaVez(cliente: Anthropic, e: Entrada, hoje: Date, modelo: string,
+  pedido?: { timeout: number; maxRetries: number }):
   Promise<{ leitura: Leitura; modelo: string; uso: Anthropic.Beta.Messages.BetaUsage }> {
   const r = await cliente.beta.messages.create({
     model: modelo,
@@ -128,11 +160,13 @@ export async function lerComIaDetalhe(cliente: Anthropic, e: Entrada, hoje = new
     system: SISTEMA,
     output_config: { effort: 'medium', format: { type: 'json_schema', schema: ESQUEMA } },
     messages: [{ role: 'user', content: [bloco(e), { type: 'text', text: 'Leia este documento.' }] }],
-  });
-  if (r.stop_reason === 'refusal') throw new Error('A IA recusou ler o documento');
-  if (r.stop_reason === 'max_tokens') throw new Error('A leitura da IA ficou incompleta');
+  }, pedido);
+  if (r.stop_reason === 'refusal') throw new ErroLeitura('A IA recusou ler o documento');
+  if (r.stop_reason === 'max_tokens') throw new ErroLeitura('A leitura da IA ficou incompleta');
   const texto = r.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
-  return { leitura: converter(JSON.parse(texto), r.model, hoje), modelo: r.model, uso: r.usage };
+  let j: Record<string, any>;
+  try { j = JSON.parse(texto); } catch { throw new ErroLeitura('A resposta da IA veio fora do formato'); }
+  return { leitura: converter(j, r.model, hoje), modelo: r.model, uso: r.usage };
 }
 
 // Da resposta da IA para a Leitura, normalizando e conferindo o que dá para conferir.
