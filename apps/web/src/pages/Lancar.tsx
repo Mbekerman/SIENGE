@@ -214,7 +214,8 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   const nossos = new Set((o?.empresas ?? []).map(e => docSo(e.documento ?? '')).filter(Boolean));
   const tomFora = tomadores.filter(d => (emp ? d !== docSo(emp.documento ?? '') : !nossos.has(d)));
   const falta: string[] = [];
-  if (tomFora.length && tomExc.trim().length < 5) falta.push('a justificativa do tomador');
+  const semJustTom = tomFora.length > 0 && tomExc.trim().length < 12;
+  if (semJustTom) falta.push('a justificativa do tomador (pelo menos 12 caracteres)');
   if (comRet && !semRet) falta.push('confirmar que a nota não tem retenção (nota com retenção ainda não se lança)');
   if (!empresa) falta.push('a empresa');
   if (!forn) falta.push('o fornecedor');
@@ -255,7 +256,7 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
       {enviar.error ? <span className="lt-erro"><Ic n="warn" s={18} />{mensagemErro(enviar.error)}</span>
         : tentou && falta.length ? <span className="lt-erro"><Ic n="warn" s={18} />Falta {juntar(falta)}.</span> : <span className="esp" />}
       <button className="btn t" onClick={fechar}>Cancelar</button>
-      <button className="btn p" onClick={lancar} disabled={enviar.isPending}>{enviar.isPending ? 'Lançando…' : 'Lançar'}</button>
+      <button className="btn p" onClick={lancar} disabled={enviar.isPending || semJustTom} title={semJustTom ? 'Escreva a justificativa do tomador (pelo menos 12 caracteres)' : undefined}>{enviar.isPending ? 'Lançando…' : 'Lançar'}</button>
     </>}>
       {op.isLoading ? <Carregando /> : op.error ? <Alerta c="cr" t={mensagemErro(op.error)} /> : !o ? <Alerta c="at" t="Seu papel só permite consulta: você não lança títulos." /> : <>
         <p className="sec lt-intro">A nota vira um título que vai para a aprovação. Aprovado, ele segue sozinho para o Sienge com a forma de pagamento de cada parcela.</p>
@@ -269,8 +270,9 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
         {tomFora.length > 0 && (
           <div className="lt-sec lt-exc">
             <span className="nt cr"><b>O tomador da nota ({tomFora.map(documento).join(', ')}) {emp ? `não é a empresa do título (${emp.nome})` : 'não é nenhuma empresa em que você lança'}.</b> Só lança com a justificativa, que todos os aprovadores veem até o pagamento.</span>
-            <textarea className={`lt-in ${tentou && tomExc.trim().length < 5 ? 'err' : ''}`} rows={2} maxLength={500} style={{ height: 'auto', padding: '8px 12px' }}
+            <textarea className={`lt-in ${tentou && semJustTom ? 'err' : ''}`} rows={2} maxLength={500} style={{ height: 'auto', padding: '8px 12px' }}
               placeholder="Por que lançar esta nota nesta empresa?" aria-label="Justificativa do tomador" value={tomExc} onChange={e => setTomExc(e.target.value)} />
+            {semJustTom && <span className="sec peq">Pelo menos 12 caracteres ({tomExc.trim().length} de 12). O botão Lançar fica desligado até lá.</span>}
           </div>
         )}
         {refeitas && <span className="nt inf">As parcelas foram preenchidas de novo com os arquivos novos; o resto da tela ficou como estava.</span>}
