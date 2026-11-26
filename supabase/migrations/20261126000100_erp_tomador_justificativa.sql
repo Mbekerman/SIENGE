@@ -73,9 +73,12 @@ end $$;
 -- O motivo do tomador entra antes dos das parcelas (invoker, como antes)
 create or replace function erp.recebedor_divergente(p_titulo uuid) returns text[] language sql stable as $$
   select coalesce(array_agg(m order by n, o), '{}') from (
+    -- CPF de pessoa física sai mascarado no texto (revisão de segurança do #147): quem aprova vê o anexo, se precisar
     select 0 as n, 0 as o, format('Tomador da nota (%s) não é a empresa do título: %s',
-                                  coalesce(erp.tomador_divergente(d.id), 'lido no anexo'), d.tomador_excecao) as m
+                                  coalesce(case when length(x.doc) = 11 then '***.' || substr(x.doc, 4, 3) || '.' || substr(x.doc, 7, 3) || '-**'
+                                                else x.doc end, 'lido no anexo'), d.tomador_excecao) as m
       from erp.titulos t join erp.documentos_fiscais d on d.id = t.documento_id
+      cross join lateral (select erp.tomador_divergente(d.id) as doc) x
      where t.id = p_titulo and t.situacao not in ('quitado', 'cancelado') and d.tomador_excecao is not null
     union all
     select g.numero as n, x.o, x.m

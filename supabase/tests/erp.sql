@@ -8222,6 +8222,12 @@ select pg_temp.ok((select erp.recebedor_divergente(:'tan_t1') = array['Tomador d
                   and exists (select 1 from api.recebedores_divergentes() r where r.id = :'tan_t1')
                   and (select (api.titulo(:'tan_t1')->'recebedor_divergente'->>0) like 'Tomador da nota%'),
   'tomador: com justificativa lança, e o motivo aparece no alerta e no selo até o pagamento');
+select (api.registrar_anexo('tom3.pdf', 'application/pdf', 10, repeat('3', 64))->>'id') as anx_t3 \gset
+select api.gravar_leitura(:'anx_t3', '{"origem": "ia", "tomador": {"documento": "123.456.789-09"}}');
+select api.lancar_titulo((select j || jsonb_build_object('numero', 'T-894', 'tomador_excecao', 'Reembolso a funcionário',
+                                                          'anexos', jsonb_build_array(:'anx_t3')) from nota_a2_anx)) as tan_t3 \gset
+select pg_temp.ok(erp.recebedor_divergente(:'tan_t3') = array['Tomador da nota (***.456.789-**) não é a empresa do título: Reembolso a funcionário'],
+  'tomador: CPF de pessoa física sai mascarado no motivo');
 select pg_temp.falha(format($$update erp.documentos_fiscais set tomador_excecao = 'outra justificativa' where id = (select documento_id from erp.titulos where id = %L)$$, :'tan_t1'),
   'tomador: a justificativa não muda depois');
 select (api.registrar_anexo('tom2.pdf', 'application/pdf', 10, repeat('2', 64))->>'id') as anx_t2 \gset
