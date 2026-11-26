@@ -530,3 +530,25 @@ test('leitor: Sonnet primeiro e Opus de reserva só quando outro modelo pode res
   assert.equal(vaiParaReserva(new Anthropic.APIConnectionError({ message: 'sem rede' })), true);
   assert.equal(vaiParaReserva(new Anthropic.AuthenticationError(401, undefined, 'chave', new Headers())), false);
 });
+
+test('rotas: ?etapas=1 responde em linhas JSON (prévia, quando há, e o resultado); recusa antes da primeira linha sai igual', async () => {
+  const { deps } = falsos();
+  deps.textoPdf = async () => null;
+  const h = tratador({ deps, limite: new Limite(30, 60_000), origens: new Set(), quem: async (j) => (j === 'ok' ? { id: 'u1' } : null) });
+  const srv = createServer((req, res) => h(req, res));
+  await new Promise<void>((ok) => srv.listen(0, ok));
+  const porta = (srv.address() as { port: number }).port;
+  const ir = (auth: string) => new Promise<{ status: number; tipo: string; corpo: string }>((ok) => {
+    const r = request({ port: porta, method: 'POST', path: '/anexos?etapas=1', agent: false, headers: { authorization: auth, 'content-length': '8' } }, (res) => {
+      let corpo = ''; res.on('data', (c) => { corpo += c; }); res.on('end', () => ok({ status: res.statusCode ?? 0, tipo: String(res.headers['content-type']), corpo }));
+    });
+    r.end(Buffer.from('%PDF-1.7'));
+  });
+  const a = await ir('Bearer ok');
+  assert.equal(a.status, 200); assert.match(a.tipo, /x-ndjson/);
+  const linhas = a.corpo.trim().split('\n').map((x) => JSON.parse(x));
+  assert.equal(linhas.length, 1); assert.equal(linhas[0].resultado.leitura.valor, 10);
+  const b = await ir('Bearer ruim');
+  assert.equal(b.status, 401); assert.deepEqual(JSON.parse(b.corpo), { erro: 'Entre de novo' });
+  srv.close();
+});

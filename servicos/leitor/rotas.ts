@@ -63,7 +63,26 @@ export function tratador(o: Opcoes) {
         const dados = await lerCorpo(req);
         let nome = 'arquivo';
         try { nome = decodeURIComponent(String(req.headers['x-nome-arquivo'] ?? 'arquivo')); } catch { /* fica arquivo */ }
-        return json(res, 200, await subir(o.deps, jwt, nome, dados));
+        if (url.searchParams.get('etapas') !== '1') return json(res, 200, await subir(o.deps, jwt, nome, dados));
+        // Em duas etapas (?etapas=1): uma linha JSON com a prévia do boleto, quando há, e outra com o resultado. Recusa
+        // antes da primeira linha sai como sempre (status e { erro }); depois dela, como a linha { erro }.
+        let aberto = false;
+        const linha = (x: unknown) => {
+          if (!aberto) {
+            aberto = true;
+            res.writeHead(200, { 'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+          }
+          res.write(JSON.stringify(x) + '\n');
+        };
+        try {
+          linha({ resultado: await subir(o.deps, jwt, nome, dados, (p) => linha({ previa: p })) });
+        } catch (e) {
+          if (!aberto) throw e;
+          if (!(e instanceof Recusa)) o.deps.log('erro', { erro: String(e) });
+          linha({ erro: e instanceof Recusa ? e.message : 'Erro no leitor' });
+        }
+        res.end();
+        return;
       }
       if (ms) {
         // a senha do PDF que os CNPJs não abriram: cada tentativa conta no limite (abrir leva à IA)
