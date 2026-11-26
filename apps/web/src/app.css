@@ -332,6 +332,11 @@ input.lt-pv{color:#1f1f1f}
 .lt-op{position:absolute;left:0;right:0;top:44px;z-index:5;background:#fff;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.18);max-height:280px;overflow:auto;padding:4px 0}
 .lt-o{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;border:0;background:none;text-align:left;padding:8px 12px;font:inherit;cursor:pointer}
 button.lt-o:hover{background:#f1f4f9}
+.lt-o.on{background:#f1f4f9}.lt-o.sel>span:first-child{font-weight:500;color:#0b57d0}
+.lt-esc .lt-in{padding-right:28px;cursor:pointer}.lt-esc .lt-in:focus{cursor:text}
+.lt-fixo{display:flex;align-items:center;background:#f1f4f9;cursor:default}
+.lt-esc-seta{position:absolute;right:10px;top:50%;transform:translateY(-50%);pointer-events:none;color:#444746;font-size:12px}
+.lt-esc .lt-op{top:44px}
 @container app (max-width:900px){
   .lt-grid{grid-template-columns:1fr}
   .lt-kv{grid-template-columns:1fr !important}

@@ -8162,6 +8162,11 @@ select pg_temp.ok((select not p.prosecdef and not exists (select 1 from aclexplo
 select pg_temp.ok((select j->'pagamento'->>'forma' = 'pix' and j->'pagamento'->>'pix_chave' = 'agencia@example.com'
                      from api.identificar_nota(jsonb_build_object('emitente', :'doc_forn')) j),
   'identificar: a última chave PIX usada com o fornecedor vem pré-selecionada');
+select pg_temp.ok(exists (select 1 from api.fornecedor_chaves_pix('10000000-0000-0000-0000-000000000007') k
+                           where k.tipo = 'email' and k.chave = 'agencia@example.com' and k.origem = 'usada')
+                  and (select not p.prosecdef and not exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0)
+                         from pg_proc p where p.oid = 'api.fornecedor_chaves_pix(uuid)'::regprocedure),
+  'chaves PIX do fornecedor: a de e-mail usada antes aparece para escolher; invoker e sem EXECUTE para public');
 -- quem não vê a nota não vê o anexo dela nem a repetição; o anexo de outra pessoa não se liga
 select pg_temp.como(:'analista2');
 create temp table anexo_ids as select :'anx'::uuid as anx, :'tan'::uuid as tit, (select documento_id from erp.titulos where id = :'tan') as doc;
