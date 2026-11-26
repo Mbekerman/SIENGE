@@ -129,8 +129,9 @@ test('resposta da IA: nulos somem, valores zerados viram não informado, linha c
     observacoes: [] }, 'claude-opus-5-5');
   assert.equal(l.origem, 'ia'); assert.equal(l.tipo, 'fatura'); assert.equal(l.valor, undefined);
   assert.equal(l.emitente?.documento, '11222333000181'); assert.equal(l.tomador, undefined);
-  assert.equal(l.boletos?.length, 2); assert.equal(l.boletos?.[0].valida, true); assert.equal(l.boletos?.[1].valida, false);
-  assert.match(l.avisos!.join(), /dígito verificador errado/);
+  assert.equal(l.boletos?.length, 1, 'a linha errada nunca vai adiante'); assert.equal(l.boletos?.[0].valida, true);
+  assert.deepEqual(l.avisos, ['Uma linha do boleto não pôde ser lida com certeza e ficou em branco: preencha à mão.']);
+  assert.ok(!l.avisos!.join().includes('9'.repeat(47)), 'o aviso não repete os dígitos errados');
   assert.deepEqual(l.consumo, { instalacao: '12345', referencia: '2026-10', vencimento: '2026-11-20' });
   assert.equal(converter({ tipo: 'qualquer' }, 'm').tipo, 'outro');
 });

@@ -12,13 +12,22 @@ export function useDivergentes(): Map<string, string[]> {
   return new Map((q.data ?? []).map(d => [d.id, d.motivos]));
 }
 
+// o motivo do tomador (Moises, 26/11/2026: tomador fora da empresa do título, com a justificativa) vem no mesmo selo
+const doTomador = (m: string) => m.startsWith('Tomador da nota');
+
 export function SeloRecebedor({ motivos }: { motivos?: string[] }) {
-  return motivos?.length ? <span title={motivos.join('\n')}><Chip t="Recebedor não confere" c="cr" /></span> : null;
+  if (!motivos?.length) return null;
+  const rec = motivos.some(m => !doTomador(m)), tom = motivos.some(doTomador);
+  return <span title={motivos.join('\n')} style={{ display: 'inline-flex', gap: 4 }}>
+    {rec && <Chip t="Recebedor não confere" c="cr" />}{tom && <Chip t="Tomador diferente" c="cr" />}</span>;
 }
 
 export function AlertaRecebedor({ motivos }: { motivos?: string[] | null }) {
   if (!motivos?.length) return null;
-  return <Alerta c="cr" t={<><b>Quem recebe não é o fornecedor conferido.</b> Fica marcado até o pagamento.{motivos.map(m => <span key={m} style={{ display: 'block' }}>{m}</span>)}</>} />;
+  const rec = motivos.some(m => !doTomador(m)), tom = motivos.some(doTomador);
+  const titulo = rec && tom ? 'Quem recebe não é o fornecedor conferido, e o tomador da nota não é a empresa do título.'
+    : rec ? 'Quem recebe não é o fornecedor conferido.' : 'O tomador da nota não é a empresa do título.';
+  return <Alerta c="cr" t={<><b>{titulo}</b> Fica marcado até o pagamento.{motivos.map(m => <span key={m} style={{ display: 'block' }}>{m}</span>)}</>} />;
 }
 
 // O selo "credor novo" (S-140, Moises, 20/11/2026): o credor nunca teve outro título que foi ao Sienge ou foi pago. Quem

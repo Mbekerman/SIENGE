@@ -8209,6 +8209,26 @@ select pg_temp.falha(format($$update erp.anexos set documento_id = (select docum
 select api.lancar_titulo((select j || jsonb_build_object('anexos', jsonb_build_array(:'anx2')) from nota_a2_anx)) as tan2 \gset
 select pg_temp.ok((select a.documento_id = t.documento_id from erp.anexos a, erp.titulos t where a.id = :'anx2' and t.id = :'tan2'),
   'anexo: o próprio anexo solto entra no lançamento');
+-- tomador lido no anexo que não é a empresa do título: só lança com justificativa, que fica para quem aprova (26/11/2026)
+select (api.registrar_anexo('tom1.pdf', 'application/pdf', 10, repeat('1', 64))->>'id') as anx_t1 \gset
+select api.gravar_leitura(:'anx_t1', '{"origem": "ia", "tomador": {"documento": "11.444.777/0001-61"}}');
+select pg_temp.erro_igual(format($$select api.lancar_titulo(%L)$$, (select j || jsonb_build_object('numero', 'T-892', 'anexos', jsonb_build_array(:'anx_t1')) from nota_a2_anx)),
+  'O tomador da nota (11444777000161) não é a empresa do título: justifique para lançar', 'tomador: diferente da empresa do título, sem justificativa não lança');
+select pg_temp.erro_igual(format($$select api.lancar_titulo(%L)$$, (select j || jsonb_build_object('numero', 'T-892', 'tomador_excecao', '   ', 'anexos', jsonb_build_array(:'anx_t1')) from nota_a2_anx)),
+  'O tomador da nota (11444777000161) não é a empresa do título: justifique para lançar', 'tomador: justificativa em branco não vale');
+select api.lancar_titulo((select j || jsonb_build_object('numero', 'T-892', 'tomador_excecao', 'Nota emitida para a holding por engano; refaturamento pedido',
+                                                          'anexos', jsonb_build_array(:'anx_t1')) from nota_a2_anx)) as tan_t1 \gset
+select pg_temp.ok((select erp.recebedor_divergente(:'tan_t1') = array['Tomador da nota (11444777000161) não é a empresa do título: Nota emitida para a holding por engano; refaturamento pedido'])
+                  and exists (select 1 from api.recebedores_divergentes() r where r.id = :'tan_t1')
+                  and (select (api.titulo(:'tan_t1')->'recebedor_divergente'->>0) like 'Tomador da nota%'),
+  'tomador: com justificativa lança, e o motivo aparece no alerta e no selo até o pagamento');
+select pg_temp.falha(format($$update erp.documentos_fiscais set tomador_excecao = 'outra justificativa' where id = (select documento_id from erp.titulos where id = %L)$$, :'tan_t1'),
+  'tomador: a justificativa não muda depois');
+select (api.registrar_anexo('tom2.pdf', 'application/pdf', 10, repeat('2', 64))->>'id') as anx_t2 \gset
+select api.gravar_leitura(:'anx_t2', jsonb_build_object('origem', 'ia', 'tomador', jsonb_build_object('documento', :'doc_spe')));
+select api.lancar_titulo((select j || jsonb_build_object('numero', 'T-893', 'anexos', jsonb_build_array(:'anx_t2')) from nota_a2_anx)) as tan_t2 \gset
+select pg_temp.ok(erp.recebedor_divergente(:'tan_t2') = '{}' and not exists (select 1 from api.recebedores_divergentes() r where r.id = :'tan_t2'),
+  'tomador: a própria empresa do título lança sem justificativa e sem alerta');
 -- o rastro de um título não traz o anexo de outra nota; o aviso de arquivo repetido ignora nota cancelada
 select pg_temp.como(:'diretor');
 select pg_temp.ok((select jsonb_array_length(r->'anexos') = 1 and r->'anexos'->0->>'id' = :'anx' from api.titulo_rastro(:'tan') r)

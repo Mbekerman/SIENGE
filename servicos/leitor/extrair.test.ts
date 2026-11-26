@@ -4,6 +4,7 @@ import { dvChave, extrair, temTexto } from './extrair.ts';
 import { type Deps, Recusa, chaveDeNota, juntar, subir } from './fluxo.ts';
 import { crc16Pix } from './ia.ts';
 import { lerArquivo } from './lote.ts';
+import { avisoLinhaEmBranco } from './leitura.ts';
 
 // Dados inventados. A chave da NF-e de teste do leitor.test.ts (CNPJ do emitente 11.222.333/0001-81).
 const CHAVE = '35261111222333000181550010000012341000012345';
@@ -54,11 +55,13 @@ test('texto: dígito errado, número maior e código de barras do boleto não vi
 });
 
 test('juntar: linha do texto entra no lugar da lida errada; chave e PIX só quando únicos', () => {
-  const l = juntar({ origem: 'ia', boletos: [{ linha: '1'.repeat(47), valida: false }] }, extrair(`${DANFE} ${impressa(LINHA)} ${PIX}`));
+  const l = juntar({ origem: 'ia', avisos: [avisoLinhaEmBranco(1)] }, extrair(`${DANFE} ${impressa(LINHA)} ${PIX}`));
   assert.deepEqual(l.boletos!.map((b) => [b.linha, b.valida]), [[LINHA, true]]);
   assert.equal(l.chave_acesso, CHAVE);
   assert.equal(l.pix?.copia_e_cola, PIX);
-  assert.match(l.avisos!.join(), /Linha do boleto conferida pelo texto/);
+  assert.equal(l.avisos, undefined, 'o texto corrigiu a linha: sem aviso');
+  const duas = juntar({ origem: 'ia', avisos: [avisoLinhaEmBranco(2)] }, extrair(`${impressa(LINHA)}`));
+  assert.deepEqual(duas.avisos, [avisoLinhaEmBranco(2)], 'corrigiu uma de duas: o aviso fica');
   const m = juntar({ origem: 'ia', chave_acesso: 'outra' }, extrair(`${DANFE} chave ${CHAVE_NFSE}`));
   assert.equal(m.chave_acesso, 'outra', 'a da leitura fica');
   assert.equal(m.boletos, undefined);
