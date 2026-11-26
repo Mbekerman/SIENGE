@@ -6,7 +6,7 @@ import { conferirLinha } from './boleto.ts';
 import { type Bucket, type Deps, Recusa, abrirComSenha, baixar, pedidoIdentificar, subir } from './fluxo.ts';
 import Anthropic from '@anthropic-ai/sdk';
 import { chaveValida, cnpjValido, converter, copiaColaValido, cpfValido, ESQUEMA, lerComIaDetalhe, mascara, MODELO, RESERVA,
-  vaiParaReserva } from './ia.ts';
+  vaiParaReserva, ErroLeitura } from './ia.ts';
 import { Limite } from './limite.ts';
 import { ENTRADA, SAIDA, lerArquivo, nomeSaida, pendentes } from './lote.ts';
 import { lerXml } from './xml.ts';
@@ -498,11 +498,14 @@ test('leitor: Sonnet primeiro e Opus de reserva só quando outro modelo pode res
   assert.equal(MODELO, 'claude-sonnet-5-5'); assert.equal(RESERVA, 'claude-opus-5-5');
   const ok = (model: string) => ({ model, stop_reason: 'end_turn', usage: {}, content: [{ type: 'text', text: '{"tipo":"boleto"}' }] });
   const falso = (falhas: unknown[]) => {
-    const pedidos: string[] = [];
-    const cliente = { beta: { messages: { create: async (b: { model: string }) => {
-      pedidos.push(b.model); const f = falhas.shift(); if (f) throw f; return ok(b.model);
+    const pedidos: string[] = []; const opcoes: unknown[] = [];
+    const cliente = { beta: { messages: { create: async (b: { model: string }, o?: unknown) => {
+      pedidos.push(b.model); opcoes.push(o); const f = falhas.shift();
+      if (f === 'recusa') return { ...ok(b.model), stop_reason: 'refusal', content: [] };
+      if (f === 'lixo') return { ...ok(b.model), content: [{ type: 'text', text: 'não é json' }] };
+      if (f) throw f; return ok(b.model);
     } } } } as unknown as Anthropic;
-    return { cliente, pedidos };
+    return { cliente, pedidos, opcoes };
   };
   const e = { tipo: 'texto' as const, dados: 'x' };
   let c = falso([]);
@@ -511,8 +514,16 @@ test('leitor: Sonnet primeiro e Opus de reserva só quando outro modelo pode res
   assert.equal((await lerComIaDetalhe(c.cliente, e)).modelo, RESERVA); assert.deepEqual(c.pedidos, [MODELO, RESERVA]);
   c = falso([new Anthropic.BadRequestError(400, undefined, 'sem crédito', new Headers())]);
   await assert.rejects(lerComIaDetalhe(c.cliente, e)); assert.deepEqual(c.pedidos, [MODELO]);
-  c = falso([new Error('x'), new Error('y')]);
-  await assert.rejects(lerComIaDetalhe(c.cliente, e), /y/); assert.deepEqual(c.pedidos, [MODELO, RESERVA]);
+  // O pior tempo cabe nos 300 s do Cloud Run: principal com 1 nova tentativa, reserva sem nenhuma.
+  assert.deepEqual(c.opcoes, [{ timeout: 90_000, maxRetries: 1 }]);
+  c = falso(['recusa']);
+  assert.equal((await lerComIaDetalhe(c.cliente, e)).modelo, RESERVA); assert.deepEqual(c.pedidos, [MODELO, RESERVA]);
+  assert.deepEqual(c.opcoes, [{ timeout: 90_000, maxRetries: 1 }, { timeout: 90_000, maxRetries: 0 }]);
+  c = falso(['lixo', 'lixo']);
+  await assert.rejects(lerComIaDetalhe(c.cliente, e), ErroLeitura); assert.deepEqual(c.pedidos, [MODELO, RESERVA]);
+  // Erro do nosso código não troca de modelo.
+  c = falso([new TypeError('bug')]);
+  await assert.rejects(lerComIaDetalhe(c.cliente, e), TypeError); assert.deepEqual(c.pedidos, [MODELO]);
   c = falso([new Error('x')]);
   await assert.rejects(lerComIaDetalhe(c.cliente, e, new Date(), 'claude-haiku-5-5'), /x/); assert.deepEqual(c.pedidos, ['claude-haiku-5-5']);
   assert.equal(vaiParaReserva(new Anthropic.RateLimitError(429, undefined, 'limite', new Headers())), true);
