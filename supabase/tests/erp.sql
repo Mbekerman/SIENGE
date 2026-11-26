@@ -8231,6 +8231,8 @@ select pg_temp.erro_igual(format($$select api.lancar_titulo(%L)$$, (select j || 
   'O tomador da nota (11444777000161) não é a empresa do título: justifique para lançar', 'tomador: diferente da empresa do título, sem justificativa não lança');
 select pg_temp.erro_igual(format($$select api.lancar_titulo(%L)$$, (select j || jsonb_build_object('numero', 'T-892', 'tomador_excecao', '   ', 'anexos', jsonb_build_array(:'anx_t1')) from nota_a2_anx)),
   'O tomador da nota (11444777000161) não é a empresa do título: justifique para lançar', 'tomador: justificativa em branco não vale');
+select pg_temp.falha(format($$select api.lancar_titulo(%L)$$, (select j || jsonb_build_object('numero', 'T-892', 'tomador_excecao', 'curta demai', 'anexos', jsonb_build_array(:'anx_t1')) from nota_a2_anx)),
+  'tomador: justificativa com menos de 12 caracteres não vale');
 select api.lancar_titulo((select j || jsonb_build_object('numero', 'T-892', 'tomador_excecao', 'Nota emitida para a holding por engano; refaturamento pedido',
                                                           'anexos', jsonb_build_array(:'anx_t1')) from nota_a2_anx)) as tan_t1 \gset
 select pg_temp.ok((select erp.recebedor_divergente(:'tan_t1') = array['Tomador da nota (11444777000161) não é a empresa do título: Nota emitida para a holding por engano; refaturamento pedido'])
