@@ -170,14 +170,17 @@ async function lerPdf(d: Deps, jwt: string, envio: Envio, pdf: Buffer): Promise<
 // banco registrou (o fornecedor sugerido) e a empresa que paga (o CNPJ do texto que é de uma das empresas da pessoa).
 // Não é gravada: a leitura gravada é a completa, que a tela usa para completar o que a pessoa não mexeu. Qualquer falha
 // aqui só tira a prévia; a leitura completa vem do mesmo jeito.
+const MAX_PREVIA = 10;
 async function mandarPrevia(d: Deps, jwt: string, envio: Envio, ext: Extraido): Promise<void> {
   if (!envio.previa || !ext.boletos.length) return;
   try {
+    // no máximo 10 linhas ao mesmo tempo no Asaas (revisão de segurança do #145); as outras ficam para a leitura completa
+    const linhas = ext.boletos.slice(0, MAX_PREVIA);
     const [conf, op] = await Promise.all([
-      Promise.all(ext.boletos.map((b) => (d.asaas ? conferirAsaas(d, envio, b.linha).catch(() => undefined) : undefined))),
+      Promise.all(linhas.map((b) => (d.asaas ? conferirAsaas(d, envio, b.linha).catch(() => undefined) : undefined))),
       d.banco.rpc<{ empresas?: { documento?: string }[] } | null>(jwt, 'lancamento_opcoes', {}).catch(() => null),
     ]);
-    const boletos = ext.boletos.map((b, i) => (conf[i] ? { ...b, conferido_asaas: conf[i] } : { ...b }));
+    const boletos = linhas.map((b, i) => (conf[i] ? { ...b, conferido_asaas: conf[i] } : { ...b }));
     const nossos = new Set((op?.empresas ?? []).map((e) => soDigitos(e.documento)).filter(Boolean));
     const tomador = ext.documentos.find((x) => nossos.has(x));
     const benef = conf.find((c) => c?.ok && c.beneficiario_documento && !nossos.has(c.beneficiario_documento));
@@ -187,7 +190,7 @@ async function mandarPrevia(d: Deps, jwt: string, envio: Envio, ext: Extraido): 
       origem: 'texto',
       tomador: tomador ? { documento: tomador } : undefined,
       emitente: benef ? { documento: benef.beneficiario_documento, nome: benef.beneficiario } : undefined,
-      valor: valores.every((v) => v && v > 0) ? Math.round(valores.reduce<number>((a, v) => a + v!, 0) * 100) / 100 : undefined,
+      valor: linhas.length === ext.boletos.length && valores.every((v) => v && v > 0) ? Math.round(valores.reduce<number>((a, v) => a + v!, 0) * 100) / 100 : undefined,
       boletos,
       chave_acesso: chaves.length === 1 ? chaves[0] : undefined,
       pix: ext.pix.length === 1 ? { copia_e_cola: ext.pix[0] } : undefined,
