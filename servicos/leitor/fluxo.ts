@@ -49,6 +49,7 @@ interface Envio {
   previa?: (r: Resultado) => void;
   asaas: Map<string, Promise<NonNullable<Boleto['conferido_asaas']>>>;
   fim: boolean;           // a leitura completa ficou pronta: prévia atrasada não sai mais
+  inicio: number;         // quando a leitura começou (Date.now()), para o registro dos tempos
 }
 
 export async function subir(d: Deps, jwt: string, nomeOriginal: string, dados: Buffer,
@@ -71,7 +72,7 @@ export async function subir(d: Deps, jwt: string, nomeOriginal: string, dados: B
 }
 
 const novoEnvio = (anexo: Resultado['anexo'], repetido: unknown[], previa?: (r: Resultado) => void): Envio =>
-  ({ anexo, repetido, previa, asaas: new Map(), fim: false });
+  ({ anexo, repetido, previa, asaas: new Map(), fim: false, inicio: Date.now() });
 
 function conferirAsaas(d: Deps, envio: Envio, linha: string) {
   let p = envio.asaas.get(linha);
@@ -89,6 +90,8 @@ async function concluir(d: Deps, jwt: string, envio: Envio, lendo: () => Promise
     pedeSenha = e instanceof SemSenha;
     if (!pedeSenha) d.log('leitura falhou', { anexo: anexo.id, erro: String(e) });
   } finally { envio.fim = true; }
+  // o tempo de cada leitura no registro do Cloud Run (só o id do anexo e os tempos, nada do conteúdo)
+  d.log('leitura pronta', { anexo: anexo.id, ms: Date.now() - envio.inicio, origem: leitura?.origem ?? null });
 
   if (leitura) {
     if (d.asaas) for (const b of leitura.boletos ?? []) {
@@ -196,9 +199,10 @@ async function mandarPrevia(d: Deps, jwt: string, envio: Envio, ext: Extraido): 
       pix: ext.pix.length === 1 ? { copia_e_cola: ext.pix[0] } : undefined,
       avisos: ['Prévia pelo texto do PDF e pelo banco do boleto; o resto da leitura chega em seguida'],
     });
-    if (envio.fim) return;
+    if (envio.fim) { d.log('prévia descartada', { anexo: envio.anexo.id, ms: Date.now() - envio.inicio }); return; }
     const identificacao = await d.banco.rpc(jwt, 'identificar_nota', { p: pedidoIdentificar(leitura) }).catch(() => null);
-    if (envio.fim) return;
+    if (envio.fim) { d.log('prévia descartada', { anexo: envio.anexo.id, ms: Date.now() - envio.inicio }); return; }
+    d.log('prévia enviada', { anexo: envio.anexo.id, ms: Date.now() - envio.inicio });
     envio.previa({ anexo: envio.anexo, repetido_em: envio.repetido, leitura, identificacao, previa: true });
   } catch (e) {
     d.log('prévia falhou', { erro: String(e).slice(0, 200) });
