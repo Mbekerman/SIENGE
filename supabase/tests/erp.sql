@@ -8162,6 +8162,21 @@ select pg_temp.ok((select not p.prosecdef and not exists (select 1 from aclexplo
 select pg_temp.ok((select j->'pagamento'->>'forma' = 'pix' and j->'pagamento'->>'pix_chave' = 'agencia@example.com'
                      from api.identificar_nota(jsonb_build_object('emitente', :'doc_forn')) j),
   'identificar: a última chave PIX usada com o fornecedor vem pré-selecionada');
+select pg_temp.ok(not exists (select 1 from api.fornecedor_chaves_pix('10000000-0000-0000-0000-000000000007') k where k.chave = 'agencia@example.com'),
+  'chaves PIX do fornecedor: a de um título que ainda não foi ao Sienge não aparece como usada');
+savepoint sp_chaves;
+select pg_temp.sis(); insert into erp.sienge_envios (titulo_id, situacao, sienge_id) values (:'tan', 'enviado', 999881); select pg_temp.volta();
+select pg_temp.ok(exists (select 1 from api.fornecedor_chaves_pix('10000000-0000-0000-0000-000000000007') k
+                           where k.tipo = 'email' and k.chave = 'agencia@example.com' and k.origem = 'usada')
+                  and (select not p.prosecdef and not exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0)
+                         from pg_proc p where p.oid = 'api.fornecedor_chaves_pix(uuid)'::regprocedure),
+  'chaves PIX do fornecedor: a de e-mail usada antes aparece para escolher; invoker e sem EXECUTE para public');
+select pg_temp.sis();
+set local role erp_situacao; update erp.titulos set situacao = 'cancelado' where id = :'tan'; reset role;
+select pg_temp.volta();
+select pg_temp.ok(not exists (select 1 from api.fornecedor_chaves_pix('10000000-0000-0000-0000-000000000007') k where k.chave = 'agencia@example.com'),
+  'chaves PIX do fornecedor: a de título cancelado não aparece');
+rollback to savepoint sp_chaves;
 -- quem não vê a nota não vê o anexo dela nem a repetição; o anexo de outra pessoa não se liga
 select pg_temp.como(:'analista2');
 create temp table anexo_ids as select :'anx'::uuid as anx, :'tan'::uuid as tit, (select documento_id from erp.titulos where id = :'tan') as doc;
@@ -8686,6 +8701,11 @@ select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pa
 select pg_temp.ok((select x->'pagamento'->>'modo' = 'cobranca' from api.conta(:'kctr') x)
                   and (select aprovacao_versao > :kver from erp.compromissos where id = :'kctr'),
   'como paga: "vem com cada cobrança" também é forma cadastrada e pede aprovação');
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento',
+  jsonb_build_object('modo', 'pix', 'pix_tipo', 'email', 'pix_chave', 'pendente@example.com')));
+select pg_temp.ok(not exists (select 1 from api.fornecedor_chaves_pix((select pessoa_id from erp.compromissos where id = :'kctr')) k
+                               where k.chave = 'pendente@example.com'),
+  'chaves PIX do fornecedor: a do cadastro da conta esperando aprovação não aparece');
 select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento', null));
 select pg_temp.ok((select x->'pagamento' = 'null'::jsonb from api.conta(:'kctr') x), 'como paga: mandar a forma nula tira a forma');
 select pg_temp.como(:'leitor');

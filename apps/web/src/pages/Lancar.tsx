@@ -11,6 +11,7 @@ import { mensagemErro, rpc, supabase } from '../lib/supabase';
 import { abrirComSenha, acordarLeitor, leitorLigado, subirArquivo, TIPOS_ACEITOS } from '../lib/leitor';
 import { casarBoletos, conferirValores, juntarLeituras } from '../lib/conjunto';
 import { pagDoBanco, textoPag } from './ComoPaga';
+import { Escolha } from '../components/Escolha';
 import type { ContaCadastro, Contrato, FornecedorBusca, Identificacao, Leitura, NaturezaLancavel, OpcoesLancamento, PrevisaoParaNota, ResultadoLeitor } from '../lib/tipos';
 
 type Forma = 'pix' | 'boleto' | 'ted' | 'cadastro';
@@ -191,6 +192,9 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   }
 
   const muda = (k: number, m: Partial<Linha>) => setLinhas(ls => ls.map(l => (l.k === k ? { ...l, ...m } : l)));
+  // as chaves de e-mail e telefone já conhecidas do fornecedor (cadastro e usadas antes), para escolher na parcela
+  const cq2 = useQuery({ queryKey: ['fornecedor_chaves_pix', forn?.id], queryFn: () => rpc<ChaveConhecida[]>('fornecedor_chaves_pix', { p_fornecedor: forn!.id }), enabled: Boolean(forn) });
+  const chavesForn = cq2.data ?? [];
   const mudaP = (k: number, m: Partial<Parcela>) => setParcelas(ps => ps.map(p => (p.k === k ? { ...p, ...m } : p)));
 
   // a conta recorrente da nota (as previsões marcadas de um contrato só): com PIX fixo ou TED aprovados no cadastro, a
@@ -353,10 +357,8 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
               {p.forma === 'cadastro' && pagCad ? <span className="nt ok">Forma do cadastro da conta: {textoPag(pagCad)}</span>
               : p.forma === 'ted' ? <TedParcela t={p.ted} docForn={forn?.documento ?? null} tentou={tentou} mudar={m => mudaP(p.k, { ted: { ...p.ted, ...m } })} />
               : p.forma === 'pix' ? <>
-                <div className="lt-lin">
-                  <select className="lt-in lt-tipo" value={p.pix_tipo} onChange={e => mudaP(p.k, { pix_tipo: e.target.value as PixTipo })}>{PIX.map(([k, r]) => <option key={k} value={k}>{r}</option>)}</select>
-                  <input className={`lt-in ${tentou && !p.pix_chave.trim() ? 'err' : ''}`} placeholder="Chave PIX" value={p.pix_chave} onChange={e => mudaP(p.k, { pix_chave: e.target.value })} />
-                </div>
+                <ChavePix tipo={p.pix_tipo} valor={p.pix_chave} forn={forn} conhecidas={chavesForn} erro={tentou && !p.pix_chave.trim()}
+                  mudar={m => mudaP(p.k, { ...(m.tipo ? { pix_tipo: m.tipo } : {}), ...(m.chave !== undefined ? { pix_chave: m.chave } : {}) })} />
                 {p.pix_tipo === 'cpf_cnpj' && forn?.documento && p.pix_chave && chave('cpf_cnpj', p.pix_chave) !== forn.documento && (
                   <div className="lt-exc"><span className="nt at">A chave não é o documento do fornecedor. Só entra com a justificativa, que quem aprova vê.</span>
                     <input className="lt-in" placeholder="Por que pagar em outra chave?" value={p.excecao} onChange={e => mudaP(p.k, { excecao: e.target.value })} /></div>
@@ -400,6 +402,59 @@ export const divisoesDe = (o: OpcoesLancamento | null | undefined, centro: strin
 };
 export const juntar = (l: string[]) => (l.length < 2 ? l.join('') : `${l.slice(0, -1).join(', ')} e ${l[l.length - 1]}`);
 
+interface ChaveConhecida { tipo: PixTipo; chave: string; origem: 'cadastro' | 'usada' | 'conta' }
+const ORIGEM_CHAVE = { cadastro: 'do cadastro', usada: 'já usada com ele', conta: 'da conta recorrente' };
+
+/** A chave PIX da parcela (Moises, 26/11/2026): no CPF/CNPJ, a marca "no CNPJ do fornecedor" põe o documento dele; no
+ *  e-mail e no telefone, a lista das chaves conhecidas do fornecedor ou "Outro", que abre o campo para digitar uma nova
+ *  (fica só na parcela). */
+function ChavePix({ tipo, valor, forn, conhecidas, erro, mudar }: {
+  tipo: PixTipo; valor: string; forn: FornecedorBusca | null; conhecidas: ChaveConhecida[]; erro: boolean;
+  mudar: (m: { tipo?: PixTipo; chave?: string }) => void;
+}) {
+  const doc = forn?.documento ?? null;
+  const opcoes = useMemo(() => {
+    const vistos = new Set<string>();
+    return conhecidas.filter(c => c.tipo === tipo).filter(c => { const k = chave(tipo, c.chave); if (vistos.has(k)) return false; vistos.add(k); return true; });
+  }, [conhecidas, tipo]);
+  const escolhida = opcoes.find(c => valor && chave(tipo, c.chave) === chave(tipo, valor));
+  const [outro, setOutro] = useState(false);
+  const lista = (tipo === 'email' || tipo === 'telefone') && opcoes.length > 0;
+  const noDoc = tipo === 'cpf_cnpj' && Boolean(doc) && chave('cpf_cnpj', valor) === doc;
+  const trocarTipo = (t: PixTipo) => {
+    setOutro(false);
+    const primeira = conhecidas.find(c => c.tipo === t);
+    mudar({ tipo: t, chave: t === 'cpf_cnpj' ? doc ?? '' : primeira ? primeira.chave : '' });
+  };
+  const tipoSel = <select className="lt-in lt-tipo" aria-label="Tipo da chave" value={tipo} onChange={e => trocarTipo(e.target.value as PixTipo)}>{PIX.map(([k, r]) => <option key={k} value={k}>{r}</option>)}</select>;
+  if (tipo === 'cpf_cnpj' && doc) return <>
+    <div className="lt-lin">{tipoSel}
+      {noDoc ? <span className="lt-in lt-fixo">{documento(doc)}</span>
+        : <input className={`lt-in ${erro ? 'err' : ''}`} placeholder="CPF ou CNPJ da chave" value={valor} onChange={e => mudar({ chave: e.target.value })} />}
+    </div>
+    <label className="ab-l"><input type="checkbox" checked={noDoc} onChange={e => mudar({ chave: e.target.checked ? doc : '' })} />
+      <span>O PIX é no {doc.length === 11 ? 'CPF' : 'CNPJ'} do fornecedor</span></label>
+  </>;
+  if (lista && !outro && (escolhida || !valor)) return (
+    <div className="lt-lin">{tipoSel}
+      <select className={`lt-in ${erro ? 'err' : ''}`} aria-label="Chave PIX" value={escolhida?.chave ?? ''}
+        onChange={e => { if (e.target.value === '__outro__') { setOutro(true); mudar({ chave: '' }); } else mudar({ chave: e.target.value }); }}>
+        {!escolhida && <option value="">Escolha {tipo === 'email' ? 'o e-mail' : 'o telefone'}</option>}
+        {opcoes.map(c => <option key={c.chave} value={c.chave}>{c.chave} ({ORIGEM_CHAVE[c.origem]})</option>)}
+        <option value={'__outro__'}>{tipo === 'email' ? 'Outro e-mail…' : 'Outro telefone…'}</option>
+      </select>
+    </div>
+  );
+  return (
+    <div className="lt-lin">{tipoSel}
+      <input className={`lt-in ${erro ? 'err' : ''}`} autoFocus={outro} inputMode={tipo === 'telefone' ? 'tel' : tipo === 'email' ? 'email' : undefined}
+        placeholder={tipo === 'email' ? 'Novo e-mail' : tipo === 'telefone' ? 'Novo telefone com DDD' : tipo === 'cpf_cnpj' ? 'CPF ou CNPJ da chave' : 'Chave PIX'}
+        value={valor} onChange={e => mudar({ chave: e.target.value })} />
+      {lista && <button className="btn t sm" onClick={() => { setOutro(false); mudar({ chave: opcoes[0].chave }); }}>Voltar à lista</button>}
+    </div>
+  );
+}
+
 export function LinhaRateio({ l, o, emp, varias, valor, tentou, mudar, tirar }: {
   l: Linha; o: OpcoesLancamento; emp: OpcoesLancamento['empresas'][number]; varias: boolean; valor: number | null; tentou: boolean;
   mudar: (m: Partial<Linha>) => void; tirar: () => void;
@@ -420,21 +475,17 @@ export function LinhaRateio({ l, o, emp, varias, valor, tentou, mudar, tirar }: 
   return (
     <div className="lt-rat">
       <div className="lt-grid">
-        <select className={`lt-in ${err(l.nucleo)}`} value={l.nucleo} onChange={e => mudar({ nucleo: e.target.value, centro: '', divisao: '', natureza: '' })} disabled={!emp.nucleos.length} aria-label="Núcleo">
-          <option value="">Núcleo</option>{emp.nucleos.map(n => <option key={n.id} value={n.id}>{n.nome}</option>)}
-        </select>
-        <select className={`lt-in ${err(l.centro)}`} value={l.centro} onChange={e => mudar({ centro: e.target.value, divisao: '', natureza: '' })} disabled={!nucleo} aria-label="Centro de custo">
-          <option value="">Centro de custo</option>{centros.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
-        </select>
+        <Escolha erro={Boolean(err(l.nucleo))} valor={l.nucleo} rotulo="Núcleo" vazio="Núcleo" disabled={!emp.nucleos.length}
+          opcoes={emp.nucleos.map(n => ({ id: n.id, nome: n.nome }))} mudar={id => mudar({ nucleo: id, centro: '', divisao: '', natureza: '' })} />
+        <Escolha erro={Boolean(err(l.centro))} valor={l.centro} rotulo="Centro de custo" vazio="Centro de custo" disabled={!nucleo}
+          opcoes={centros.map(c => ({ id: c.id, nome: c.nome }))} mudar={id => mudar({ centro: id, divisao: '', natureza: '' })} />
         {divs.length > 0 && (
-          <select className={`lt-in ${err(l.divisao)}`} value={l.divisao} onChange={e => mudar({ divisao: e.target.value, natureza: '' })} aria-label="Divisão">
-            <option value="">Divisão (último nível)</option>{divs.map(d => <option key={d.id} value={d.id}>{d.caminho}</option>)}
-          </select>
+          <Escolha erro={Boolean(err(l.divisao))} valor={l.divisao} rotulo="Divisão" vazio="Divisão (último nível)"
+            opcoes={divs.map(d => ({ id: d.id, nome: d.caminho }))} mudar={id => mudar({ divisao: id, natureza: '' })} />
         )}
-        <select className={`lt-in lt-nat ${err(l.natureza)}`} value={l.natureza} onChange={e => mudar({ natureza: e.target.value })} disabled={!pronta || nq.isLoading} aria-label="Natureza">
-          <option value="">{!pronta ? 'Natureza' : nq.isLoading ? 'Carregando…' : nats.length ? 'Natureza' : 'Nenhuma natureza liberada para você aqui'}</option>
-          {nats.map(n => <option key={n.id} value={n.id}>{n.caminho}</option>)}
-        </select>
+        <Escolha className="lt-nat" erro={Boolean(err(l.natureza))} valor={l.natureza} rotulo="Natureza" disabled={!pronta || nq.isLoading}
+          vazio={!pronta ? 'Natureza' : nq.isLoading ? 'Carregando…' : nats.length ? 'Natureza (digite para buscar)' : 'Nenhuma natureza liberada para você aqui'}
+          opcoes={nats.map(n => ({ id: n.id, nome: n.caminho }))} mudar={id => mudar({ natureza: id })} />
       </div>
       {varias && (
         <div className="lt-lin lt-pct">
