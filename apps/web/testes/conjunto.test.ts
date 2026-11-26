@@ -64,3 +64,17 @@ test('conjunto: a nota manda, os boletos dos outros arquivos entram', () => {
   assert.equal(juntarLeituras([nota]), nota);
   assert.equal(juntarLeituras([]), null);
 });
+
+test('leitor em duas etapas: a prévia vai antes, o resultado volta, linha partida no meio e erro depois da prévia', async () => {
+  const { lerEtapas } = await import('../src/lib/etapas.ts');
+  const corpo = (pedacos: string[]) => new ReadableStream<Uint8Array>({ start(c) { for (const p of pedacos) c.enqueue(new TextEncoder().encode(p)); c.close(); } });
+  const anexo = { id: 'a', nome: 'b.pdf', tipo_mime: 'application/pdf', tamanho: 1 };
+  const previa = JSON.stringify({ previa: { anexo, repetido_em: [], leitura: { origem: 'texto' }, identificacao: null, previa: true } });
+  const final = JSON.stringify({ resultado: { anexo, repetido_em: [], leitura: { origem: 'ia', numero: '7' }, identificacao: null } });
+  const vistas: unknown[] = [];
+  const r = await lerEtapas(corpo([previa.slice(0, 10), previa.slice(10) + '\n' + final.slice(0, 5), final.slice(5) + '\n']), p => vistas.push(p));
+  assert.equal(vistas.length, 1); assert.equal(r.leitura?.numero, '7');
+  assert.equal((await lerEtapas(corpo([final]), () => {})).leitura?.origem, 'ia', 'sem a quebra no fim');
+  await assert.rejects(lerEtapas(corpo([previa + '\n', '{"erro":"Erro no leitor"}\n']), () => {}), /Erro no leitor/);
+  await assert.rejects(lerEtapas(corpo([previa + '\n']), () => {}), /não respondeu/);
+});

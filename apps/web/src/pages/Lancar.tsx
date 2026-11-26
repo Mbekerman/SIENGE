@@ -115,7 +115,9 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   const mao = (k: string) => { if (lendo.current) mexidos.current.add(k); };
   const subir = useMutation({ mutationFn: async (fs: File[]) => {
     lendo.current = true; mexidos.current.clear();
-    try { for (const f of fs) { const r = await subirArquivo(f); setArquivos(a => [...a.filter(x => x.anexo.id !== r.anexo.id), r]); } }
+    // no boleto, a prévia (texto e Asaas) chega antes e a leitura completa depois toma o lugar dela (Moises, 26/11/2026)
+    const pondo = (r: ResultadoLeitor) => setArquivos(a => [...a.filter(x => x.anexo.id !== r.anexo.id), r]);
+    try { for (const f of fs) pondo(await subirArquivo(f, pondo)); }
     finally { lendo.current = false; }
   }, onSuccess: () => setSemRet(false) });
   // acorda o leitor ao abrir a tela, para a primeira leitura não esperar o servidor subir
@@ -124,17 +126,18 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   // com a mesma base (só entrou boleto ou anexo), só as parcelas se refazem: o que foi corrigido à mão no resto fica;
   // com base nova (a nota chegou depois do boleto), a tela inteira se preenche pela nota
   const base = useRef<string | null>(null);
+  const basePrevia = useRef(false);   // a base era a prévia: a leitura completa dela preenche a tela inteira
   const [refeitas, setRefeitas] = useState(false);
   useEffect(() => {
     if (!arq) { base.current = null; return; }
-    if (base.current === arq.anexo.id && arq.leitura) {
+    if (base.current === arq.anexo.id && arq.leitura && !basePrevia.current) {
       setParcelas(parcelasLidas(arq.leitura, arq.identificacao?.pagamento ?? null, forn?.documento ?? null));
       setRefeitas(true);
     } else { preencher(arq); setRefeitas(false); }
-    base.current = arq.anexo.id;
+    base.current = arq.anexo.id; basePrevia.current = Boolean(arq.previa);
   }, [arq]); // eslint-disable-line react-hooks/exhaustive-deps
   const docEmit = arq?.leitura?.emitente?.documento?.toUpperCase().replace(/[^0-9A-Z]/g, '') ?? '';
-  const procurarSienge = Boolean(arq && docEmit && !arq.identificacao?.fornecedor && /^([0-9]{11}|[0-9A-Z]{12}[0-9]{2})$/.test(docEmit));
+  const procurarSienge = Boolean(arq && !arq.previa && docEmit && !arq.identificacao?.fornecedor && /^([0-9]{11}|[0-9A-Z]{12}[0-9]{2})$/.test(docEmit));
   useEffect(() => {
     if (!procurarSienge || sienge?.doc === docEmit) return;
     let vivo = true;
@@ -545,7 +548,7 @@ function ArquivoNota({ r, arquivos, tirar, subindo, erro, escolher, valor, cand,
             <div key={a.anexo.id} className="lt-arq ok">
               <Ic n="anexo" s={22} />
               <span style={{ flex: 1, minWidth: 0 }}><b className="lt-arqn" title={a.anexo.nome}>{a.anexo.nome}</b>
-                <span className="sec peq" style={{ display: 'block' }}>{[a.leitura ? (a.leitura.origem === 'xml' ? `Lido do XML${a.leitura.formato ? ` (${a.leitura.formato})` : ''}` : 'Lido pela IA') : a.pede_senha ? 'Com senha' : 'Guardado, sem leitura',
+                <span className="sec peq" style={{ display: 'block' }}>{[a.leitura ? (a.leitura.origem === 'xml' ? `Lido do XML${a.leitura.formato ? ` (${a.leitura.formato})` : ''}` : a.previa ? 'Boleto lido pelo texto; a IA lê o resto' : 'Lido pela IA') : a.pede_senha ? 'Com senha' : 'Guardado, sem leitura',
                   a.leitura?.tipo ? NOME_TIPO[a.leitura.tipo] : null, arquivos.length > 1 && r?.anexo.id === a.anexo.id ? 'preenche a tela' : null].filter(Boolean).join(' · ')}</span></span>
               <button className="btn t sm" onClick={() => tirar(a.anexo.id)} disabled={subindo}>Tirar</button>
             </div>

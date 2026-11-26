@@ -22,7 +22,7 @@ export interface Boleto {
 export interface Retencoes { iss?: number; irrf?: number; inss?: number; pis?: number; cofins?: number; csll?: number }
 
 export interface Leitura {
-  origem: 'xml' | 'ia';
+  origem: 'xml' | 'ia' | 'texto';   // texto: a prévia do boleto (fluxo.ts › mandarPrevia), nunca gravada
   modelo?: string;                // o modelo de IA, quando origem = ia
   formato?: string;               // NF-e 4.00, NFS-e Nacional...
   tipo?: TipoDocumento;
