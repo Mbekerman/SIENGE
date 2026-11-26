@@ -265,7 +265,7 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
         {tomFora.length > 0 && (
           <div className="lt-sec lt-exc">
             <span className="nt cr"><b>O tomador da nota ({tomFora.map(documento).join(', ')}) {emp ? `não é a empresa do título (${emp.nome})` : 'não é nenhuma empresa em que você lança'}.</b> Só lança com a justificativa, que todos os aprovadores veem até o pagamento.</span>
-            <textarea className={`lt-in ${tentou && tomExc.trim().length < 5 ? 'err' : ''}`} rows={2} maxLength={500}
+            <textarea className={`lt-in ${tentou && tomExc.trim().length < 5 ? 'err' : ''}`} rows={2} maxLength={500} style={{ height: 'auto', padding: '8px 12px' }}
               placeholder="Por que lançar esta nota nesta empresa?" aria-label="Justificativa do tomador" value={tomExc} onChange={e => setTomExc(e.target.value)} />
           </div>
         )}
