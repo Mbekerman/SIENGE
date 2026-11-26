@@ -4,7 +4,9 @@ import { test } from 'node:test';
 import { pdfCriptografado, senhasCandidatas, tentarSenhas, tipoPelosBytes } from './arquivo.ts';
 import { conferirLinha } from './boleto.ts';
 import { type Bucket, type Deps, Recusa, abrirComSenha, baixar, pedidoIdentificar, subir } from './fluxo.ts';
-import { chaveValida, cnpjValido, converter, copiaColaValido, cpfValido, ESQUEMA, mascara } from './ia.ts';
+import Anthropic from '@anthropic-ai/sdk';
+import { chaveValida, cnpjValido, converter, copiaColaValido, cpfValido, ESQUEMA, lerComIaDetalhe, mascara, MODELO, RESERVA,
+  vaiParaReserva } from './ia.ts';
 import { Limite } from './limite.ts';
 import { ENTRADA, SAIDA, lerArquivo, nomeSaida, pendentes } from './lote.ts';
 import { lerXml } from './xml.ts';
@@ -490,4 +492,30 @@ test('CPF e CNPJ lidos com dígito verificador errado saem vazios, com aviso', (
   assert.equal(converter({ tipo: 'nfse', tomador: { documento: '11.222.XXX/0001-81' } }, 'm').tomador?.documento_mascara, '11222***000181');
   // documento mascarado segue pelo caminho da máscara
   assert.equal(converter({ tipo: 'nfse', tomador: { documento: '***.982.247-**' } }, 'm').tomador?.documento_mascara !== undefined, true);
+});
+
+test('leitor: Sonnet primeiro e Opus de reserva só quando outro modelo pode resolver', async () => {
+  assert.equal(MODELO, 'claude-sonnet-5-5'); assert.equal(RESERVA, 'claude-opus-5-5');
+  const ok = (model: string) => ({ model, stop_reason: 'end_turn', usage: {}, content: [{ type: 'text', text: '{"tipo":"boleto"}' }] });
+  const falso = (falhas: unknown[]) => {
+    const pedidos: string[] = [];
+    const cliente = { beta: { messages: { create: async (b: { model: string }) => {
+      pedidos.push(b.model); const f = falhas.shift(); if (f) throw f; return ok(b.model);
+    } } } } as unknown as Anthropic;
+    return { cliente, pedidos };
+  };
+  const e = { tipo: 'texto' as const, dados: 'x' };
+  let c = falso([]);
+  assert.equal((await lerComIaDetalhe(c.cliente, e)).modelo, MODELO); assert.deepEqual(c.pedidos, [MODELO]);
+  c = falso([new Anthropic.InternalServerError(529, undefined, 'sobrecarregado', new Headers())]);
+  assert.equal((await lerComIaDetalhe(c.cliente, e)).modelo, RESERVA); assert.deepEqual(c.pedidos, [MODELO, RESERVA]);
+  c = falso([new Anthropic.BadRequestError(400, undefined, 'sem crédito', new Headers())]);
+  await assert.rejects(lerComIaDetalhe(c.cliente, e)); assert.deepEqual(c.pedidos, [MODELO]);
+  c = falso([new Error('x'), new Error('y')]);
+  await assert.rejects(lerComIaDetalhe(c.cliente, e), /y/); assert.deepEqual(c.pedidos, [MODELO, RESERVA]);
+  c = falso([new Error('x')]);
+  await assert.rejects(lerComIaDetalhe(c.cliente, e, new Date(), 'claude-haiku-5-5'), /x/); assert.deepEqual(c.pedidos, ['claude-haiku-5-5']);
+  assert.equal(vaiParaReserva(new Anthropic.RateLimitError(429, undefined, 'limite', new Headers())), true);
+  assert.equal(vaiParaReserva(new Anthropic.APIConnectionError({ message: 'sem rede' })), true);
+  assert.equal(vaiParaReserva(new Anthropic.AuthenticationError(401, undefined, 'chave', new Headers())), false);
 });

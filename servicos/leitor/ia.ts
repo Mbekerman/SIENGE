@@ -5,7 +5,10 @@ import Anthropic from '@anthropic-ai/sdk';
 import { conferirLinha } from './boleto.ts';
 import { type Boleto, type Leitura, type TipoDocumento, data, limpar, numero, soDigitos } from './leitura.ts';
 
-export const MODELO = 'claude-opus-5-5';
+// Sonnet desde 26/11/2026 (escolha do Moises depois do lote de 2.032 arquivos: o mesmo acerto de valor do Opus, menos
+// CNPJ errado, metade do tempo e menos da metade do custo). O Opus fica de reserva quando o Sonnet falha.
+export const MODELO = 'claude-sonnet-5-5';
+export const RESERVA = 'claude-opus-5-5';
 
 // A API aceita no máximo 16 campos com union (type: [t, 'null']) por esquema. Texto ausente vem como "" (vazio); só os
 // números aceitam null, porque zero seria um valor. O teste conta e falha acima de 16.
@@ -118,8 +121,27 @@ export async function lerComIa(cliente: Anthropic, e: Entrada, hoje = new Date()
 
 // A mesma leitura, com o uso de tokens da chamada (o teste em escala, lote.ts, mede o custo por arquivo).
 // O modelo só muda no teste em escala (LOTE_MODELO, para comparar com outro modelo); o leitor usa sempre o MODELO. A
-// troca de modelo do servidor quando o principal está sobrecarregado (fallbacks) fica só no MODELO.
+// troca de modelo do servidor quando o principal recusa (fallbacks) fica só no MODELO. Se a leitura com o MODELO
+// falha (servidor sobrecarregado, fora do ar, recusa, resposta incompleta ou fora do formato), tenta uma vez com a
+// RESERVA; erro de pedido (crédito, chave, arquivo recusado) não muda de modelo, porque falharia igual.
 export async function lerComIaDetalhe(cliente: Anthropic, e: Entrada, hoje = new Date(), modelo = MODELO):
+  Promise<{ leitura: Leitura; modelo: string; uso: Anthropic.Beta.Messages.BetaUsage }> {
+  if (modelo !== MODELO) return lerUmaVez(cliente, e, hoje, modelo);
+  try {
+    return await lerUmaVez(cliente, e, hoje, modelo);
+  } catch (err) {
+    if (!vaiParaReserva(err)) throw err;
+    return lerUmaVez(cliente, e, hoje, RESERVA);
+  }
+}
+
+// Erro que outro modelo pode resolver: o servidor (429, 5xx, sem resposta) ou a própria leitura. Erro 4xx do pedido não.
+export function vaiParaReserva(err: unknown): boolean {
+  if (err instanceof Anthropic.APIError) return err.status === undefined || err.status === 429 || err.status >= 500;
+  return err instanceof Error;
+}
+
+async function lerUmaVez(cliente: Anthropic, e: Entrada, hoje: Date, modelo: string):
   Promise<{ leitura: Leitura; modelo: string; uso: Anthropic.Beta.Messages.BetaUsage }> {
   const r = await cliente.beta.messages.create({
     model: modelo,
