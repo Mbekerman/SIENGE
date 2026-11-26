@@ -3,7 +3,7 @@
 // título. A linha do boleto que ela lê é conferida aqui pelos dígitos verificadores (boleto.ts).
 import Anthropic from '@anthropic-ai/sdk';
 import { conferirLinha } from './boleto.ts';
-import { type Boleto, type Leitura, type TipoDocumento, data, limpar, numero, soDigitos } from './leitura.ts';
+import { type Boleto, type Leitura, type TipoDocumento, data, avisoLinhaEmBranco, limpar, numero, soDigitos } from './leitura.ts';
 
 // Sonnet desde 26/11/2026 (escolha do Moises depois do lote de 2.032 arquivos: o mesmo acerto de valor do Opus, menos
 // CNPJ errado, metade do tempo e menos da metade do custo). O Opus fica de reserva quando o Sonnet falha.
@@ -182,9 +182,11 @@ export function converter(j: Record<string, any>, modelo: string, hoje = new Dat
   };
   const emissao = data(j.emissao);
   const ref = emissao ? new Date(`${emissao}T12:00:00Z`) : hoje;
-  const boletos = (Array.isArray(j.linhas_digitaveis) ? j.linhas_digitaveis : [])
+  const lidos = (Array.isArray(j.linhas_digitaveis) ? j.linhas_digitaveis : [])
     .map((l: unknown) => conferirLinha(String(l ?? ''), ref)).filter((b): b is Boleto => b !== null);
-  for (const b of boletos) if (!b.valida) avisos.push(`Linha do boleto com dígito verificador errado: ${b.linha}`);
+  // linha que não fecha pelo dígito verificador nunca vai adiante: o campo fica em branco (pedido do Moises, 26/11/2026)
+  const boletos = lidos.filter((b) => b.valida);
+  if (lidos.length > boletos.length) avisos.push(avisoLinhaEmBranco(lidos.length - boletos.length));
   const chave = chaveConferida(str(j.chave_acesso), avisos);
   const comp = typeof j.competencia === 'string' && /^\d{4}-\d{2}$/.test(j.competencia) ? j.competencia : undefined;
   const refConsumo = typeof j.consumo?.referencia === 'string' && /^\d{4}-\d{2}/.test(j.consumo.referencia) ? j.consumo.referencia.slice(0, 7) : undefined;

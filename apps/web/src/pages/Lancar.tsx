@@ -73,6 +73,7 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   const arq = useMemo(() => juntarLeituras(arquivos), [arquivos]);
   const [cand, setCand] = useState<string | null>(null);
   const [semRet, setSemRet] = useState(false);
+  const [tomExc, setTomExc] = useState('');
   const [buscaForn, setBuscaForn] = useState('');
   // emitente que o ERP não achou: a tela pergunta ao cadastro de credores do Sienge (função sienge-credores), que traz o
   // credor para o ERP; achado, o fornecedor se preenche (Moises, 24/11/2026)
@@ -203,7 +204,13 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   const cadastroPendente = Boolean(pagCad && pagCad.modo !== 'cobranca' && lq.data && !lq.data.find(c => c.id === contrato)?.aprovado);
   useEffect(() => { if (!cadastroUsavel) setParcelas(ps => (ps.some(p => p.forma === 'cadastro') ? ps.map(p => (p.forma === 'cadastro' ? { ...p, forma: 'pix' } : p)) : ps)); }, [cadastroUsavel]);
 
+  // tomador lido que não é a empresa do título (Moises, 26/11/2026): alerta vermelho e justificativa obrigatória, que quem
+  // aprova vê até o pagamento; o banco confere de novo pelos anexos (erp.tg_anexo_tomador)
+  const tomadores = [...new Set(arquivos.map(a => docSo(a.leitura?.tomador?.documento ?? '')).filter(Boolean))];
+  const nossos = new Set((o?.empresas ?? []).map(e => docSo(e.documento ?? '')).filter(Boolean));
+  const tomFora = tomadores.filter(d => (emp ? d !== docSo(emp.documento ?? '') : !nossos.has(d)));
   const falta: string[] = [];
+  if (tomFora.length && tomExc.trim().length < 5) falta.push('a justificativa do tomador');
   if (comRet && !semRet) falta.push('confirmar que a nota não tem retenção (nota com retenção ainda não se lança)');
   if (!empresa) falta.push('a empresa');
   if (!forn) falta.push('o fornecedor');
@@ -232,6 +239,7 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
         ? { vencimento: p.vencimento, ...(comValor ? { valor: lerReais(p.valor) } : {}), forma: 'pix', pix_tipo: p.pix_tipo, pix_chave: chave(p.pix_tipo, p.pix_chave), pix_excecao: p.excecao.trim() || null, pix_copia_cola: p.pix_cc.trim() || null, pix_copia_cola_excecao: (p.pix_cc.trim() && p.cc_exc.trim()) || null }
         : { vencimento: p.vencimento, ...(comValor ? { valor: lerReais(p.valor) } : {}), forma: 'boleto', boleto_linha: p.boleto.replace(/\D/g, ''), boleto_excecao: p.bol_exc.trim() || null, pix_copia_cola: p.pix_cc.trim() || null, pix_copia_cola_excecao: (p.pix_cc.trim() && p.cc_exc.trim()) || null }),
       previsoes: prevs, etiquetas: etq, anexos: arquivos.map(a => a.anexo.id),
+      tomador_excecao: tomFora.length ? tomExc.trim() : null,
     } }),
     onSuccess: id => { qc.invalidateQueries({ queryKey: ['titulos'] }); qc.invalidateQueries({ queryKey: ['previsoes'] }); lancado(id); },
   });
@@ -254,6 +262,13 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
           abrir={(id, x) => senha.mutate({ id, s: x })} abrindo={senha.isPending} erroSenha={senha.error ? mensagemErro(senha.error) : null}
           sugeridas={sugeridas} mascara={mascaraTom} usarEmpresa={id => { setEmpresa(id); setLinhas([novaLinha()]); }}
           sienge={sienge?.doc === docEmit ? sienge.estado : null} />}
+        {tomFora.length > 0 && (
+          <div className="lt-sec lt-exc">
+            <span className="nt cr"><b>O tomador da nota ({tomFora.map(documento).join(', ')}) {emp ? `não é a empresa do título (${emp.nome})` : 'não é nenhuma empresa em que você lança'}.</b> Só lança com a justificativa, que todos os aprovadores veem até o pagamento.</span>
+            <textarea className={`lt-in ${tentou && tomExc.trim().length < 5 ? 'err' : ''}`} rows={2} maxLength={500} style={{ height: 'auto', padding: '8px 12px' }}
+              placeholder="Por que lançar esta nota nesta empresa?" aria-label="Justificativa do tomador" value={tomExc} onChange={e => setTomExc(e.target.value)} />
+          </div>
+        )}
         {refeitas && <span className="nt inf">As parcelas foram preenchidas de novo com os arquivos novos; o resto da tela ficou como estava.</span>}
         {comRet && arq?.leitura && (
           <div className="lt-sec">
@@ -498,7 +513,6 @@ function avisosLidos(r: ResultadoLeitor, valor: number | null, sienge: BuscaSien
     out.push({ c: 'cr', t: <>Esta nota já foi lançada: {NOME_TIPO[d.tipo] ?? d.tipo} {d.numero} de {data(d.emissao)}, {reais(d.valor)}{d.titulo_id && <> · <a href={`/titulos/${d.titulo_id}`} target="_blank" rel="noreferrer">abrir o título</a></>}.</> });
   if (!l) return out;
   if (l.origem === 'ia') out.push({ c: 'inf', t: 'Lido pela IA a partir da imagem do documento: confira cada campo antes de lançar.' });
-  if (l.tomador?.documento && !id?.empresa) out.push({ c: 'at', t: `O tomador da nota (${documento(l.tomador.documento)}) não é uma empresa em que você lança.` });
   const emit = `O emitente ${l.emitente?.nome ?? ''} (${documento(l.emitente?.documento ?? '')})`;
   if (l.emitente?.documento && !id?.fornecedor) out.push(
     sienge === 'buscando' ? { c: 'inf', t: `${emit} não está no cadastro do ERP. Procurando nos credores do Sienge…` }

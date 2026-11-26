@@ -2,7 +2,7 @@
 // Toda chamada ao banco vai com o login da pessoa (o JWT dela), pelo esquema api: o RLS decide o que ela pode.
 import { LIMITE, type Mime, nomeLimpo, pdfCriptografado, senhasCandidatas, sha256, textoUtf8, tipoPelosBytes } from './arquivo.ts';
 import type { Entrada } from './ia.ts';
-import { type Boleto, type Leitura, limpar, soDigitos } from './leitura.ts';
+import { type Boleto, type Leitura, LINHA_EM_BRANCO, limpar, soDigitos } from './leitura.ts';
 import { type Extraido, extrair, temTexto } from './extrair.ts';
 import { lerXml } from './xml.ts';
 
@@ -244,9 +244,12 @@ export function juntar(l: Leitura, ext: Extraido): Leitura {
   const chaves = ext.chaves.filter(chaveDeNota);
   const r: Leitura = { ...l };
   if (novos.length) {
-    // uma linha que a leitura trouxe com o dígito errado e o texto trouxe certa sai, para não ficar repetida
+    // o texto do PDF trouxe a linha que a IA leu errada: entra a certa, sem aviso (a linha do texto já fecha pelo dígito)
     r.boletos = [...(l.boletos ?? []).filter((b) => b.valida), ...novos];
-    r.avisos = [...(l.avisos ?? []), `${novos.length === 1 ? 'Linha do boleto conferida' : `${novos.length} linhas de boleto conferidas`} pelo texto do PDF`];
+    const emBranco = (l.avisos ?? []).find((a) => LINHA_EM_BRANCO.test(a));
+    const faltavam = emBranco ? Number(emBranco.match(/^\d+/)?.[0] ?? 1) : 0;
+    if (emBranco && novos.length >= faltavam) r.avisos = (l.avisos ?? []).filter((a) => a !== emBranco);
+    if (r.avisos && !r.avisos.length) delete r.avisos;
   }
   if (!r.chave_acesso && chaves.length === 1) r.chave_acesso = chaves[0];
   if (!r.pix?.copia_e_cola && ext.pix.length === 1) r.pix = { ...(r.pix ?? {}), copia_e_cola: ext.pix[0] };
