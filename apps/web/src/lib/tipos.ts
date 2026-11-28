@@ -118,7 +118,7 @@ export interface Aprovacao {
 
 // Leitor de notas (servicos/leitor): o que volta de POST /anexos. A Leitura é a mesma de servicos/leitor/leitura.ts.
 export interface Leitura {
-  origem: 'xml' | 'ia'; modelo?: string; formato?: string;
+  origem: 'xml' | 'ia' | 'texto'; modelo?: string; formato?: string;   // texto: a prévia do boleto (servicos/leitor › mandarPrevia)
   tipo?: 'nfe' | 'nfse' | 'fatura' | 'boleto' | 'iptu' | 'itbi' | 'darf' | 'darm' | 'dare' | 'recibo' | 'outro';
   emitente?: { documento?: string; nome?: string }; tomador?: { documento?: string; documento_mascara?: string; nome?: string };
   numero?: string; serie?: string; chave_acesso?: string; emissao?: string; competencia?: string;
@@ -149,6 +149,7 @@ export interface ResultadoLeitor {
   erro_leitura?: string;
   pede_senha?: boolean;   // PDF com senha que os CNPJs das empresas não abriram
   identificacao: Identificacao | null;
+  previa?: boolean;       // a primeira resposta do boleto, só com o texto e o Asaas; a leitura completa vem em seguida
 }
 
 // Cadastros › Empresas (migration 20261123001000_erp_empresa_apelido.sql): o apelido é o nome no sistema; sem ele, a razão social

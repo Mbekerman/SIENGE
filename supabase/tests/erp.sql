@@ -8162,6 +8162,21 @@ select pg_temp.ok((select not p.prosecdef and not exists (select 1 from aclexplo
 select pg_temp.ok((select j->'pagamento'->>'forma' = 'pix' and j->'pagamento'->>'pix_chave' = 'agencia@example.com'
                      from api.identificar_nota(jsonb_build_object('emitente', :'doc_forn')) j),
   'identificar: a última chave PIX usada com o fornecedor vem pré-selecionada');
+select pg_temp.ok(not exists (select 1 from api.fornecedor_chaves_pix('10000000-0000-0000-0000-000000000007') k where k.chave = 'agencia@example.com'),
+  'chaves PIX do fornecedor: a de um título que ainda não foi ao Sienge não aparece como usada');
+savepoint sp_chaves;
+select pg_temp.sis(); insert into erp.sienge_envios (titulo_id, situacao, sienge_id) values (:'tan', 'enviado', 999881); select pg_temp.volta();
+select pg_temp.ok(exists (select 1 from api.fornecedor_chaves_pix('10000000-0000-0000-0000-000000000007') k
+                           where k.tipo = 'email' and k.chave = 'agencia@example.com' and k.origem = 'usada')
+                  and (select not p.prosecdef and not exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0)
+                         from pg_proc p where p.oid = 'api.fornecedor_chaves_pix(uuid)'::regprocedure),
+  'chaves PIX do fornecedor: a de e-mail usada antes aparece para escolher; invoker e sem EXECUTE para public');
+select pg_temp.sis();
+set local role erp_situacao; update erp.titulos set situacao = 'cancelado' where id = :'tan'; reset role;
+select pg_temp.volta();
+select pg_temp.ok(not exists (select 1 from api.fornecedor_chaves_pix('10000000-0000-0000-0000-000000000007') k where k.chave = 'agencia@example.com'),
+  'chaves PIX do fornecedor: a de título cancelado não aparece');
+rollback to savepoint sp_chaves;
 -- quem não vê a nota não vê o anexo dela nem a repetição; o anexo de outra pessoa não se liga
 select pg_temp.como(:'analista2');
 create temp table anexo_ids as select :'anx'::uuid as anx, :'tan'::uuid as tit, (select documento_id from erp.titulos where id = :'tan') as doc;
@@ -8209,6 +8224,34 @@ select pg_temp.falha(format($$update erp.anexos set documento_id = (select docum
 select api.lancar_titulo((select j || jsonb_build_object('anexos', jsonb_build_array(:'anx2')) from nota_a2_anx)) as tan2 \gset
 select pg_temp.ok((select a.documento_id = t.documento_id from erp.anexos a, erp.titulos t where a.id = :'anx2' and t.id = :'tan2'),
   'anexo: o próprio anexo solto entra no lançamento');
+-- tomador lido no anexo que não é a empresa do título: só lança com justificativa, que fica para quem aprova (26/11/2026)
+select (api.registrar_anexo('tom1.pdf', 'application/pdf', 10, repeat('1', 64))->>'id') as anx_t1 \gset
+select api.gravar_leitura(:'anx_t1', '{"origem": "ia", "tomador": {"documento": "11.444.777/0001-61"}}');
+select pg_temp.erro_igual(format($$select api.lancar_titulo(%L)$$, (select j || jsonb_build_object('numero', 'T-892', 'anexos', jsonb_build_array(:'anx_t1')) from nota_a2_anx)),
+  'O tomador da nota (11444777000161) não é a empresa do título: justifique para lançar', 'tomador: diferente da empresa do título, sem justificativa não lança');
+select pg_temp.erro_igual(format($$select api.lancar_titulo(%L)$$, (select j || jsonb_build_object('numero', 'T-892', 'tomador_excecao', '   ', 'anexos', jsonb_build_array(:'anx_t1')) from nota_a2_anx)),
+  'O tomador da nota (11444777000161) não é a empresa do título: justifique para lançar', 'tomador: justificativa em branco não vale');
+select pg_temp.falha(format($$select api.lancar_titulo(%L)$$, (select j || jsonb_build_object('numero', 'T-892', 'tomador_excecao', 'curta demai', 'anexos', jsonb_build_array(:'anx_t1')) from nota_a2_anx)),
+  'tomador: justificativa com menos de 12 caracteres não vale');
+select api.lancar_titulo((select j || jsonb_build_object('numero', 'T-892', 'tomador_excecao', 'Nota emitida para a holding por engano; refaturamento pedido',
+                                                          'anexos', jsonb_build_array(:'anx_t1')) from nota_a2_anx)) as tan_t1 \gset
+select pg_temp.ok((select erp.recebedor_divergente(:'tan_t1') = array['Tomador da nota (11444777000161) não é a empresa do título: Nota emitida para a holding por engano; refaturamento pedido'])
+                  and exists (select 1 from api.recebedores_divergentes() r where r.id = :'tan_t1')
+                  and (select (api.titulo(:'tan_t1')->'recebedor_divergente'->>0) like 'Tomador da nota%'),
+  'tomador: com justificativa lança, e o motivo aparece no alerta e no selo até o pagamento');
+select (api.registrar_anexo('tom3.pdf', 'application/pdf', 10, repeat('3', 64))->>'id') as anx_t3 \gset
+select api.gravar_leitura(:'anx_t3', '{"origem": "ia", "tomador": {"documento": "123.456.789-09"}}');
+select api.lancar_titulo((select j || jsonb_build_object('numero', 'T-894', 'tomador_excecao', 'Reembolso a funcionário',
+                                                          'anexos', jsonb_build_array(:'anx_t3')) from nota_a2_anx)) as tan_t3 \gset
+select pg_temp.ok(erp.recebedor_divergente(:'tan_t3') = array['Tomador da nota (***.456.789-**) não é a empresa do título: Reembolso a funcionário'],
+  'tomador: CPF de pessoa física sai mascarado no motivo');
+select pg_temp.falha(format($$update erp.documentos_fiscais set tomador_excecao = 'outra justificativa' where id = (select documento_id from erp.titulos where id = %L)$$, :'tan_t1'),
+  'tomador: a justificativa não muda depois');
+select (api.registrar_anexo('tom2.pdf', 'application/pdf', 10, repeat('2', 64))->>'id') as anx_t2 \gset
+select api.gravar_leitura(:'anx_t2', jsonb_build_object('origem', 'ia', 'tomador', jsonb_build_object('documento', :'doc_spe')));
+select api.lancar_titulo((select j || jsonb_build_object('numero', 'T-893', 'anexos', jsonb_build_array(:'anx_t2')) from nota_a2_anx)) as tan_t2 \gset
+select pg_temp.ok(erp.recebedor_divergente(:'tan_t2') = '{}' and not exists (select 1 from api.recebedores_divergentes() r where r.id = :'tan_t2'),
+  'tomador: a própria empresa do título lança sem justificativa e sem alerta');
 -- o rastro de um título não traz o anexo de outra nota; o aviso de arquivo repetido ignora nota cancelada
 select pg_temp.como(:'diretor');
 select pg_temp.ok((select jsonb_array_length(r->'anexos') = 1 and r->'anexos'->0->>'id' = :'anx' from api.titulo_rastro(:'tan') r)
@@ -8660,6 +8703,11 @@ select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pa
 select pg_temp.ok((select x->'pagamento'->>'modo' = 'cobranca' from api.conta(:'kctr') x)
                   and (select aprovacao_versao > :kver from erp.compromissos where id = :'kctr'),
   'como paga: "vem com cada cobrança" também é forma cadastrada e pede aprovação');
+select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento',
+  jsonb_build_object('modo', 'pix', 'pix_tipo', 'email', 'pix_chave', 'pendente@example.com')));
+select pg_temp.ok(not exists (select 1 from api.fornecedor_chaves_pix((select pessoa_id from erp.compromissos where id = :'kctr')) k
+                               where k.chave = 'pendente@example.com'),
+  'chaves PIX do fornecedor: a do cadastro da conta esperando aprovação não aparece');
 select api.salvar_conta(:'kbase'::jsonb || jsonb_build_object('id', :'kctr', 'pagamento', null));
 select pg_temp.ok((select x->'pagamento' = 'null'::jsonb from api.conta(:'kctr') x), 'como paga: mandar a forma nula tira a forma');
 select pg_temp.como(:'leitor');

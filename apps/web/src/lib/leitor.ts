@@ -2,6 +2,7 @@
 // pergunta ao banco com esse mesmo login, então só entrega o que a pessoa vê.
 import { LEITOR_URL } from './config';
 import { supabase } from './supabase';
+import { lerEtapas } from './etapas';
 import type { ResultadoLeitor } from './tipos';
 
 export const leitorLigado = Boolean(LEITOR_URL);
@@ -25,15 +26,18 @@ export function acordarLeitor(): void {
   if (LEITOR_URL) fetch(`${LEITOR_URL}/saude`, { mode: 'no-cors', cache: 'no-store' }).catch(() => {});
 }
 
-export async function subirArquivo(f: File): Promise<ResultadoLeitor> {
+/** Sobe o arquivo. Com `aoPrevia`, pede a resposta em duas etapas (?etapas=1): no boleto, a prévia com o que o texto
+ *  e o banco do boleto dão chega em cerca de 1 s, antes da leitura completa (pedido do Moises, 26/11/2026). */
+export async function subirArquivo(f: File, aoPrevia?: (r: ResultadoLeitor) => void): Promise<ResultadoLeitor> {
   if (!LEITOR_URL) throw new Error('O leitor de notas não está ligado neste ambiente');
   if (f.size > LIMITE) throw new Error('O arquivo passa de 20 MB');
-  const r = await fetch(`${LEITOR_URL}/anexos`, {
+  const r = await fetch(`${LEITOR_URL}/anexos${aoPrevia ? '?etapas=1' : ''}`, {
     method: 'POST', body: f,
     headers: { authorization: `Bearer ${await token()}`, 'content-type': 'application/octet-stream', 'x-nome-arquivo': encodeURIComponent(f.name) },
   }).catch(() => { throw new Error('Sem conexão com o leitor. Verifique a internet e tente de novo.'); });
   if (!r.ok) throw await erro(r);
-  return r.json();
+  if (!aoPrevia || !r.body || !(r.headers.get('content-type') ?? '').includes('ndjson')) return r.json();
+  return lerEtapas(r.body, aoPrevia);
 }
 
 /** Abre o PDF guardado com a senha que a pessoa digitou (quando os CNPJs das empresas não abriram) e lê. A senha não

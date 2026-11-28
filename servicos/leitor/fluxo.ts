@@ -2,7 +2,7 @@
 // Toda chamada ao banco vai com o login da pessoa (o JWT dela), pelo esquema api: o RLS decide o que ela pode.
 import { LIMITE, type Mime, nomeLimpo, pdfCriptografado, senhasCandidatas, sha256, textoUtf8, tipoPelosBytes } from './arquivo.ts';
 import type { Entrada } from './ia.ts';
-import type { Boleto, Leitura } from './leitura.ts';
+import { type Boleto, type Leitura, LINHA_EM_BRANCO, limpar, soDigitos } from './leitura.ts';
 import { type Extraido, extrair, temTexto } from './extrair.ts';
 import { lerXml } from './xml.ts';
 
@@ -38,9 +38,22 @@ export interface Resultado {
   erro_leitura?: string;
   pede_senha?: boolean;   // PDF com senha que os CNPJs não abriram: a tela pede a senha
   identificacao: unknown;
+  previa?: boolean;       // a primeira resposta, só com o que o texto e o Asaas dão; a leitura completa vem depois
 }
 
-export async function subir(d: Deps, jwt: string, nomeOriginal: string, dados: Buffer): Promise<Resultado> {
+// O que vale para um envio: a prévia (quem pediu a resposta em duas etapas) e as consultas ao Asaas já feitas, para a
+// linha não ser consultada duas vezes (na prévia e depois da IA).
+interface Envio {
+  anexo: Resultado['anexo'];
+  repetido: unknown[];
+  previa?: (r: Resultado) => void;
+  asaas: Map<string, Promise<NonNullable<Boleto['conferido_asaas']>>>;
+  fim: boolean;           // a leitura completa ficou pronta: prévia atrasada não sai mais
+  inicio: number;         // quando a leitura começou (Date.now()), para o registro dos tempos
+}
+
+export async function subir(d: Deps, jwt: string, nomeOriginal: string, dados: Buffer,
+  previa?: (r: Resultado) => void): Promise<Resultado> {
   if (!dados.length) throw new Recusa(400, 'Arquivo vazio');
   if (dados.length > LIMITE) throw new Recusa(413, 'O arquivo passa de 20 MB');
   const mime = tipoPelosBytes(dados);
@@ -54,24 +67,36 @@ export async function subir(d: Deps, jwt: string, nomeOriginal: string, dados: B
   await d.bucket.gravar(reg.id, mime, dados);
 
   // 3. lê; uma falha de leitura não perde o arquivo: a pessoa preenche à mão
-  return concluir(d, jwt, { id: reg.id, nome, tipo_mime: mime, tamanho: dados.length }, reg.repetido_em ?? [],
-    () => ler(d, jwt, mime, dados));
+  const envio = novoEnvio({ id: reg.id, nome, tipo_mime: mime, tamanho: dados.length }, reg.repetido_em ?? [], previa);
+  return concluir(d, jwt, envio, () => ler(d, jwt, envio, mime, dados));
+}
+
+const novoEnvio = (anexo: Resultado['anexo'], repetido: unknown[], previa?: (r: Resultado) => void): Envio =>
+  ({ anexo, repetido, previa, asaas: new Map(), fim: false, inicio: Date.now() });
+
+function conferirAsaas(d: Deps, envio: Envio, linha: string) {
+  let p = envio.asaas.get(linha);
+  if (!p) { p = d.asaas!(linha); envio.asaas.set(linha, p); }
+  return p;
 }
 
 // Lê, confere os boletos no Asaas, grava a leitura e pergunta ao banco o que casa com ela.
-async function concluir(d: Deps, jwt: string, anexo: Resultado['anexo'], repetido: unknown[], lendo: () => Promise<Leitura>): Promise<Resultado> {
+async function concluir(d: Deps, jwt: string, envio: Envio, lendo: () => Promise<Leitura>): Promise<Resultado> {
+  const { anexo, repetido } = envio;
   let leitura: Leitura | null = null, erro: string | undefined, pedeSenha = false;
   try { leitura = await lendo(); }
   catch (e) {
     erro = e instanceof Recusa ? e.message : 'Não consegui ler o arquivo';
     pedeSenha = e instanceof SemSenha;
     if (!pedeSenha) d.log('leitura falhou', { anexo: anexo.id, erro: String(e) });
-  }
+  } finally { envio.fim = true; }
+  // o tempo de cada leitura no registro do Cloud Run (só o id do anexo e os tempos, nada do conteúdo)
+  d.log('leitura pronta', { anexo: anexo.id, ms: Date.now() - envio.inicio, origem: leitura?.origem ?? null });
 
   if (leitura) {
     if (d.asaas) for (const b of leitura.boletos ?? []) {
       if (!b.valida) continue;
-      try { b.conferido_asaas = await d.asaas(b.linha); } catch (e) { d.log('asaas falhou', { erro: String(e) }); }
+      try { b.conferido_asaas = await conferirAsaas(d, envio, b.linha); } catch (e) { d.log('asaas falhou', { erro: String(e) }); }
     }
     await d.banco.rpc(jwt, 'gravar_leitura', { p_anexo: anexo.id, p_leitura: leitura });
   }
@@ -92,14 +117,15 @@ export async function abrirComSenha(d: Deps, jwt: string, id: string, senha: str
   const a = await baixar(d, jwt, id);
   if (a.mime !== 'application/pdf' || !pdfCriptografado(a.dados)) throw new Recusa(400, 'Este arquivo não é um PDF com senha');
   if (!d.ia) throw new Recusa(503, 'Leitura por IA indisponível');
-  return concluir(d, jwt, { id, nome: a.nome, tipo_mime: 'application/pdf', tamanho: a.dados.length }, [], async () => {
+  const envio = novoEnvio({ id, nome: a.nome, tipo_mime: 'application/pdf', tamanho: a.dados.length }, []);
+  return concluir(d, jwt, envio, async () => {
     const aberto = d.abrirPdf ? await d.abrirPdf(a.dados, [senha]) : null;
     if (!aberto) throw new SemSenha('A senha não abriu o PDF');
-    return lerPdf(d, jwt, aberto);
+    return lerPdf(d, jwt, envio, aberto);
   });
 }
 
-async function ler(d: Deps, jwt: string, mime: Mime, dados: Buffer): Promise<Leitura> {
+async function ler(d: Deps, jwt: string, envio: Envio, mime: Mime, dados: Buffer): Promise<Leitura> {
   if (mime === 'application/xml') {
     if (dados.length > LIMITE_XML) throw new Recusa(413, 'XML maior que 2 MB não é nota fiscal; suba o PDF');
     const texto = textoUtf8(dados)!;
@@ -115,7 +141,7 @@ async function ler(d: Deps, jwt: string, mime: Mime, dados: Buffer): Promise<Lei
       if (!aberto) throw new SemSenha('O PDF tem senha e nenhum CNPJ das empresas abriu; digite a senha');
       pdf = aberto;
     }
-    return lerPdf(d, jwt, pdf);
+    return lerPdf(d, jwt, envio, pdf);
   }
   if (!d.ia) throw new Recusa(503, 'Leitura por IA indisponível');
   return d.ia({ tipo: 'imagem', mime, dados });
@@ -125,7 +151,7 @@ async function ler(d: Deps, jwt: string, mime: Mime, dados: Buffer): Promise<Lei
 // nota que já chegou pela busca automática e que a pessoa vê (o banco decide, com o login dela; a de PJ não volta para
 // quem não cuida de PJ), a leitura é a do XML. Senão a IA lê o PDF, e o que o texto traz conferido pelos dígitos
 // (linha do boleto, chave, PIX) completa o que ela não achou.
-async function lerPdf(d: Deps, jwt: string, pdf: Buffer): Promise<Leitura> {
+async function lerPdf(d: Deps, jwt: string, envio: Envio, pdf: Buffer): Promise<Leitura> {
   let texto: string | null = null;
   if (d.textoPdf) {
     try { texto = await d.textoPdf(pdf); } catch (e) { d.log('texto do PDF falhou', { erro: String(e).slice(0, 200) }); }
@@ -136,8 +162,51 @@ async function lerPdf(d: Deps, jwt: string, pdf: Buffer): Promise<Leitura> {
     if (x) return juntar(x, ext);
   }
   if (!d.ia) throw new Recusa(503, 'Leitura por IA indisponível');
+  // a prévia corre junto com a IA, sem atrasá-la
+  if (ext) void mandarPrevia(d, jwt, envio, ext);
   const l = await d.ia({ tipo: 'pdf', dados: pdf });
   return ext ? juntar(l, ext) : l;
+}
+
+// Prévia do boleto (pedido do Moises, 26/11/2026: ler o boleto em cerca de 1 s): enquanto a IA lê, a tela já recebe o
+// que o texto dá conferido pelos dígitos (linha, valor, vencimento, chave, PIX), o beneficiário que o Asaas diz que o
+// banco registrou (o fornecedor sugerido) e a empresa que paga (o CNPJ do texto que é de uma das empresas da pessoa).
+// Não é gravada: a leitura gravada é a completa, que a tela usa para completar o que a pessoa não mexeu. Qualquer falha
+// aqui só tira a prévia; a leitura completa vem do mesmo jeito.
+const MAX_PREVIA = 10;
+async function mandarPrevia(d: Deps, jwt: string, envio: Envio, ext: Extraido): Promise<void> {
+  if (!envio.previa || !ext.boletos.length) return;
+  try {
+    // no máximo 10 linhas ao mesmo tempo no Asaas (revisão de segurança do #145); as outras ficam para a leitura completa
+    const linhas = ext.boletos.slice(0, MAX_PREVIA);
+    const [conf, op] = await Promise.all([
+      Promise.all(linhas.map((b) => (d.asaas ? conferirAsaas(d, envio, b.linha).catch(() => undefined) : undefined))),
+      d.banco.rpc<{ empresas?: { documento?: string }[] } | null>(jwt, 'lancamento_opcoes', {}).catch(() => null),
+    ]);
+    const boletos = linhas.map((b, i) => (conf[i] ? { ...b, conferido_asaas: conf[i] } : { ...b }));
+    const nossos = new Set((op?.empresas ?? []).map((e) => soDigitos(e.documento)).filter(Boolean));
+    const tomador = ext.documentos.find((x) => nossos.has(x));
+    const benef = conf.find((c) => c?.ok && c.beneficiario_documento && !nossos.has(c.beneficiario_documento));
+    const valores = boletos.map((b) => (b.conferido_asaas?.ok ? b.conferido_asaas.valor : undefined) ?? b.valor);
+    const chaves = ext.chaves.filter(chaveDeNota);
+    const leitura = limpar<Leitura>({
+      origem: 'texto',
+      tomador: tomador ? { documento: tomador } : undefined,
+      emitente: benef ? { documento: benef.beneficiario_documento, nome: benef.beneficiario } : undefined,
+      valor: linhas.length === ext.boletos.length && valores.every((v) => v && v > 0) ? Math.round(valores.reduce<number>((a, v) => a + v!, 0) * 100) / 100 : undefined,
+      boletos,
+      chave_acesso: chaves.length === 1 ? chaves[0] : undefined,
+      pix: ext.pix.length === 1 ? { copia_e_cola: ext.pix[0] } : undefined,
+      avisos: ['Prévia pelo texto do PDF e pelo banco do boleto; o resto da leitura chega em seguida'],
+    });
+    if (envio.fim) { d.log('prévia descartada', { anexo: envio.anexo.id, ms: Date.now() - envio.inicio }); return; }
+    const identificacao = await d.banco.rpc(jwt, 'identificar_nota', { p: pedidoIdentificar(leitura) }).catch(() => null);
+    if (envio.fim) { d.log('prévia descartada', { anexo: envio.anexo.id, ms: Date.now() - envio.inicio }); return; }
+    d.log('prévia enviada', { anexo: envio.anexo.id, ms: Date.now() - envio.inicio });
+    envio.previa({ anexo: envio.anexo, repetido_em: envio.repetido, leitura, identificacao, previa: true });
+  } catch (e) {
+    d.log('prévia falhou', { erro: String(e).slice(0, 200) });
+  }
 }
 
 const UFS = new Set(['11', '12', '13', '14', '15', '16', '17', '21', '22', '23', '24', '25', '26', '27', '28', '29', '31', '32',
@@ -175,9 +244,12 @@ export function juntar(l: Leitura, ext: Extraido): Leitura {
   const chaves = ext.chaves.filter(chaveDeNota);
   const r: Leitura = { ...l };
   if (novos.length) {
-    // uma linha que a leitura trouxe com o dígito errado e o texto trouxe certa sai, para não ficar repetida
+    // o texto do PDF trouxe a linha que a IA leu errada: entra a certa, sem aviso (a linha do texto já fecha pelo dígito)
     r.boletos = [...(l.boletos ?? []).filter((b) => b.valida), ...novos];
-    r.avisos = [...(l.avisos ?? []), `${novos.length === 1 ? 'Linha do boleto conferida' : `${novos.length} linhas de boleto conferidas`} pelo texto do PDF`];
+    const emBranco = (l.avisos ?? []).find((a) => LINHA_EM_BRANCO.test(a));
+    const faltavam = emBranco ? Number(emBranco.match(/^\d+/)?.[0] ?? 1) : 0;
+    if (emBranco && novos.length >= faltavam) r.avisos = (l.avisos ?? []).filter((a) => a !== emBranco);
+    if (r.avisos && !r.avisos.length) delete r.avisos;
   }
   if (!r.chave_acesso && chaves.length === 1) r.chave_acesso = chaves[0];
   if (!r.pix?.copia_e_cola && ext.pix.length === 1) r.pix = { ...(r.pix ?? {}), copia_e_cola: ext.pix[0] };

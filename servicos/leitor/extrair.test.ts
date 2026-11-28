@@ -4,6 +4,7 @@ import { dvChave, extrair, temTexto } from './extrair.ts';
 import { type Deps, Recusa, chaveDeNota, juntar, subir } from './fluxo.ts';
 import { crc16Pix } from './ia.ts';
 import { lerArquivo } from './lote.ts';
+import { avisoLinhaEmBranco } from './leitura.ts';
 
 // Dados inventados. A chave da NF-e de teste do leitor.test.ts (CNPJ do emitente 11.222.333/0001-81).
 const CHAVE = '35261111222333000181550010000012341000012345';
@@ -54,11 +55,13 @@ test('texto: dígito errado, número maior e código de barras do boleto não vi
 });
 
 test('juntar: linha do texto entra no lugar da lida errada; chave e PIX só quando únicos', () => {
-  const l = juntar({ origem: 'ia', boletos: [{ linha: '1'.repeat(47), valida: false }] }, extrair(`${DANFE} ${impressa(LINHA)} ${PIX}`));
+  const l = juntar({ origem: 'ia', avisos: [avisoLinhaEmBranco(1)] }, extrair(`${DANFE} ${impressa(LINHA)} ${PIX}`));
   assert.deepEqual(l.boletos!.map((b) => [b.linha, b.valida]), [[LINHA, true]]);
   assert.equal(l.chave_acesso, CHAVE);
   assert.equal(l.pix?.copia_e_cola, PIX);
-  assert.match(l.avisos!.join(), /Linha do boleto conferida pelo texto/);
+  assert.equal(l.avisos, undefined, 'o texto corrigiu a linha: sem aviso');
+  const duas = juntar({ origem: 'ia', avisos: [avisoLinhaEmBranco(2)] }, extrair(`${impressa(LINHA)}`));
+  assert.deepEqual(duas.avisos, [avisoLinhaEmBranco(2)], 'corrigiu uma de duas: o aviso fica');
   const m = juntar({ origem: 'ia', chave_acesso: 'outra' }, extrair(`${DANFE} chave ${CHAVE_NFSE}`));
   assert.equal(m.chave_acesso, 'outra', 'a da leitura fica');
   assert.equal(m.boletos, undefined);
@@ -128,4 +131,61 @@ test('lote no modo texto: só o que sai do texto, sem IA e sem guardar o texto',
 test('texto: só os primeiros 200 mil caracteres são procurados', () => {
   assert.deepEqual(extrair('x'.repeat(200_000) + ` ${CHAVE}`).chaves, []);
   assert.deepEqual(extrair('000201'.repeat(300_000)).pix, []);
+});
+
+// Prévia do boleto (26/11/2026): enquanto a IA lê, sai o que o texto e o Asaas dão; o Asaas é consultado uma vez só.
+const BOLETO = `Beneficiário FORNECEDOR TESTE LTDA CNPJ 11.222.333/0001-81  Pagador SPE TESTE CNPJ 11.444.777/0001-61
+${impressa(LINHA)}`;
+function comPrevia(iaEspera: Promise<void>, asaasEspera: Promise<void> = Promise.resolve()) {
+  const { deps, chamadas } = falsos(BOLETO, () => null);
+  const rpc = deps.banco.rpc;
+  deps.banco = { async rpc(jwt, fn, args) {
+    if (fn === 'lancamento_opcoes') { chamadas.push(fn); return { empresas: [{ documento: '11444777000161' }] } as never; }
+    if (fn === 'identificar_nota') { chamadas.push(fn); return { recebido: args.p } as never; }
+    return rpc(jwt, fn, args);
+  } };
+  deps.asaas = async () => { chamadas.push('asaas'); await asaasEspera;
+    return { ok: true, valor: 1234.56, vencimento: '2026-12-10', beneficiario: 'FORNECEDOR TESTE LTDA', beneficiario_documento: '11222333000181' }; };
+  deps.ia = async () => { await iaEspera; chamadas.push('ia'); return { origem: 'ia', tipo: 'boleto', valor: 1234.56, numero: '77',
+    boletos: [{ linha: LINHA, valida: true }] }; };
+  return { deps, chamadas };
+}
+
+test('prévia do boleto: sai antes da IA com a linha, o beneficiário do Asaas e a empresa que paga', async () => {
+  let soltar!: () => void;
+  const ia = new Promise<void>((ok) => { soltar = ok; });
+  const { deps, chamadas } = comPrevia(ia);
+  const previas: unknown[] = [];
+  const fim = subir(deps, 'ok', 'boleto.pdf', PDF, (p) => { previas.push(p); soltar(); });
+  const r = await fim;
+  assert.equal(previas.length, 1);
+  const p = previas[0] as { previa: boolean; leitura: { origem: string; emitente: unknown; tomador: unknown; valor: number; boletos: { conferido_asaas?: unknown }[] }; identificacao: { recebido: Record<string, unknown> } };
+  assert.equal(p.previa, true); assert.equal(p.leitura.origem, 'texto');
+  assert.deepEqual(p.leitura.emitente, { documento: '11222333000181', nome: 'FORNECEDOR TESTE LTDA' });
+  assert.deepEqual(p.leitura.tomador, { documento: '11444777000161' });
+  assert.equal(p.leitura.valor, 1234.56); assert.ok(p.leitura.boletos[0].conferido_asaas);
+  assert.equal(p.identificacao.recebido.emitente, '11222333000181'); assert.equal(p.identificacao.recebido.tomador, '11444777000161');
+  // a leitura completa é a da IA, com o Asaas da prévia (uma consulta só) e sem a marca de prévia
+  assert.equal(r.leitura?.origem, 'ia'); assert.equal(r.leitura?.numero, '77'); assert.equal(r.previa, undefined);
+  assert.ok(r.leitura?.boletos?.[0].conferido_asaas?.ok);
+  assert.equal(chamadas.filter((c) => c === 'asaas').length, 1);
+  assert.ok(chamadas.indexOf('ia') > chamadas.indexOf('identificar_nota'), 'a IA terminou depois da prévia');
+});
+
+test('prévia do boleto: não sai sem quem pediu, sem linha no texto ou depois da leitura completa', async () => {
+  const sem = comPrevia(Promise.resolve());
+  assert.equal((await subir(sem.deps, 'ok', 'b.pdf', PDF)).leitura?.origem, 'ia');
+  assert.ok(!sem.chamadas.includes('lancamento_opcoes'));
+  const semLinha = falsos(DANFE, () => null);
+  const vistas: unknown[] = [];
+  await subir(semLinha.deps, 'ok', 'n.pdf', PDF, (p) => vistas.push(p));
+  assert.equal(vistas.length, 0);
+  // o Asaas demora mais que a IA: a prévia chegaria depois do resultado e não sai
+  let soltar!: () => void;
+  const lento = comPrevia(Promise.resolve(), new Promise<void>((ok) => { soltar = ok; }));
+  const atrasadas: unknown[] = [];
+  const fim = subir(lento.deps, 'ok', 'b.pdf', PDF, (p) => atrasadas.push(p));
+  setTimeout(() => soltar(), 20);
+  await fim; await new Promise((ok) => setTimeout(ok, 30));
+  assert.equal(atrasadas.length, 0);
 });

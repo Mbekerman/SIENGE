@@ -22,7 +22,7 @@ export interface Boleto {
 export interface Retencoes { iss?: number; irrf?: number; inss?: number; pis?: number; cofins?: number; csll?: number }
 
 export interface Leitura {
-  origem: 'xml' | 'ia';
+  origem: 'xml' | 'ia' | 'texto';   // texto: a prévia do boleto (fluxo.ts › mandarPrevia), nunca gravada
   modelo?: string;                // o modelo de IA, quando origem = ia
   formato?: string;               // NF-e 4.00, NFS-e Nacional...
   tipo?: TipoDocumento;
@@ -72,4 +72,11 @@ export function limpar<T>(v: T): T {
 function vazio(x: unknown) {
   return x === undefined || x === null || x === '' || (Array.isArray(x) && x.length === 0)
     || (typeof x === 'object' && x !== null && !Array.isArray(x) && Object.keys(x).length === 0);
+}
+
+// Aviso de linha lida errada; juntar() o tira quando o texto do PDF traz a linha certa.
+export const LINHA_EM_BRANCO = /^(Uma linha|\d+ linhas) do boleto não (pôde|puderam) ser lidas? com certeza/;
+export function avisoLinhaEmBranco(n: number) {
+  return n === 1 ? 'Uma linha do boleto não pôde ser lida com certeza e ficou em branco: preencha à mão.'
+    : `${n} linhas do boleto não puderam ser lidas com certeza e ficaram em branco: preencha à mão.`;
 }

@@ -11,6 +11,7 @@ import { mensagemErro, rpc, supabase } from '../lib/supabase';
 import { abrirComSenha, acordarLeitor, leitorLigado, subirArquivo, TIPOS_ACEITOS } from '../lib/leitor';
 import { casarBoletos, conferirValores, juntarLeituras } from '../lib/conjunto';
 import { pagDoBanco, textoPag } from './ComoPaga';
+import { Escolha } from '../components/Escolha';
 import type { ContaCadastro, Contrato, FornecedorBusca, Identificacao, Leitura, NaturezaLancavel, OpcoesLancamento, PrevisaoParaNota, ResultadoLeitor } from '../lib/tipos';
 
 type Forma = 'pix' | 'boleto' | 'ted' | 'cadastro';
@@ -73,6 +74,7 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   const arq = useMemo(() => juntarLeituras(arquivos), [arquivos]);
   const [cand, setCand] = useState<string | null>(null);
   const [semRet, setSemRet] = useState(false);
+  const [tomExc, setTomExc] = useState('');
   const [buscaForn, setBuscaForn] = useState('');
   // emitente que o ERP não achou: a tela pergunta ao cadastro de credores do Sienge (função sienge-credores), que traz o
   // credor para o ERP; achado, o fornecedor se preenche (Moises, 24/11/2026)
@@ -115,7 +117,9 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   const mao = (k: string) => { if (lendo.current) mexidos.current.add(k); };
   const subir = useMutation({ mutationFn: async (fs: File[]) => {
     lendo.current = true; mexidos.current.clear();
-    try { for (const f of fs) { const r = await subirArquivo(f); setArquivos(a => [...a.filter(x => x.anexo.id !== r.anexo.id), r]); } }
+    // no boleto, a prévia (texto e Asaas) chega antes e a leitura completa depois toma o lugar dela (Moises, 26/11/2026)
+    const pondo = (r: ResultadoLeitor) => setArquivos(a => [...a.filter(x => x.anexo.id !== r.anexo.id), r]);
+    try { for (const f of fs) pondo(await subirArquivo(f, pondo)); }
     finally { lendo.current = false; }
   }, onSuccess: () => setSemRet(false) });
   // acorda o leitor ao abrir a tela, para a primeira leitura não esperar o servidor subir
@@ -124,17 +128,18 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   // com a mesma base (só entrou boleto ou anexo), só as parcelas se refazem: o que foi corrigido à mão no resto fica;
   // com base nova (a nota chegou depois do boleto), a tela inteira se preenche pela nota
   const base = useRef<string | null>(null);
+  const basePrevia = useRef(false);   // a base era a prévia: a leitura completa dela preenche a tela inteira
   const [refeitas, setRefeitas] = useState(false);
   useEffect(() => {
     if (!arq) { base.current = null; return; }
-    if (base.current === arq.anexo.id && arq.leitura) {
+    if (base.current === arq.anexo.id && arq.leitura && !basePrevia.current) {
       setParcelas(parcelasLidas(arq.leitura, arq.identificacao?.pagamento ?? null, forn?.documento ?? null));
       setRefeitas(true);
     } else { preencher(arq); setRefeitas(false); }
-    base.current = arq.anexo.id;
+    base.current = arq.anexo.id; basePrevia.current = Boolean(arq.previa);
   }, [arq]); // eslint-disable-line react-hooks/exhaustive-deps
   const docEmit = arq?.leitura?.emitente?.documento?.toUpperCase().replace(/[^0-9A-Z]/g, '') ?? '';
-  const procurarSienge = Boolean(arq && docEmit && !arq.identificacao?.fornecedor && /^([0-9]{11}|[0-9A-Z]{12}[0-9]{2})$/.test(docEmit));
+  const procurarSienge = Boolean(arq && !arq.previa && docEmit && !arq.identificacao?.fornecedor && /^([0-9]{11}|[0-9A-Z]{12}[0-9]{2})$/.test(docEmit));
   useEffect(() => {
     if (!procurarSienge || sienge?.doc === docEmit) return;
     let vivo = true;
@@ -187,6 +192,9 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   }
 
   const muda = (k: number, m: Partial<Linha>) => setLinhas(ls => ls.map(l => (l.k === k ? { ...l, ...m } : l)));
+  // as chaves de e-mail e telefone já conhecidas do fornecedor (cadastro e usadas antes), para escolher na parcela
+  const cq2 = useQuery({ queryKey: ['fornecedor_chaves_pix', forn?.id], queryFn: () => rpc<ChaveConhecida[]>('fornecedor_chaves_pix', { p_fornecedor: forn!.id }), enabled: Boolean(forn) });
+  const chavesForn = cq2.data ?? [];
   const mudaP = (k: number, m: Partial<Parcela>) => setParcelas(ps => ps.map(p => (p.k === k ? { ...p, ...m } : p)));
 
   // a conta recorrente da nota (as previsões marcadas de um contrato só): com PIX fixo ou TED aprovados no cadastro, a
@@ -200,7 +208,14 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
   const cadastroPendente = Boolean(pagCad && pagCad.modo !== 'cobranca' && lq.data && !lq.data.find(c => c.id === contrato)?.aprovado);
   useEffect(() => { if (!cadastroUsavel) setParcelas(ps => (ps.some(p => p.forma === 'cadastro') ? ps.map(p => (p.forma === 'cadastro' ? { ...p, forma: 'pix' } : p)) : ps)); }, [cadastroUsavel]);
 
+  // tomador lido que não é a empresa do título (Moises, 26/11/2026): alerta vermelho e justificativa obrigatória, que quem
+  // aprova vê até o pagamento; o banco confere de novo pelos anexos (erp.tg_anexo_tomador)
+  const tomadores = [...new Set(arquivos.map(a => docSo(a.leitura?.tomador?.documento ?? '')).filter(Boolean))];
+  const nossos = new Set((o?.empresas ?? []).map(e => docSo(e.documento ?? '')).filter(Boolean));
+  const tomFora = tomadores.filter(d => (emp ? d !== docSo(emp.documento ?? '') : !nossos.has(d)));
   const falta: string[] = [];
+  const semJustTom = tomFora.length > 0 && tomExc.trim().length < 12;
+  if (semJustTom) falta.push('a justificativa do tomador (pelo menos 12 caracteres)');
   if (comRet && !semRet) falta.push('confirmar que a nota não tem retenção (nota com retenção ainda não se lança)');
   if (!empresa) falta.push('a empresa');
   if (!forn) falta.push('o fornecedor');
@@ -229,6 +244,7 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
         ? { vencimento: p.vencimento, ...(comValor ? { valor: lerReais(p.valor) } : {}), forma: 'pix', pix_tipo: p.pix_tipo, pix_chave: chave(p.pix_tipo, p.pix_chave), pix_excecao: p.excecao.trim() || null, pix_copia_cola: p.pix_cc.trim() || null, pix_copia_cola_excecao: (p.pix_cc.trim() && p.cc_exc.trim()) || null }
         : { vencimento: p.vencimento, ...(comValor ? { valor: lerReais(p.valor) } : {}), forma: 'boleto', boleto_linha: p.boleto.replace(/\D/g, ''), boleto_excecao: p.bol_exc.trim() || null, pix_copia_cola: p.pix_cc.trim() || null, pix_copia_cola_excecao: (p.pix_cc.trim() && p.cc_exc.trim()) || null }),
       previsoes: prevs, etiquetas: etq, anexos: arquivos.map(a => a.anexo.id),
+      tomador_excecao: tomFora.length ? tomExc.trim() : null,
     } }),
     onSuccess: id => { qc.invalidateQueries({ queryKey: ['titulos'] }); qc.invalidateQueries({ queryKey: ['previsoes'] }); lancado(id); },
   });
@@ -240,7 +256,7 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
       {enviar.error ? <span className="lt-erro"><Ic n="warn" s={18} />{mensagemErro(enviar.error)}</span>
         : tentou && falta.length ? <span className="lt-erro"><Ic n="warn" s={18} />Falta {juntar(falta)}.</span> : <span className="esp" />}
       <button className="btn t" onClick={fechar}>Cancelar</button>
-      <button className="btn p" onClick={lancar} disabled={enviar.isPending}>{enviar.isPending ? 'Lançando…' : 'Lançar'}</button>
+      <button className="btn p" onClick={lancar} disabled={enviar.isPending || semJustTom} title={semJustTom ? 'Escreva a justificativa do tomador (pelo menos 12 caracteres)' : undefined}>{enviar.isPending ? 'Lançando…' : 'Lançar'}</button>
     </>}>
       {op.isLoading ? <Carregando /> : op.error ? <Alerta c="cr" t={mensagemErro(op.error)} /> : !o ? <Alerta c="at" t="Seu papel só permite consulta: você não lança títulos." /> : <>
         <p className="sec lt-intro">A nota vira um título que vai para a aprovação. Aprovado, ele segue sozinho para o Sienge com a forma de pagamento de cada parcela.</p>
@@ -251,6 +267,14 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
           abrir={(id, x) => senha.mutate({ id, s: x })} abrindo={senha.isPending} erroSenha={senha.error ? mensagemErro(senha.error) : null}
           sugeridas={sugeridas} mascara={mascaraTom} usarEmpresa={id => { setEmpresa(id); setLinhas([novaLinha()]); }}
           sienge={sienge?.doc === docEmit ? sienge.estado : null} />}
+        {tomFora.length > 0 && (
+          <div className="lt-sec lt-exc">
+            <span className="nt cr"><b>O tomador da nota ({tomFora.map(documento).join(', ')}) {emp ? `não é a empresa do título (${emp.nome})` : 'não é nenhuma empresa em que você lança'}.</b> Só lança com a justificativa, que todos os aprovadores veem até o pagamento.</span>
+            <textarea className={`lt-in ${tentou && semJustTom ? 'err' : ''}`} rows={2} maxLength={500} style={{ height: 'auto', padding: '8px 12px' }}
+              placeholder="Por que lançar esta nota nesta empresa?" aria-label="Justificativa do tomador" value={tomExc} onChange={e => setTomExc(e.target.value)} />
+            {semJustTom && <span className="sec peq">Pelo menos 12 caracteres ({tomExc.trim().length} de 12). O botão Lançar fica desligado até lá.</span>}
+          </div>
+        )}
         {refeitas && <span className="nt inf">As parcelas foram preenchidas de novo com os arquivos novos; o resto da tela ficou como estava.</span>}
         {comRet && arq?.leitura && (
           <div className="lt-sec">
@@ -335,10 +359,8 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
               {p.forma === 'cadastro' && pagCad ? <span className="nt ok">Forma do cadastro da conta: {textoPag(pagCad)}</span>
               : p.forma === 'ted' ? <TedParcela t={p.ted} docForn={forn?.documento ?? null} tentou={tentou} mudar={m => mudaP(p.k, { ted: { ...p.ted, ...m } })} />
               : p.forma === 'pix' ? <>
-                <div className="lt-lin">
-                  <select className="lt-in lt-tipo" value={p.pix_tipo} onChange={e => mudaP(p.k, { pix_tipo: e.target.value as PixTipo })}>{PIX.map(([k, r]) => <option key={k} value={k}>{r}</option>)}</select>
-                  <input className={`lt-in ${tentou && !p.pix_chave.trim() ? 'err' : ''}`} placeholder="Chave PIX" value={p.pix_chave} onChange={e => mudaP(p.k, { pix_chave: e.target.value })} />
-                </div>
+                <ChavePix tipo={p.pix_tipo} valor={p.pix_chave} forn={forn} conhecidas={chavesForn} erro={tentou && !p.pix_chave.trim()}
+                  mudar={m => mudaP(p.k, { ...(m.tipo ? { pix_tipo: m.tipo } : {}), ...(m.chave !== undefined ? { pix_chave: m.chave } : {}) })} />
                 {p.pix_tipo === 'cpf_cnpj' && forn?.documento && p.pix_chave && chave('cpf_cnpj', p.pix_chave) !== forn.documento && (
                   <div className="lt-exc"><span className="nt at">A chave não é o documento do fornecedor. Só entra com a justificativa, que quem aprova vê.</span>
                     <input className="lt-in" placeholder="Por que pagar em outra chave?" value={p.excecao} onChange={e => mudaP(p.k, { excecao: e.target.value })} /></div>
@@ -348,7 +370,8 @@ export function LancarTitulo({ fechar, lancado }: { fechar: () => void; lancado:
                 {[47, 48].includes(p.boleto.replace(/\D/g, '').length) && <RecebedorBoleto linha={p.boleto.replace(/\D/g, '')} docForn={forn?.documento ?? null}
                   valor={(comValor ? digitados[i] : iguais[i]) ?? null} exc={p.bol_exc} mudaExc={v => mudaP(p.k, { bol_exc: v })} tentou={tentou} />}
               </>}
-              {(p.forma === 'pix' || p.forma === 'boleto') && <><input className="lt-in mono" aria-label="PIX copia e cola" placeholder={p.forma === 'boleto' ? 'PIX copia e cola do boleto (opcional)' : 'PIX copia e cola (opcional)'}
+              {/* no PIX, o copia e cola só aparece quando o arquivo trouxe o código (Moises, 26/11/2026); no boleto, sempre */}
+              {(p.forma === 'boleto' || (p.forma === 'pix' && p.pix_cc !== '')) && <><input className="lt-in mono" aria-label="PIX copia e cola" placeholder={p.forma === 'boleto' ? 'PIX copia e cola do boleto (opcional)' : 'PIX copia e cola (opcional)'}
                 value={p.pix_cc} onChange={e => mudaP(p.k, { pix_cc: e.target.value.replace(/[\r\n]+/g, '') })} />
               {p.pix_cc.trim() && <RecebedorPix codigo={p.pix_cc} forma={p.forma} chaveParcela={p.forma === 'pix' ? chave(p.pix_tipo, p.pix_chave) : null}
                 docForn={forn?.documento ?? null} valor={(comValor ? digitados[i] : iguais[i]) ?? null} exc={p.cc_exc} mudaExc={v => mudaP(p.k, { cc_exc: v })} tentou={tentou} />}</>}
@@ -382,6 +405,59 @@ export const divisoesDe = (o: OpcoesLancamento | null | undefined, centro: strin
 };
 export const juntar = (l: string[]) => (l.length < 2 ? l.join('') : `${l.slice(0, -1).join(', ')} e ${l[l.length - 1]}`);
 
+interface ChaveConhecida { tipo: PixTipo; chave: string; origem: 'cadastro' | 'usada' | 'conta' }
+const ORIGEM_CHAVE = { cadastro: 'do cadastro', usada: 'já usada com ele', conta: 'da conta recorrente' };
+
+/** A chave PIX da parcela (Moises, 26/11/2026): no CPF/CNPJ, a marca "no CNPJ do fornecedor" põe o documento dele; no
+ *  e-mail e no telefone, a lista das chaves conhecidas do fornecedor ou "Outro", que abre o campo para digitar uma nova
+ *  (fica só na parcela). */
+function ChavePix({ tipo, valor, forn, conhecidas, erro, mudar }: {
+  tipo: PixTipo; valor: string; forn: FornecedorBusca | null; conhecidas: ChaveConhecida[]; erro: boolean;
+  mudar: (m: { tipo?: PixTipo; chave?: string }) => void;
+}) {
+  const doc = forn?.documento ?? null;
+  const opcoes = useMemo(() => {
+    const vistos = new Set<string>();
+    return conhecidas.filter(c => c.tipo === tipo).filter(c => { const k = chave(tipo, c.chave); if (vistos.has(k)) return false; vistos.add(k); return true; });
+  }, [conhecidas, tipo]);
+  const escolhida = opcoes.find(c => valor && chave(tipo, c.chave) === chave(tipo, valor));
+  const [outro, setOutro] = useState(false);
+  const lista = (tipo === 'email' || tipo === 'telefone') && opcoes.length > 0;
+  const noDoc = tipo === 'cpf_cnpj' && Boolean(doc) && chave('cpf_cnpj', valor) === doc;
+  const trocarTipo = (t: PixTipo) => {
+    setOutro(false);
+    const primeira = conhecidas.find(c => c.tipo === t);
+    mudar({ tipo: t, chave: t === 'cpf_cnpj' ? doc ?? '' : primeira ? primeira.chave : '' });
+  };
+  const tipoSel = <select className="lt-in lt-tipo" aria-label="Tipo da chave" value={tipo} onChange={e => trocarTipo(e.target.value as PixTipo)}>{PIX.map(([k, r]) => <option key={k} value={k}>{r}</option>)}</select>;
+  if (tipo === 'cpf_cnpj' && doc) return <>
+    <div className="lt-lin">{tipoSel}
+      {noDoc ? <span className="lt-in lt-fixo">{documento(doc)}</span>
+        : <input className={`lt-in ${erro ? 'err' : ''}`} placeholder="CPF ou CNPJ da chave" value={valor} onChange={e => mudar({ chave: e.target.value })} />}
+    </div>
+    <label className="ab-l"><input type="checkbox" checked={noDoc} onChange={e => mudar({ chave: e.target.checked ? doc : '' })} />
+      <span>O PIX é no {doc.length === 11 ? 'CPF' : 'CNPJ'} do fornecedor</span></label>
+  </>;
+  if (lista && !outro && (escolhida || !valor)) return (
+    <div className="lt-lin">{tipoSel}
+      <select className={`lt-in ${erro ? 'err' : ''}`} aria-label="Chave PIX" value={escolhida?.chave ?? ''}
+        onChange={e => { if (e.target.value === '__outro__') { setOutro(true); mudar({ chave: '' }); } else mudar({ chave: e.target.value }); }}>
+        {!escolhida && <option value="">Escolha {tipo === 'email' ? 'o e-mail' : 'o telefone'}</option>}
+        {opcoes.map(c => <option key={c.chave} value={c.chave}>{c.chave} ({ORIGEM_CHAVE[c.origem]})</option>)}
+        <option value={'__outro__'}>{tipo === 'email' ? 'Outro e-mail…' : 'Outro telefone…'}</option>
+      </select>
+    </div>
+  );
+  return (
+    <div className="lt-lin">{tipoSel}
+      <input className={`lt-in ${erro ? 'err' : ''}`} autoFocus={outro} inputMode={tipo === 'telefone' ? 'tel' : tipo === 'email' ? 'email' : undefined}
+        placeholder={tipo === 'email' ? 'Novo e-mail' : tipo === 'telefone' ? 'Novo telefone com DDD' : tipo === 'cpf_cnpj' ? 'CPF ou CNPJ da chave' : 'Chave PIX'}
+        value={valor} onChange={e => mudar({ chave: e.target.value })} />
+      {lista && <button className="btn t sm" onClick={() => { setOutro(false); mudar({ chave: opcoes[0].chave }); }}>Voltar à lista</button>}
+    </div>
+  );
+}
+
 export function LinhaRateio({ l, o, emp, varias, valor, tentou, mudar, tirar }: {
   l: Linha; o: OpcoesLancamento; emp: OpcoesLancamento['empresas'][number]; varias: boolean; valor: number | null; tentou: boolean;
   mudar: (m: Partial<Linha>) => void; tirar: () => void;
@@ -402,21 +478,17 @@ export function LinhaRateio({ l, o, emp, varias, valor, tentou, mudar, tirar }: 
   return (
     <div className="lt-rat">
       <div className="lt-grid">
-        <select className={`lt-in ${err(l.nucleo)}`} value={l.nucleo} onChange={e => mudar({ nucleo: e.target.value, centro: '', divisao: '', natureza: '' })} disabled={!emp.nucleos.length} aria-label="Núcleo">
-          <option value="">Núcleo</option>{emp.nucleos.map(n => <option key={n.id} value={n.id}>{n.nome}</option>)}
-        </select>
-        <select className={`lt-in ${err(l.centro)}`} value={l.centro} onChange={e => mudar({ centro: e.target.value, divisao: '', natureza: '' })} disabled={!nucleo} aria-label="Centro de custo">
-          <option value="">Centro de custo</option>{centros.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
-        </select>
+        <Escolha erro={Boolean(err(l.nucleo))} valor={l.nucleo} rotulo="Núcleo" vazio="Núcleo" disabled={!emp.nucleos.length}
+          opcoes={emp.nucleos.map(n => ({ id: n.id, nome: n.nome }))} mudar={id => mudar({ nucleo: id, centro: '', divisao: '', natureza: '' })} />
+        <Escolha erro={Boolean(err(l.centro))} valor={l.centro} rotulo="Centro de custo" vazio="Centro de custo" disabled={!nucleo}
+          opcoes={centros.map(c => ({ id: c.id, nome: c.nome }))} mudar={id => mudar({ centro: id, divisao: '', natureza: '' })} />
         {divs.length > 0 && (
-          <select className={`lt-in ${err(l.divisao)}`} value={l.divisao} onChange={e => mudar({ divisao: e.target.value, natureza: '' })} aria-label="Divisão">
-            <option value="">Divisão (último nível)</option>{divs.map(d => <option key={d.id} value={d.id}>{d.caminho}</option>)}
-          </select>
+          <Escolha erro={Boolean(err(l.divisao))} valor={l.divisao} rotulo="Divisão" vazio="Divisão (último nível)"
+            opcoes={divs.map(d => ({ id: d.id, nome: d.caminho }))} mudar={id => mudar({ divisao: id, natureza: '' })} />
         )}
-        <select className={`lt-in lt-nat ${err(l.natureza)}`} value={l.natureza} onChange={e => mudar({ natureza: e.target.value })} disabled={!pronta || nq.isLoading} aria-label="Natureza">
-          <option value="">{!pronta ? 'Natureza' : nq.isLoading ? 'Carregando…' : nats.length ? 'Natureza' : 'Nenhuma natureza liberada para você aqui'}</option>
-          {nats.map(n => <option key={n.id} value={n.id}>{n.caminho}</option>)}
-        </select>
+        <Escolha className="lt-nat" erro={Boolean(err(l.natureza))} valor={l.natureza} rotulo="Natureza" disabled={!pronta || nq.isLoading}
+          vazio={!pronta ? 'Natureza' : nq.isLoading ? 'Carregando…' : nats.length ? 'Natureza (digite para buscar)' : 'Nenhuma natureza liberada para você aqui'}
+          opcoes={nats.map(n => ({ id: n.id, nome: n.caminho }))} mudar={id => mudar({ natureza: id })} />
       </div>
       {varias && (
         <div className="lt-lin lt-pct">
@@ -495,7 +567,6 @@ function avisosLidos(r: ResultadoLeitor, valor: number | null, sienge: BuscaSien
     out.push({ c: 'cr', t: <>Esta nota já foi lançada: {NOME_TIPO[d.tipo] ?? d.tipo} {d.numero} de {data(d.emissao)}, {reais(d.valor)}{d.titulo_id && <> · <a href={`/titulos/${d.titulo_id}`} target="_blank" rel="noreferrer">abrir o título</a></>}.</> });
   if (!l) return out;
   if (l.origem === 'ia') out.push({ c: 'inf', t: 'Lido pela IA a partir da imagem do documento: confira cada campo antes de lançar.' });
-  if (l.tomador?.documento && !id?.empresa) out.push({ c: 'at', t: `O tomador da nota (${documento(l.tomador.documento)}) não é uma empresa em que você lança.` });
   const emit = `O emitente ${l.emitente?.nome ?? ''} (${documento(l.emitente?.documento ?? '')})`;
   if (l.emitente?.documento && !id?.fornecedor) out.push(
     sienge === 'buscando' ? { c: 'inf', t: `${emit} não está no cadastro do ERP. Procurando nos credores do Sienge…` }
@@ -545,7 +616,7 @@ function ArquivoNota({ r, arquivos, tirar, subindo, erro, escolher, valor, cand,
             <div key={a.anexo.id} className="lt-arq ok">
               <Ic n="anexo" s={22} />
               <span style={{ flex: 1, minWidth: 0 }}><b className="lt-arqn" title={a.anexo.nome}>{a.anexo.nome}</b>
-                <span className="sec peq" style={{ display: 'block' }}>{[a.leitura ? (a.leitura.origem === 'xml' ? `Lido do XML${a.leitura.formato ? ` (${a.leitura.formato})` : ''}` : 'Lido pela IA') : a.pede_senha ? 'Com senha' : 'Guardado, sem leitura',
+                <span className="sec peq" style={{ display: 'block' }}>{[a.leitura ? (a.leitura.origem === 'xml' ? `Lido do XML${a.leitura.formato ? ` (${a.leitura.formato})` : ''}` : a.previa ? 'Boleto lido pelo texto; a IA lê o resto' : 'Lido pela IA') : a.pede_senha ? 'Com senha' : 'Guardado, sem leitura',
                   a.leitura?.tipo ? NOME_TIPO[a.leitura.tipo] : null, arquivos.length > 1 && r?.anexo.id === a.anexo.id ? 'preenche a tela' : null].filter(Boolean).join(' · ')}</span></span>
               <button className="btn t sm" onClick={() => tirar(a.anexo.id)} disabled={subindo}>Tirar</button>
             </div>
