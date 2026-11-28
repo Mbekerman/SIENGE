@@ -10773,5 +10773,115 @@ select pg_temp.ok((select count(*) from api.lancamento_opcoes() j, jsonb_array_e
 select pg_temp.como(null);
 rollback;
 
+\echo '# centros e divisões pela tela (api.centros_arvore e companhia, Moises, 28/11/2026)'
+select pg_temp.como(null);
+begin;
+select pg_temp.sis();
+alter table erp.centros_custo disable trigger t_teste_libera;
+alter table erp.divisoes disable trigger t_teste_libera;
+delete from erp.aprovadores_acesso; insert into erp.aprovadores_acesso values (:'diretor2');
+update erp.regra_acesso set minimo = 1;
+update erp.regras_mudanca_acesso set exige_aprovacao = true where tabela = 'divisoes';
+select pg_temp.volta();
+create temp table cd_nat as select array[pg_temp.nat('05.01.04')] a, array[pg_temp.nat('05.01.04'), pg_temp.nat('05.01.03')] b;
+grant select on cd_nat to public;
+-- quem lê
+select pg_temp.como(:'leitor');
+select pg_temp.ok((select not (j->'pode'->>'centro')::boolean and not (j->'pode'->>'naturezas')::boolean
+                          and jsonb_array_length(j->'centros') > 0 and jsonb_array_length(j->'naturezas') > 0
+                     from api.centros_arvore() j),
+  'árvore: quem só consulta vê os centros e as naturezas, sem poder mexer');
+select pg_temp.erro_igual($$select api.criar_centro('Centro do leitor', (select a from cd_nat), null)$$,
+  'Só o administrador cria centro de custo', 'árvore: quem só consulta não cria centro');
+-- o tronco, pelo administrador (o TI)
+select pg_temp.como(:'ti');
+select pg_temp.ok((select (j->'pode'->>'centro')::boolean and (j->'pode'->>'divisao')::boolean and not (j->'pode'->>'na_hora')::boolean
+                     from api.centros_arvore() j), 'árvore: o administrador cria centro e pede divisão, mas não faz divisão na hora');
+select pg_temp.erro_igual($$select api.criar_centro('Sem naturezas', '{}', null)$$,
+  'Marque as naturezas liberadas para lançamento no centro novo', 'centro novo: sem naturezas não nasce');
+select pg_temp.erro_igual($$select api.criar_centro('Galho', array[pg_temp.nat('05.01')], null)$$,
+  'Só se liberam naturezas ativas do último nível', 'centro novo: natureza que não é do último nível não se libera');
+select pg_temp.erro_igual($$select api.criar_centro(' marketing ', (select a from cd_nat), null)$$,
+  'Já existe um centro de custo com este nome', 'centro novo: nome repetido (sem olhar maiúscula) é recusado');
+select api.criar_centro('  Consórcios  ', (select b from cd_nat), array[:'ne_vm'::uuid]) as cd_c \gset
+select pg_temp.ok((select nome = 'Consórcios' and ativo from erp.centros_custo where id = :'cd_c')
+                  and (select count(*) = 2 from erp.naturezas_liberadas where centro_custo_id = :'cd_c' and divisao_id is null)
+                  and erp.centro_ligado(:'ne_vm', :'cd_c') and not erp.centro_ligado(:'ne_corp', :'cd_c'),
+  'centro novo: nasce com o nome sem espaços, as naturezas marcadas e ligado só no núcleo escolhido');
+select api.ligar_centro(:'cd_c', :'ne_corp', true);
+select api.ligar_centro(:'cd_c', :'ne_vm', false);
+select pg_temp.ok(erp.centro_ligado(:'ne_corp', :'cd_c') and not erp.centro_ligado(:'ne_vm', :'cd_c'),
+  'centro: liga num núcleo e desliga em outro');
+select api.alterar_centro(:'cd_c', 'Consórcios BKM', null);
+select pg_temp.erro_igual(format($$select api.alterar_centro(%L, 'Obra', null)$$, :'cd_c'),
+  'Já existe um centro de custo com este nome', 'centro: não se renomeia para o nome de outro');
+select pg_temp.como(null);
+select pg_temp.ok(exists (select 1 from erp.auditoria where tabela = 'centros_custo' and registro = :'cd_c'),
+  'centro: criar e renomear ficam na auditoria');
+select pg_temp.falha(format($$delete from erp.centros_custo where id = %L$$, :'cd_c'), 'centro: não se apaga, nem pelo sistema');
+-- o galho: o administrador pede, o aprovador de acesso decide
+select pg_temp.como(:'ti');
+select api.pedir_divisao('incluir', jsonb_build_object('centro_custo_id', :'cd_c', 'nome', ' Cartas ', 'naturezas', (select to_jsonb(a) from cd_nat)),
+                         'Uma divisão por carta') ->> 'pedido' as cd_p1 \gset
+select pg_temp.ok((select situacao = 'pendente' and dados->>'nome' = 'Cartas' from erp.mudancas_acesso where id = :'cd_p1')
+                  and not exists (select 1 from erp.divisoes where centro_custo_id = :'cd_c'),
+  'divisão pela tela: o pedido do administrador fica pendente, com o nome sem espaços');
+select pg_temp.erro_igual(format($$select api.pedir_divisao('incluir', jsonb_build_object('centro_custo_id', %L, 'nome', 'cartas', 'naturezas', (select to_jsonb(a) from cd_nat)), 'x')$$, :'cd_c'),
+  'Já existe (ou já foi pedida) uma divisão com este nome no mesmo lugar', 'divisão pela tela: o mesmo nome já pedido no mesmo lugar é recusado');
+select pg_temp.ok((select p->>'posso_decidir' = 'false' and (p->>'meu')::boolean
+                     from api.centros_arvore() j, jsonb_array_elements(j->'pedidos') p where p->>'id' = :'cd_p1'),
+  'divisão pela tela: quem pediu vê o pedido e não o decide');
+select pg_temp.como(:'diretor2');
+select pg_temp.ok((select (p->>'posso_decidir')::boolean from api.centros_arvore() j, jsonb_array_elements(j->'pedidos') p where p->>'id' = :'cd_p1'),
+  'divisão pela tela: o aprovador de acesso pode decidir');
+select pg_temp.ok(api.decidir_pedido_divisao(:'cd_p1', true, null) = 'aplicada', 'divisão pela tela: aprovada, é aplicada');
+select id as cd_d1 from erp.divisoes where centro_custo_id = :'cd_c' and nome = 'Cartas' \gset
+select pg_temp.ok((select count(*) = 1 from erp.naturezas_liberadas where divisao_id = :'cd_d1')
+                  and not exists (select 1 from erp.naturezas_liberadas where centro_custo_id = :'cd_c' and divisao_id is null),
+  'divisão pela tela: nasce com as naturezas marcadas e o centro passa a ser a soma');
+-- o master faz na hora; o primeiro nível abaixo copia a lista do de cima
+select pg_temp.como(:'diretor');
+select pg_temp.ok((select j->>'situacao' = 'aplicada'
+                     from api.pedir_divisao('incluir', jsonb_build_object('mae_id', :'cd_d1', 'nome', 'Carta 101', 'copiar_de', :'cd_d1'), null) j),
+  'divisão pela tela: o master cria na hora, sem motivo');
+select id as cd_d2 from erp.divisoes where mae_id = :'cd_d1' \gset
+select pg_temp.ok((select nivel = 2 from erp.divisoes where id = :'cd_d2')
+                  and (select count(*) = 1 from erp.naturezas_liberadas where divisao_id = :'cd_d2')
+                  and not exists (select 1 from erp.naturezas_liberadas where divisao_id = :'cd_d1'),
+  'divisão pela tela: o 1º subnível copia a lista do de cima, que vira a soma');
+select pg_temp.erro_igual(format($$select api.salvar_naturezas(%L, %L, (select b from cd_nat))$$, :'cd_c', :'cd_d1'),
+  'Este nível tem níveis abaixo: as naturezas dele são a soma das de baixo', 'naturezas: o nível com níveis abaixo não tem lista própria');
+select pg_temp.falha(format($$select api.pedir_divisao('alterar', jsonb_build_object('id', %L, 'mae_id', null), null)$$, :'cd_d2'),
+  'divisão pela tela: mudar de lugar continua recusado');
+select api.pedir_divisao('alterar', jsonb_build_object('id', :'cd_d2', 'nome', 'Carta 102'), null) ->> 'situacao' as cd_sit \gset
+select pg_temp.ok(:'cd_sit' = 'aplicada' and (select nome = 'Carta 102' from erp.divisoes where id = :'cd_d2'),
+  'divisão pela tela: o master renomeia na hora');
+-- naturezas do último nível: AF, AO, AD mudam na hora
+select pg_temp.como(:'gestor');
+select pg_temp.falha(format($$select api.salvar_naturezas(%L, %L, (select b from cd_nat))$$, :'cd_c', :'cd_d2'),
+  'naturezas: o gestor não liga natureza');
+select pg_temp.como(:'analista');   -- está na lista AO
+select api.salvar_naturezas(:'cd_c', :'cd_d2', (select b from cd_nat)) as cd_n1 \gset
+select pg_temp.ok(:'cd_n1' = 1 and (select count(*) = 2 from erp.naturezas_liberadas where divisao_id = :'cd_d2'),
+  'naturezas: quem é AO liga a natureza no último nível na hora');
+select api.salvar_naturezas(:'cd_c', :'cd_d2', (select a from cd_nat)) as cd_n2 \gset
+select pg_temp.ok(:'cd_n2' = 1 and (select count(*) = 1 from erp.naturezas_liberadas where divisao_id = :'cd_d2'),
+  'naturezas: e desliga a que saiu da lista');
+select api.salvar_modelo_naturezas('Consórcio padrão', (select b from cd_nat)) as cd_m \gset
+select pg_temp.ok((select count(*) = 2 from erp.modelo_naturezas where modelo_id = :'cd_m')
+                  and exists (select 1 from api.centros_arvore() j, jsonb_array_elements(j->'modelos') m where m->>'id' = :'cd_m'),
+  'modelo: a lista marcada vira modelo e aparece na árvore');
+select pg_temp.erro_igual($$select api.salvar_modelo_naturezas('consórcio padrão', (select a from cd_nat))$$,
+  'Já existe um modelo com este nome', 'modelo: nome repetido é recusado');
+select pg_temp.como(:'leitor');
+select pg_temp.falha($$select api.salvar_modelo_naturezas('Do leitor', (select a from cd_nat))$$, 'modelo: quem só consulta não salva');
+select pg_temp.como(null);
+select pg_temp.ok(not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                               where n.nspname = 'api' and p.proname in ('centros_arvore','criar_centro','alterar_centro','ligar_centro',
+                                     'pedir_divisao','decidir_pedido_divisao','cancelar_pedido_divisao','salvar_naturezas','salvar_modelo_naturezas')
+                                 and (has_function_privilege('anon', p.oid, 'EXECUTE') or p.prosecdef)),
+  'árvore: as funções da tela são invoker e anon não as executa');
+rollback;
+
 \echo '# fim'
 do $$ begin raise notice 'TODOS OS TESTES PASSARAM'; end $$;

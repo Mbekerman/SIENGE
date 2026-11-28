@@ -157,3 +157,18 @@ export interface Empresa {
   id: string; apelido: string | null; razao_social: string; documento: string | null;
   tipo: 'holding' | 'incorporadora' | 'construtora' | 'spe' | 'outra'; ativa: boolean; posso_apelido: boolean;
 }
+
+/* api.centros_arvore (migration 20261128000100): os troncos (centros), os galhos (divisões) e o que se pode fazer. */
+export interface ArvoreCentros {
+  pode: { centro: boolean; divisao: boolean; naturezas: boolean; na_hora: boolean };
+  centros: { id: string; nome: string; ativo: boolean; nucleos: string[]; naturezas: string[] }[];
+  divisoes: { id: string; centro: string; mae: string | null; nome: string; ativa: boolean; nivel: number; naturezas: string[] }[];
+  pedidos: {
+    id: string; operacao: 'incluir' | 'alterar'; dados: { id: string; nome?: string; ativa?: boolean; centro_custo_id?: string; mae_id?: string | null };
+    antes: { nome: string; ativa: boolean } | null; motivo: string; pedida_por: string | null; meu: boolean; pedida_em: string;
+    minimo: number; votos: number; posso_decidir: boolean;
+  }[];
+  nucleos: { id: string; nome: string; empresa: string | null }[];
+  naturezas: { id: string; mae: string | null; nome: string; codigo: string | null; caminho: string; folha: boolean; ativa: boolean; nivel: number }[];
+  modelos: { id: string; nome: string; naturezas: string[] }[];
+}
