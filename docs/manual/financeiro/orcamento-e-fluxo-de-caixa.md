@@ -37,7 +37,7 @@ O **custo de capital** (permuta financeira, pagamento do terreno) existe só no 
 
 ✅ **Decidido** (Moises, 23/nov/2026). Serve para planejar a despesa de uma área (Marketing, Administrativo...) sem fornecedor: o quanto se espera gastar por mês em cada natureza, num centro de custo ou num nível dele (por exemplo, Marketing › Mídia Online). Com ele, o fluxo de caixa já mostra a despesa antes de a nota chegar, e depois dá para comparar o previsto com o realizado.
 
-> 🟡 O código das regras abaixo está no PR #122, ainda não juntado. ⏳ As telas ainda não existem.
+> ✅ As regras abaixo estão no sistema (PR #122, juntado em 23/nov/2026). ⏳ As telas ainda não existem.
 
 É outro tipo de orçamento, diferente do orçamento do empreendimento descrito acima: não tem viabilidade, só versões aprovadas e revisões.
 

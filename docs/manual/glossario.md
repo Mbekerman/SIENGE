@@ -12,6 +12,7 @@ As palavras abaixo têm um sentido preciso no ERP BKM. Quando houver diferença 
 | **Baixa** | A ligação entre um pagamento e uma parcela: quanto daquele pagamento baixou aquela parcela, com juros, multa e desconto. Pagar só parte deixa saldo a pagar. (Antes de 14/11/2026 o manual chamava isso de quitação.) |
 | **Caução** | Parte do valor da nota que a BKM retém do fornecedor como garantia. Fica num extrato por contrato até ser liberada. |
 | **Centro de custo** | Onde a despesa é apropriada dentro do núcleo econômico: Marketing, Terreno, Incorporação, Obra, Assistência técnica, Administrativo... Uma lista única da empresa, ligada ou desligada em cada núcleo. ⚠️ Antes de 14/11/2026 o manual chamava isso de **área**. No Sienge, "centro de custo" é a obra, ou seja, o nosso **núcleo econômico**. |
+| **DFM1 e DFM2** | Taxas mensais pagas ao investidor da SPE: DFM1 é o custo do capital investido e DFM2 o prêmio pela captação. A contabilidade registra como distribuição de lucro; na DRE gerencial são despesa financeira, no centro Alavancagem (Moises, 16/11/2026). |
 | **Divisão** | Subdivisão de um centro de custo, por exemplo Marketing › PDV, Online, Offline e Eventos, com permissão e alçada próprias (Moises, 15/11/2026). Pode ter até 3 subníveis abaixo dela, por exemplo Marketing › Mídia › Online › Google; só se lança no último nível. |
 | **Etiqueta** | Marca num título, criada só pela AF ou pela AD, por exemplo uma campanha, para filtrar e para relatórios. Não entra em aprovação, alçada nem acesso. |
 | **Fase de aprovação** | Cada passo de uma aprovação: gestor da área, depois AF, depois AD, conforme a faixa (Moises, 15/11/2026). Não existe etapa do empreendimento: ela saiu do sistema em 15/11/2026, e o momento do gasto é dito pelo centro de custo e pela divisão. |
@@ -24,6 +25,7 @@ As palavras abaixo têm um sentido preciso no ERP BKM. Quando houver diferença 
 | **Estágio** | Em que ponto o valor está: orçado, previsto, comprometido ou realizado. |
 | **Fechamento do mês** | O ato que trava os lançamentos de um mês. Depois dele, mudar algo exige alçada mais alta. |
 | **Fluxo de caixa** | Não é cadastro: é uma visão que soma o previsto, o comprometido e o realizado por data de caixa. |
+| **Kostyl** | Centro de custo de cada SPE para as despesas da holding pagas pela SPE. Fica fora da DRE do empreendimento; o custo entra na DRE da holding, na linha da natureza (Moises, 17/11/2026). |
 | **Liberação da medição** | Passo do Sienge que transforma a medição autorizada em título a pagar. Hoje só se faz à mão no Sienge. |
 | **Livro de lançamentos** | A tabela única onde todo valor do sistema vira uma linha com as mesmas classificações. É de onde saem relatórios, BI e consultas. |
 | **Medição** | O registro do quanto de um contrato foi executado num período; é o que gera a cobrança. |
