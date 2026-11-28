@@ -253,6 +253,25 @@ Decidido pelo Moises em 16/nov/2026. "Dedução" quer dizer venda desfeita; "per
 4. Confira o tipo, a linha da DRE e a do fluxo de caixa, que vêm da mãe. Mude só se for diferente.
 5. Salve. A natureza já aparece para lançamento e para orçamento.
 
+## Tarefa: montar centros e divisões
+
+> 🟡 Tela do PR #151, ainda não juntado (pedido do Moises, 28/nov/2026, para que as árvores sejam construídas e editadas no próprio sistema). As regras de divisão, nível e naturezas são as de [Três dimensões](#três-dimensões-núcleo-econômico-centro-de-custo-e-natureza); a tela não muda nenhuma delas.
+
+1. Abra **Cadastros › Centros e divisões**. Cada centro de custo é um quadro, com as divisões em árvore até o nível 4. O nível que tem níveis abaixo mostra **soma: N** (a soma das naturezas de baixo, só leitura); o último nível mostra quantas naturezas tem.
+2. **Centro novo:** clique em **Novo centro**, dê um nome que não exista e marque pelo menos uma natureza; os núcleos em que ele vale são opcionais. 🟡 Só o administrador ou o master, direto, sem pedido aprovado (era assim no banco; ⏳ a revisão de segurança vai dizer se o centro também deve passar por aprovação, como a divisão).
+3. **Ligar o centro nos núcleos:** clique no centro; a gaveta mostra os núcleos e liga ou desliga cada um na hora. Desligar não apaga o histórico.
+4. **Divisão nova:** clique no nível de cima e em **Adicionar nível abaixo**. Dê o nome e escolha as naturezas: à mão, por um modelo, copiando de uma irmã ou, no primeiro nível abaixo, copiando do nível de cima. O administrador informa o motivo e o pedido aparece na árvore como **Aguardando aprovação**, com **Aprovar** e **Recusar** (pede justificativa) para a lista de aprovadores de acesso e **Cancelar** para quem pediu. O pedido do master vale na hora.
+5. **Renomear ou desativar:** na gaveta do nível, o nome se edita no lugar; **Desativar** fica no pé. Seguem o mesmo pedido da divisão nova. Só se desativa um nível depois de desativar os de baixo. Centro de custo não se apaga, só se desativa.
+6. **Naturezas do último nível:** na gaveta, com busca, **Marcar todas** e **Desmarcar todas**, **Aplicar um modelo** e **Salvar como modelo**. Master, administrador, AF, AO e AD mudam na hora; vale para os lançamentos novos.
+
+⏳ **Mover um galho** de lugar ainda não existe: espera as respostas do Moises às três perguntas da conversa do plano financeiro (só no mesmo centro ou não; acesso e alçada do lugar novo; o que vai junto).
+
+![Centros e divisões no computador](../imagens/financeiro/centros-divisoes-desk.png)
+
+![Naturezas do último nível na gaveta](../imagens/financeiro/centros-divisao-naturezas-desk.png)
+
+![Centros e divisões no celular](../imagens/financeiro/centros-divisoes-cel.png)
+
 ## Tarefa: lançar um gasto com rateio
 
 1. No lançamento (nota, previsão ou orçamento), em **Classificação**, clique em **Ratear**.
